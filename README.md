@@ -40,6 +40,7 @@ Health endpoints:
 - Worker: `http://localhost:5002/health` (container) or launch profile URL in local run
 - Web: `http://localhost:5000/health` (container)
 - DB status (API): `http://localhost:5001/api/system/db-status` (container)
+- Swagger UI (API): `http://localhost:5001/swagger`
 
 ## EF migrations
 

@@ -1,0 +1,55 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{F0C05581-81C8-4720-AEB5-EE8BF4EABA32}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BasketElo.Web", "src\BasketElo.Web\BasketElo.Web.csproj", "{C7750822-6780-4938-96C5-CD0BE01A9C2E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BasketElo.Api", "src\BasketElo.Api\BasketElo.Api.csproj", "{690A252E-0CD5-45A3-B37A-42D5732BCE5B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BasketElo.Worker", "src\BasketElo.Worker\BasketElo.Worker.csproj", "{C27C20EC-7D1B-4C22-997C-BFA0E3FFCA98}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BasketElo.Domain", "src\BasketElo.Domain\BasketElo.Domain.csproj", "{861AEAC5-AF2E-45EA-A3BF-7984F44DE888}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BasketElo.Infrastructure", "src\BasketElo.Infrastructure\BasketElo.Infrastructure.csproj", "{AA32A885-1776-49D4-83DF-0AC7E0530717}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C7750822-6780-4938-96C5-CD0BE01A9C2E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C7750822-6780-4938-96C5-CD0BE01A9C2E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C7750822-6780-4938-96C5-CD0BE01A9C2E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C7750822-6780-4938-96C5-CD0BE01A9C2E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{690A252E-0CD5-45A3-B37A-42D5732BCE5B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{690A252E-0CD5-45A3-B37A-42D5732BCE5B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{690A252E-0CD5-45A3-B37A-42D5732BCE5B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{690A252E-0CD5-45A3-B37A-42D5732BCE5B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C27C20EC-7D1B-4C22-997C-BFA0E3FFCA98}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C27C20EC-7D1B-4C22-997C-BFA0E3FFCA98}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C27C20EC-7D1B-4C22-997C-BFA0E3FFCA98}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C27C20EC-7D1B-4C22-997C-BFA0E3FFCA98}.Release|Any CPU.Build.0 = Release|Any CPU
+		{861AEAC5-AF2E-45EA-A3BF-7984F44DE888}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{861AEAC5-AF2E-45EA-A3BF-7984F44DE888}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{861AEAC5-AF2E-45EA-A3BF-7984F44DE888}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{861AEAC5-AF2E-45EA-A3BF-7984F44DE888}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AA32A885-1776-49D4-83DF-0AC7E0530717}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AA32A885-1776-49D4-83DF-0AC7E0530717}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AA32A885-1776-49D4-83DF-0AC7E0530717}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AA32A885-1776-49D4-83DF-0AC7E0530717}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{C7750822-6780-4938-96C5-CD0BE01A9C2E} = {F0C05581-81C8-4720-AEB5-EE8BF4EABA32}
+		{690A252E-0CD5-45A3-B37A-42D5732BCE5B} = {F0C05581-81C8-4720-AEB5-EE8BF4EABA32}
+		{C27C20EC-7D1B-4C22-997C-BFA0E3FFCA98} = {F0C05581-81C8-4720-AEB5-EE8BF4EABA32}
+		{861AEAC5-AF2E-45EA-A3BF-7984F44DE888} = {F0C05581-81C8-4720-AEB5-EE8BF4EABA32}
+		{AA32A885-1776-49D4-83DF-0AC7E0530717} = {F0C05581-81C8-4720-AEB5-EE8BF4EABA32}
+	EndGlobalSection
+EndGlobal

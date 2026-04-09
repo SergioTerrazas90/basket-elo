@@ -7,4 +7,6 @@ public class Team
     public string CountryCode { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    public ICollection<TeamAlias> Aliases { get; set; } = new List<TeamAlias>();
 }

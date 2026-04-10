@@ -8,12 +8,14 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamAlias> TeamAliases => Set<TeamAlias>();
     public DbSet<Competition> Competitions => Set<Competition>();
+    public DbSet<CompetitionAlias> CompetitionAliases => Set<CompetitionAlias>();
     public DbSet<Season> Seasons => Set<Season>();
     public DbSet<Game> Games => Set<Game>();
     public DbSet<TeamRating> TeamRatings => Set<TeamRating>();
     public DbSet<RatingHistory> RatingHistories => Set<RatingHistory>();
     public DbSet<RankingSnapshot> RankingSnapshots => Set<RankingSnapshot>();
     public DbSet<EloRebuildRun> EloRebuildRuns => Set<EloRebuildRun>();
+    public DbSet<BackfillJob> BackfillJobs => Set<BackfillJob>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -55,6 +57,22 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.CountryCode).HasMaxLength(3);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.HasIndex(x => new { x.Name, x.CountryCode }).IsUnique();
+        });
+
+        modelBuilder.Entity<CompetitionAlias>(entity =>
+        {
+            entity.ToTable("competition_aliases");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Source).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.SourceCompetitionId).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.AliasName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasOne(x => x.Competition)
+                .WithMany(x => x.Aliases)
+                .HasForeignKey(x => x.CompetitionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.Source, x.SourceCompetitionId }).IsUnique();
+            entity.HasIndex(x => new { x.CompetitionId, x.AliasName });
         });
 
         modelBuilder.Entity<Season>(entity =>
@@ -172,6 +190,22 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.Notes).HasMaxLength(4000);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.HasIndex(x => x.StartedAtUtc);
+        });
+
+        modelBuilder.Entity<BackfillJob>(entity =>
+        {
+            entity.ToTable("backfill_jobs");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Provider).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Country).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.LeagueName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Season).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.SummaryJson).HasColumnType("jsonb");
+            entity.Property(x => x.ErrorMessage).HasMaxLength(4000);
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.Property(x => x.UpdatedAtUtc).IsRequired();
+            entity.HasIndex(x => new { x.Status, x.CreatedAtUtc });
         });
     }
 }

@@ -1,3 +1,5 @@
+using BasketElo.Domain.Backfill;
+using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -14,6 +16,18 @@ public static class DependencyInjection
 
         services.AddDbContext<BasketEloDbContext>(options =>
             options.UseNpgsql(connectionString));
+
+        services.Configure<ApiSportsOptions>(configuration.GetSection(ApiSportsOptions.SectionName));
+        services.AddHttpClient<ApiSportsBasketballDataProvider>((serviceProvider, client) =>
+        {
+            var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ApiSportsOptions>>().Value;
+            client.BaseAddress = new Uri(options.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<ApiSportsBasketballDataProvider>());
+        services.AddScoped<IBackfillJobProcessor, BackfillJobProcessor>();
 
         return services;
     }

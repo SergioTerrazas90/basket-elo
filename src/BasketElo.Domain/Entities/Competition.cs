@@ -9,4 +9,6 @@ public class Competition
     public int Tier { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    public ICollection<CompetitionAlias> Aliases { get; set; } = new List<CompetitionAlias>();
 }

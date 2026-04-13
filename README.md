@@ -34,6 +34,12 @@ dotnet run --project src/BasketElo.Worker
 dotnet run --project src/BasketElo.Web
 ```
 
+Set API-Sports key for backfill testing (do not commit keys):
+
+```powershell
+$env:APISPORTS_API_KEY="<your_api_key>"
+```
+
 Health endpoints:
 
 - API: `http://localhost:5001/health` (container) or launch profile URL in local run
@@ -65,6 +71,7 @@ dotnet tool run dotnet-ef database update --project src/BasketElo.Infrastructure
 ## Run with Docker Compose
 
 ```powershell
+$env:APISPORTS_API_KEY="<your_api_key>"
 docker compose up -d --build
 ```
 
@@ -94,6 +101,21 @@ docker compose down -v
 In containers, services use:
 
 `Host=postgres;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo`
+
+## Backfill job trigger
+
+Create a backfill job (API -> Worker):
+
+```powershell
+curl.exe -X POST "http://localhost:5001/api/backfill/jobs" `
+  -H "Content-Type: application/json" `
+  -d "{\"provider\":\"api-sports\",\"country\":\"Spain\",\"leagueName\":\"ACB\",\"season\":\"2024-2025\",\"dryRun\":true,\"maxRequests\":2}"
+```
+
+Notes:
+- `dryRun=true` fetches provider data and stores summary without writing competition/team/game rows.
+- `maxRequests` hard-limits provider calls for budget control.
+- Current provider support is `api-sports` only.
 
 ## Troubleshooting (Windows + Docker)
 

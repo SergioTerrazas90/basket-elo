@@ -55,6 +55,7 @@ services:
     container_name: basket-elo-web
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      ApiBaseUrl: http://api:8080
     depends_on:
       - api
     ports:

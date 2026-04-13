@@ -28,6 +28,8 @@ public static class DependencyInjection
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<ApiSportsBasketballDataProvider>());
         services.AddScoped<IBackfillJobProcessor, BackfillJobProcessor>();
+        services.AddScoped<IBackfillCoverageService, BackfillCoverageService>();
+        services.AddSingleton<IBackfillCatalog, BackfillCatalog>();
 
         return services;
     }

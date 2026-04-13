@@ -1,0 +1,39 @@
+.hero-shell {
+    margin-top: 1.5rem;
+    padding: 2rem;
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at top left, rgba(255, 196, 80, 0.35), transparent 28%),
+        linear-gradient(145deg, #0f172a 0%, #16324f 55%, #1b4332 100%);
+    color: #f8fafc;
+    box-shadow: 0 22px 40px rgba(15, 23, 42, 0.18);
+}
+
+.hero-copy {
+    max-width: 42rem;
+}
+
+.eyebrow {
+    margin: 0 0 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 0.78rem;
+    color: #facc15;
+}
+
+.hero-shell h1 {
+    margin-bottom: 1rem;
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    line-height: 1.05;
+}
+
+.hero-text {
+    margin-bottom: 1.5rem;
+    font-size: 1.05rem;
+    color: rgba(248, 250, 252, 0.84);
+}
+
+.hero-action {
+    padding-inline: 1.35rem;
+    font-weight: 600;
+}

@@ -1,0 +1,338 @@
+@page "/backfill"
+@rendermode InteractiveServer
+@using BasketElo.Domain.Backfill
+@inject HttpClient Http
+
+<PageTitle>Backfill Coverage</PageTitle>
+
+<div class="backfill-page">
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Coverage Dashboard</p>
+            <h1>League and season backfill coverage</h1>
+            <p class="intro">See what is already loaded, spot gaps from 2000-2001 onward, and queue one season or a full league from the same screen.</p>
+        </div>
+        <button class="btn btn-outline-primary" @onclick="RefreshAsync" disabled="@isBusy">Refresh</button>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(feedbackMessage))
+    {
+        <div class="alert @(feedbackIsError ? "alert-danger" : "alert-success")" role="alert">
+            @feedbackMessage
+        </div>
+    }
+
+    <section class="filters-panel">
+        <div class="filter-field">
+            <label for="countryFilter">Country</label>
+            <select id="countryFilter" class="form-select" @bind="selectedCountry">
+                <option value="">All</option>
+                @foreach (var country in CountryOptions)
+                {
+                    <option value="@country">@country</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="leagueFilter">League</label>
+            <select id="leagueFilter" class="form-select" @bind="selectedLeague">
+                <option value="">All</option>
+                @foreach (var league in LeagueOptions)
+                {
+                    <option value="@league">@league</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="statusFilter">Status</label>
+            <select id="statusFilter" class="form-select" @bind="selectedStatus">
+                <option value="">All</option>
+                @foreach (var status in StatusOptions)
+                {
+                    <option value="@status">@status</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-field compact-toggle">
+            <label for="dryRunToggle">Dry Run</label>
+            <input id="dryRunToggle" class="form-check-input" type="checkbox" @bind="dryRun" />
+        </div>
+
+        <div class="filter-field compact-input">
+            <label for="maxRequestsInput">Max Requests</label>
+            <input id="maxRequestsInput" class="form-control" type="number" min="1" max="100" @bind="maxRequests" />
+        </div>
+    </section>
+
+    @if (isBusy && rows.Count == 0)
+    {
+        <p>Loading coverage...</p>
+    }
+    else
+    {
+        <section class="summary-panel">
+            <div class="summary-card">
+                <span class="summary-label">Configured Leagues</span>
+                <strong>@LeagueSummaries.Count</strong>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Configured Seasons</span>
+                <strong>@FilteredRows.Count</strong>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Completed</span>
+                <strong>@FilteredRows.Count(x => x.CoverageStatus == "completed")</strong>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Missing</span>
+                <strong>@FilteredRows.Count(x => x.CoverageStatus == "not_started")</strong>
+            </div>
+        </section>
+
+        <section class="table-section">
+            <div class="section-head">
+                <h2>League overview</h2>
+                <p>Queue every configured season for a league in one click.</p>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle coverage-table">
+                    <thead>
+                        <tr>
+                            <th>Country</th>
+                            <th>League</th>
+                            <th>Seasons</th>
+                            <th>Completed</th>
+                            <th>Warnings</th>
+                            <th>Latest Run</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var league in LeagueSummaries)
+                        {
+                            <tr>
+                                <td>@league.Country</td>
+                                <td>@league.DisplayName</td>
+                                <td>@league.TotalSeasons</td>
+                                <td>@league.CompletedSeasons</td>
+                                <td>@league.WarningSeasons</td>
+                                <td>@FormatDate(league.LastRunUtc)</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary"
+                                            @onclick="() => TriggerLeagueAsync(league)"
+                                            disabled="@isBusy">
+                                        Trigger league
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="table-section">
+            <div class="section-head">
+                <h2>Season coverage</h2>
+                <p>Scan the latest status per season and trigger a single season when needed.</p>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-striped align-middle coverage-table">
+                    <thead>
+                        <tr>
+                            <th>Country</th>
+                            <th>League</th>
+                            <th>Season</th>
+                            <th>Status</th>
+                            <th>Last Run</th>
+                            <th>Requests</th>
+                            <th>Warnings</th>
+                            <th>Data</th>
+                            <th>Games</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in FilteredRows)
+                        {
+                            <tr>
+                                <td>@row.Country</td>
+                                <td>@row.DisplayName</td>
+                                <td>@row.Season</td>
+                                <td><span class="status-pill @StatusClass(row.CoverageStatus)">@FormatStatus(row.CoverageStatus)</span></td>
+                                <td>@FormatDate(row.LastRunUtc)</td>
+                                <td>@row.RequestsUsed</td>
+                                <td>@row.WarningCount</td>
+                                <td>@(row.DataPresent ? "Yes" : "No")</td>
+                                <td>@row.GameCount</td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary"
+                                            @onclick="() => TriggerSeasonAsync(row)"
+                                            disabled="@isBusy">
+                                        Trigger season
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private readonly List<BackfillCoverageRow> rows = [];
+    private bool dryRun = true;
+    private int maxRequests = 2;
+    private bool isBusy;
+    private string? feedbackMessage;
+    private bool feedbackIsError;
+    private string? selectedCountry;
+    private string? selectedLeague;
+    private string? selectedStatus;
+
+    private IReadOnlyCollection<string> CountryOptions => rows.Select(x => x.Country).Distinct().OrderBy(x => x).ToList();
+    private IReadOnlyCollection<string> LeagueOptions => rows.Select(x => x.DisplayName).Distinct().OrderBy(x => x).ToList();
+    private static IReadOnlyCollection<string> StatusOptions => ["not_started", "in_progress", "completed", "completed_with_warnings", "failed", "partial"];
+
+    private IReadOnlyCollection<BackfillCoverageRow> FilteredRows => rows
+        .Where(x => string.IsNullOrWhiteSpace(selectedCountry) || x.Country == selectedCountry)
+        .Where(x => string.IsNullOrWhiteSpace(selectedLeague) || x.DisplayName == selectedLeague)
+        .Where(x => string.IsNullOrWhiteSpace(selectedStatus) || x.CoverageStatus == selectedStatus)
+        .ToList();
+
+    private IReadOnlyCollection<LeagueSummary> LeagueSummaries => FilteredRows
+        .GroupBy(x => new { x.Provider, x.Country, x.LeagueName, x.DisplayName })
+        .Select(group => new LeagueSummary(
+            group.Key.Provider,
+            group.Key.Country,
+            group.Key.LeagueName,
+            group.Key.DisplayName,
+            group.Count(),
+            group.Count(x => x.CoverageStatus == "completed"),
+            group.Count(x => x.CoverageStatus == "completed_with_warnings"),
+            group.Max(x => x.LastRunUtc)))
+        .OrderBy(x => x.Country)
+        .ThenBy(x => x.DisplayName)
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        isBusy = true;
+        feedbackMessage = null;
+
+        try
+        {
+            var response = await Http.GetFromJsonAsync<BackfillCoverageResponse>("api/backfill/coverage");
+            rows.Clear();
+            if (response is not null)
+            {
+                rows.AddRange(response.Rows);
+            }
+        }
+        catch (Exception ex)
+        {
+            feedbackIsError = true;
+            feedbackMessage = $"Could not load coverage: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task TriggerSeasonAsync(BackfillCoverageRow row)
+    {
+        await SubmitAsync(
+            "api/backfill/jobs",
+            new CreateBackfillJobRequest
+            {
+                Provider = row.Provider,
+                Country = row.Country,
+                LeagueName = row.LeagueName,
+                Season = row.Season,
+                DryRun = dryRun,
+                MaxRequests = maxRequests
+            },
+            $"Queued {row.DisplayName} {row.Season}.");
+    }
+
+    private async Task TriggerLeagueAsync(LeagueSummary league)
+    {
+        await SubmitAsync(
+            "api/backfill/leagues/jobs",
+            new TriggerLeagueBackfillRequest
+            {
+                Provider = league.Provider,
+                Country = league.Country,
+                LeagueName = league.LeagueName,
+                DryRun = dryRun,
+                MaxRequests = maxRequests
+            },
+            $"Queued configured seasons for {league.DisplayName}.");
+    }
+
+    private async Task SubmitAsync<TRequest>(string url, TRequest request, string successMessage)
+    {
+        isBusy = true;
+        feedbackMessage = null;
+
+        try
+        {
+            var response = await Http.PostAsJsonAsync(url, request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body);
+            }
+
+            feedbackIsError = false;
+            feedbackMessage = successMessage;
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            feedbackIsError = true;
+            feedbackMessage = $"Action failed: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static string FormatStatus(string status) => status.Replace('_', ' ');
+
+    private static string FormatDate(DateTime? value) => value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
+
+    private static string StatusClass(string status) => status switch
+    {
+        "completed" => "status-completed",
+        "completed_with_warnings" => "status-warning",
+        "failed" => "status-failed",
+        "in_progress" => "status-progress",
+        "partial" => "status-partial",
+        _ => "status-empty"
+    };
+
+    private sealed record LeagueSummary(
+        string Provider,
+        string Country,
+        string LeagueName,
+        string DisplayName,
+        int TotalSeasons,
+        int CompletedSeasons,
+        int WarningSeasons,
+        DateTime? LastRunUtc);
+}

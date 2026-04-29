@@ -33,7 +33,7 @@ public interface IBasketballDataProvider
         BackfillExecutionContext context,
         CancellationToken cancellationToken);
 
-    Task<(IReadOnlyCollection<BasketballProviderGame> Games, bool HasMorePages)> GetGamesAsync(
+    Task<(IReadOnlyCollection<BasketballProviderGame> Games, bool HasMorePages, IReadOnlyCollection<string> Warnings)> GetGamesAsync(
         BasketballProviderLeague league,
         string season,
         BackfillExecutionContext context,

@@ -7,6 +7,10 @@ public class BackfillCatalog : IBackfillCatalog
     private static readonly IReadOnlyCollection<ConfiguredBackfillLeague> Leagues =
     [
         new("api-sports", "Spain", "ACB", "Spain: ACB", "2000-2001"),
+        new("api-sports", "Europe", "Euroleague", "International: Euroleague", "2008-2009"),
+        new("api-sports", "Europe", "Eurocup", "International: EuroCup", "2008-2009"),
+        new("api-sports", "Europe", "Champions League", "International: Basketball Champions League", "2016-2017"),
+        new("api-sports", "Europe", "FIBA Europe Cup", "International: FIBA Europe Cup", "2015-2016"),
         new("api-sports", "France", "LNB Pro A", "France: LNB Pro A / Betclic Elite", "2000-2001"),
         new("api-sports", "Lithuania", "LKL", "Lithuania: LKL", "2000-2001"),
         new("api-sports", "Greece", "A1 Ethniki", "Greece: A1 / Greek Basket League", "2000-2001"),

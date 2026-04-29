@@ -60,7 +60,7 @@ public class ApiSportsBasketballDataProvider(
         return null;
     }
 
-    public async Task<(IReadOnlyCollection<BasketballProviderGame> Games, bool HasMorePages)> GetGamesAsync(
+    public async Task<(IReadOnlyCollection<BasketballProviderGame> Games, bool HasMorePages, IReadOnlyCollection<string> Warnings)> GetGamesAsync(
         BasketballProviderLeague league,
         string season,
         BackfillExecutionContext context,
@@ -68,7 +68,10 @@ public class ApiSportsBasketballDataProvider(
     {
         EnsureRequestAvailable(context);
 
-        var uri = $"/games?league={Uri.EscapeDataString(league.SourceLeagueId)}&season={Uri.EscapeDataString(season)}";
+        var seasonParameter = string.IsNullOrWhiteSpace(league.CountryCode)
+            ? ToStartYearSeason(season)
+            : season;
+        var uri = $"/games?league={Uri.EscapeDataString(league.SourceLeagueId)}&season={Uri.EscapeDataString(seasonParameter)}";
         using var request = CreateRequest(uri);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -76,6 +79,7 @@ public class ApiSportsBasketballDataProvider(
         var payload = await response.Content.ReadAsStringAsync(cancellationToken);
         using var document = JsonDocument.Parse(payload);
         var games = new List<BasketballProviderGame>();
+        var warnings = ExtractApiWarnings(document.RootElement);
 
         var hasMorePages = false;
         if (document.RootElement.TryGetProperty("paging", out var pagingElement))
@@ -87,7 +91,7 @@ public class ApiSportsBasketballDataProvider(
 
         if (!document.RootElement.TryGetProperty("response", out var responseArray))
         {
-            return (games, hasMorePages);
+            return (games, hasMorePages, warnings);
         }
 
         foreach (var item in responseArray.EnumerateArray())
@@ -129,7 +133,40 @@ public class ApiSportsBasketballDataProvider(
                 awayScore));
         }
 
-        return (games, hasMorePages);
+        return (games, hasMorePages, warnings);
+    }
+
+    private static IReadOnlyCollection<string> ExtractApiWarnings(JsonElement root)
+    {
+        if (!root.TryGetProperty("errors", out var errors) ||
+            errors.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return [];
+        }
+
+        var warnings = new List<string>();
+        if (errors.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var error in errors.EnumerateObject())
+            {
+                if (error.Value.ValueKind == JsonValueKind.String)
+                {
+                    warnings.Add($"API-Sports {error.Name}: {error.Value.GetString()}");
+                }
+            }
+        }
+        else if (errors.ValueKind == JsonValueKind.Array)
+        {
+            warnings.AddRange(errors.EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => $"API-Sports: {x.GetString()}"));
+        }
+        else if (errors.ValueKind == JsonValueKind.String)
+        {
+            warnings.Add($"API-Sports: {errors.GetString()}");
+        }
+
+        return warnings.Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
     }
 
     private HttpRequestMessage CreateRequest(string path)
@@ -143,6 +180,14 @@ public class ApiSportsBasketballDataProvider(
         var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.Add("x-apisports-key", apiKey);
         return request;
+    }
+
+    private static string ToStartYearSeason(string season)
+    {
+        var pieces = season.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return pieces.Length > 0 && int.TryParse(pieces[0], out var startYear)
+            ? startYear.ToString()
+            : season;
     }
 
     private static short? TryGetShort(JsonElement parent, string child1, string child2)

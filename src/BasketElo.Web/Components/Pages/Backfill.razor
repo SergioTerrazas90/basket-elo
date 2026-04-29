@@ -167,7 +167,24 @@
                                 <td><span class="status-pill @StatusClass(row.CoverageStatus)">@FormatStatus(row.CoverageStatus)</span></td>
                                 <td>@FormatDate(row.LastRunUtc)</td>
                                 <td>@row.RequestsUsed</td>
-                                <td>@row.WarningCount</td>
+                                <td>
+                                    @if (row.Warnings.Count == 0)
+                                    {
+                                        <span>@row.WarningCount</span>
+                                    }
+                                    else
+                                    {
+                                        <details class="warning-details">
+                                            <summary>@row.WarningCount warning@(row.WarningCount == 1 ? string.Empty : "s")</summary>
+                                            <ul>
+                                                @foreach (var warning in row.Warnings)
+                                                {
+                                                    <li>@warning</li>
+                                                }
+                                            </ul>
+                                        </details>
+                                    }
+                                </td>
                                 <td>@(row.DataPresent ? "Yes" : "No")</td>
                                 <td>@row.GameCount</td>
                                 <td>
@@ -199,7 +216,7 @@
 
     private IReadOnlyCollection<string> CountryOptions => rows.Select(x => x.Country).Distinct().OrderBy(x => x).ToList();
     private IReadOnlyCollection<string> LeagueOptions => rows.Select(x => x.DisplayName).Distinct().OrderBy(x => x).ToList();
-    private static IReadOnlyCollection<string> StatusOptions => ["not_started", "in_progress", "completed", "completed_with_warnings", "failed", "partial"];
+    private static IReadOnlyCollection<string> StatusOptions => ["not_started", "in_progress", "completed", "completed_with_warnings", "dry_run", "no_data", "failed", "partial"];
 
     private IReadOnlyCollection<BackfillCoverageRow> FilteredRows => rows
         .Where(x => string.IsNullOrWhiteSpace(selectedCountry) || x.Country == selectedCountry)
@@ -312,7 +329,13 @@
         }
     }
 
-    private static string FormatStatus(string status) => status.Replace('_', ' ');
+    private static string FormatStatus(string status) => status switch
+    {
+        "dry_run" => "dry run",
+        "no_data" => "no data",
+        "partial" => "partial data",
+        _ => status.Replace('_', ' ')
+    };
 
     private static string FormatDate(DateTime? value) => value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
 
@@ -320,6 +343,8 @@
     {
         "completed" => "status-completed",
         "completed_with_warnings" => "status-warning",
+        "dry_run" => "status-dry-run",
+        "no_data" => "status-empty",
         "failed" => "status-failed",
         "in_progress" => "status-progress",
         "partial" => "status-partial",

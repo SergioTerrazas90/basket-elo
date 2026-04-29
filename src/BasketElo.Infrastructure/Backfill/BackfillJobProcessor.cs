@@ -87,6 +87,8 @@ public class BackfillJobProcessor(
             job.WarningCount += 1;
         }
 
+        job.WarningCount += gamesResult.Warnings.Count;
+
         var summary = new BackfillSummary
         {
             LeagueName = league.Name,
@@ -96,6 +98,13 @@ public class BackfillJobProcessor(
             HasMorePages = gamesResult.HasMorePages,
             GamesFetched = gamesResult.Games.Count
         };
+
+        if (gamesResult.HasMorePages)
+        {
+            summary.Warnings.Add("The provider returned more pages than the current request budget allowed, so only the first page of games was imported.");
+        }
+
+        summary.Warnings.AddRange(gamesResult.Warnings);
 
         if (!job.DryRun)
         {
@@ -180,7 +189,7 @@ public class BackfillJobProcessor(
             {
                 Id = Guid.NewGuid(),
                 Name = providerLeague.Name,
-                Type = "domestic_first_division",
+                Type = string.IsNullOrWhiteSpace(providerLeague.CountryCode) ? "international" : "domestic_first_division",
                 CountryCode = countryCode,
                 Tier = 1,
                 IsActive = true,
@@ -328,5 +337,6 @@ public class BackfillJobProcessor(
         public int GamesFetched { get; set; }
         public int GamesInserted { get; set; }
         public int GamesUpdated { get; set; }
+        public List<string> Warnings { get; } = [];
     }
 }

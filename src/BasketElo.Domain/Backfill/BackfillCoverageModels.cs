@@ -17,6 +17,7 @@ public record BackfillCoverageRow(
     DateTime? LastRunUtc,
     int RequestsUsed,
     int WarningCount,
+    IReadOnlyCollection<string> Warnings,
     bool DataPresent,
     int GameCount,
     string? LatestJobStatus,

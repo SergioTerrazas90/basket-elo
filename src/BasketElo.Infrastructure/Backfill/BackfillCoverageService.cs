@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Persistence;
@@ -117,6 +118,7 @@ public class BackfillCoverageService(
                     latestJob?.FinishedAtUtc ?? latestJob?.StartedAtUtc,
                     latestJob?.RequestsUsed ?? 0,
                     latestJob?.WarningCount ?? 0,
+                    ExtractWarnings(latestJob),
                     dataPresent,
                     gameCount,
                     latestJob?.Status,
@@ -143,12 +145,91 @@ public class BackfillCoverageService(
             BackfillJobStatus.Pending => "in_progress",
             BackfillJobStatus.Running => "in_progress",
             BackfillJobStatus.CompletedWithWarnings => "completed_with_warnings",
+            BackfillJobStatus.Completed when job.DryRun && !dataPresent => "dry_run",
             BackfillJobStatus.Completed when dataPresent => "completed",
-            BackfillJobStatus.Completed => "partial",
+            BackfillJobStatus.Completed => "no_data",
             BackfillJobStatus.Failed when dataPresent => "partial",
             BackfillJobStatus.Failed => "failed",
             _ => dataPresent ? "partial" : "not_started"
         };
+    }
+
+    private static IReadOnlyCollection<string> ExtractWarnings(BackfillJob? job)
+    {
+        if (job is null || job.WarningCount == 0)
+        {
+            return [];
+        }
+
+        var warnings = new List<string>();
+        if (!string.IsNullOrWhiteSpace(job.SummaryJson))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(job.SummaryJson);
+                var root = document.RootElement;
+
+                if (TryGetString(root, "message", out var message))
+                {
+                    warnings.Add(message);
+                }
+
+                if (TryGetProperty(root, "warnings", out var warningArray) &&
+                    warningArray.ValueKind == JsonValueKind.Array)
+                {
+                    warnings.AddRange(warningArray
+                        .EnumerateArray()
+                        .Where(x => x.ValueKind == JsonValueKind.String)
+                        .Select(x => x.GetString())
+                        .Where(x => !string.IsNullOrWhiteSpace(x))!);
+                }
+
+                if (TryGetProperty(root, "hasMorePages", out var hasMorePages) &&
+                    hasMorePages.ValueKind is JsonValueKind.True)
+                {
+                    warnings.Add("The provider returned more pages than the current request budget allowed, so only the first page of games was imported.");
+                }
+            }
+            catch (JsonException)
+            {
+                warnings.Add("This job completed with warnings, but its stored summary could not be read.");
+            }
+        }
+
+        if (warnings.Count == 0)
+        {
+            warnings.Add("This job completed with warnings, but no warning details were recorded.");
+        }
+
+        return warnings.Distinct().ToList();
+    }
+
+    private static bool TryGetString(JsonElement root, string propertyName, out string value)
+    {
+        value = string.Empty;
+        if (!TryGetProperty(root, propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = property.GetString() ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private static bool TryGetProperty(JsonElement root, string propertyName, out JsonElement property)
+    {
+        foreach (var candidate in root.EnumerateObject())
+        {
+            if (string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                property = candidate.Value;
+                return true;
+            }
+        }
+
+        property = default;
+        return false;
     }
 
     private static string DisplayCountryFromCode(string? countryCode)

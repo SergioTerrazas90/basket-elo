@@ -127,6 +127,11 @@
     color: #92400e;
 }
 
+.status-dry-run {
+    background: #ccfbf1;
+    color: #0f766e;
+}
+
 .status-failed {
     background: #fee2e2;
     color: #b91c1c;
@@ -145,6 +150,25 @@
 .status-empty {
     background: #e2e8f0;
     color: #475569;
+}
+
+.warning-details {
+    max-width: 22rem;
+    color: #78350f;
+}
+
+.warning-details summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.warning-details ul {
+    margin: 0.45rem 0 0;
+    padding-left: 1.15rem;
+}
+
+.warning-details li {
+    margin-bottom: 0.3rem;
 }
 
 @media (max-width: 768px) {

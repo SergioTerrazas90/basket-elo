@@ -26,18 +26,49 @@ public class BackfillCoverageService(
             .Where(x => configuredLeagues.Select(l => l.Provider).Contains(x.Provider))
             .ToListAsync(cancellationToken);
 
+        var aliases = await dbContext.CompetitionAliases
+            .AsNoTracking()
+            .Include(x => x.Competition)
+            .ToListAsync(cancellationToken);
+
+        var aliasMatches = aliases
+            .Where(alias => configuredLeagues.Any(league =>
+                string.Equals(league.Provider, alias.Source, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(league.LeagueName, alias.AliasName, StringComparison.OrdinalIgnoreCase)))
+            .Select(alias => alias.Competition)
+            .ToList();
+
         var competitionKeys = configuredLeagues
             .Select(x => new CompetitionKey(x.Country, x.LeagueName))
             .Distinct()
-            .ToList();
+            .ToHashSet();
 
-        var competitions = await dbContext.Competitions
+        var allCompetitions = await dbContext.Competitions
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        var matchedCompetitions = competitions
+        var directMatches = allCompetitions
             .Where(c => competitionKeys.Contains(new CompetitionKey(DisplayCountryFromCode(c.CountryCode), c.Name)))
             .ToList();
+
+        var matchedCompetitions = aliasMatches
+            .Concat(directMatches)
+            .GroupBy(c => c.Id)
+            .Select(group => group.First())
+            .ToList();
+
+        var competitionIdsByLeague = configuredLeagues.ToDictionary(
+            league => LeagueKey(league.Provider, league.Country, league.LeagueName),
+            league => matchedCompetitions
+                .Where(competition => aliases.Any(alias =>
+                        alias.CompetitionId == competition.Id &&
+                        string.Equals(alias.Source, league.Provider, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(alias.AliasName, league.LeagueName, StringComparison.OrdinalIgnoreCase)) ||
+                    (string.Equals(competition.Name, league.LeagueName, StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(DisplayCountryFromCode(competition.CountryCode), league.Country, StringComparison.OrdinalIgnoreCase)))
+                .Select(competition => competition.Id)
+                .Distinct()
+                .ToHashSet());
 
         var seasons = await dbContext.Seasons
             .AsNoTracking()
@@ -55,26 +86,24 @@ public class BackfillCoverageService(
                 x => x.Key,
                 x => x.OrderByDescending(j => j.CreatedAtUtc).First());
 
-        var dataPresence = (from competition in matchedCompetitions
-                            join season in seasons on competition.Id equals season.CompetitionId
-                            join game in games on season.Id equals game.SeasonId into seasonGames
-                            select new
-                            {
-                                Key = $"{competition.Name}|{DisplayCountryFromCode(competition.CountryCode)}|{season.Label}",
-                                GameCount = seasonGames.Count()
-                            })
-            .ToDictionary(x => x.Key, x => x.GameCount);
+        var gameCountsBySeasonId = games
+            .GroupBy(game => game.SeasonId)
+            .ToDictionary(group => group.Key, group => group.Count());
 
         var rows = new List<BackfillCoverageRow>();
         foreach (var league in configuredLeagues)
         {
+            competitionIdsByLeague.TryGetValue(LeagueKey(league.Provider, league.Country, league.LeagueName), out var competitionIds);
+            competitionIds ??= [];
+
             foreach (var season in catalog.GetSeasonsForLeague(league))
             {
                 var jobKey = $"{league.Provider}|{league.Country}|{league.LeagueName}|{season}";
                 latestJobs.TryGetValue(jobKey, out var latestJob);
 
-                var dataKey = $"{league.LeagueName}|{league.Country}|{season}";
-                var gameCount = dataPresence.GetValueOrDefault(dataKey);
+                var gameCount = seasons
+                    .Where(s => competitionIds.Contains(s.CompetitionId) && string.Equals(s.Label, season, StringComparison.OrdinalIgnoreCase))
+                    .Sum(s => gameCountsBySeasonId.GetValueOrDefault(s.Id));
                 var dataPresent = gameCount > 0;
                 var coverageStatus = ComputeCoverageStatus(latestJob, dataPresent);
 
@@ -126,22 +155,38 @@ public class BackfillCoverageService(
     {
         return countryCode?.ToUpperInvariant() switch
         {
+            "ES" => "Spain",
             "ESP" => "Spain",
+            "FR" => "France",
             "FRA" => "France",
+            "LT" => "Lithuania",
             "LTU" => "Lithuania",
+            "GR" => "Greece",
             "GRC" => "Greece",
+            "IT" => "Italy",
             "ITA" => "Italy",
+            "TR" => "Turkey",
             "TUR" => "Turkey",
+            "LV" => "Latvia",
             "LVA" => "Latvia",
+            "BE" => "Belgium",
             "BEL" => "Belgium",
+            "DE" => "Germany",
             "DEU" => "Germany",
+            "IL" => "Israel",
             "ISR" => "Israel",
+            "PL" => "Poland",
             "POL" => "Poland",
+            "CZ" => "Czech Republic",
             "CZE" => "Czech Republic",
+            "RU" => "Russia",
             "RUS" => "Russia",
             _ => countryCode ?? string.Empty
         };
     }
 
     private readonly record struct CompetitionKey(string Country, string LeagueName);
+
+    private static string LeagueKey(string provider, string country, string leagueName)
+        => $"{provider}|{country}|{leagueName}";
 }

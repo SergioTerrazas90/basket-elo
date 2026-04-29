@@ -33,13 +33,19 @@ public class ApiSportsBasketballDataProvider(
 
         foreach (var item in responseArray.EnumerateArray())
         {
-            if (!item.TryGetProperty("league", out var leagueElement))
+            var leagueElement = item.TryGetProperty("league", out var nestedLeagueElement)
+                ? nestedLeagueElement
+                : item;
+
+            if (!leagueElement.TryGetProperty("id", out var idElement))
             {
                 continue;
             }
 
-            var id = leagueElement.GetProperty("id").ToString();
-            var name = leagueElement.GetProperty("name").GetString() ?? leagueName;
+            var id = idElement.ToString();
+            var name = leagueElement.TryGetProperty("name", out var nameElement)
+                ? nameElement.GetString() ?? leagueName
+                : leagueName;
             string? countryCode = null;
             if (item.TryGetProperty("country", out var countryElement))
             {

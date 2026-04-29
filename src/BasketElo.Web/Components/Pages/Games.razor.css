@@ -1,0 +1,138 @@
+.games-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.page-header,
+.section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.eyebrow {
+    margin: 0 0 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.intro,
+.section-head p {
+    margin: 0;
+    color: #5f6b76;
+    max-width: 55rem;
+}
+
+.header-actions,
+.pager {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.filters-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    padding: 1.25rem;
+    border: 1px solid #d9dee3;
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #fbfcfd 0%, #f6f8fa 100%);
+}
+
+.filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.filter-field.wide {
+    grid-column: span 2;
+}
+
+.filter-field.actions {
+    justify-content: end;
+}
+
+.summary-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
+.summary-card {
+    padding: 1rem 1.1rem;
+    border-radius: 1rem;
+    background: #ffffff;
+    border: 1px solid #d9dee3;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+.summary-label {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+
+.table-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.games-table th {
+    white-space: nowrap;
+}
+
+.matchup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.vs {
+    color: #6c757d;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.status-pill {
+    display: inline-flex;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.status-completed {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-empty {
+    background: #eef2f6;
+    color: #46505a;
+}
+
+.empty-state {
+    text-align: center;
+    color: #6c757d;
+    padding: 2rem 1rem !important;
+}
+
+@media (max-width: 900px) {
+    .page-header,
+    .section-head {
+        flex-direction: column;
+    }
+
+    .filter-field.wide {
+        grid-column: span 1;
+    }
+}

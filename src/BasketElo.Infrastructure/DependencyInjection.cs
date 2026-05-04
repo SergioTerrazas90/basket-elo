@@ -1,5 +1,6 @@
 using BasketElo.Domain.Backfill;
 using BasketElo.Infrastructure.Backfill;
+using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -30,6 +31,7 @@ public static class DependencyInjection
         services.AddScoped<IBackfillJobProcessor, BackfillJobProcessor>();
         services.AddScoped<IBackfillCoverageService, BackfillCoverageService>();
         services.AddSingleton<IBackfillCatalog, BackfillCatalog>();
+        services.AddScoped<IIdentityHealthCheckService, IdentityHealthCheckService>();
 
         return services;
     }

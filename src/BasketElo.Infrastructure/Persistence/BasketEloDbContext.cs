@@ -16,6 +16,9 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<RankingSnapshot> RankingSnapshots => Set<RankingSnapshot>();
     public DbSet<EloRebuildRun> EloRebuildRuns => Set<EloRebuildRun>();
     public DbSet<BackfillJob> BackfillJobs => Set<BackfillJob>();
+    public DbSet<IdentityHealthCheckRun> IdentityHealthCheckRuns => Set<IdentityHealthCheckRun>();
+    public DbSet<IdentityHealthCheckFinding> IdentityHealthCheckFindings => Set<IdentityHealthCheckFinding>();
+    public DbSet<IdentityReviewDecision> IdentityReviewDecisions => Set<IdentityReviewDecision>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,7 +47,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .WithMany(x => x.Aliases)
                 .HasForeignKey(x => x.TeamId)
                 .OnDelete(DeleteBehavior.Cascade);
-            entity.HasIndex(x => new { x.Source, x.SourceTeamId }).IsUnique();
+            entity.HasIndex(x => new { x.Source, x.SourceTeamId });
+            entity.HasIndex(x => new { x.Source, x.SourceTeamId, x.AliasName }).IsUnique();
             entity.HasIndex(x => new { x.TeamId, x.AliasName });
         });
 
@@ -206,6 +210,91 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.Property(x => x.UpdatedAtUtc).IsRequired();
             entity.HasIndex(x => new { x.Status, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<IdentityHealthCheckRun>(entity =>
+        {
+            entity.ToTable("identity_health_check_runs");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Source).HasMaxLength(50);
+            entity.Property(x => x.Season).HasMaxLength(20);
+            entity.Property(x => x.CountryCode).HasMaxLength(3);
+            entity.Property(x => x.ScopeKey).HasMaxLength(300).IsRequired();
+            entity.Property(x => x.RulesVersion).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.CheckedAtUtc).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasOne(x => x.Competition)
+                .WithMany()
+                .HasForeignKey(x => x.CompetitionId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(x => x.ScopeKey);
+            entity.HasIndex(x => new { x.Status, x.CheckedAtUtc });
+        });
+
+        modelBuilder.Entity<IdentityHealthCheckFinding>(entity =>
+        {
+            entity.ToTable("identity_health_check_findings");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.FindingType).HasMaxLength(60).IsRequired();
+            entity.Property(x => x.Severity).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.Source).HasMaxLength(50);
+            entity.Property(x => x.SourceTeamId).HasMaxLength(100);
+            entity.Property(x => x.RelatedSource).HasMaxLength(50);
+            entity.Property(x => x.RelatedSourceTeamId).HasMaxLength(100);
+            entity.Property(x => x.Season).HasMaxLength(20);
+            entity.Property(x => x.CountryCode).HasMaxLength(3);
+            entity.Property(x => x.Evidence).HasMaxLength(4000).IsRequired();
+            entity.Property(x => x.SuggestedAction).HasMaxLength(1000).IsRequired();
+            entity.Property(x => x.ResolutionAction).HasMaxLength(60);
+            entity.Property(x => x.ResolvedBy).HasMaxLength(200);
+            entity.Property(x => x.ResolutionNote).HasMaxLength(1000);
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasOne(x => x.Run)
+                .WithMany(x => x.Findings)
+                .HasForeignKey(x => x.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.AffectedTeam)
+                .WithMany()
+                .HasForeignKey(x => x.AffectedTeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.RelatedTeam)
+                .WithMany()
+                .HasForeignKey(x => x.RelatedTeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.Competition)
+                .WithMany()
+                .HasForeignKey(x => x.CompetitionId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(x => new { x.Status, x.Severity });
+            entity.HasIndex(x => new { x.Source, x.SourceTeamId });
+            entity.HasIndex(x => new { x.Season, x.CountryCode });
+        });
+
+        modelBuilder.Entity<IdentityReviewDecision>(entity =>
+        {
+            entity.ToTable("identity_review_decisions");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.DecisionKey).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.FindingType).HasMaxLength(60).IsRequired();
+            entity.Property(x => x.ResolutionAction).HasMaxLength(60).IsRequired();
+            entity.Property(x => x.Source).HasMaxLength(50);
+            entity.Property(x => x.SourceTeamId).HasMaxLength(100);
+            entity.Property(x => x.RelatedSource).HasMaxLength(50);
+            entity.Property(x => x.RelatedSourceTeamId).HasMaxLength(100);
+            entity.Property(x => x.Note).HasMaxLength(1000);
+            entity.Property(x => x.CreatedBy).HasMaxLength(200);
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasOne(x => x.AffectedTeam)
+                .WithMany()
+                .HasForeignKey(x => x.AffectedTeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.RelatedTeam)
+                .WithMany()
+                .HasForeignKey(x => x.RelatedTeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(x => x.DecisionKey).IsUnique();
         });
     }
 }

@@ -1,0 +1,734 @@
+@page "/admin/identity"
+@rendermode InteractiveServer
+@inject HttpClient Http
+
+<PageTitle>Identity Health</PageTitle>
+
+<h1>Identity Health</h1>
+
+<div class="mb-4">
+    <div class="row g-2 align-items-end">
+        <div class="col-sm-2">
+            <label class="form-label" for="identity-source">Source</label>
+            <select id="identity-source" class="form-select" @bind="checkRequest.Source">
+                <option value="">All sources</option>
+                @foreach (var source in options?.Sources ?? [])
+                {
+                    <option value="@source">@source</option>
+                }
+            </select>
+        </div>
+        <div class="col-sm-2">
+            <label class="form-label" for="identity-season">Season filter</label>
+            <select id="identity-season" class="form-select" @bind="checkRequest.Season">
+                <option value="">All seasons</option>
+                @foreach (var season in options?.Seasons ?? [])
+                {
+                    <option value="@season">@season</option>
+                }
+            </select>
+        </div>
+        <div class="col-sm-2">
+            <label class="form-label" for="identity-country">Country</label>
+            <select id="identity-country" class="form-select" @bind="checkRequest.CountryCode">
+                <option value="">All countries</option>
+                @foreach (var country in options?.Countries ?? [])
+                {
+                    <option value="@country.Code">@CountryLabel(country)</option>
+                }
+            </select>
+        </div>
+        <div class="col-sm-3">
+            <label class="form-label" for="identity-competition">Competition</label>
+            <select id="identity-competition" class="form-select" @bind="competitionIdText">
+                <option value="">All competitions</option>
+                @foreach (var competition in FilteredCompetitionOptions)
+                {
+                    <option value="@competition.Id">@CompetitionLabel(competition)</option>
+                }
+            </select>
+        </div>
+        <div class="col-sm-1 form-check mb-2">
+            <input id="identity-force" class="form-check-input" type="checkbox" @bind="checkRequest.Force" />
+            <label class="form-check-label" for="identity-force">Force</label>
+        </div>
+        <div class="col-sm-2">
+            <button class="btn btn-primary w-100" @onclick="RunCheckAsync" disabled="@isBusy">Run Check</button>
+        </div>
+        <div class="col-sm-2">
+            <button class="btn btn-outline-secondary w-100" @onclick="ApplyRunFiltersAsync" disabled="@isBusy">Apply filters</button>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert @messageCss">@message</div>
+}
+
+<h2>Latest Runs</h2>
+
+@if (runs is null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (runs.Count == 0)
+{
+    <p>No identity health checks have run yet.</p>
+}
+else
+{
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr>
+                <th>Checked</th>
+                <th>Scope</th>
+                <th>Pending</th>
+                <th>Resolved</th>
+                <th>Ignored</th>
+                <th>Types</th>
+                <th>Invalidated</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var run in runs)
+            {
+                <tr class="@(run.Id == selectedRunId ? "table-primary" : string.Empty)">
+                    <td>@run.CheckedAtUtc.ToLocalTime().ToString("g")</td>
+                    <td>@run.ScopeKey</td>
+                    <td title="@PendingTitle(run)">
+                        <span class="@PendingBadge(run)">@run.OpenFindingsCount</span>
+                    </td>
+                    <td>@run.ResolvedFindingsCount</td>
+                    <td>@run.IgnoredFindingsCount</td>
+                    <td title="@TypeSummaryTitle(run)">@TypeSummary(run)</td>
+                    <td>@(run.InvalidatedAtUtc?.ToLocalTime().ToString("g") ?? "-")</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary" @onclick="() => SelectRunAsync(run.Id)" disabled="@isBusy">
+                            Select
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteRunAsync(run.Id)" disabled="@isBusy">
+                            Delete
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<h2>Findings</h2>
+
+@if (SelectedRun is not null)
+{
+    <p>Showing findings for run @SelectedRun.CheckedAtUtc.ToLocalTime().ToString("g") with scope @SelectedRun.ScopeKey.</p>
+}
+else
+{
+    <p>Select a run to review its findings.</p>
+}
+
+<div class="row g-2 align-items-end mb-3">
+    <div class="col-sm-2">
+        <label class="form-label" for="finding-status">Status</label>
+        <select id="finding-status" class="form-select" @bind="findingStatus">
+            <option value="open">Open</option>
+            <option value="resolved">Resolved</option>
+            <option value="ignored">Ignored</option>
+            <option value="">All</option>
+        </select>
+    </div>
+    <div class="col-sm-2">
+        <label class="form-label" for="finding-severity">Severity</label>
+        <select id="finding-severity" class="form-select" @bind="findingSeverity">
+            <option value="">All</option>
+            <option value="blocker">Blocker</option>
+            <option value="warning">Warning</option>
+        </select>
+    </div>
+    <div class="col-sm-2">
+        <label class="form-label" for="finding-limit">Rows</label>
+        <select id="finding-limit" class="form-select" @bind="findingLimit">
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="250">250</option>
+            <option value="5000">All</option>
+        </select>
+    </div>
+    <div class="col-sm-2">
+        <button class="btn btn-outline-secondary w-100" @onclick="ApplyFindingFiltersAsync" disabled="@isBusy">Apply filters</button>
+    </div>
+</div>
+
+@if (selectedRunId is null)
+{
+}
+else if (findings is null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (findings.Count == 0)
+{
+    <p>No identity findings match the current filters.</p>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span>Showing @findings.Count row@(findings.Count == 1 ? string.Empty : "s") on page @findingPage.</span>
+        <div class="btn-group">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="PreviousFindingsPageAsync" disabled="@isBusy || findingPage <= 1">Previous</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="NextFindingsPageAsync" disabled="@isBusy || findings.Count < findingLimit">Next</button>
+        </div>
+    </div>
+
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr>
+                <th>Severity</th>
+                <th>Type</th>
+                <th>Teams</th>
+                <th>Evidence</th>
+                <th>Review</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var finding in findings)
+            {
+                var reviewState = GetReviewState(finding);
+                <tr>
+                    <td><span class="@SeverityBadge(finding.Severity)">@finding.Severity</span></td>
+                    <td>@finding.FindingType</td>
+                    <td>
+                        <div>@TeamLabel(finding.AffectedTeamName, finding.AffectedTeamId, finding.Source, finding.SourceTeamId)</div>
+                        @if (finding.RelatedTeamId.HasValue)
+                        {
+                            <div>@TeamLabel(finding.RelatedTeamName, finding.RelatedTeamId, finding.RelatedSource, finding.RelatedSourceTeamId)</div>
+                        }
+                    </td>
+                    <td>@finding.Evidence</td>
+                    <td>
+                        @if (finding.Status != "open")
+                        {
+                            <div>
+                                <span class="@FindingStatusBadge(finding.Status)">@finding.Status</span>
+                                <span>@FormatResolution(finding)</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="mb-2">@finding.SuggestedAction</p>
+                            @if (finding.FindingType == "missing_metadata")
+                            {
+                                <div class="input-group input-group-sm mb-2">
+                                    <span class="input-group-text">Country</span>
+                                    <select class="form-select" @bind="reviewState.CountryCode">
+                                        <option value="">Choose country</option>
+                                        @foreach (var country in options?.Countries ?? [])
+                                        {
+                                            <option value="@country.Code">@CountryLabel(country)</option>
+                                        }
+                                    </select>
+                                    <button class="btn btn-outline-primary" @onclick="() => EditCountryAsync(finding, reviewState)" disabled="@isBusy">
+                                        Save
+                                    </button>
+                                </div>
+                            }
+                            else if (finding.FindingType == "alias_observation")
+                            {
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => AcceptAliasAsync(finding.Id)" disabled="@isBusy">
+                                    Accept alias
+                                </button>
+                            }
+                            else if (finding.RelatedTeamId.HasValue)
+                            {
+                                <div class="row g-2 align-items-center">
+                                    <div class="col-sm-5">
+                                        <select class="form-select form-select-sm" @bind="reviewState.MergeTargetTeamId">
+                                            @if (finding.AffectedTeamId.HasValue)
+                                            {
+                                                <option value="@finding.AffectedTeamId">@DisplayName(finding.AffectedTeamName, finding.AffectedTeamId)</option>
+                                            }
+                                            <option value="@finding.RelatedTeamId">@DisplayName(finding.RelatedTeamName, finding.RelatedTeamId)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-sm-3 form-check">
+                                        <input class="form-check-input" type="checkbox" @bind="reviewState.ConfirmMergeWithRatings" />
+                                        <label class="form-check-label">Confirm merge</label>
+                                    </div>
+                                    <div class="col-sm-4 text-nowrap">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => MergeAsync(finding, reviewState)" disabled="@isBusy || !reviewState.ConfirmMergeWithRatings">
+                                            Merge
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => MarkReviewedAsync(finding.Id)" disabled="@isBusy">
+                                            Keep separate
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => MarkReviewedAsync(finding.Id)" disabled="@isBusy">
+                                    Mark reviewed
+                                </button>
+                            }
+
+                            <button class="btn btn-sm btn-link" @onclick="() => IgnoreAsync(finding.Id)" disabled="@isBusy">
+                                Ignore
+                            </button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IdentityHealthCheckRequest checkRequest = new() { Source = "api-sports" };
+    private string? competitionIdText;
+    private IdentityHealthOptionsDto? options;
+    private IReadOnlyList<IdentityHealthCheckRunDto>? runs;
+    private IReadOnlyList<IdentityHealthCheckFindingDto>? findings;
+    private readonly Dictionary<Guid, FindingReviewState> reviewStates = [];
+    private Guid? selectedRunId;
+    private string? findingStatus = "open";
+    private string? findingSeverity;
+    private int findingPage = 1;
+    private int findingLimit = 100;
+    private bool isBusy;
+    private string? message;
+    private string messageCss = "alert-info";
+
+    private IReadOnlyList<IdentityCompetitionOptionDto> FilteredCompetitionOptions => (options?.Competitions ?? [])
+        .Where(x => string.IsNullOrWhiteSpace(checkRequest.CountryCode) || x.CountryCode == checkRequest.CountryCode)
+        .ToList();
+    private IdentityHealthCheckRunDto? SelectedRun => runs?.FirstOrDefault(x => x.Id == selectedRunId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        options = await Http.GetFromJsonAsync<IdentityHealthOptionsDto>("api/identity-health/options");
+        if (!string.IsNullOrWhiteSpace(checkRequest.Source) &&
+            options is not null &&
+            !options.Sources.Contains(checkRequest.Source, StringComparer.OrdinalIgnoreCase))
+        {
+            checkRequest.Source = null;
+        }
+
+        await RefreshAsync();
+    }
+
+    private async Task RunCheckAsync()
+    {
+        isBusy = true;
+        message = null;
+
+        try
+        {
+            checkRequest.CompetitionId = ParseCompetitionId();
+            var apiResponse = await Http.PostAsJsonAsync("api/identity-health/checks", checkRequest);
+            if (!apiResponse.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(apiResponse));
+            }
+
+            var run = await apiResponse.Content.ReadFromJsonAsync<IdentityHealthCheckRunDto>()
+                ?? throw new InvalidOperationException("Identity check response was empty.");
+            selectedRunId = run.Id;
+            message = $"Identity check finished with status '{run.Status}' and {run.FindingsCount} finding(s).";
+            messageCss = run.UnresolvedBlockersCount > 0 ? "alert-warning" : "alert-success";
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task MarkReviewedAsync(Guid findingId)
+    {
+        await ResolveAsync(findingId, new ResolveIdentityFindingRequest
+        {
+            Action = "keep_separate",
+            ResolvedBy = "admin-ui",
+            Note = "Confirmed as separate identities from internal identity health page."
+        });
+    }
+
+    private async Task IgnoreAsync(Guid findingId)
+    {
+        await ResolveAsync(findingId, new ResolveIdentityFindingRequest
+        {
+            Action = "ignore",
+            ResolvedBy = "admin-ui",
+            Note = "Ignored from internal identity health page."
+        });
+    }
+
+    private async Task AcceptAliasAsync(Guid findingId)
+    {
+        await ResolveAsync(findingId, new ResolveIdentityFindingRequest
+        {
+            Action = "accept_alias",
+            ResolvedBy = "admin-ui",
+            Note = "Accepted alias observation from internal identity health page."
+        });
+    }
+
+    private async Task EditCountryAsync(IdentityHealthCheckFindingDto finding, FindingReviewState reviewState)
+    {
+        if (!finding.AffectedTeamId.HasValue)
+        {
+            message = "This finding does not have a team to update.";
+            messageCss = "alert-danger";
+            return;
+        }
+
+        await ResolveAsync(finding.Id, new ResolveIdentityFindingRequest
+        {
+            Action = "edit_metadata",
+            TargetTeamId = finding.AffectedTeamId,
+            CountryCode = reviewState.CountryCode,
+            ResolvedBy = "admin-ui",
+            Note = "Updated country metadata from internal identity health page."
+        });
+    }
+
+    private async Task MergeAsync(IdentityHealthCheckFindingDto finding, FindingReviewState reviewState)
+    {
+        if (!reviewState.MergeTargetTeamId.HasValue)
+        {
+            message = "Choose a target team before merging.";
+            messageCss = "alert-danger";
+            return;
+        }
+
+        await ResolveAsync(finding.Id, new ResolveIdentityFindingRequest
+        {
+            Action = "merge_duplicate",
+            TargetTeamId = reviewState.MergeTargetTeamId,
+            ConfirmMergeWithRatings = reviewState.ConfirmMergeWithRatings,
+            ResolvedBy = "admin-ui",
+            Note = "Merged from internal identity health page."
+        });
+    }
+
+    private async Task DeleteRunAsync(Guid runId)
+    {
+        isBusy = true;
+        message = null;
+
+        try
+        {
+            var response = await Http.DeleteAsync($"api/identity-health/checks/{runId}");
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(response));
+            }
+
+            reviewStates.Clear();
+            if (selectedRunId == runId)
+            {
+                selectedRunId = null;
+                findings = [];
+            }
+
+            message = "Identity run and its findings were deleted.";
+            messageCss = "alert-success";
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task ResolveAsync(Guid findingId, ResolveIdentityFindingRequest request)
+    {
+        isBusy = true;
+        message = null;
+
+        try
+        {
+            var apiResponse = await Http.PostAsJsonAsync(
+                $"api/identity-health/findings/{findingId}/resolve",
+                request);
+
+            if (!apiResponse.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(apiResponse));
+            }
+
+            message = "Finding updated.";
+            messageCss = "alert-success";
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        checkRequest.CompetitionId = ParseCompetitionId();
+        runs = await Http.GetFromJsonAsync<IReadOnlyList<IdentityHealthCheckRunDto>>($"api/identity-health/checks?{BuildScopeQuery(10)}") ?? [];
+        if (selectedRunId.HasValue && !runs.Any(x => x.Id == selectedRunId))
+        {
+            selectedRunId = null;
+        }
+
+        selectedRunId ??= runs.FirstOrDefault()?.Id;
+
+        if (selectedRunId is null)
+        {
+            findings = [];
+            return;
+        }
+
+        findings = await Http.GetFromJsonAsync<IReadOnlyList<IdentityHealthCheckFindingDto>>($"api/identity-health/findings?{BuildFindingQuery()}") ?? [];
+
+        foreach (var finding in findings)
+        {
+            GetReviewState(finding);
+        }
+    }
+
+    private async Task ApplyRunFiltersAsync()
+    {
+        selectedRunId = null;
+        findingPage = 1;
+        reviewStates.Clear();
+        await RefreshAsync();
+    }
+
+    private async Task SelectRunAsync(Guid runId)
+    {
+        selectedRunId = runId;
+        findingPage = 1;
+        reviewStates.Clear();
+        await RefreshAsync();
+    }
+
+    private async Task ApplyFindingFiltersAsync()
+    {
+        if (selectedRunId is null)
+        {
+            message = "Select an identity run before filtering findings.";
+            messageCss = "alert-warning";
+            return;
+        }
+
+        findingPage = 1;
+        await RefreshAsync();
+    }
+
+    private async Task PreviousFindingsPageAsync()
+    {
+        if (findingPage <= 1)
+        {
+            return;
+        }
+
+        findingPage -= 1;
+        await RefreshAsync();
+    }
+
+    private async Task NextFindingsPageAsync()
+    {
+        if (findings is null || findings.Count < findingLimit)
+        {
+            return;
+        }
+
+        findingPage += 1;
+        await RefreshAsync();
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase ?? "Request failed." : body;
+    }
+
+    private Guid? ParseCompetitionId()
+    {
+        if (string.IsNullOrWhiteSpace(competitionIdText))
+        {
+            return null;
+        }
+
+        if (Guid.TryParse(competitionIdText, out var competitionId))
+        {
+            return competitionId;
+        }
+
+        throw new InvalidOperationException("Competition ID must be a valid GUID.");
+    }
+
+    private string BuildScopeQuery(int limit)
+    {
+        var query = new List<string> { $"limit={limit}" };
+        Append(query, "source", checkRequest.Source);
+        Append(query, "season", checkRequest.Season);
+        Append(query, "countryCode", checkRequest.CountryCode);
+        Append(query, "competitionId", competitionIdText);
+        return string.Join("&", query);
+    }
+
+    private string BuildFindingQuery()
+    {
+        var query = new List<string>
+        {
+            $"runId={selectedRunId}",
+            $"page={findingPage}",
+            $"limit={findingLimit}"
+        };
+        Append(query, "status", findingStatus);
+        Append(query, "severity", findingSeverity);
+        return string.Join("&", query);
+    }
+
+    private static void Append(List<string> query, string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        query.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
+    }
+
+    private static string PendingBadge(IdentityHealthCheckRunDto run)
+    {
+        return run.OpenBlockersCount > 0
+            ? "badge bg-danger"
+            : run.OpenWarningsCount > 0
+                ? "badge bg-warning text-dark"
+                : "badge bg-success";
+    }
+
+    private static string PendingTitle(IdentityHealthCheckRunDto run)
+    {
+        return $"{run.OpenFindingsCount} open: {run.OpenBlockersCount} blocker(s), {run.OpenWarningsCount} warning(s).";
+    }
+
+    private static string TypeSummary(IdentityHealthCheckRunDto run)
+    {
+        if (run.TypeSummaries.Count == 0)
+        {
+            return "-";
+        }
+
+        return string.Join(", ", run.TypeSummaries.Take(3).Select(x => $"{FormatType(x.FindingType)} {x.OpenCount}/{x.OpenCount + x.ResolvedCount + x.IgnoredCount}"));
+    }
+
+    private static string TypeSummaryTitle(IdentityHealthCheckRunDto run)
+    {
+        if (run.TypeSummaries.Count == 0)
+        {
+            return "No findings.";
+        }
+
+        return string.Join(Environment.NewLine, run.TypeSummaries.Select(x =>
+            $"{FormatType(x.FindingType)}: {x.OpenCount} open, {x.ResolvedCount} resolved, {x.IgnoredCount} ignored"));
+    }
+
+    private static string FormatType(string findingType)
+    {
+        return findingType.Replace('_', ' ');
+    }
+
+    private static string SeverityBadge(string severity)
+    {
+        return severity == "blocker" ? "badge bg-danger" : "badge bg-warning text-dark";
+    }
+
+    private static string FindingStatusBadge(string status)
+    {
+        return status == "resolved"
+            ? "badge bg-success"
+            : status == "ignored"
+                ? "badge bg-secondary"
+                : "badge bg-info text-dark";
+    }
+
+    private static string FormatResolution(IdentityHealthCheckFindingDto finding)
+    {
+        var action = string.IsNullOrWhiteSpace(finding.ResolutionAction)
+            ? finding.Status
+            : finding.ResolutionAction.Replace('_', ' ');
+        var when = finding.ResolvedAtUtc?.ToLocalTime().ToString("g");
+
+        return string.IsNullOrWhiteSpace(when) ? action : $"{action} on {when}";
+    }
+
+    private static string CompetitionLabel(IdentityCompetitionOptionDto competition)
+    {
+        return string.IsNullOrWhiteSpace(competition.CountryCode)
+            ? $"{competition.Name} ({competition.Id})"
+            : $"{competition.Name} [{competition.CountryCode}] ({competition.Id})";
+    }
+
+    private static string CountryLabel(IdentityCountryOptionDto country)
+    {
+        return $"{country.Name} [{country.Code}]";
+    }
+
+    private FindingReviewState GetReviewState(IdentityHealthCheckFindingDto finding)
+    {
+        if (!reviewStates.TryGetValue(finding.Id, out var state))
+        {
+            state = new FindingReviewState
+            {
+                CountryCode = finding.SuggestedCountryCode,
+                MergeTargetTeamId = finding.AffectedTeamId ?? finding.RelatedTeamId
+            };
+            reviewStates[finding.Id] = state;
+        }
+
+        return state;
+    }
+
+    private static string TeamLabel(string? name, Guid? teamId, string? source, string? sourceTeamId)
+    {
+        var displayName = DisplayName(name, teamId);
+        var sourceLabel = string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(sourceTeamId)
+            ? string.Empty
+            : $" ({source}:{sourceTeamId})";
+
+        return $"{displayName}{sourceLabel}";
+    }
+
+    private static string DisplayName(string? name, Guid? teamId)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            return name;
+        }
+
+        return teamId?.ToString() ?? "Unknown team";
+    }
+
+    private sealed class FindingReviewState
+    {
+        public string? CountryCode { get; set; }
+        public Guid? MergeTargetTeamId { get; set; }
+        public bool ConfirmMergeWithRatings { get; set; }
+    }
+}

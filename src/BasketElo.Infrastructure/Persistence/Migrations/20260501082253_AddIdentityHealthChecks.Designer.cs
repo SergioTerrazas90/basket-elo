@@ -3,6 +3,7 @@ using System;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BasketElo.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(BasketEloDbContext))]
-    partial class BasketEloDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260501082253_AddIdentityHealthChecks")]
+    partial class AddIdentityHealthChecks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -439,72 +442,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.ToTable("identity_health_check_runs", (string)null);
                 });
 
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityReviewDecision", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AffectedTeamId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("DecisionKey")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("FindingType")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("RelatedSource")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("RelatedSourceTeamId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<Guid?>("RelatedTeamId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ResolutionAction")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.Property<string>("Source")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("SourceTeamId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AffectedTeamId");
-
-                    b.HasIndex("DecisionKey")
-                        .IsUnique();
-
-                    b.HasIndex("RelatedTeamId");
-
-                    b.ToTable("identity_review_decisions", (string)null);
-                });
-
             modelBuilder.Entity("BasketElo.Domain.Entities.RankingSnapshot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -817,23 +754,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Competition");
-                });
-
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityReviewDecision", b =>
-                {
-                    b.HasOne("BasketElo.Domain.Entities.Team", "AffectedTeam")
-                        .WithMany()
-                        .HasForeignKey("AffectedTeamId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("BasketElo.Domain.Entities.Team", "RelatedTeam")
-                        .WithMany()
-                        .HasForeignKey("RelatedTeamId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("AffectedTeam");
-
-                    b.Navigation("RelatedTeam");
                 });
 
             modelBuilder.Entity("BasketElo.Domain.Entities.RankingSnapshot", b =>

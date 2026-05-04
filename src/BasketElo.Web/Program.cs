@@ -5,12 +5,16 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddHttpClient("BasketEloApi", client =>
+
+builder.Services.AddScoped(_ =>
 {
-    var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5001";
-    client.BaseAddress = new Uri(apiBaseUrl);
+    var apiBaseUrl = builder.Configuration["ApiBaseUrl"];
+    var baseAddress = string.IsNullOrWhiteSpace(apiBaseUrl)
+        ? new Uri("http://localhost:5147/")
+        : new Uri(apiBaseUrl.TrimEnd('/') + "/");
+
+    return new HttpClient { BaseAddress = baseAddress };
 });
-builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("BasketEloApi"));
 
 var app = builder.Build();
 

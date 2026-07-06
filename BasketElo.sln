@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BasketElo.Domain", "src\Bas
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BasketElo.Infrastructure", "src\BasketElo.Infrastructure\BasketElo.Infrastructure.csproj", "{AA32A885-1776-49D4-83DF-0AC7E0530717}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BasketElo.Domain.Tests", "tests\BasketElo.Domain.Tests\BasketElo.Domain.Tests.csproj", "{4736E6CB-3CD2-4CE7-86AB-843821702749}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -44,6 +46,10 @@ Global
 		{AA32A885-1776-49D4-83DF-0AC7E0530717}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AA32A885-1776-49D4-83DF-0AC7E0530717}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AA32A885-1776-49D4-83DF-0AC7E0530717}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4736E6CB-3CD2-4CE7-86AB-843821702749}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4736E6CB-3CD2-4CE7-86AB-843821702749}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4736E6CB-3CD2-4CE7-86AB-843821702749}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4736E6CB-3CD2-4CE7-86AB-843821702749}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{C7750822-6780-4938-96C5-CD0BE01A9C2E} = {F0C05581-81C8-4720-AEB5-EE8BF4EABA32}

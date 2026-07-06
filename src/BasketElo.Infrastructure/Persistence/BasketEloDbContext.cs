@@ -124,12 +124,13 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
         modelBuilder.Entity<TeamRating>(entity =>
         {
             entity.ToTable("team_ratings");
-            entity.HasKey(x => x.TeamId);
+            entity.HasKey(x => new { x.TeamId, x.RulesetVersion });
+            entity.Property(x => x.RulesetVersion).HasMaxLength(50).IsRequired();
             entity.Property(x => x.Elo).HasPrecision(8, 2).IsRequired();
             entity.Property(x => x.UpdatedAtUtc).IsRequired();
             entity.HasOne(x => x.Team)
-                .WithOne()
-                .HasForeignKey<TeamRating>(x => x.TeamId)
+                .WithMany()
+                .HasForeignKey(x => x.TeamId)
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(x => x.LastGame)
                 .WithMany()
@@ -141,12 +142,15 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
         {
             entity.ToTable("rating_history");
             entity.HasKey(x => x.Id);
+            entity.Property(x => x.RulesetVersion).HasMaxLength(50).IsRequired();
             entity.Property(x => x.GameDateTimeUtc).IsRequired();
             entity.Property(x => x.PreElo).HasPrecision(8, 2).IsRequired();
             entity.Property(x => x.PostElo).HasPrecision(8, 2).IsRequired();
             entity.Property(x => x.EloDelta).HasPrecision(8, 2).IsRequired();
             entity.Property(x => x.ExpectedScore).HasPrecision(6, 4).IsRequired();
             entity.Property(x => x.ActualScore).HasPrecision(4, 2).IsRequired();
+            entity.Property(x => x.MarginMultiplier).HasPrecision(6, 4).IsRequired();
+            entity.Property(x => x.CompetitionWeight).HasPrecision(6, 4).IsRequired();
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.HasOne(x => x.Game)
                 .WithMany()
@@ -160,8 +164,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .WithMany()
                 .HasForeignKey(x => x.OpponentTeamId)
                 .OnDelete(DeleteBehavior.Restrict);
-            entity.HasIndex(x => new { x.TeamId, x.GameDateTimeUtc });
-            entity.HasIndex(x => new { x.GameId, x.TeamId }).IsUnique();
+            entity.HasIndex(x => new { x.TeamId, x.RulesetVersion, x.GameDateTimeUtc });
+            entity.HasIndex(x => new { x.GameId, x.TeamId, x.RulesetVersion }).IsUnique();
         });
 
         modelBuilder.Entity<RankingSnapshot>(entity =>
@@ -169,6 +173,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.ToTable("ranking_snapshots");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.SnapshotDate).IsRequired();
+            entity.Property(x => x.RulesetVersion).HasMaxLength(50).IsRequired();
             entity.Property(x => x.Elo).HasPrecision(8, 2).IsRequired();
             entity.Property(x => x.Position).IsRequired();
             entity.Property(x => x.CreatedAtUtc).IsRequired();
@@ -176,8 +181,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .WithMany()
                 .HasForeignKey(x => x.TeamId)
                 .OnDelete(DeleteBehavior.Cascade);
-            entity.HasIndex(x => new { x.SnapshotDate, x.Position });
-            entity.HasIndex(x => new { x.SnapshotDate, x.TeamId }).IsUnique();
+            entity.HasIndex(x => new { x.SnapshotDate, x.RulesetVersion, x.Position });
+            entity.HasIndex(x => new { x.SnapshotDate, x.TeamId, x.RulesetVersion }).IsUnique();
         });
 
         modelBuilder.Entity<EloRebuildRun>(entity =>
@@ -187,6 +192,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.StartedAtUtc).IsRequired();
             entity.Property(x => x.RulesetVersion).HasMaxLength(30).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.GamesProcessed).IsRequired();
+            entity.Property(x => x.TeamsRated).IsRequired();
             entity.Property(x => x.Notes).HasMaxLength(4000);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.HasIndex(x => x.StartedAtUtc);

@@ -3,7 +3,8 @@ namespace BasketElo.Domain.Entities;
 public class EloRebuildRun
 {
     public Guid Id { get; set; }
-    public DateTime StartedAtUtc { get; set; }
+    public DateTime QueuedAtUtc { get; set; }
+    public DateTime? StartedAtUtc { get; set; }
     public DateTime? FinishedAtUtc { get; set; }
     public DateTime? FromGameDateTimeUtc { get; set; }
     public string RulesetVersion { get; set; } = string.Empty;

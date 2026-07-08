@@ -14,7 +14,7 @@ public sealed class EloRebuildJobProcessor(
     {
         var runId = await dbContext.EloRebuildRuns
             .Where(x => x.Status == EloRebuildRunStatus.Pending)
-            .OrderBy(x => x.CreatedAtUtc)
+            .OrderBy(x => x.QueuedAtUtc)
             .Select(x => (Guid?)x.Id)
             .FirstOrDefaultAsync(cancellationToken);
 

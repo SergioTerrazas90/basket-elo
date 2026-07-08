@@ -1,14 +1,18 @@
 using BasketElo.Domain.Elo;
+using BasketElo.Domain.Entities;
+using BasketElo.Infrastructure.Elo;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace BasketElo.Api.Controllers;
 
 [ApiController]
 [Route("api/elo")]
 public class EloController(
-    BasketEloDbContext dbContext) : ControllerBase
+    BasketEloDbContext dbContext,
+    IEloRebuildNotificationPublisher notificationPublisher) : ControllerBase
 {
     [HttpGet("rulesets")]
     public ActionResult<EloRulesetCatalogResponse> GetRulesets()
@@ -55,11 +59,11 @@ public class EloController(
             await dbContext.EloRebuildRuns
                 .AsNoTracking()
                 .Where(x => x.RulesetVersion == selectedRuleset)
-                .MaxAsync(x => (DateTime?)x.StartedAtUtc, cancellationToken));
+                .MaxAsync(x => (DateTime?)x.QueuedAtUtc, cancellationToken));
 
         var runs = await dbContext.EloRebuildRuns
             .AsNoTracking()
-            .OrderByDescending(x => x.StartedAtUtc)
+            .OrderByDescending(x => x.QueuedAtUtc)
             .Take(limit)
             .Select(x => new EloRebuildRunDto(
                 x.Id,
@@ -67,6 +71,7 @@ public class EloController(
                 x.Status,
                 x.GamesProcessed,
                 x.TeamsRated,
+                x.QueuedAtUtc,
                 x.StartedAtUtc,
                 x.FinishedAtUtc,
                 x.FromGameDateTimeUtc,
@@ -115,23 +120,102 @@ public class EloController(
         }
 
         var queuedAtUtc = DateTime.UtcNow;
-        var runs = rulesets.Select(ruleset => new Domain.Entities.EloRebuildRun
+        var runs = rulesets.Select(ruleset => new EloRebuildRun
         {
             Id = Guid.NewGuid(),
             RulesetVersion = ruleset,
             Status = EloRebuildRunStatus.Pending,
-            StartedAtUtc = queuedAtUtc,
+            QueuedAtUtc = queuedAtUtc,
             CreatedAtUtc = queuedAtUtc
         }).ToList();
 
         dbContext.EloRebuildRuns.AddRange(runs);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            return Conflict($"An ELO rebuild is already queued or running for: {string.Join(", ", rulesets)}.");
+        }
+
+        return Accepted(runs.Select(ToDto).ToList());
+    }
+
+    [HttpPost("rebuilds/{runId:guid}/cancel")]
+    public async Task<ActionResult<EloRebuildRunDto>> CancelRebuild(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        var run = await dbContext.EloRebuildRuns.SingleOrDefaultAsync(x => x.Id == runId, cancellationToken);
+        if (run is null)
+        {
+            return NotFound();
+        }
+
+        if (run.Status != EloRebuildRunStatus.Pending)
+        {
+            return Conflict($"Only pending rebuilds can be canceled. Run '{runId}' is {run.Status}.");
+        }
+
+        run.Status = EloRebuildRunStatus.Canceled;
+        run.FinishedAtUtc = DateTime.UtcNow;
+        run.Notes = "Canceled by an internal admin operator before the worker started it.";
         await dbContext.SaveChangesAsync(cancellationToken);
+        await PublishNotificationAsync(run, cancellationToken);
 
-        var response = runs.Select(x => new EloRebuildRunDto(
-            x.Id, x.RulesetVersion, x.Status, x.GamesProcessed, x.TeamsRated,
-            x.StartedAtUtc, x.FinishedAtUtc, x.FromGameDateTimeUtc, x.Notes)).ToList();
+        return Ok(ToDto(run));
+    }
 
-        return Accepted(response);
+    [HttpPost("rebuilds/{runId:guid}/retry")]
+    public async Task<ActionResult<EloRebuildRunDto>> RetryRebuild(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        var sourceRun = await dbContext.EloRebuildRuns
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == runId, cancellationToken);
+        if (sourceRun is null)
+        {
+            return NotFound();
+        }
+
+        if (sourceRun.Status is not (EloRebuildRunStatus.Failed or EloRebuildRunStatus.Canceled))
+        {
+            return Conflict($"Only failed or canceled rebuilds can be retried. Run '{runId}' is {sourceRun.Status}.");
+        }
+
+        var activeExists = await dbContext.EloRebuildRuns.AnyAsync(x =>
+            x.RulesetVersion == sourceRun.RulesetVersion &&
+            (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running),
+            cancellationToken);
+        if (activeExists)
+        {
+            return Conflict($"An ELO rebuild is already queued or running for: {sourceRun.RulesetVersion}.");
+        }
+
+        var queuedAtUtc = DateTime.UtcNow;
+        var retryRun = new EloRebuildRun
+        {
+            Id = Guid.NewGuid(),
+            RulesetVersion = sourceRun.RulesetVersion,
+            Status = EloRebuildRunStatus.Pending,
+            QueuedAtUtc = queuedAtUtc,
+            CreatedAtUtc = queuedAtUtc,
+            Notes = $"Retry queued from rebuild run {sourceRun.Id}."
+        };
+
+        dbContext.EloRebuildRuns.Add(retryRun);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            return Conflict($"An ELO rebuild is already queued or running for: {sourceRun.RulesetVersion}.");
+        }
+
+        return Accepted(ToDto(retryRun));
     }
 
     private static EloRulesetCatalogResponse BuildRulesetCatalog()
@@ -147,4 +231,29 @@ public class EloController(
         var normalized = rulesetVersion.Trim().ToLowerInvariant();
         return EloRulesetVersions.All.Contains(normalized) ? normalized : null;
     }
+
+    private static EloRebuildRunDto ToDto(EloRebuildRun run)
+        => new(
+            run.Id,
+            run.RulesetVersion,
+            run.Status,
+            run.GamesProcessed,
+            run.TeamsRated,
+            run.QueuedAtUtc,
+            run.StartedAtUtc,
+            run.FinishedAtUtc,
+            run.FromGameDateTimeUtc,
+            run.Notes);
+
+    private Task PublishNotificationAsync(EloRebuildRun run, CancellationToken cancellationToken)
+        => notificationPublisher.PublishAsync(
+            new EloRebuildRunNotification(
+                run.Id,
+                run.RulesetVersion,
+                run.Status,
+                DateTime.UtcNow),
+            cancellationToken);
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException exception)
+        => exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 }

@@ -15,6 +15,7 @@ public static class EloRebuildRunStatus
     public const string Running = "running";
     public const string Completed = "completed";
     public const string Failed = "failed";
+    public const string Canceled = "canceled";
 }
 
 public static class EloRebuildNotifications
@@ -40,7 +41,8 @@ public sealed class EloRebuildResult
     public string Status { get; set; } = string.Empty;
     public int GamesProcessed { get; set; }
     public int TeamsRated { get; set; }
-    public DateTime StartedAtUtc { get; set; }
+    public DateTime QueuedAtUtc { get; set; }
+    public DateTime? StartedAtUtc { get; set; }
     public DateTime? FinishedAtUtc { get; set; }
     public string? Notes { get; set; }
 }
@@ -55,7 +57,8 @@ public sealed record EloRebuildRunDto(
     string Status,
     int GamesProcessed,
     int TeamsRated,
-    DateTime StartedAtUtc,
+    DateTime QueuedAtUtc,
+    DateTime? StartedAtUtc,
     DateTime? FinishedAtUtc,
     DateTime? FromGameDateTimeUtc,
     string? Notes);
@@ -67,7 +70,7 @@ public sealed record EloDashboardSummary(
     int RatedTeams,
     DateTime? LatestCompletedGameUtc,
     DateTime? LatestSuccessfulRebuildUtc,
-    DateTime? LatestRunStartedAtUtc);
+    DateTime? LatestRunQueuedAtUtc);
 
 public sealed record EloDashboardResponse(
     EloRulesetCatalogResponse Rulesets,

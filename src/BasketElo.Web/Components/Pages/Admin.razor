@@ -116,6 +116,7 @@
                 <table class="table table-striped align-middle rebuild-table">
                     <thead>
                         <tr>
+                            <th>Queued</th>
                             <th>Started</th>
                             <th>Ruleset</th>
                             <th>Status</th>
@@ -124,13 +125,14 @@
                             <th>Teams</th>
                             <th>From Game</th>
                             <th>Notes</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (dashboard.RecentRuns.Count == 0)
                         {
                             <tr>
-                                <td colspan="8" class="empty-state">No rebuild runs recorded yet.</td>
+                                <td colspan="10" class="empty-state">No rebuild runs recorded yet.</td>
                             </tr>
                         }
                         else
@@ -138,6 +140,7 @@
                             @foreach (var run in dashboard.RecentRuns)
                             {
                                 <tr>
+                                    <td>@FormatDate(run.QueuedAtUtc)</td>
                                     <td>@FormatDate(run.StartedAtUtc)</td>
                                     <td>@run.RulesetVersion</td>
                                     <td><span class="status-pill @StatusClass(run.Status)">@run.Status</span></td>
@@ -157,6 +160,22 @@
                                                 <pre>@run.Notes</pre>
                                             </details>
                                         }
+                                    </td>
+                                    <td>
+                                        <div class="row-actions">
+                                            @if (run.Status == EloRebuildRunStatus.Pending)
+                                            {
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => CancelRebuildAsync(run.Id)" disabled="@isBusy">
+                                                    Cancel
+                                                </button>
+                                            }
+                                            @if (run.Status == EloRebuildRunStatus.Failed || run.Status == EloRebuildRunStatus.Canceled)
+                                            {
+                                                <button class="btn btn-sm btn-outline-primary" @onclick="() => RetryRebuildAsync(run.Id)" disabled="@isBusy">
+                                                    Retry
+                                                </button>
+                                            }
+                                        </div>
                                     </td>
                                 </tr>
                             }
@@ -251,6 +270,48 @@
         }
     }
 
+    private async Task CancelRebuildAsync(Guid runId)
+    {
+        await RunRebuildActionAsync(
+            () => Http.PostAsync($"api/elo/rebuilds/{runId}/cancel", null),
+            "Rebuild canceled.");
+    }
+
+    private async Task RetryRebuildAsync(Guid runId)
+    {
+        await RunRebuildActionAsync(
+            () => Http.PostAsync($"api/elo/rebuilds/{runId}/retry", null),
+            "Retry queued. This page will update when the worker finishes.");
+    }
+
+    private async Task RunRebuildActionAsync(Func<Task<HttpResponseMessage>> action, string successMessage)
+    {
+        isBusy = true;
+        message = null;
+
+        try
+        {
+            using var response = await action();
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(response));
+            }
+
+            message = successMessage;
+            messageCss = "alert-success";
+            await RefreshAsync(clearMessage: false);
+        }
+        catch (Exception ex)
+        {
+            message = $"Rebuild action failed: {ex.Message}";
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
     private string BuildDashboardUri()
     {
         var ruleset = string.IsNullOrWhiteSpace(selectedRuleset) ? null : selectedRuleset;
@@ -272,6 +333,7 @@
         "completed" => "status-completed",
         "pending" => "status-progress",
         "running" => "status-progress",
+        "canceled" => "status-canceled",
         "failed" => "status-failed",
         _ => "status-empty"
     };

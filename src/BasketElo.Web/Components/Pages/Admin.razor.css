@@ -188,6 +188,11 @@
     color: #b91c1c;
 }
 
+.status-canceled {
+    background: #fef3c7;
+    color: #92400e;
+}
+
 .status-progress {
     background: #dbeafe;
     color: #1d4ed8;
@@ -209,6 +214,12 @@
     word-break: break-word;
     font-size: 0.8rem;
     color: #334155;
+}
+
+.row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
 }
 
 @media (max-width: 900px) {

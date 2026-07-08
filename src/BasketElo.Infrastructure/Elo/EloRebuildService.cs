@@ -177,6 +177,7 @@ public class EloRebuildService(
             dbContext.ChangeTracker.Clear();
             run = await dbContext.EloRebuildRuns.SingleAsync(x => x.Id == run.Id, CancellationToken.None);
             run.Status = EloRebuildRunStatus.Pending;
+            run.StartedAtUtc = null;
             run.FinishedAtUtc = null;
             run.Notes = "Worker stopped during the rebuild; the run was returned to the queue.";
             await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -202,6 +203,7 @@ public class EloRebuildService(
             Status = run.Status,
             GamesProcessed = run.GamesProcessed,
             TeamsRated = run.TeamsRated,
+            QueuedAtUtc = run.QueuedAtUtc,
             StartedAtUtc = run.StartedAtUtc,
             FinishedAtUtc = run.FinishedAtUtc,
             Notes = run.Notes

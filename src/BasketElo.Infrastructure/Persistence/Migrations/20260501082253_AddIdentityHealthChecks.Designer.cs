@@ -3,6 +3,7 @@ using System;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BasketElo.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(BasketEloDbContext))]
-    partial class BasketEloDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260501082253_AddIdentityHealthChecks")]
+    partial class AddIdentityHealthChecks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -180,9 +183,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("FromGameDateTimeUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("GamesProcessed")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Notes")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
@@ -199,9 +199,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
-
-                    b.Property<int>("TeamsRated")
-                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -445,72 +442,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.ToTable("identity_health_check_runs", (string)null);
                 });
 
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityReviewDecision", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AffectedTeamId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("DecisionKey")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("FindingType")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("RelatedSource")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("RelatedSourceTeamId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<Guid?>("RelatedTeamId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ResolutionAction")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.Property<string>("Source")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("SourceTeamId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AffectedTeamId");
-
-                    b.HasIndex("DecisionKey")
-                        .IsUnique();
-
-                    b.HasIndex("RelatedTeamId");
-
-                    b.ToTable("identity_review_decisions", (string)null);
-                });
-
             modelBuilder.Entity("BasketElo.Domain.Entities.RankingSnapshot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -527,11 +458,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<int>("Position")
                         .HasColumnType("integer");
 
-                    b.Property<string>("RulesetVersion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
                     b.Property<DateOnly>("SnapshotDate")
                         .HasColumnType("date");
 
@@ -542,9 +468,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TeamId");
 
-                    b.HasIndex("SnapshotDate", "RulesetVersion", "Position");
+                    b.HasIndex("SnapshotDate", "Position");
 
-                    b.HasIndex("SnapshotDate", "TeamId", "RulesetVersion")
+                    b.HasIndex("SnapshotDate", "TeamId")
                         .IsUnique();
 
                     b.ToTable("ranking_snapshots", (string)null);
@@ -559,10 +485,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<decimal>("ActualScore")
                         .HasPrecision(4, 2)
                         .HasColumnType("numeric(4,2)");
-
-                    b.Property<decimal>("CompetitionWeight")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("numeric(6,4)");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -587,10 +509,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<int>("KFactorUsed")
                         .HasColumnType("integer");
 
-                    b.Property<decimal>("MarginMultiplier")
-                        .HasPrecision(6, 4)
-                        .HasColumnType("numeric(6,4)");
-
                     b.Property<Guid>("OpponentTeamId")
                         .HasColumnType("uuid");
 
@@ -605,11 +523,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<int?>("RatingPositionAfter")
                         .HasColumnType("integer");
 
-                    b.Property<string>("RulesetVersion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
                     b.Property<Guid>("TeamId")
                         .HasColumnType("uuid");
 
@@ -617,10 +530,10 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("OpponentTeamId");
 
-                    b.HasIndex("GameId", "TeamId", "RulesetVersion")
+                    b.HasIndex("GameId", "TeamId")
                         .IsUnique();
 
-                    b.HasIndex("TeamId", "RulesetVersion", "GameDateTimeUtc");
+                    b.HasIndex("TeamId", "GameDateTimeUtc");
 
                     b.ToTable("rating_history", (string)null);
                 });
@@ -735,10 +648,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("TeamId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("RulesetVersion")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
                     b.Property<decimal>("Elo")
                         .HasPrecision(8, 2)
                         .HasColumnType("numeric(8,2)");
@@ -752,7 +661,7 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.HasKey("TeamId", "RulesetVersion");
+                    b.HasKey("TeamId");
 
                     b.HasIndex("LastGameId");
 
@@ -847,23 +756,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Navigation("Competition");
                 });
 
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityReviewDecision", b =>
-                {
-                    b.HasOne("BasketElo.Domain.Entities.Team", "AffectedTeam")
-                        .WithMany()
-                        .HasForeignKey("AffectedTeamId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("BasketElo.Domain.Entities.Team", "RelatedTeam")
-                        .WithMany()
-                        .HasForeignKey("RelatedTeamId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("AffectedTeam");
-
-                    b.Navigation("RelatedTeam");
-                });
-
             modelBuilder.Entity("BasketElo.Domain.Entities.RankingSnapshot", b =>
                 {
                     b.HasOne("BasketElo.Domain.Entities.Team", "Team")
@@ -932,8 +824,8 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("BasketElo.Domain.Entities.Team", "Team")
-                        .WithMany()
-                        .HasForeignKey("TeamId")
+                        .WithOne()
+                        .HasForeignKey("BasketElo.Domain.Entities.TeamRating", "TeamId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 

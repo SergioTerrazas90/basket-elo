@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BasketElo.Domain\BasketElo.Domain.csproj" />
+    <ProjectReference Include="..\BasketElo.Infrastructure\BasketElo.Infrastructure.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

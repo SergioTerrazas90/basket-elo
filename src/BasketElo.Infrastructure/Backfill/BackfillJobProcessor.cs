@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Entities;
+using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,7 @@ namespace BasketElo.Infrastructure.Backfill;
 public class BackfillJobProcessor(
     BasketEloDbContext dbContext,
     IEnumerable<IBasketballDataProvider> providers,
+    IIdentityHealthCheckService identityHealthCheckService,
     ILogger<BackfillJobProcessor> logger) : IBackfillJobProcessor
 {
     public async Task<bool> TryProcessNextPendingJobAsync(CancellationToken cancellationToken)
@@ -113,8 +115,8 @@ public class BackfillJobProcessor(
 
             foreach (var providerGame in gamesResult.Games)
             {
-                var homeTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceHomeTeamId, providerGame.HomeTeamName, cancellationToken);
-                var awayTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceAwayTeamId, providerGame.AwayTeamName, cancellationToken);
+                var homeTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceHomeTeamId, providerGame.HomeTeamName, competition.CountryCode, cancellationToken);
+                var awayTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceAwayTeamId, providerGame.AwayTeamName, competition.CountryCode, cancellationToken);
 
                 var existingGame = await dbContext.Games
                     .FirstOrDefaultAsync(x =>
@@ -155,6 +157,36 @@ public class BackfillJobProcessor(
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
+
+            if (summary.GamesInserted > 0 || summary.GamesUpdated > 0)
+            {
+                var changedScope = new IdentityChangedScope
+                {
+                    Source = provider.SourceKey,
+                    Season = season.Label,
+                    CountryCode = competition.CountryCode,
+                    CompetitionId = competition.Id
+                };
+
+                await identityHealthCheckService.InvalidateChangedScopeAsync(
+                    changedScope,
+                    cancellationToken);
+
+                var identityRun = await identityHealthCheckService.RunAsync(
+                    new IdentityHealthCheckRequest
+                    {
+                        Source = changedScope.Source,
+                        Season = changedScope.Season,
+                        CountryCode = changedScope.CountryCode,
+                        CompetitionId = changedScope.CompetitionId,
+                        Force = true
+                    },
+                    cancellationToken);
+
+                summary.IdentityHealthStatus = identityRun.Status;
+                summary.IdentityFindingsCount = identityRun.FindingsCount;
+                summary.IdentityBlockersCount = identityRun.UnresolvedBlockersCount;
+            }
         }
 
         CompleteJob(
@@ -244,6 +276,7 @@ public class BackfillJobProcessor(
         string source,
         string sourceTeamId,
         string teamName,
+        string? countryCode,
         CancellationToken cancellationToken)
     {
         var alias = await dbContext.TeamAliases
@@ -254,6 +287,42 @@ public class BackfillJobProcessor(
 
         if (alias is not null)
         {
+            var aliasChanged = false;
+
+            if (alias.Team.CountryCode == "UNK" && !string.IsNullOrWhiteSpace(countryCode))
+            {
+                alias.Team.CountryCode = countryCode;
+                aliasChanged = true;
+            }
+
+            var hasObservedName = await dbContext.TeamAliases.AnyAsync(
+                x =>
+                    x.Source == source &&
+                    x.SourceTeamId == sourceTeamId &&
+                    x.TeamId == alias.TeamId &&
+                    x.AliasName == teamName,
+                cancellationToken);
+
+            if (!hasObservedName)
+            {
+                dbContext.TeamAliases.Add(new TeamAlias
+                {
+                    Id = Guid.NewGuid(),
+                    TeamId = alias.TeamId,
+                    Source = source,
+                    SourceTeamId = sourceTeamId,
+                    AliasName = teamName,
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+
+                aliasChanged = true;
+            }
+
+            if (aliasChanged)
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
             return alias.Team;
         }
 
@@ -261,7 +330,7 @@ public class BackfillJobProcessor(
         {
             Id = Guid.NewGuid(),
             CanonicalName = teamName,
-            CountryCode = "UNK",
+            CountryCode = string.IsNullOrWhiteSpace(countryCode) ? "UNK" : countryCode,
             IsActive = true,
             CreatedAtUtc = DateTime.UtcNow
         };
@@ -338,5 +407,8 @@ public class BackfillJobProcessor(
         public int GamesInserted { get; set; }
         public int GamesUpdated { get; set; }
         public List<string> Warnings { get; } = [];
+        public string? IdentityHealthStatus { get; set; }
+        public int IdentityFindingsCount { get; set; }
+        public int IdentityBlockersCount { get; set; }
     }
 }

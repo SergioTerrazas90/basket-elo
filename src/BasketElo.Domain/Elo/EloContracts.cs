@@ -11,10 +11,22 @@ public static class EloRulesetVersions
 
 public static class EloRebuildRunStatus
 {
+    public const string Pending = "pending";
     public const string Running = "running";
     public const string Completed = "completed";
     public const string Failed = "failed";
 }
+
+public static class EloRebuildNotifications
+{
+    public const string Channel = "elo_rebuild_events";
+}
+
+public sealed record EloRebuildRunNotification(
+    Guid RunId,
+    string RulesetVersion,
+    string Status,
+    DateTime OccurredAtUtc);
 
 public sealed class EloRebuildRequest
 {
@@ -33,7 +45,36 @@ public sealed class EloRebuildResult
     public string? Notes { get; set; }
 }
 
+public sealed record EloRulesetCatalogResponse(
+    string DefaultRuleset,
+    IReadOnlyList<string> Rulesets);
+
+public sealed record EloRebuildRunDto(
+    Guid Id,
+    string RulesetVersion,
+    string Status,
+    int GamesProcessed,
+    int TeamsRated,
+    DateTime StartedAtUtc,
+    DateTime? FinishedAtUtc,
+    DateTime? FromGameDateTimeUtc,
+    string? Notes);
+
+public sealed record EloDashboardSummary(
+    string SelectedRuleset,
+    int CompletedGames,
+    int UnratedCompletedGames,
+    int RatedTeams,
+    DateTime? LatestCompletedGameUtc,
+    DateTime? LatestSuccessfulRebuildUtc,
+    DateTime? LatestRunStartedAtUtc);
+
+public sealed record EloDashboardResponse(
+    EloRulesetCatalogResponse Rulesets,
+    EloDashboardSummary Summary,
+    IReadOnlyList<EloRebuildRunDto> RecentRuns);
+
 public interface IEloRebuildService
 {
-    Task<IReadOnlyList<EloRebuildResult>> RebuildAsync(string? rulesetVersion, CancellationToken cancellationToken);
+    Task<EloRebuildResult> RebuildAsync(Guid runId, CancellationToken cancellationToken);
 }

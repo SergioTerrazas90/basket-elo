@@ -34,6 +34,8 @@ public static class DependencyInjection
         services.AddScoped<IBackfillCoverageService, BackfillCoverageService>();
         services.AddSingleton<IBackfillCatalog, BackfillCatalog>();
         services.AddScoped<IEloRebuildService, EloRebuildService>();
+        services.AddScoped<IEloRebuildJobProcessor, EloRebuildJobProcessor>();
+        services.AddSingleton<IEloRebuildNotificationPublisher, PostgresEloRebuildNotificationPublisher>();
         services.AddScoped<IIdentityHealthCheckService, IdentityHealthCheckService>();
 
         return services;

@@ -1,0 +1,309 @@
+@page "/admin"
+@rendermode InteractiveServer
+@using BasketElo.Domain.Elo
+@using BasketElo.Web.Elo
+@inject HttpClient Http
+@inject EloRebuildNotificationCenter Notifications
+@implements IDisposable
+
+<PageTitle>Admin</PageTitle>
+
+<div class="admin-page">
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Internal Admin</p>
+            <h1>Operate the ELO pipeline before public rankings depend on it.</h1>
+            <p class="intro">Trigger rebuilds, inspect recent runs, and jump into the other internal operator tools from one place.</p>
+        </div>
+        <button class="btn btn-outline-primary" @onclick="() => RefreshAsync()" disabled="@isBusy">Refresh</button>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="alert @messageCss" role="alert">
+            @message
+        </div>
+    }
+
+    @if (dashboard is null && isBusy)
+    {
+        <p>Loading admin dashboard...</p>
+    }
+    else if (dashboard is not null)
+    {
+        <section class="summary-panel">
+            <div class="summary-card accent-card">
+                <span class="summary-label">Selected Ruleset</span>
+                <strong>@dashboard.Summary.SelectedRuleset</strong>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Completed Games</span>
+                <strong>@dashboard.Summary.CompletedGames</strong>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Unrated Completed Games</span>
+                <strong>@dashboard.Summary.UnratedCompletedGames</strong>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Rated Teams</span>
+                <strong>@dashboard.Summary.RatedTeams</strong>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Latest Successful Rebuild</span>
+                <strong>@FormatDate(dashboard.Summary.LatestSuccessfulRebuildUtc)</strong>
+            </div>
+            <div class="summary-card">
+                <span class="summary-label">Latest Completed Game</span>
+                <strong>@FormatDate(dashboard.Summary.LatestCompletedGameUtc)</strong>
+            </div>
+        </section>
+
+        <section class="panel-grid">
+            <section class="control-panel">
+                <div class="section-head">
+                    <h2>ELO rebuilds</h2>
+                    <p>Queue a full rebuild for one ruleset. This page updates when the worker reports completion.</p>
+                </div>
+
+                <div class="control-row">
+                    <div class="filter-field">
+                        <label for="rulesetSelect">Ruleset</label>
+                        <select id="rulesetSelect" class="form-select" @bind="selectedRuleset">
+                            @foreach (var ruleset in dashboard.Rulesets.Rulesets)
+                            {
+                                <option value="@ruleset">@ruleset</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="filter-field compact-action">
+                        <label>&nbsp;</label>
+                        <button class="btn btn-primary" @onclick="TriggerRebuildAsync" disabled="@(isBusy || HasActiveRebuild)">
+                            Trigger rebuild
+                        </button>
+                    </div>
+                </div>
+
+                <p class="hint">Current default from the API: <strong>@dashboard.Rulesets.DefaultRuleset</strong>.</p>
+            </section>
+
+            <section class="tool-links">
+                <div class="section-head">
+                    <h2>Other operator tools</h2>
+                    <p>These remain internal workflows and stay separate from the future public rankings experience.</p>
+                </div>
+
+                <div class="link-grid">
+                    <a class="tool-card" href="backfill">
+                        <span class="tool-label">Backfill Coverage</span>
+                        <strong>Queue seasons and inspect coverage gaps</strong>
+                    </a>
+                    <a class="tool-card" href="admin/identity">
+                        <span class="tool-label">Identity Health</span>
+                        <strong>Review suspicious team identity findings</strong>
+                    </a>
+                </div>
+            </section>
+        </section>
+
+        <section class="table-section">
+            <div class="section-head">
+                <h2>Recent rebuild runs</h2>
+                <p>Showing the latest runs across rulesets so operator history is visible in one place.</p>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-striped align-middle rebuild-table">
+                    <thead>
+                        <tr>
+                            <th>Started</th>
+                            <th>Ruleset</th>
+                            <th>Status</th>
+                            <th>Finished</th>
+                            <th>Games</th>
+                            <th>Teams</th>
+                            <th>From Game</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (dashboard.RecentRuns.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="8" class="empty-state">No rebuild runs recorded yet.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var run in dashboard.RecentRuns)
+                            {
+                                <tr>
+                                    <td>@FormatDate(run.StartedAtUtc)</td>
+                                    <td>@run.RulesetVersion</td>
+                                    <td><span class="status-pill @StatusClass(run.Status)">@run.Status</span></td>
+                                    <td>@FormatDate(run.FinishedAtUtc)</td>
+                                    <td>@run.GamesProcessed</td>
+                                    <td>@run.TeamsRated</td>
+                                    <td>@FormatDate(run.FromGameDateTimeUtc)</td>
+                                    <td>
+                                        @if (string.IsNullOrWhiteSpace(run.Notes))
+                                        {
+                                            <span>-</span>
+                                        }
+                                        else
+                                        {
+                                            <details class="notes-details">
+                                                <summary>View</summary>
+                                                <pre>@run.Notes</pre>
+                                            </details>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private EloDashboardResponse? dashboard;
+    private string? selectedRuleset;
+    private bool isBusy;
+    private string? message;
+    private string messageCss = "alert-info";
+    private IDisposable? notificationSubscription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        notificationSubscription = Notifications.Subscribe(HandleRebuildNotificationAsync);
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync(bool clearMessage = true)
+    {
+        isBusy = true;
+        if (clearMessage)
+        {
+            message = null;
+        }
+
+        try
+        {
+            dashboard = await Http.GetFromJsonAsync<EloDashboardResponse>(BuildDashboardUri());
+            if (dashboard is not null)
+            {
+                selectedRuleset = dashboard.Summary.SelectedRuleset;
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Could not load admin dashboard: {ex.Message}";
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task TriggerRebuildAsync()
+    {
+        if (string.IsNullOrWhiteSpace(selectedRuleset))
+        {
+            message = "Choose a ruleset before triggering a rebuild.";
+            messageCss = "alert-warning";
+            return;
+        }
+
+        isBusy = true;
+        message = null;
+
+        try
+        {
+            var response = await Http.PostAsJsonAsync(
+                "api/elo/rebuilds",
+                new EloRebuildRequest { RulesetVersion = selectedRuleset });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(response));
+            }
+
+            var results = await response.Content.ReadFromJsonAsync<IReadOnlyList<EloRebuildRunDto>>() ?? [];
+            var triggered = results.FirstOrDefault();
+            message = triggered is null
+                ? $"Rebuild requested for {selectedRuleset}. This page will update when the worker finishes."
+                : $"Rebuild queued for {triggered.RulesetVersion}. This page will update when the worker finishes.";
+            messageCss = "alert-success";
+            await RefreshAsync(clearMessage: false);
+        }
+        catch (Exception ex)
+        {
+            message = $"Rebuild failed: {ex.Message}";
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private string BuildDashboardUri()
+    {
+        var ruleset = string.IsNullOrWhiteSpace(selectedRuleset) ? null : selectedRuleset;
+        return string.IsNullOrWhiteSpace(ruleset)
+            ? "api/elo/dashboard"
+            : $"api/elo/dashboard?rulesetVersion={Uri.EscapeDataString(ruleset)}";
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase ?? "Request failed." : body;
+    }
+
+    private static string FormatDate(DateTime? value) => value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
+
+    private static string StatusClass(string status) => status switch
+    {
+        "completed" => "status-completed",
+        "pending" => "status-progress",
+        "running" => "status-progress",
+        "failed" => "status-failed",
+        _ => "status-empty"
+    };
+
+    private bool HasActiveRebuild => dashboard?.RecentRuns.Any(x =>
+        x.RulesetVersion == selectedRuleset &&
+        (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running)) == true;
+
+    private Task HandleRebuildNotificationAsync(EloRebuildRunNotification notification)
+    {
+        return InvokeAsync(async () =>
+        {
+            if (!IsRelevantNotification(notification))
+            {
+                return;
+            }
+
+            message = $"Rebuild {notification.Status} for {notification.RulesetVersion}. Dashboard refreshed.";
+            messageCss = notification.Status == EloRebuildRunStatus.Failed ? "alert-danger" : "alert-success";
+            await RefreshAsync(clearMessage: false);
+            StateHasChanged();
+        });
+    }
+
+    private bool IsRelevantNotification(EloRebuildRunNotification notification)
+    {
+        return string.Equals(notification.RulesetVersion, selectedRuleset, StringComparison.OrdinalIgnoreCase) ||
+            dashboard?.RecentRuns.Any(x => x.Id == notification.RunId) == true;
+    }
+
+    public void Dispose()
+    {
+        notificationSubscription?.Dispose();
+    }
+}

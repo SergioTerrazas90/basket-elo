@@ -56,6 +56,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ApiBaseUrl: http://api:8080
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo
     depends_on:
       - api
     ports:

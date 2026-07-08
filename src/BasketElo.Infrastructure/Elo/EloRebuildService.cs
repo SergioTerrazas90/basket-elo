@@ -9,35 +9,18 @@ namespace BasketElo.Infrastructure.Elo;
 
 public class EloRebuildService(
     BasketEloDbContext dbContext,
+    IEloRebuildNotificationPublisher notificationPublisher,
     ILogger<EloRebuildService> logger) : IEloRebuildService
 {
-    public async Task<IReadOnlyList<EloRebuildResult>> RebuildAsync(string? rulesetVersion, CancellationToken cancellationToken)
+    public async Task<EloRebuildResult> RebuildAsync(Guid runId, CancellationToken cancellationToken)
     {
-        var rulesets = ResolveRulesets(rulesetVersion);
-        var results = new List<EloRebuildResult>();
-
-        foreach (var ruleset in rulesets)
+        var run = await dbContext.EloRebuildRuns.SingleAsync(x => x.Id == runId, cancellationToken);
+        if (run.Status != EloRebuildRunStatus.Running)
         {
-            results.Add(await RebuildRulesetAsync(ruleset, cancellationToken));
+            throw new InvalidOperationException($"ELO rebuild run '{runId}' is not running.");
         }
 
-        return results;
-    }
-
-    private async Task<EloRebuildResult> RebuildRulesetAsync(string rulesetVersion, CancellationToken cancellationToken)
-    {
-        var startedAtUtc = DateTime.UtcNow;
-        var run = new EloRebuildRun
-        {
-            Id = Guid.NewGuid(),
-            StartedAtUtc = startedAtUtc,
-            RulesetVersion = rulesetVersion,
-            Status = EloRebuildRunStatus.Running,
-            CreatedAtUtc = startedAtUtc
-        };
-
-        dbContext.EloRebuildRuns.Add(run);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        var rulesetVersion = run.RulesetVersion;
 
         try
         {
@@ -187,6 +170,17 @@ public class EloRebuildService(
 
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            await PublishNotificationAsync(run, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            dbContext.ChangeTracker.Clear();
+            run = await dbContext.EloRebuildRuns.SingleAsync(x => x.Id == run.Id, CancellationToken.None);
+            run.Status = EloRebuildRunStatus.Pending;
+            run.FinishedAtUtc = null;
+            run.Notes = "Worker stopped during the rebuild; the run was returned to the queue.";
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            throw;
         }
         catch (Exception ex)
         {
@@ -198,6 +192,7 @@ public class EloRebuildService(
             run.FinishedAtUtc = DateTime.UtcNow;
             run.Notes = ex.Message;
             await dbContext.SaveChangesAsync(CancellationToken.None);
+            await PublishNotificationAsync(run, CancellationToken.None);
         }
 
         return new EloRebuildResult
@@ -252,28 +247,22 @@ public class EloRebuildService(
         return (homePosition, awayPosition);
     }
 
-    private static IReadOnlyList<string> ResolveRulesets(string? rulesetVersion)
-    {
-        if (string.IsNullOrWhiteSpace(rulesetVersion) ||
-            string.Equals(rulesetVersion, "all", StringComparison.OrdinalIgnoreCase))
-        {
-            return EloRulesetVersions.All;
-        }
-
-        var normalized = rulesetVersion.Trim().ToLowerInvariant();
-        if (!EloRulesetVersions.All.Contains(normalized))
-        {
-            throw new ArgumentException($"Unsupported ELO ruleset '{rulesetVersion}'.", nameof(rulesetVersion));
-        }
-
-        return [normalized];
-    }
-
     private static decimal RoundRating(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 
     private static decimal RoundProbability(decimal value) => Math.Round(value, 4, MidpointRounding.AwayFromZero);
 
     private static decimal RoundMultiplier(decimal value) => Math.Round(value, 4, MidpointRounding.AwayFromZero);
+
+    private Task PublishNotificationAsync(EloRebuildRun run, CancellationToken cancellationToken)
+    {
+        var notification = new EloRebuildRunNotification(
+            run.Id,
+            run.RulesetVersion,
+            run.Status,
+            DateTime.UtcNow);
+
+        return notificationPublisher.PublishAsync(notification, cancellationToken);
+    }
 
     private sealed record RatedGame(
         Guid Id,

@@ -1,10 +1,13 @@
 using BasketElo.Web.Components;
+using BasketElo.Web.Elo;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddSingleton<EloRebuildNotificationCenter>();
+builder.Services.AddHostedService<PostgresEloRebuildNotificationListener>();
 
 builder.Services.AddScoped(_ =>
 {

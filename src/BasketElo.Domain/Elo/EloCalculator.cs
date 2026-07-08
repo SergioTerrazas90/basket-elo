@@ -1,0 +1,74 @@
+namespace BasketElo.Domain.Elo;
+
+public static class EloCalculator
+{
+    public const decimal BaseRating = 1500m;
+    public const int KFactor = 20;
+    public const decimal HomeAdvantageElo = 100m;
+    public const decimal PointsPerEloMargin = 28m;
+    public const decimal CompetitionWeight = 1m;
+    public const decimal MaxMarginMultiplier = 1.5m;
+    public const decimal MinMarginMultiplier = 1m / MaxMarginMultiplier;
+
+    public static EloGameCalculation Calculate(
+        short homeScore,
+        short awayScore,
+        decimal homeElo,
+        decimal awayElo,
+        string rulesetVersion)
+    {
+        if (!EloRulesetVersions.All.Contains(rulesetVersion))
+        {
+            throw new ArgumentException($"Unsupported ELO ruleset '{rulesetVersion}'.", nameof(rulesetVersion));
+        }
+
+        if (homeScore == awayScore)
+        {
+            throw new ArgumentException("ELO calculation requires a winner.", nameof(homeScore));
+        }
+
+        var eloDiff = homeElo + HomeAdvantageElo - awayElo;
+        var expectedHomeResult = CalculateExpectedResult(eloDiff);
+        var homeActualResult = homeScore > awayScore ? 1m : 0m;
+        var baseHomeDelta = KFactor * (homeActualResult - expectedHomeResult);
+        var marginMultiplier = rulesetVersion == EloRulesetVersions.PointMarginEloV1
+            ? CalculateMarginMultiplier(homeScore, awayScore, eloDiff)
+            : 1m;
+
+        return new EloGameCalculation(
+            expectedHomeResult,
+            homeActualResult,
+            baseHomeDelta * marginMultiplier * CompetitionWeight,
+            marginMultiplier);
+    }
+
+    private static decimal CalculateExpectedResult(decimal eloDiff)
+    {
+        var expected = 1d / (1d + Math.Pow(10d, -(double)eloDiff / 400d));
+        return (decimal)expected;
+    }
+
+    private static decimal CalculateMarginMultiplier(short homeScore, short awayScore, decimal eloDiff)
+    {
+        var actualMargin = homeScore - awayScore;
+        var expectedMargin = eloDiff / PointsPerEloMargin;
+        var winnerActualMargin = Math.Abs(actualMargin);
+        var winnerExpectedMargin = actualMargin > 0 ? expectedMargin : -expectedMargin;
+        var winnerOverperformance = winnerActualMargin - winnerExpectedMargin;
+
+        if (winnerOverperformance >= 0)
+        {
+            var boost = Math.Min(Math.Log((double)winnerOverperformance + 1d) / 5d, 0.5d);
+            return Math.Min(1m + (decimal)boost, MaxMarginMultiplier);
+        }
+
+        var dampener = Math.Min(Math.Log((double)Math.Abs(winnerOverperformance) + 1d) / 5d, 0.5d);
+        return Math.Max(1m / (1m + (decimal)dampener), MinMarginMultiplier);
+    }
+}
+
+public sealed record EloGameCalculation(
+    decimal ExpectedHomeResult,
+    decimal HomeActualResult,
+    decimal HomeDelta,
+    decimal MarginMultiplier);

@@ -8,6 +8,8 @@ public class EloRebuildRun
     public DateTime? FromGameDateTimeUtc { get; set; }
     public string RulesetVersion { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public int GamesProcessed { get; set; }
+    public int TeamsRated { get; set; }
     public string? Notes { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

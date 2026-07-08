@@ -68,6 +68,15 @@ Apply migrations:
 dotnet tool run dotnet-ef database update --project src/BasketElo.Infrastructure/BasketElo.Infrastructure.csproj --startup-project src/BasketElo.Api/BasketElo.Api.csproj --no-build
 ```
 
+## ELO rulesets
+
+Basket ELO stores ratings by ruleset version from day one:
+
+- `basic-elo-v1`: plain win/loss ELO.
+- `point-margin-elo-v1`: default public ruleset, adjusted by point margin.
+
+See `docs/elo-rulesets.md` for the naming, constants, and point-margin conversion rationale.
+
 ## Run with Docker Compose
 
 ```powershell

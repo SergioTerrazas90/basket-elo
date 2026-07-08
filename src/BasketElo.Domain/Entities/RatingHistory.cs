@@ -6,6 +6,7 @@ public class RatingHistory
     public Guid GameId { get; set; }
     public Guid TeamId { get; set; }
     public Guid OpponentTeamId { get; set; }
+    public string RulesetVersion { get; set; } = string.Empty;
     public DateTime GameDateTimeUtc { get; set; }
     public decimal PreElo { get; set; }
     public decimal PostElo { get; set; }
@@ -13,6 +14,8 @@ public class RatingHistory
     public int KFactorUsed { get; set; }
     public decimal ExpectedScore { get; set; }
     public decimal ActualScore { get; set; }
+    public decimal MarginMultiplier { get; set; } = 1m;
+    public decimal CompetitionWeight { get; set; } = 1m;
     public int GamesPlayedBefore { get; set; }
     public int? RatingPositionAfter { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

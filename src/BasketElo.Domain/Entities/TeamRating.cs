@@ -3,6 +3,7 @@ namespace BasketElo.Domain.Entities;
 public class TeamRating
 {
     public Guid TeamId { get; set; }
+    public string RulesetVersion { get; set; } = string.Empty;
     public decimal Elo { get; set; } = 1500m;
     public int GamesPlayed { get; set; }
     public Guid? LastGameId { get; set; }

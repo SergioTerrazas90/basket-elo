@@ -3,6 +3,7 @@ using System;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BasketElo.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(BasketEloDbContext))]
-    partial class BasketEloDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260504055647_AddRulesetVersionedEloRebuild")]
+    partial class AddRulesetVersionedEloRebuild
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -276,241 +279,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.ToTable("games", (string)null);
                 });
 
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityHealthCheckFinding", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AffectedTeamId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("CompetitionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CountryCode")
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Evidence")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<string>("FindingType")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.Property<string>("RelatedSource")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("RelatedSourceTeamId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<Guid?>("RelatedTeamId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ResolutionAction")
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.Property<string>("ResolutionNote")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<DateTime?>("ResolvedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ResolvedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Season")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Severity")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Source")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("SourceTeamId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("SuggestedAction")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AffectedTeamId");
-
-                    b.HasIndex("CompetitionId");
-
-                    b.HasIndex("RelatedTeamId");
-
-                    b.HasIndex("RunId");
-
-                    b.HasIndex("Season", "CountryCode");
-
-                    b.HasIndex("Source", "SourceTeamId");
-
-                    b.HasIndex("Status", "Severity");
-
-                    b.ToTable("identity_health_check_findings", (string)null);
-                });
-
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityHealthCheckRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CheckedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CompetitionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CountryCode")
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("FindingsCount")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("Forced")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("InvalidatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("RulesVersion")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<string>("ScopeKey")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<string>("Season")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("Source")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int>("UnresolvedBlockersCount")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CompetitionId");
-
-                    b.HasIndex("ScopeKey");
-
-                    b.HasIndex("Status", "CheckedAtUtc");
-
-                    b.ToTable("identity_health_check_runs", (string)null);
-                });
-
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityReviewDecision", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AffectedTeamId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("DecisionKey")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("FindingType")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("RelatedSource")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("RelatedSourceTeamId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<Guid?>("RelatedTeamId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ResolutionAction")
-                        .IsRequired()
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.Property<string>("Source")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("SourceTeamId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AffectedTeamId");
-
-                    b.HasIndex("DecisionKey")
-                        .IsUnique();
-
-                    b.HasIndex("RelatedTeamId");
-
-                    b.ToTable("identity_review_decisions", (string)null);
-                });
-
             modelBuilder.Entity("BasketElo.Domain.Entities.RankingSnapshot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -720,12 +488,10 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Source", "SourceTeamId");
+                    b.HasIndex("Source", "SourceTeamId")
+                        .IsUnique();
 
                     b.HasIndex("TeamId", "AliasName");
-
-                    b.HasIndex("Source", "SourceTeamId", "AliasName")
-                        .IsUnique();
 
                     b.ToTable("team_aliases", (string)null);
                 });
@@ -803,65 +569,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Navigation("HomeTeam");
 
                     b.Navigation("Season");
-                });
-
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityHealthCheckFinding", b =>
-                {
-                    b.HasOne("BasketElo.Domain.Entities.Team", "AffectedTeam")
-                        .WithMany()
-                        .HasForeignKey("AffectedTeamId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("BasketElo.Domain.Entities.Competition", "Competition")
-                        .WithMany()
-                        .HasForeignKey("CompetitionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("BasketElo.Domain.Entities.Team", "RelatedTeam")
-                        .WithMany()
-                        .HasForeignKey("RelatedTeamId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("BasketElo.Domain.Entities.IdentityHealthCheckRun", "Run")
-                        .WithMany("Findings")
-                        .HasForeignKey("RunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AffectedTeam");
-
-                    b.Navigation("Competition");
-
-                    b.Navigation("RelatedTeam");
-
-                    b.Navigation("Run");
-                });
-
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityHealthCheckRun", b =>
-                {
-                    b.HasOne("BasketElo.Domain.Entities.Competition", "Competition")
-                        .WithMany()
-                        .HasForeignKey("CompetitionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Competition");
-                });
-
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityReviewDecision", b =>
-                {
-                    b.HasOne("BasketElo.Domain.Entities.Team", "AffectedTeam")
-                        .WithMany()
-                        .HasForeignKey("AffectedTeamId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("BasketElo.Domain.Entities.Team", "RelatedTeam")
-                        .WithMany()
-                        .HasForeignKey("RelatedTeamId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("AffectedTeam");
-
-                    b.Navigation("RelatedTeam");
                 });
 
             modelBuilder.Entity("BasketElo.Domain.Entities.RankingSnapshot", b =>
@@ -945,11 +652,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("BasketElo.Domain.Entities.Competition", b =>
                 {
                     b.Navigation("Aliases");
-                });
-
-            modelBuilder.Entity("BasketElo.Domain.Entities.IdentityHealthCheckRun", b =>
-                {
-                    b.Navigation("Findings");
                 });
 
             modelBuilder.Entity("BasketElo.Domain.Entities.Team", b =>

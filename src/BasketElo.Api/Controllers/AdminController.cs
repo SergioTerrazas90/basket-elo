@@ -100,32 +100,49 @@ public class AdminController(BasketEloDbContext dbContext) : ControllerBase
                 x.ErrorMessage))
             .ToListAsync(cancellationToken);
 
-        var gameCoverage = await dbContext.Games
+        var ratedGameIds = (await dbContext.RatingHistories
             .AsNoTracking()
-            .GroupBy(x => new
+            .Where(x => x.RulesetVersion == selectedRuleset)
+            .Select(x => x.GameId)
+            .Distinct()
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        var gameCoverageRows = await dbContext.Games
+            .AsNoTracking()
+            .Select(x => new
             {
-                Competition = x.Competition.Name,
-                Season = x.Season.Label,
-                CountryCode = x.Competition.CountryCode
+                x.Id,
+                x.HomeScore,
+                x.AwayScore,
+                x.GameDateTimeUtc,
+                CompetitionName = x.Competition.Name,
+                SeasonLabel = x.Season.Label,
+                x.Competition.CountryCode
             })
-            .Select(group => new AdminGameCoverageRow(
-                group.Key.Competition,
-                group.Key.Season,
-                group.Key.CountryCode ?? string.Empty,
-                group.Count(),
-                group.Count(x => x.HomeScore.HasValue && x.AwayScore.HasValue && x.HomeScore != x.AwayScore),
-                group.Count(x =>
-                    x.HomeScore.HasValue &&
-                    x.AwayScore.HasValue &&
-                    x.HomeScore != x.AwayScore &&
-                    !dbContext.RatingHistories.Any(history =>
-                        history.GameId == x.Id &&
-                        history.RulesetVersion == selectedRuleset)),
-                group.Max(x => (DateTime?)x.GameDateTimeUtc)))
+            .ToListAsync(cancellationToken);
+
+        var gameCoverage = gameCoverageRows
+            .GroupBy(x => new { x.CompetitionName, x.SeasonLabel, x.CountryCode })
+            .Select(group =>
+            {
+                var completedGroupGames = group
+                    .Where(x => x.HomeScore.HasValue && x.AwayScore.HasValue && x.HomeScore != x.AwayScore)
+                    .ToList();
+
+                return new AdminGameCoverageRow(
+                    group.Key.CompetitionName,
+                    group.Key.SeasonLabel,
+                    group.Key.CountryCode ?? string.Empty,
+                    group.Count(),
+                    completedGroupGames.Count,
+                    completedGroupGames.Count(x => !ratedGameIds.Contains(x.Id)),
+                    group.Max(x => (DateTime?)x.GameDateTimeUtc));
+            })
             .OrderByDescending(x => x.LatestGameUtc)
             .ThenBy(x => x.Competition)
             .Take(25)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         var teamsMissingCountry = await dbContext.Teams
             .AsNoTracking()

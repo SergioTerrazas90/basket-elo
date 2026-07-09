@@ -1,6 +1,7 @@
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Elo;
+using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +13,8 @@ namespace BasketElo.Api.Controllers;
 [Route("api/elo")]
 public class EloController(
     BasketEloDbContext dbContext,
-    IEloRebuildNotificationPublisher notificationPublisher) : ControllerBase
+    IEloRebuildNotificationPublisher notificationPublisher,
+    IIdentityHealthCheckService identityHealthCheckService) : ControllerBase
 {
     [HttpGet("rulesets")]
     public ActionResult<EloRulesetCatalogResponse> GetRulesets()
@@ -386,6 +388,12 @@ public class EloController(
             return Conflict($"An ELO rebuild is already queued or running for: {string.Join(", ", activeRulesets)}.");
         }
 
+        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(cancellationToken);
+        if (identityGate is not null)
+        {
+            return identityGate;
+        }
+
         var queuedAtUtc = DateTime.UtcNow;
         var runs = rulesets.Select(ruleset => new EloRebuildRun
         {
@@ -461,6 +469,12 @@ public class EloController(
             return Conflict($"An ELO rebuild is already queued or running for: {sourceRun.RulesetVersion}.");
         }
 
+        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(cancellationToken);
+        if (identityGate is not null)
+        {
+            return identityGate;
+        }
+
         var queuedAtUtc = DateTime.UtcNow;
         var retryRun = new EloRebuildRun
         {
@@ -487,6 +501,23 @@ public class EloController(
 
     private static EloRulesetCatalogResponse BuildRulesetCatalog()
         => new(EloRulesetVersions.Default, EloRulesetVersions.All);
+
+    private async Task<ConflictObjectResult?> EnsureIdentityHealthAllowsRebuildAsync(CancellationToken cancellationToken)
+    {
+        var identityRun = await identityHealthCheckService.RunAsync(new IdentityHealthCheckRequest(), cancellationToken);
+        if (identityRun.UnresolvedBlockersCount == 0)
+        {
+            return null;
+        }
+
+        return Conflict(new
+        {
+            message = "ELO rebuild is blocked by unresolved identity health blockers.",
+            identityRunId = identityRun.Id,
+            identityRun.ScopeKey,
+            identityRun.UnresolvedBlockersCount
+        });
+    }
 
     private static string? ResolveRulesetOrDefault(string? rulesetVersion)
     {

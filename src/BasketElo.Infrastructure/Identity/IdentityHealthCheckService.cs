@@ -766,16 +766,19 @@ public class IdentityHealthCheckService(
             .Where(x => x.TeamId == sourceTeam.Id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.TeamId, targetTeam.Id), cancellationToken);
 
-        var sourceRating = await dbContext.TeamRatings.FindAsync([sourceTeam.Id], cancellationToken);
-        if (sourceRating is not null)
+        var sourceRatings = await dbContext.TeamRatings
+            .Where(x => x.TeamId == sourceTeam.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var sourceRating in sourceRatings)
         {
-            var targetRating = await dbContext.TeamRatings.FindAsync([targetTeam.Id], cancellationToken);
+            var targetRating = await dbContext.TeamRatings.FindAsync([targetTeam.Id, sourceRating.RulesetVersion], cancellationToken);
             if (targetRating is null)
             {
                 dbContext.TeamRatings.Remove(sourceRating);
                 dbContext.TeamRatings.Add(new TeamRating
                 {
                     TeamId = targetTeam.Id,
+                    RulesetVersion = sourceRating.RulesetVersion,
                     Elo = sourceRating.Elo,
                     GamesPlayed = sourceRating.GamesPlayed,
                     LastGameId = sourceRating.LastGameId,

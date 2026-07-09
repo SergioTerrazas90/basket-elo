@@ -1,19 +1,21 @@
 @page "/admin"
 @rendermode InteractiveServer
+@using BasketElo.Domain.Admin
 @using BasketElo.Domain.Elo
+@using BasketElo.Domain.Entities
 @using BasketElo.Web.Elo
 @inject HttpClient Http
 @inject EloRebuildNotificationCenter Notifications
 @implements IDisposable
 
-<PageTitle>Admin</PageTitle>
+<PageTitle>Internal Admin</PageTitle>
 
 <div class="admin-page">
     <section class="page-header">
         <div>
             <p class="eyebrow">Internal Admin</p>
-            <h1>Operate the ELO pipeline before public rankings depend on it.</h1>
-            <p class="intro">Trigger rebuilds, inspect recent runs, and jump into the other internal operator tools from one place.</p>
+            <h1>Pipeline operations</h1>
+            <p class="intro">Monitor ingestion, data health, system status, and ELO rebuilds from one internal surface.</p>
         </div>
         <button class="btn btn-outline-primary" @onclick="() => RefreshAsync()" disabled="@isBusy">Refresh</button>
     </section>
@@ -25,36 +27,36 @@
         </div>
     }
 
-    @if (dashboard is null && isBusy)
+    @if (adminDashboard is null && isBusy)
     {
         <p>Loading admin dashboard...</p>
     }
-    else if (dashboard is not null)
+    else if (adminDashboard is not null)
     {
         <section class="summary-panel">
             <div class="summary-card accent-card">
                 <span class="summary-label">Selected Ruleset</span>
-                <strong>@dashboard.Summary.SelectedRuleset</strong>
+                <strong>@adminDashboard.Elo.Summary.SelectedRuleset</strong>
             </div>
             <div class="summary-card">
                 <span class="summary-label">Completed Games</span>
-                <strong>@dashboard.Summary.CompletedGames</strong>
+                <strong>@adminDashboard.DataHealth.CompletedGames</strong>
             </div>
-            <div class="summary-card">
+            <div class="summary-card @(adminDashboard.DataHealth.UnratedCompletedGames > 0 ? "warning-card" : null)">
                 <span class="summary-label">Unrated Completed Games</span>
-                <strong>@dashboard.Summary.UnratedCompletedGames</strong>
+                <strong>@adminDashboard.DataHealth.UnratedCompletedGames</strong>
             </div>
             <div class="summary-card">
                 <span class="summary-label">Rated Teams</span>
-                <strong>@dashboard.Summary.RatedTeams</strong>
+                <strong>@adminDashboard.Elo.Summary.RatedTeams</strong>
             </div>
             <div class="summary-card">
-                <span class="summary-label">Latest Successful Rebuild</span>
-                <strong>@FormatDate(dashboard.Summary.LatestSuccessfulRebuildUtc)</strong>
+                <span class="summary-label">DB Status</span>
+                <strong>@(adminDashboard.System.DatabaseCanConnect ? "Connected" : "Offline")</strong>
             </div>
             <div class="summary-card">
-                <span class="summary-label">Latest Completed Game</span>
-                <strong>@FormatDate(dashboard.Summary.LatestCompletedGameUtc)</strong>
+                <span class="summary-label">Worker Status</span>
+                <strong>@FormatStatus(adminDashboard.System.WorkerStatus)</strong>
             </div>
         </section>
 
@@ -62,14 +64,14 @@
             <section class="control-panel">
                 <div class="section-head">
                     <h2>ELO rebuilds</h2>
-                    <p>Queue a full rebuild for one ruleset. This page updates when the worker reports completion.</p>
+                    <p>Queue a full rebuild for one ruleset. The default public ruleset is selected first.</p>
                 </div>
 
                 <div class="control-row">
                     <div class="filter-field">
                         <label for="rulesetSelect">Ruleset</label>
                         <select id="rulesetSelect" class="form-select" @bind="selectedRuleset">
-                            @foreach (var ruleset in dashboard.Rulesets.Rulesets)
+                            @foreach (var ruleset in adminDashboard.Elo.Rulesets.Rulesets)
                             {
                                 <option value="@ruleset">@ruleset</option>
                             }
@@ -84,36 +86,183 @@
                     </div>
                 </div>
 
-                <p class="hint">Current default from the API: <strong>@dashboard.Rulesets.DefaultRuleset</strong>.</p>
+                <p class="hint">API default: <strong>@adminDashboard.Elo.Rulesets.DefaultRuleset</strong>. Latest successful rebuild: <strong>@FormatDate(adminDashboard.DataHealth.LatestSuccessfulRebuildUtc)</strong>.</p>
             </section>
 
-            <section class="tool-links">
+            <section class="control-panel">
                 <div class="section-head">
-                    <h2>Other operator tools</h2>
-                    <p>These remain internal workflows and stay separate from the future public rankings experience.</p>
+                    <h2>System status</h2>
+                    <p>Operational heartbeat from database, migrations, and latest worker-owned job activity.</p>
                 </div>
 
-                <div class="link-grid">
-                    <a class="tool-card" href="backfill">
-                        <span class="tool-label">Backfill Coverage</span>
-                        <strong>Queue seasons and inspect coverage gaps</strong>
-                    </a>
+                <dl class="status-list">
+                    <div>
+                        <dt>Database</dt>
+                        <dd>@(adminDashboard.System.DatabaseCanConnect ? "Connected" : "Cannot connect")</dd>
+                    </div>
+                    <div>
+                        <dt>Pending migrations</dt>
+                        <dd>@adminDashboard.System.PendingMigrationsCount</dd>
+                    </div>
+                    <div>
+                        <dt>Latest worker activity</dt>
+                        <dd>@FormatDate(adminDashboard.System.LatestWorkerActivityUtc)</dd>
+                    </div>
+                    <div>
+                        <dt>Server UTC</dt>
+                        <dd>@FormatDate(adminDashboard.System.ServerUtc)</dd>
+                    </div>
+                </dl>
+            </section>
+        </section>
+
+        <section class="panel-grid">
+            <section class="control-panel">
+                <div class="section-head">
+                    <h2>Data health</h2>
+                    <p>Basic coverage and identity signals that can affect rating trust.</p>
+                </div>
+
+                <dl class="status-list">
+                    <div>
+                        <dt>Teams missing country</dt>
+                        <dd>@adminDashboard.DataHealth.TeamsMissingCountry</dd>
+                    </div>
+                    <div>
+                        <dt>Possible duplicate aliases</dt>
+                        <dd>@adminDashboard.DataHealth.PossibleDuplicateAliasGroups</dd>
+                    </div>
+                    <div>
+                        <dt>Open identity warnings</dt>
+                        <dd>@adminDashboard.DataHealth.OpenIdentityWarnings</dd>
+                    </div>
+                    <div>
+                        <dt>Open identity blockers</dt>
+                        <dd>@adminDashboard.DataHealth.OpenIdentityBlockers</dd>
+                    </div>
+                </dl>
+
+                <div class="link-grid compact-links">
                     <a class="tool-card" href="admin/identity">
                         <span class="tool-label">Identity Health</span>
-                        <strong>Review suspicious team identity findings</strong>
+                        <strong>Review findings</strong>
                     </a>
+                    <a class="tool-card" href="backfill">
+                        <span class="tool-label">Backfill Coverage</span>
+                        <strong>Queue seasons</strong>
+                    </a>
+                </div>
+            </section>
+
+            <section class="table-section compact-table-section">
+                <div class="section-head">
+                    <h2>Game coverage</h2>
+                    <p>Loaded games by competition and season for the selected ruleset.</p>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-striped align-middle admin-table">
+                        <thead>
+                            <tr>
+                                <th>Competition</th>
+                                <th>Season</th>
+                                <th>Games</th>
+                                <th>Completed</th>
+                                <th>Unrated</th>
+                                <th>Latest</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (adminDashboard.GameCoverage.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="6" class="empty-state">No games loaded yet.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var row in adminDashboard.GameCoverage)
+                                {
+                                    <tr>
+                                        <td>@row.Competition</td>
+                                        <td>@row.Season</td>
+                                        <td>@row.GamesLoaded</td>
+                                        <td>@row.CompletedGames</td>
+                                        <td class="@(row.UnratedCompletedGames > 0 ? "attention-text" : null)">@row.UnratedCompletedGames</td>
+                                        <td>@FormatDate(row.LatestGameUtc)</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
                 </div>
             </section>
         </section>
 
         <section class="table-section">
             <div class="section-head">
-                <h2>Recent rebuild runs</h2>
-                <p>Showing the latest runs across rulesets so operator history is visible in one place.</p>
+                <h2>Recent backfill jobs</h2>
+                <p>Latest ingestion jobs with request usage, warnings, summaries, and errors.</p>
             </div>
 
             <div class="table-responsive">
-                <table class="table table-striped align-middle rebuild-table">
+                <table class="table table-striped align-middle admin-table">
+                    <thead>
+                        <tr>
+                            <th>Created</th>
+                            <th>Provider</th>
+                            <th>Country</th>
+                            <th>League</th>
+                            <th>Season</th>
+                            <th>Status</th>
+                            <th>Dry Run</th>
+                            <th>Requests</th>
+                            <th>Warnings</th>
+                            <th>Started</th>
+                            <th>Finished</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (adminDashboard.RecentBackfillJobs.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="12" class="empty-state">No backfill jobs recorded yet.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var job in adminDashboard.RecentBackfillJobs)
+                            {
+                                <tr>
+                                    <td>@FormatDate(job.CreatedAtUtc)</td>
+                                    <td>@job.Provider</td>
+                                    <td>@job.Country</td>
+                                    <td>@job.LeagueName</td>
+                                    <td>@job.Season</td>
+                                    <td><span class="status-pill @StatusClass(job.Status)">@FormatStatus(job.Status)</span></td>
+                                    <td>@(job.DryRun ? "Yes" : "No")</td>
+                                    <td>@job.RequestsUsed</td>
+                                    <td>@job.WarningCount</td>
+                                    <td>@FormatDate(job.StartedAtUtc)</td>
+                                    <td>@FormatDate(job.FinishedAtUtc)</td>
+                                    <td>@Details(job.SummaryJson, job.ErrorMessage)</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="table-section">
+            <div class="section-head">
+                <h2>Recent rebuild runs</h2>
+                <p>Latest rebuild history across rulesets with worker actions.</p>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-striped align-middle admin-table">
                     <thead>
                         <tr>
                             <th>Queued</th>
@@ -129,7 +278,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @if (dashboard.RecentRuns.Count == 0)
+                        @if (adminDashboard.Elo.RecentRuns.Count == 0)
                         {
                             <tr>
                                 <td colspan="10" class="empty-state">No rebuild runs recorded yet.</td>
@@ -137,30 +286,18 @@
                         }
                         else
                         {
-                            @foreach (var run in dashboard.RecentRuns)
+                            @foreach (var run in adminDashboard.Elo.RecentRuns)
                             {
                                 <tr>
                                     <td>@FormatDate(run.QueuedAtUtc)</td>
                                     <td>@FormatDate(run.StartedAtUtc)</td>
                                     <td>@run.RulesetVersion</td>
-                                    <td><span class="status-pill @StatusClass(run.Status)">@run.Status</span></td>
+                                    <td><span class="status-pill @StatusClass(run.Status)">@FormatStatus(run.Status)</span></td>
                                     <td>@FormatDate(run.FinishedAtUtc)</td>
                                     <td>@run.GamesProcessed</td>
                                     <td>@run.TeamsRated</td>
                                     <td>@FormatDate(run.FromGameDateTimeUtc)</td>
-                                    <td>
-                                        @if (string.IsNullOrWhiteSpace(run.Notes))
-                                        {
-                                            <span>-</span>
-                                        }
-                                        else
-                                        {
-                                            <details class="notes-details">
-                                                <summary>View</summary>
-                                                <pre>@run.Notes</pre>
-                                            </details>
-                                        }
-                                    </td>
+                                    <td>@Details(run.Notes, null)</td>
                                     <td>
                                         <div class="row-actions">
                                             @if (run.Status == EloRebuildRunStatus.Pending)
@@ -188,7 +325,7 @@
 </div>
 
 @code {
-    private EloDashboardResponse? dashboard;
+    private AdminDashboardResponse? adminDashboard;
     private string? selectedRuleset;
     private bool isBusy;
     private string? message;
@@ -211,10 +348,10 @@
 
         try
         {
-            dashboard = await Http.GetFromJsonAsync<EloDashboardResponse>(BuildDashboardUri());
-            if (dashboard is not null)
+            adminDashboard = await Http.GetFromJsonAsync<AdminDashboardResponse>(BuildDashboardUri());
+            if (adminDashboard is not null)
             {
-                selectedRuleset = dashboard.Summary.SelectedRuleset;
+                selectedRuleset ??= adminDashboard.Elo.Summary.SelectedRuleset;
             }
         }
         catch (Exception ex)
@@ -316,8 +453,8 @@
     {
         var ruleset = string.IsNullOrWhiteSpace(selectedRuleset) ? null : selectedRuleset;
         return string.IsNullOrWhiteSpace(ruleset)
-            ? "api/elo/dashboard"
-            : $"api/elo/dashboard?rulesetVersion={Uri.EscapeDataString(ruleset)}";
+            ? "api/admin/dashboard"
+            : $"api/admin/dashboard?rulesetVersion={Uri.EscapeDataString(ruleset)}";
     }
 
     private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
@@ -328,17 +465,45 @@
 
     private static string FormatDate(DateTime? value) => value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
 
+    private static string FormatStatus(string status) => status.Replace('_', ' ');
+
     private static string StatusClass(string status) => status switch
     {
         "completed" => "status-completed",
+        "completed_with_warnings" => "status-warning",
+        "dry_run" => "status-dry-run",
+        "no_data" => "status-empty",
+        "partial" => "status-partial",
         "pending" => "status-progress",
         "running" => "status-progress",
         "canceled" => "status-canceled",
         "failed" => "status-failed",
+        "attention" => "status-failed",
+        "idle" => "status-empty",
         _ => "status-empty"
     };
 
-    private bool HasActiveRebuild => dashboard?.RecentRuns.Any(x =>
+    private static RenderFragment Details(string? summary, string? error) => builder =>
+    {
+        var text = string.IsNullOrWhiteSpace(error) ? summary : error;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            builder.AddContent(0, "-");
+            return;
+        }
+
+        builder.OpenElement(1, "details");
+        builder.AddAttribute(2, "class", "notes-details");
+        builder.OpenElement(3, "summary");
+        builder.AddContent(4, string.IsNullOrWhiteSpace(error) ? "View" : "Error");
+        builder.CloseElement();
+        builder.OpenElement(5, "pre");
+        builder.AddContent(6, text);
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private bool HasActiveRebuild => adminDashboard?.Elo.RecentRuns.Any(x =>
         x.RulesetVersion == selectedRuleset &&
         (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running)) == true;
 
@@ -361,7 +526,7 @@
     private bool IsRelevantNotification(EloRebuildRunNotification notification)
     {
         return string.Equals(notification.RulesetVersion, selectedRuleset, StringComparison.OrdinalIgnoreCase) ||
-            dashboard?.RecentRuns.Any(x => x.Id == notification.RunId) == true;
+            adminDashboard?.Elo.RecentRuns.Any(x => x.Id == notification.RunId) == true;
     }
 
     public void Dispose()

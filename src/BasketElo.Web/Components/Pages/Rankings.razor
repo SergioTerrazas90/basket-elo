@@ -135,22 +135,9 @@
                     }
                     else
                     {
-                        <svg viewBox="0 0 920 320" preserveAspectRatio="none">
-                            <line x1="54" y1="270" x2="884" y2="270" stroke="#d6dde5" stroke-width="1" vector-effect="non-scaling-stroke" />
-                            <line x1="54" y1="34" x2="54" y2="270" stroke="#d6dde5" stroke-width="1" vector-effect="non-scaling-stroke" />
-                            <text x="54" y="24" class="axis-label">@EvolutionMaxElo().ToString("0")</text>
-                            <text x="54" y="294" class="axis-label">@EvolutionMinElo().ToString("0")</text>
+                        <EloEvolutionChart Series="@BuildEvolutionChartSeries()" />
 
-                            @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
-                            {
-                                if (item.series.Points.Count >= 2)
-                                {
-                                    <path d="@BuildEvolutionPath(item.series.Points)" fill="none" stroke="@ChartColor(item.index)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
-                                }
-                            }
-                        </svg>
-
-                        <div class="evolution-legend" aria-label="ELO evolution chart legend">
+                        <div class="evolution-legend legacy-links" aria-label="ELO evolution chart team links">
                             @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
                             {
                                 <a href="@BuildTeamHref(item.series.TeamId)">
@@ -458,63 +445,21 @@
         return $"Showing {rangeStart}-{rangeEnd} of {response.TotalCount} {scope}. Page {response.Page} of {response.TotalPages}.";
     }
 
-    private string BuildEvolutionPath(IReadOnlyCollection<EloTeamEvolutionPoint> points)
-    {
-        var orderedPoints = points.OrderBy(x => x.GameDateTimeUtc).ToList();
-        if (orderedPoints.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        var coordinates = orderedPoints
-            .Select(point => ToEvolutionCoordinate(point.GameDateTimeUtc, point.Elo))
+    private IReadOnlyList<EloChartSeries> BuildEvolutionChartSeries()
+        => EvolutionSeries
+            .Select((series, index) => new EloChartSeries(
+                series.TeamId,
+                series.TeamName,
+                ChartColor(index),
+                series.Points
+                    .OrderBy(point => point.GameDateTimeUtc)
+                    .Select(point => new EloChartPoint(
+                        point.GameDateTimeUtc,
+                        point.Elo,
+                        series.TeamName,
+                        ChartColor(index)))
+                    .ToList()))
             .ToList();
-
-        var path = $"M {FormatCoordinate(coordinates[0].X)} {FormatCoordinate(coordinates[0].Y)}";
-        for (var index = 1; index < coordinates.Count; index += 1)
-        {
-            var previous = coordinates[index - 1];
-            var current = coordinates[index];
-            var controlX = previous.X + ((current.X - previous.X) / 2d);
-
-            path += string.Create(
-                CultureInfo.InvariantCulture,
-                $" C {controlX:0.##} {previous.Y:0.##}, {controlX:0.##} {current.Y:0.##}, {current.X:0.##} {current.Y:0.##}");
-        }
-
-        return path;
-    }
-
-    private ChartPoint ToEvolutionCoordinate(DateTime gameDateUtc, decimal elo)
-    {
-        var minDate = EvolutionMinDate();
-        var maxDate = EvolutionMaxDate();
-        var minElo = EvolutionMinElo();
-        var maxElo = EvolutionMaxElo();
-        var eloSpread = Math.Max(1m, maxElo - minElo);
-        var dateSpread = Math.Max(1L, maxDate.Ticks - minDate.Ticks);
-        const decimal left = 54m;
-        const decimal top = 34m;
-        const decimal width = 830m;
-        const decimal height = 236m;
-
-        var x = left + ((gameDateUtc.Ticks - minDate.Ticks) / (decimal)dateSpread * width);
-        var y = top + height - ((elo - minElo) / eloSpread * height);
-
-        return new ChartPoint((double)x, (double)y);
-    }
-
-    private DateTime EvolutionMinDate()
-        => EvolutionSeries.SelectMany(x => x.Points).Min(x => x.GameDateTimeUtc);
-
-    private DateTime EvolutionMaxDate()
-        => EvolutionSeries.SelectMany(x => x.Points).Max(x => x.GameDateTimeUtc);
-
-    private decimal EvolutionMinElo()
-        => EvolutionSeries.SelectMany(x => x.Points).Min(x => x.Elo);
-
-    private decimal EvolutionMaxElo()
-        => EvolutionSeries.SelectMany(x => x.Points).Max(x => x.Elo);
 
     private static string ChartColor(int index)
     {
@@ -544,11 +489,6 @@
 
         return colors[index % colors.Length];
     }
-
-    private static string FormatCoordinate(double value)
-        => value.ToString("0.##", CultureInfo.InvariantCulture);
-
-    private sealed record ChartPoint(double X, double Y);
 
     private static void AppendLabel(List<string> labels, string? value)
     {

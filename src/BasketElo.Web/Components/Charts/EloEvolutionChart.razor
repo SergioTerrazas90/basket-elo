@@ -1,0 +1,77 @@
+@using System.Globalization
+
+<div class="elo-chart">
+    <RadzenChart class="elo-radzen-chart" TooltipTolerance="40" MouseMoveThrottle="25">
+        <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="ChartTooltipTrigger.Axis" />
+        <RadzenLegend Visible="@ShowLegend" Position="LegendPosition.Bottom" />
+
+        @foreach (var series in PlottableSeries)
+        {
+            <RadzenLineSeries Data="@series.Points"
+                              TItem="EloChartPoint"
+                              CategoryProperty="@nameof(EloChartPoint.GameDateTimeUtc)"
+                              ValueProperty="@nameof(EloChartPoint.Elo)"
+                              Title="@series.TeamName"
+                              Stroke="@series.Color"
+                              StrokeWidth="3"
+                              Smooth="false">
+                <ChildContent>
+                    <RadzenMarkers MarkerType="MarkerType.Circle" Size="4" Fill="@series.Color" Stroke="@series.Color" />
+                </ChildContent>
+                <TooltipTemplate Context="point">
+                    <div class="elo-chart-tooltip">
+                        <strong>@point.TeamName</strong>
+                        <span>@FormatDate(point.GameDateTimeUtc)</span>
+                        <span>ELO @point.Elo.ToString("0")</span>
+                        @if (point.EloDelta.HasValue)
+                        {
+                            <span>Change @FormatMovement(point.EloDelta.Value)</span>
+                        }
+                        @if (point.Rank.HasValue)
+                        {
+                            <span>Rank #@point.Rank</span>
+                        }
+                    </div>
+                </TooltipTemplate>
+            </RadzenLineSeries>
+        }
+
+        <RadzenCategoryAxis FormatString="{0:MMM yyyy}">
+            <RadzenAxisCrosshair Visible="true" Label="true" Snap="true" Stroke="#6b7682" />
+        </RadzenCategoryAxis>
+        <RadzenValueAxis Formatter="@FormatEloAxis">
+            <RadzenGridLines Visible="true" />
+            <RadzenAxisCrosshair Visible="true" Label="true" Stroke="#9aa6b2" />
+        </RadzenValueAxis>
+    </RadzenChart>
+</div>
+
+@code {
+    [Parameter]
+    public IReadOnlyList<EloChartSeries> Series { get; set; } = [];
+
+    [Parameter]
+    public bool ShowLegend { get; set; } = true;
+
+    [Parameter]
+    public bool SharedTooltip { get; set; } = true;
+
+    private IReadOnlyList<EloChartSeries> PlottableSeries
+        => Series.Where(x => x.Points.Count >= 2).ToList();
+
+    private static string FormatDate(DateTime value)
+        => value.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.CurrentCulture);
+
+    private static string FormatMovement(decimal value)
+        => value switch
+        {
+            > 0 => $"+{value:0}",
+            < 0 => value.ToString("0"),
+            _ => "0"
+        };
+
+    private static string FormatEloAxis(object value)
+        => value is IFormattable formattable
+            ? formattable.ToString("0", CultureInfo.CurrentCulture)
+            : value?.ToString() ?? string.Empty;
+}

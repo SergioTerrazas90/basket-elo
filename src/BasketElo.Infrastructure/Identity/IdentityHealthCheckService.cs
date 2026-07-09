@@ -1344,6 +1344,8 @@ public class IdentityHealthCheckService(
             finding.SourceTeamId,
             finding.AffectedTeamId,
             finding.AffectedTeam?.CanonicalName,
+            finding.AffectedTeam?.CountryCode,
+            finding.AffectedTeam?.IsActive,
             finding.RelatedSource,
             finding.RelatedSourceTeamId,
             finding.RelatedTeamId,

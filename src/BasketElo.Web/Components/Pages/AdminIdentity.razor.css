@@ -1,0 +1,21 @@
+.metadata-editor {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.8fr) auto auto;
+    gap: 0.45rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.metadata-active {
+    display: inline-flex;
+    gap: 0.35rem;
+    align-items: center;
+    margin: 0;
+    white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+    .metadata-editor {
+        grid-template-columns: 1fr;
+    }
+}

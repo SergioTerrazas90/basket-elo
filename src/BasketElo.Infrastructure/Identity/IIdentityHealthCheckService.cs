@@ -116,6 +116,8 @@ public sealed record IdentityHealthCheckFindingDto(
     string? SourceTeamId,
     Guid? AffectedTeamId,
     string? AffectedTeamName,
+    string? AffectedTeamCountryCode,
+    bool? AffectedTeamIsActive,
     string? RelatedSource,
     string? RelatedSourceTeamId,
     Guid? RelatedTeamId,

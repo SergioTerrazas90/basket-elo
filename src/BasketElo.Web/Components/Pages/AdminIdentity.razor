@@ -218,23 +218,27 @@ else
                         else
                         {
                             <p class="mb-2">@finding.SuggestedAction</p>
-                            @if (finding.FindingType == "missing_metadata")
+                            @if (finding.AffectedTeamId.HasValue)
                             {
-                                <div class="input-group input-group-sm mb-2">
-                                    <span class="input-group-text">Country</span>
-                                    <select class="form-select" @bind="reviewState.CountryCode">
-                                        <option value="">Choose country</option>
+                                <div class="metadata-editor">
+                                    <input class="form-control form-control-sm" placeholder="Canonical name" @bind="reviewState.CanonicalName" />
+                                    <select class="form-select form-select-sm" @bind="reviewState.CountryCode">
+                                        <option value="">Country</option>
                                         @foreach (var country in options?.Countries ?? [])
                                         {
                                             <option value="@country.Code">@CountryLabel(country)</option>
                                         }
                                     </select>
-                                    <button class="btn btn-outline-primary" @onclick="() => EditCountryAsync(finding, reviewState)" disabled="@isBusy">
-                                        Save
+                                    <label class="form-check metadata-active">
+                                        <input class="form-check-input" type="checkbox" @bind="reviewState.IsActive" />
+                                        <span class="form-check-label">Active</span>
+                                    </label>
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => EditMetadataAsync(finding, reviewState)" disabled="@isBusy">
+                                        Save metadata
                                     </button>
                                 </div>
                             }
-                            else if (finding.FindingType == "alias_observation")
+                            @if (finding.FindingType == "alias_observation")
                             {
                                 <button class="btn btn-sm btn-outline-primary" @onclick="() => AcceptAliasAsync(finding.Id)" disabled="@isBusy">
                                     Accept alias
@@ -380,7 +384,7 @@ else
         });
     }
 
-    private async Task EditCountryAsync(IdentityHealthCheckFindingDto finding, FindingReviewState reviewState)
+    private async Task EditMetadataAsync(IdentityHealthCheckFindingDto finding, FindingReviewState reviewState)
     {
         if (!finding.AffectedTeamId.HasValue)
         {
@@ -393,9 +397,11 @@ else
         {
             Action = "edit_metadata",
             TargetTeamId = finding.AffectedTeamId,
+            CanonicalName = reviewState.CanonicalName,
             CountryCode = reviewState.CountryCode,
+            IsActive = reviewState.IsActive,
             ResolvedBy = "admin-ui",
-            Note = "Updated country metadata from internal identity health page."
+            Note = "Updated team metadata from internal identity health page."
         });
     }
 
@@ -696,7 +702,9 @@ else
         {
             state = new FindingReviewState
             {
-                CountryCode = finding.SuggestedCountryCode,
+                CanonicalName = finding.AffectedTeamName,
+                CountryCode = finding.SuggestedCountryCode ?? finding.AffectedTeamCountryCode,
+                IsActive = finding.AffectedTeamIsActive ?? true,
                 MergeTargetTeamId = finding.AffectedTeamId ?? finding.RelatedTeamId
             };
             reviewStates[finding.Id] = state;
@@ -727,7 +735,9 @@ else
 
     private sealed class FindingReviewState
     {
+        public string? CanonicalName { get; set; }
         public string? CountryCode { get; set; }
+        public bool IsActive { get; set; } = true;
         public Guid? MergeTargetTeamId { get; set; }
         public bool ConfirmMergeWithRatings { get; set; }
     }

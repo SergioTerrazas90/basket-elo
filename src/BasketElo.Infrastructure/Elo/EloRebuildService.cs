@@ -21,6 +21,7 @@ public class EloRebuildService(
         }
 
         var rulesetVersion = run.RulesetVersion;
+        var ruleset = EloCalculator.GetRulesetParameters(rulesetVersion);
 
         try
         {
@@ -161,13 +162,11 @@ public class EloRebuildService(
             run.TeamsRated = ratings.Count;
             run.Notes = JsonSerializer.Serialize(new
             {
-                baseRating = EloCalculator.BaseRating,
-                kFactor = EloCalculator.KFactor,
-                homeAdvantageElo = EloCalculator.HomeAdvantageElo,
-                pointsPerEloMargin = rulesetVersion is EloRulesetVersions.AdjustedV1 or EloRulesetVersions.PointMarginEloV1
-                    ? EloCalculator.PointsPerEloMargin
-                    : (decimal?)null,
-                competitionWeight = EloCalculator.CompetitionWeight
+                baseRating = ruleset.BaseRating,
+                kFactor = ruleset.KFactor,
+                homeAdvantageElo = ruleset.HomeAdvantageElo,
+                pointsPerEloMargin = ruleset.PointsPerEloMargin,
+                competitionWeight = ruleset.CompetitionWeight
             });
 
             await dbContext.SaveChangesAsync(cancellationToken);

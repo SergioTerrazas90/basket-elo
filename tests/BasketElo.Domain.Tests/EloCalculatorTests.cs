@@ -39,6 +39,32 @@ public class EloCalculatorTests
     }
 
     [Fact]
+    public void AdjustedV1_UsesIssueSpecifiedHomeAdvantage()
+    {
+        var parameters = EloCalculator.GetRulesetParameters(EloRulesetVersions.AdjustedV1);
+        var result = EloCalculator.Calculate(90, 80, 1500m, 1500m, EloRulesetVersions.AdjustedV1);
+
+        Assert.Equal(70m, parameters.HomeAdvantageElo);
+        Assert.Equal(EloCalculator.PointsPerEloMargin, parameters.PointsPerEloMargin);
+        Assert.True(parameters.UsesMarginAdjustment);
+        Assert.InRange(result.ExpectedHomeResult, 0.5993m, 0.5994m);
+    }
+
+    [Fact]
+    public void LegacyRulesets_KeepExistingHomeAdvantage()
+    {
+        var basic = EloCalculator.GetRulesetParameters(EloRulesetVersions.BasicEloV1);
+        var pointMargin = EloCalculator.GetRulesetParameters(EloRulesetVersions.PointMarginEloV1);
+
+        Assert.Equal(100m, basic.HomeAdvantageElo);
+        Assert.Null(basic.PointsPerEloMargin);
+        Assert.False(basic.UsesMarginAdjustment);
+        Assert.Equal(100m, pointMargin.HomeAdvantageElo);
+        Assert.Equal(EloCalculator.PointsPerEloMargin, pointMargin.PointsPerEloMargin);
+        Assert.True(pointMargin.UsesMarginAdjustment);
+    }
+
+    [Fact]
     public void Calculate_RejectsTiesAndUnknownRulesets()
     {
         Assert.Throws<ArgumentException>(() =>

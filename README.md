@@ -73,7 +73,8 @@ dotnet tool run dotnet-ef database update --project src/BasketElo.Infrastructure
 Basket ELO stores ratings by ruleset version from day one:
 
 - `basic-elo-v1`: plain win/loss ELO.
-- `point-margin-elo-v1`: default public ruleset, adjusted by point margin.
+- `point-margin-elo-v1`: legacy ruleset, adjusted by point margin.
+- `adjusted-v1`: default public ruleset, adjusted by point margin with the issue #8 constants.
 
 See `docs/elo-rulesets.md` for the naming, constants, and point-margin conversion rationale.
 

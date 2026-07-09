@@ -7,13 +7,30 @@ Basket ELO stores ratings by ruleset version from the start, so a new formula ca
 Ruleset names follow short model-style slugs:
 
 - `basic-elo-v1`: plain win/loss ELO.
-- `point-margin-elo-v1`: ELO with a point-margin adjustment.
+- `point-margin-elo-v1`: legacy ELO with a point-margin adjustment.
+- `adjusted-v1`: default public ELO with point-margin adjustment and issue #8 constants.
 
-`point-margin-elo-v1` is the default public ruleset.
+`adjusted-v1` is the default public ruleset.
 
-## Shared Constants
+## Adjusted V1 Constants
 
-Both day-one rulesets use:
+`adjusted-v1` uses:
+
+- Base rating: `1500`
+- K-factor: `20`
+- Home advantage: `70` ELO points
+- Points per ELO margin: `28`
+- Competition weight: `1.0`
+- Max margin multiplier: `1.5`
+- Min margin multiplier: `0.6667`
+
+The home advantage value comes from the accepted `adjusted-v1` ruleset contract. It is worth `2.5` expected points with the `28` points-per-ELO-margin conversion.
+
+## Legacy Constants
+
+`basic-elo-v1` and `point-margin-elo-v1` preserve the original day-one home advantage of `100` ELO points so historical runs can coexist with `adjusted-v1` without silent formula drift.
+
+Both legacy rulesets use:
 
 - Base rating: `1500`
 - K-factor: `20`
@@ -24,14 +41,15 @@ The home advantage value is intentionally aligned with FiveThirtyEight's publish
 
 ## Point-Margin Conversion
 
-`point-margin-elo-v1` converts ELO difference into expected point margin with:
+`adjusted-v1` and `point-margin-elo-v1` convert ELO difference into expected point margin with:
 
 ```text
 expectedMargin = eloDiff / 28
 ```
 
-We chose `28` because FiveThirtyEight's NBA ELO methodology used the same basketball-specific conversion: team ELO difference plus home advantage, divided by 28, gives projected point margin. That means:
+We chose `28` because FiveThirtyEight's NBA ELO methodology used the same basketball-specific conversion: team ELO difference plus home advantage, divided by 28, gives projected point margin. For example:
 
+- `70` ELO home advantage is worth `2.5` expected points.
 - `100` ELO home advantage is worth about `3.6` expected points.
 - `140` ELO points is worth `5` expected points.
 - `280` ELO points is worth `10` expected points.

@@ -31,7 +31,7 @@ public static class EloCalculator
         var expectedHomeResult = CalculateExpectedResult(eloDiff);
         var homeActualResult = homeScore > awayScore ? 1m : 0m;
         var baseHomeDelta = KFactor * (homeActualResult - expectedHomeResult);
-        var marginMultiplier = rulesetVersion == EloRulesetVersions.PointMarginEloV1
+        var marginMultiplier = rulesetVersion is EloRulesetVersions.AdjustedV1 or EloRulesetVersions.PointMarginEloV1
             ? CalculateMarginMultiplier(homeScore, awayScore, eloDiff)
             : 1m;
 

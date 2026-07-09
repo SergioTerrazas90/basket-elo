@@ -1,0 +1,268 @@
+@page "/teams/{TeamId:guid}"
+@rendermode InteractiveServer
+@using System.Globalization
+@using BasketElo.Domain.Elo
+@inject HttpClient Http
+
+<PageTitle>@(team?.TeamName ?? "Team") - Basket ELO</PageTitle>
+
+<div class="team-page">
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">
+            @errorMessage
+        </div>
+    }
+
+    @if (isBusy && team is null)
+    {
+        <section class="loading-panel">Loading team profile...</section>
+    }
+    else if (team is not null)
+    {
+        <section class="team-hero">
+            <div>
+                <a class="back-link" href="@BackHref">Back to rankings</a>
+                <p class="eyebrow">@team.Country</p>
+                <h1>@team.TeamName</h1>
+                <p class="intro">Current adjusted ELO profile, recent rated games, and rating path.</p>
+            </div>
+            <div class="team-rank-card">
+                <span>Global rank</span>
+                <strong>#@team.GlobalRank</strong>
+                <small>@team.RulesetVersion</small>
+            </div>
+        </section>
+
+        <section class="team-summary">
+            <div>
+                <span>Current ELO</span>
+                <strong>@team.Elo.ToString("0")</strong>
+            </div>
+            <div>
+                <span>Games rated</span>
+                <strong>@team.GamesPlayed</strong>
+            </div>
+            <div>
+                <span>Recent movement</span>
+                <strong class="@MovementClass(team.RecentMovement)">@FormatMovement(team.RecentMovement)</strong>
+            </div>
+            <div>
+                <span>Last game</span>
+                <strong>@FormatDate(team.LastGameUtc)</strong>
+            </div>
+        </section>
+
+        <section class="team-context">
+            <div>
+                <h2>Competitions</h2>
+                <div class="competition-list">
+                    @if (team.Competitions.Count == 0)
+                    {
+                        <span class="empty-chip">No competitions yet</span>
+                    }
+                    else
+                    {
+                        @foreach (var competition in team.Competitions)
+                        {
+                            <span>@competition</span>
+                        }
+                    }
+                </div>
+            </div>
+        </section>
+
+        <section class="history-section">
+            <div class="section-head">
+                <div>
+                    <h2>Rating history</h2>
+                    <p>Last @team.History.Count rated points.</p>
+                </div>
+            </div>
+            <div class="chart-shell">
+                @if (team.History.Count < 2)
+                {
+                    <div class="empty-state">Not enough rated games for a chart yet.</div>
+                }
+                else
+                {
+                    <svg viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Team ELO rating history">
+                        <line x1="40" y1="188" x2="688" y2="188" stroke="#d6dde5" stroke-width="1" vector-effect="non-scaling-stroke" />
+                        <line x1="40" y1="28" x2="40" y2="188" stroke="#d6dde5" stroke-width="1" vector-effect="non-scaling-stroke" />
+                        <path d="@BuildChartPath(team.History)" fill="none" stroke="#1b6ec2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+                    </svg>
+                }
+            </div>
+        </section>
+
+        <section class="recent-games-section">
+            <div class="section-head">
+                <div>
+                    <h2>Recent rated games</h2>
+                    <p>The latest games included in this team rating.</p>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle team-games-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Competition</th>
+                            <th>Opponent</th>
+                            <th>Score</th>
+                            <th class="numeric">ELO change</th>
+                            <th class="numeric">After</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (team.RecentGames.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="6" class="empty-state">No rated games are available for this team.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var game in team.RecentGames)
+                            {
+                                <tr>
+                                    <td>@FormatDate(game.GameDateTimeUtc)</td>
+                                    <td>
+                                        <div class="competition-cell">
+                                            <span>@game.Competition</span>
+                                            <small>@game.Season</small>
+                                        </div>
+                                    </td>
+                                    <td>@(game.WasHome ? "vs" : "at") @game.Opponent</td>
+                                    <td>@FormatScore(game)</td>
+                                    <td class="numeric"><span class="@MovementClass(game.EloDelta)">@FormatMovement(game.EloDelta)</span></td>
+                                    <td class="numeric rating">@game.PostElo.ToString("0")</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public Guid TeamId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    private EloTeamDetailResponse? team;
+    private bool isBusy;
+    private string? errorMessage;
+
+    private string BackHref => string.IsNullOrWhiteSpace(ReturnUrl) ? "/rankings" : "/" + ReturnUrl.TrimStart('/');
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isBusy = true;
+        errorMessage = null;
+
+        try
+        {
+            team = await Http.GetFromJsonAsync<EloTeamDetailResponse>($"api/elo/teams/{TeamId}");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load team profile: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static string BuildChartPath(IReadOnlyCollection<EloRatingHistoryPoint> history)
+    {
+        var points = history
+            .OrderBy(x => x.GameDateTimeUtc)
+            .Select((point, index) => point with { Elo = SmoothElo(history, index) })
+            .ToList();
+
+        var min = points.Min(x => x.Elo);
+        var max = points.Max(x => x.Elo);
+        var spread = Math.Max(1m, max - min);
+        var usableWidth = 648m;
+        var usableHeight = 150m;
+        var left = 40m;
+        var top = 28m;
+        var coordinates = points.Select((point, index) =>
+        {
+            var x = points.Count == 1 ? left : left + (usableWidth * index / (points.Count - 1));
+            var y = top + usableHeight - ((point.Elo - min) / spread * usableHeight);
+            return new ChartPoint((double)x, (double)y);
+        }).ToList();
+
+        if (coordinates.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        if (coordinates.Count == 1)
+        {
+            return $"M {FormatCoordinate(coordinates[0].X)} {FormatCoordinate(coordinates[0].Y)}";
+        }
+
+        var path = $"M {FormatCoordinate(coordinates[0].X)} {FormatCoordinate(coordinates[0].Y)}";
+        for (var index = 1; index < coordinates.Count; index += 1)
+        {
+            var previous = coordinates[index - 1];
+            var current = coordinates[index];
+            var controlX = previous.X + ((current.X - previous.X) / 2d);
+
+            path += string.Create(
+                CultureInfo.InvariantCulture,
+                $" C {controlX:0.##} {previous.Y:0.##}, {controlX:0.##} {current.Y:0.##}, {current.X:0.##} {current.Y:0.##}");
+        }
+
+        return path;
+    }
+
+    private static decimal SmoothElo(IReadOnlyCollection<EloRatingHistoryPoint> history, int index)
+    {
+        var points = history.OrderBy(x => x.GameDateTimeUtc).ToList();
+        var start = Math.Max(0, index - 2);
+        var end = Math.Min(points.Count - 1, index + 2);
+        return points
+            .Skip(start)
+            .Take(end - start + 1)
+            .Average(x => x.Elo);
+    }
+
+    private static string FormatCoordinate(double value)
+        => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private sealed record ChartPoint(double X, double Y);
+
+    private static string FormatScore(EloTeamGameDto game)
+        => game.TeamScore.HasValue && game.OpponentScore.HasValue
+            ? $"{game.TeamScore}-{game.OpponentScore}"
+            : "-";
+
+    private static string FormatDate(DateTime? value)
+        => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";
+
+    private static string FormatMovement(decimal value)
+        => value switch
+        {
+            > 0 => $"+{value:0}",
+            < 0 => value.ToString("0"),
+            _ => "0"
+        };
+
+    private static string MovementClass(decimal value)
+        => value switch
+        {
+            > 0 => "movement-up",
+            < 0 => "movement-down",
+            _ => "movement-flat"
+        };
+}

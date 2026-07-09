@@ -1,0 +1,342 @@
+.rankings-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.4rem;
+}
+
+.rankings-hero,
+.section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.rankings-hero h1 {
+    margin: 0 0 0.45rem;
+    font-size: clamp(2rem, 5vw, 4rem);
+    line-height: 1;
+    letter-spacing: 0;
+}
+
+.eyebrow {
+    margin: 0 0 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.78rem;
+    color: #65717d;
+}
+
+.intro,
+.section-head p {
+    margin: 0;
+    color: #596775;
+    max-width: 52rem;
+}
+
+.leader-strip {
+    min-width: 220px;
+    padding: 1rem;
+    border: 1px solid #d8e0e7;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 8px 20px rgba(20, 30, 40, 0.05);
+}
+
+.leader-strip span,
+.leader-strip small,
+.ranking-summary span {
+    display: block;
+    color: #687684;
+    font-size: 0.82rem;
+}
+
+.leader-strip strong {
+    display: block;
+    margin: 0.2rem 0;
+    font-size: 1.35rem;
+}
+
+.ranking-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+    gap: 0.9rem;
+    padding: 1rem;
+    border: 1px solid #d8e0e7;
+    border-radius: 8px;
+    background: #f8fafb;
+}
+
+.filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.filter-field.wide {
+    grid-column: span 2;
+}
+
+.filter-field.compact {
+    max-width: 150px;
+}
+
+.filter-actions,
+.pager {
+    display: flex;
+    align-items: end;
+    gap: 0.6rem;
+}
+
+.ranking-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem;
+}
+
+.ranking-summary div {
+    padding: 0.9rem 1rem;
+    border: 1px solid #d8e0e7;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.ranking-summary strong {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 1.2rem;
+}
+
+.rankings-table-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.top-chart-section,
+.evolution-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    padding: 1rem;
+    border: 1px solid #d8e0e7;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.evolution-chart {
+    overflow: hidden;
+    border: 1px solid #e1e7ed;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
+}
+
+.evolution-chart svg {
+    display: block;
+    width: 100%;
+    height: 320px;
+}
+
+.axis-label {
+    fill: #65717d;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.evolution-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.75rem;
+    padding: 0.75rem;
+    border-top: 1px solid #e1e7ed;
+}
+
+.evolution-legend a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    max-width: 220px;
+    overflow: hidden;
+    color: #17212b;
+    font-size: 0.86rem;
+    font-weight: 700;
+    text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.evolution-legend a:hover {
+    color: #1b6ec2;
+    text-decoration: underline;
+}
+
+.evolution-legend span {
+    flex: 0 0 auto;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 999px;
+}
+
+.top-chart {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.chart-row {
+    display: grid;
+    grid-template-columns: 44px minmax(150px, 240px) minmax(160px, 1fr) 58px;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 30px;
+}
+
+.chart-rank {
+    color: #65717d;
+    font-weight: 800;
+    text-align: right;
+}
+
+.chart-label {
+    overflow: hidden;
+    color: #17212b;
+    font-weight: 700;
+    text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chart-label:hover {
+    color: #1b6ec2;
+    text-decoration: underline;
+}
+
+.chart-track {
+    height: 12px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #edf2f6;
+}
+
+.chart-bar {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #2f7fc8 0%, #1f9f7a 100%);
+}
+
+.chart-value {
+    color: #26313d;
+    font-weight: 800;
+    text-align: right;
+}
+
+.ranking-table-wrap {
+    border: 1px solid #d8e0e7;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.ranking-table {
+    margin-bottom: 0;
+}
+
+.ranking-table th {
+    color: #5a6673;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
+.team-row {
+    cursor: pointer;
+}
+
+.team-row:focus {
+    outline: 2px solid #8bbff0;
+    outline-offset: -2px;
+}
+
+.rank-cell {
+    font-weight: 800;
+    font-size: 1.05rem;
+}
+
+.muted-rank {
+    color: #65717d;
+}
+
+.team-link {
+    color: #17212b;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.team-link:hover {
+    color: #1b6ec2;
+    text-decoration: underline;
+}
+
+.numeric {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.rating {
+    font-weight: 800;
+}
+
+.movement-up {
+    color: #087443;
+    font-weight: 800;
+}
+
+.movement-down {
+    color: #b42318;
+    font-weight: 800;
+}
+
+.movement-flat {
+    color: #6b7682;
+    font-weight: 700;
+}
+
+.loading-panel,
+.empty-state {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: #65717d;
+}
+
+@media (max-width: 760px) {
+    .rankings-hero,
+    .section-head {
+        flex-direction: column;
+    }
+
+    .leader-strip {
+        width: 100%;
+    }
+
+    .filter-field.wide {
+        grid-column: span 1;
+    }
+
+    .filter-actions {
+        align-items: stretch;
+    }
+
+    .chart-row {
+        grid-template-columns: 38px minmax(0, 1fr) 52px;
+        gap: 0.35rem 0.6rem;
+    }
+
+    .chart-track {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    .chart-value {
+        grid-column: 3;
+        grid-row: 1;
+    }
+}

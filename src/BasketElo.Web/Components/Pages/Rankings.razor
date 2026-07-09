@@ -1,0 +1,609 @@
+@page "/"
+@page "/rankings"
+@rendermode InteractiveServer
+@using System.Globalization
+@using BasketElo.Domain.Elo
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Basket ELO Rankings</PageTitle>
+
+<div class="rankings-page">
+    <section class="rankings-hero">
+        <div>
+            <p class="eyebrow">Basket ELO</p>
+            <h1>Basketball power rankings</h1>
+            <p class="intro">Current strength ratings across the imported basketball world, tuned for the public adjusted ELO ruleset.</p>
+        </div>
+
+        @if (response?.Summary is not null)
+        {
+            <div class="leader-strip" aria-label="Top ranked team">
+                <span>Strongest right now</span>
+                <strong>@(response.Summary.TopTeamName ?? "-")</strong>
+                <small>@FormatRating(response.Summary.TopTeamElo)</small>
+            </div>
+        }
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">
+            @errorMessage
+        </div>
+    }
+
+    <section class="ranking-filters" aria-label="Ranking filters">
+        <div class="filter-field wide">
+            <label for="teamSearch">Team</label>
+            <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" placeholder="Search Real Madrid, Fenerbahce..." />
+        </div>
+
+        <div class="filter-field">
+            <label for="countryFilter">Country</label>
+            <select id="countryFilter" class="form-select" @bind="selectedCountry">
+                <option value="">All countries</option>
+                @foreach (var option in response?.Filters.Countries ?? [])
+                {
+                    <option value="@option">@option</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="competitionFilter">Competition</label>
+            <select id="competitionFilter" class="form-select" @bind="selectedCompetition">
+                <option value="">All competitions</option>
+                @foreach (var option in response?.Filters.Competitions ?? [])
+                {
+                    <option value="@option">@option</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="seasonFilter">Season</label>
+            <select id="seasonFilter" class="form-select" @bind="selectedSeason">
+                <option value="">Any season</option>
+                @foreach (var option in response?.Filters.Seasons ?? [])
+                {
+                    <option value="@option">@option</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="fromDate">From</label>
+            <input id="fromDate" class="form-control" type="date" @bind-value="fromDate" @bind-value:format="yyyy-MM-dd" />
+        </div>
+
+        <div class="filter-field">
+            <label for="toDate">To</label>
+            <input id="toDate" class="form-control" type="date" @bind-value="toDate" @bind-value:format="yyyy-MM-dd" />
+        </div>
+
+        <div class="filter-field compact">
+            <label for="minGames">Min games</label>
+            <input id="minGames" class="form-control" type="number" min="0" max="999" @bind="minimumGames" />
+        </div>
+
+        <div class="filter-actions">
+            <button class="btn btn-primary" @onclick="ApplyFiltersAsync" disabled="@isBusy">Apply</button>
+            <button class="btn btn-outline-secondary" @onclick="ResetFiltersAsync" disabled="@isBusy">Reset</button>
+        </div>
+    </section>
+
+    @if (isBusy && response is null)
+    {
+        <section class="loading-panel">Loading rankings...</section>
+    }
+    else if (response is not null)
+    {
+        <section class="ranking-summary">
+            <div>
+                <span>Rated teams</span>
+                <strong>@response.Summary.RatedTeams</strong>
+            </div>
+            <div>
+                <span>Showing</span>
+                <strong>@response.Summary.FilteredTeams</strong>
+            </div>
+            <div>
+                <span>Latest rated game</span>
+                <strong>@FormatDate(response.Summary.LatestGameUtc)</strong>
+            </div>
+            <div>
+                <span>Ruleset</span>
+                <strong>@response.RulesetVersion</strong>
+            </div>
+        </section>
+
+        @if (response.Rankings.Count > 0)
+        {
+            <section class="evolution-section">
+                <div class="section-head">
+                    <div>
+                        <h2>ELO evolution</h2>
+                        <p>@EvolutionContextLabel()</p>
+                    </div>
+                </div>
+
+                <div class="evolution-chart" role="img" aria-label="ELO evolution for teams in the current ranking table">
+                    @if (EvolutionSeries.Count < 1 || EvolutionSeries.All(x => x.Points.Count < 2))
+                    {
+                        <div class="empty-state">Not enough rated games for an evolution chart yet.</div>
+                    }
+                    else
+                    {
+                        <svg viewBox="0 0 920 320" preserveAspectRatio="none">
+                            <line x1="54" y1="270" x2="884" y2="270" stroke="#d6dde5" stroke-width="1" vector-effect="non-scaling-stroke" />
+                            <line x1="54" y1="34" x2="54" y2="270" stroke="#d6dde5" stroke-width="1" vector-effect="non-scaling-stroke" />
+                            <text x="54" y="24" class="axis-label">@EvolutionMaxElo().ToString("0")</text>
+                            <text x="54" y="294" class="axis-label">@EvolutionMinElo().ToString("0")</text>
+
+                            @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
+                            {
+                                if (item.series.Points.Count >= 2)
+                                {
+                                    <path d="@BuildEvolutionPath(item.series.Points)" fill="none" stroke="@ChartColor(item.index)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+                                }
+                            }
+                        </svg>
+
+                        <div class="evolution-legend" aria-label="ELO evolution chart legend">
+                            @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
+                            {
+                                <a href="@BuildTeamHref(item.series.TeamId)">
+                                    <span style="background: @ChartColor(item.index)"></span>
+                                    @item.series.TeamName
+                                </a>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+
+        <section class="rankings-table-section">
+            <div class="section-head">
+                <div>
+                    <h2>Ranking table</h2>
+                    <p>@TableContextLabel()</p>
+                </div>
+                <div class="pager">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || response.Page <= 1">Previous</button>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || response.Page >= response.TotalPages">Next</button>
+                </div>
+            </div>
+
+            <div class="table-responsive ranking-table-wrap">
+                <table class="table table-hover align-middle ranking-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            @if (response.Summary.IsFiltered)
+                            {
+                                <th>Global</th>
+                            }
+                            <th>Team</th>
+                            <th>Country</th>
+                            <th class="numeric">ELO</th>
+                            <th class="numeric">Games</th>
+                            <th class="numeric">Recent</th>
+                            <th>Last game</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (response.Rankings.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="8" class="empty-state">No teams match the current filters.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in response.Rankings)
+                            {
+                                <tr class="team-row" tabindex="0" @onclick="() => OpenTeam(row.TeamId)" @onkeydown="args => OpenTeamFromKeyboard(args, row.TeamId)">
+                                    <td class="rank-cell">#@row.Rank</td>
+                                    @if (response.Summary.IsFiltered)
+                                    {
+                                        <td class="muted-rank">#@row.GlobalRank</td>
+                                    }
+                                    <td>
+                                        <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
+                                    </td>
+                                    <td>@row.Country</td>
+                                    <td class="numeric rating">@row.Elo.ToString("0")</td>
+                                    <td class="numeric">@row.GamesPlayed</td>
+                                    <td class="numeric">
+                                        <span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span>
+                                    </td>
+                                    <td>@FormatDate(row.LastGameUtc)</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "country")]
+    public string? Country { get; set; }
+
+    [SupplyParameterFromQuery(Name = "competition")]
+    public string? Competition { get; set; }
+
+    [SupplyParameterFromQuery(Name = "season")]
+    public string? Season { get; set; }
+
+    [SupplyParameterFromQuery(Name = "from")]
+    public DateTime? From { get; set; }
+
+    [SupplyParameterFromQuery(Name = "to")]
+    public DateTime? To { get; set; }
+
+    [SupplyParameterFromQuery(Name = "minGames")]
+    public int? MinGames { get; set; }
+
+    [SupplyParameterFromQuery(Name = "team")]
+    public string? Team { get; set; }
+
+    [SupplyParameterFromQuery(Name = "page")]
+    public int? Page { get; set; }
+
+    private EloRankingsResponse? response;
+    private EloRankingsEvolutionResponse? evolution;
+    private EloRankingsResponse? evolutionRankings;
+    private bool isBusy;
+    private string? errorMessage;
+    private string? selectedCountry;
+    private string? selectedCompetition;
+    private string? selectedSeason;
+    private string? teamSearch;
+    private DateTime? fromDate;
+    private DateTime? toDate;
+    private int minimumGames;
+    private int page = 1;
+    private string? lastLoadedUri;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var currentUri = Navigation.Uri;
+        if (currentUri == lastLoadedUri)
+        {
+            return;
+        }
+
+        selectedCountry = Country;
+        selectedCompetition = Competition;
+        selectedSeason = Season;
+        fromDate = From;
+        toDate = To;
+        minimumGames = Math.Max(0, MinGames ?? 0);
+        teamSearch = Team;
+        page = Math.Max(1, Page ?? 1);
+        lastLoadedUri = currentUri;
+
+        await RefreshAsync();
+    }
+
+    private Task ApplyFiltersAsync()
+    {
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private Task ResetFiltersAsync()
+    {
+        selectedCountry = null;
+        selectedCompetition = null;
+        selectedSeason = null;
+        fromDate = null;
+        toDate = null;
+        minimumGames = 0;
+        teamSearch = null;
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private Task PreviousPageAsync()
+    {
+        NavigateToRankings(Math.Max(1, page - 1));
+        return Task.CompletedTask;
+    }
+
+    private Task NextPageAsync()
+    {
+        if (response is not null)
+        {
+            NavigateToRankings(Math.Min(response.TotalPages, page + 1));
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task RefreshAsync()
+    {
+        isBusy = true;
+        errorMessage = null;
+
+        try
+        {
+            response = await Http.GetFromJsonAsync<EloRankingsResponse>(BuildApiUri());
+            evolutionRankings = await FetchEvolutionRankingsAsync();
+            evolution = await FetchEvolutionAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load rankings: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void NavigateToRankings(int targetPage)
+    {
+        var query = new Dictionary<string, object?>
+        {
+            ["country"] = selectedCountry,
+            ["competition"] = selectedCompetition,
+            ["season"] = selectedSeason,
+            ["from"] = fromDate?.ToString("yyyy-MM-dd"),
+            ["to"] = toDate?.ToString("yyyy-MM-dd"),
+            ["minGames"] = minimumGames > 0 ? minimumGames : null,
+            ["team"] = teamSearch,
+            ["page"] = targetPage > 1 ? targetPage : null
+        };
+
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters("/rankings", query));
+    }
+
+    private string BuildApiUri()
+    {
+        var query = new List<string>
+        {
+            "pageSize=50",
+            $"page={page}"
+        };
+
+        Append(query, "country", selectedCountry);
+        Append(query, "competition", selectedCompetition);
+        Append(query, "season", selectedSeason);
+        Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
+        Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
+        Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
+        Append(query, "team", teamSearch);
+
+        return $"api/elo/rankings?{string.Join("&", query)}";
+    }
+
+    private async Task<EloRankingsEvolutionResponse?> FetchEvolutionAsync()
+    {
+        if (evolutionRankings is null || evolutionRankings.Rankings.Count == 0)
+        {
+            return null;
+        }
+
+        return await Http.GetFromJsonAsync<EloRankingsEvolutionResponse>(BuildEvolutionApiUri());
+    }
+
+    private string BuildEvolutionApiUri()
+    {
+        var teamIds = string.Join(",", evolutionRankings?.Rankings.Take(20).Select(x => x.TeamId) ?? []);
+        return $"api/elo/rankings/evolution?rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}&teamIds={Uri.EscapeDataString(teamIds)}&pointsPerTeam=60";
+    }
+
+    private async Task<EloRankingsResponse?> FetchEvolutionRankingsAsync()
+    {
+        if (response is null || response.TotalCount == 0)
+        {
+            return null;
+        }
+
+        return await Http.GetFromJsonAsync<EloRankingsResponse>(BuildEvolutionRankingsApiUri());
+    }
+
+    private string BuildEvolutionRankingsApiUri()
+    {
+        var query = new List<string>
+        {
+            "pageSize=20",
+            "page=1"
+        };
+
+        Append(query, "country", selectedCountry);
+        Append(query, "competition", selectedCompetition);
+        Append(query, "season", selectedSeason);
+        Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
+        Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
+        Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
+        Append(query, "team", teamSearch);
+
+        return $"api/elo/rankings?{string.Join("&", query)}";
+    }
+
+    private string BuildTeamHref(Guid teamId)
+    {
+        var returnUrl = Navigation.ToBaseRelativePath(Navigation.Uri);
+        return $"/teams/{teamId}?returnUrl={Uri.EscapeDataString(returnUrl)}";
+    }
+
+    private IReadOnlyList<EloTeamEvolutionSeries> EvolutionSeries
+        => evolution?.Series
+            .Where(x => evolutionRankings?.Rankings.Any(row => row.TeamId == x.TeamId) == true)
+            .ToList() ?? [];
+
+    private string EvolutionContextLabel()
+        => response?.Summary.IsFiltered == true
+            ? "Rating history for the top 20 teams in the current filtered result set."
+            : "Rating history for the top 20 teams overall.";
+
+    private string TableContextLabel()
+    {
+        if (response is null)
+        {
+            return string.Empty;
+        }
+
+        var rangeStart = response.TotalCount == 0 ? 0 : ((response.Page - 1) * response.PageSize) + 1;
+        var rangeEnd = Math.Min(response.TotalCount, response.Page * response.PageSize);
+        var scope = response.Summary.IsFiltered ? "filtered teams" : "rated teams";
+
+        return $"Showing {rangeStart}-{rangeEnd} of {response.TotalCount} {scope}. Page {response.Page} of {response.TotalPages}.";
+    }
+
+    private string BuildEvolutionPath(IReadOnlyCollection<EloTeamEvolutionPoint> points)
+    {
+        var orderedPoints = points.OrderBy(x => x.GameDateTimeUtc).ToList();
+        if (orderedPoints.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var coordinates = orderedPoints
+            .Select(point => ToEvolutionCoordinate(point.GameDateTimeUtc, point.Elo))
+            .ToList();
+
+        var path = $"M {FormatCoordinate(coordinates[0].X)} {FormatCoordinate(coordinates[0].Y)}";
+        for (var index = 1; index < coordinates.Count; index += 1)
+        {
+            var previous = coordinates[index - 1];
+            var current = coordinates[index];
+            var controlX = previous.X + ((current.X - previous.X) / 2d);
+
+            path += string.Create(
+                CultureInfo.InvariantCulture,
+                $" C {controlX:0.##} {previous.Y:0.##}, {controlX:0.##} {current.Y:0.##}, {current.X:0.##} {current.Y:0.##}");
+        }
+
+        return path;
+    }
+
+    private ChartPoint ToEvolutionCoordinate(DateTime gameDateUtc, decimal elo)
+    {
+        var minDate = EvolutionMinDate();
+        var maxDate = EvolutionMaxDate();
+        var minElo = EvolutionMinElo();
+        var maxElo = EvolutionMaxElo();
+        var eloSpread = Math.Max(1m, maxElo - minElo);
+        var dateSpread = Math.Max(1L, maxDate.Ticks - minDate.Ticks);
+        const decimal left = 54m;
+        const decimal top = 34m;
+        const decimal width = 830m;
+        const decimal height = 236m;
+
+        var x = left + ((gameDateUtc.Ticks - minDate.Ticks) / (decimal)dateSpread * width);
+        var y = top + height - ((elo - minElo) / eloSpread * height);
+
+        return new ChartPoint((double)x, (double)y);
+    }
+
+    private DateTime EvolutionMinDate()
+        => EvolutionSeries.SelectMany(x => x.Points).Min(x => x.GameDateTimeUtc);
+
+    private DateTime EvolutionMaxDate()
+        => EvolutionSeries.SelectMany(x => x.Points).Max(x => x.GameDateTimeUtc);
+
+    private decimal EvolutionMinElo()
+        => EvolutionSeries.SelectMany(x => x.Points).Min(x => x.Elo);
+
+    private decimal EvolutionMaxElo()
+        => EvolutionSeries.SelectMany(x => x.Points).Max(x => x.Elo);
+
+    private static string ChartColor(int index)
+    {
+        string[] colors =
+        [
+            "#1b6ec2",
+            "#087443",
+            "#b42318",
+            "#8a4baf",
+            "#b7791f",
+            "#006d77",
+            "#c2410c",
+            "#3949ab",
+            "#52796f",
+            "#be185d",
+            "#4d7c0f",
+            "#7c2d12",
+            "#0f766e",
+            "#6d28d9",
+            "#a16207",
+            "#2563eb",
+            "#15803d",
+            "#9f1239",
+            "#0369a1",
+            "#854d0e"
+        ];
+
+        return colors[index % colors.Length];
+    }
+
+    private static string FormatCoordinate(double value)
+        => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private sealed record ChartPoint(double X, double Y);
+
+    private static void AppendLabel(List<string> labels, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            labels.Add(value);
+        }
+    }
+
+    private void OpenTeam(Guid teamId)
+        => Navigation.NavigateTo(BuildTeamHref(teamId));
+
+    private void OpenTeamFromKeyboard(KeyboardEventArgs args, Guid teamId)
+    {
+        if (args.Key is "Enter" or " ")
+        {
+            OpenTeam(teamId);
+        }
+    }
+
+    private static void Append(List<string> query, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            query.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
+        }
+    }
+
+    private static DateTime? NormalizeDate(DateTime? value)
+        => value.HasValue
+            ? DateTime.SpecifyKind(value.Value.Date, DateTimeKind.Utc)
+            : null;
+
+    private static DateTime? NormalizeInclusiveDateEnd(DateTime? value)
+        => NormalizeDate(value)?.AddDays(1).AddTicks(-1);
+
+    private static string FormatRating(decimal? value)
+        => value.HasValue ? value.Value.ToString("0") : "-";
+
+    private static string FormatDate(DateTime? value)
+        => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";
+
+    private static string FormatMovement(decimal value)
+        => value switch
+        {
+            > 0 => $"+{value:0}",
+            < 0 => value.ToString("0"),
+            _ => "0"
+        };
+
+    private static string MovementClass(decimal value)
+        => value switch
+        {
+            > 0 => "movement-up",
+            < 0 => "movement-down",
+            _ => "movement-flat"
+        };
+}

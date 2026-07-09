@@ -164,7 +164,9 @@ public class EloRebuildService(
                 baseRating = EloCalculator.BaseRating,
                 kFactor = EloCalculator.KFactor,
                 homeAdvantageElo = EloCalculator.HomeAdvantageElo,
-                pointsPerEloMargin = rulesetVersion == EloRulesetVersions.PointMarginEloV1 ? EloCalculator.PointsPerEloMargin : (decimal?)null,
+                pointsPerEloMargin = rulesetVersion is EloRulesetVersions.AdjustedV1 or EloRulesetVersions.PointMarginEloV1
+                    ? EloCalculator.PointsPerEloMargin
+                    : (decimal?)null,
                 competitionWeight = EloCalculator.CompetitionWeight
             });
 

@@ -25,7 +25,7 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                 """
                 UPDATE "elo_rebuild_runs"
                 SET "QueuedAtUtc" = "StartedAtUtc"
-                WHERE "QueuedAtUtc" IS NULL
+                WHERE "QueuedAtUtc" IS NULL;
                 """);
 
             migrationBuilder.AlterColumn<DateTime>(
@@ -73,7 +73,7 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                 """
                 UPDATE "elo_rebuild_runs"
                 SET "StartedAtUtc" = COALESCE("StartedAtUtc", "QueuedAtUtc", "CreatedAtUtc")
-                WHERE "StartedAtUtc" IS NULL
+                WHERE "StartedAtUtc" IS NULL;
                 """);
 
             migrationBuilder.DropColumn(

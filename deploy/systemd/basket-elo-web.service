@@ -1,0 +1,18 @@
+[Unit]
+Description=Basket ELO Web
+After=network.target basket-elo-api.service
+Wants=basket-elo-api.service
+
+[Service]
+WorkingDirectory=/opt/basket-elo/releases/web
+ExecStart=/opt/basket-elo/releases/web/BasketElo.Web
+Restart=always
+RestartSec=5
+User=ubuntu
+EnvironmentFile=/etc/basket-elo/basket-elo.env
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5100
+Environment=ApiBaseUrl=http://127.0.0.1:5101
+
+[Install]
+WantedBy=multi-user.target

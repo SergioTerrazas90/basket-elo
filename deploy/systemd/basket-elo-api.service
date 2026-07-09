@@ -1,0 +1,16 @@
+[Unit]
+Description=Basket ELO API
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/basket-elo/releases/api
+ExecStart=/opt/basket-elo/releases/api/BasketElo.Api
+Restart=always
+RestartSec=5
+User=ubuntu
+EnvironmentFile=/etc/basket-elo/basket-elo.env
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5101
+
+[Install]
+WantedBy=multi-user.target

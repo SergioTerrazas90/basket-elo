@@ -6,7 +6,9 @@ namespace BasketElo.Infrastructure.Backfill;
 
 public class ApiSportsBasketballDataProvider(
     HttpClient httpClient,
-    IOptions<ApiSportsOptions> options) : IBasketballDataProvider
+    IOptions<ApiSportsOptions> options,
+    IApiSportsRateLimiter rateLimiter,
+    IApiSportsLeagueCache leagueCache) : IBasketballDataProvider
 {
     public const string Source = "api-sports";
     public string SourceKey => Source;
@@ -17,10 +19,20 @@ public class ApiSportsBasketballDataProvider(
         BackfillExecutionContext context,
         CancellationToken cancellationToken)
     {
-        EnsureRequestAvailable(context);
+        var knownLeague = ResolveKnownLeague(country, leagueName);
+        if (knownLeague is not null)
+        {
+            return knownLeague;
+        }
+
+        if (leagueCache.TryGet(country, leagueName, out var cachedLeague))
+        {
+            return cachedLeague;
+        }
 
         var uri = $"/leagues?country={Uri.EscapeDataString(country)}&name={Uri.EscapeDataString(leagueName)}";
         using var request = CreateRequest(uri);
+        await PrepareRequestAsync(context, cancellationToken);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -28,6 +40,7 @@ public class ApiSportsBasketballDataProvider(
         using var document = JsonDocument.Parse(payload);
         if (!document.RootElement.TryGetProperty("response", out var responseArray) || responseArray.GetArrayLength() == 0)
         {
+            leagueCache.Set(country, leagueName, null);
             return null;
         }
 
@@ -54,7 +67,33 @@ public class ApiSportsBasketballDataProvider(
                     : null;
             }
 
-            return new BasketballProviderLeague(Source, id, name, countryCode);
+            var league = new BasketballProviderLeague(Source, id, name, countryCode);
+            leagueCache.Set(country, leagueName, league);
+            return league;
+        }
+
+        leagueCache.Set(country, leagueName, null);
+        return null;
+    }
+
+    private static BasketballProviderLeague? ResolveKnownLeague(string country, string leagueName)
+    {
+        if (string.Equals(country, "Europe", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(leagueName, "Latvia-Estonian League", StringComparison.OrdinalIgnoreCase))
+        {
+            return new BasketballProviderLeague(Source, "204", "Latvia-Estonian League", null);
+        }
+
+        if (string.Equals(country, "Russia", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(leagueName, "VTB United League Promo-Cup", StringComparison.OrdinalIgnoreCase))
+        {
+            return new BasketballProviderLeague(Source, "82", "VTB United League Promo-Cup", "RU");
+        }
+
+        if (string.Equals(country, "Italy", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(leagueName, "Lega A - Super Cup", StringComparison.OrdinalIgnoreCase))
+        {
+            return new BasketballProviderLeague(Source, "142", "Lega A - Super Cup", "IT");
         }
 
         return null;
@@ -66,13 +105,10 @@ public class ApiSportsBasketballDataProvider(
         BackfillExecutionContext context,
         CancellationToken cancellationToken)
     {
-        EnsureRequestAvailable(context);
-
-        var seasonParameter = string.IsNullOrWhiteSpace(league.CountryCode)
-            ? ToStartYearSeason(season)
-            : season;
+        var seasonParameter = ToProviderSeason(season, league);
         var uri = $"/games?league={Uri.EscapeDataString(league.SourceLeagueId)}&season={Uri.EscapeDataString(seasonParameter)}";
         using var request = CreateRequest(uri);
+        await PrepareRequestAsync(context, cancellationToken);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -182,12 +218,42 @@ public class ApiSportsBasketballDataProvider(
         return request;
     }
 
+    private static string ToProviderSeason(string season, BasketballProviderLeague league)
+    {
+        return league.SeasonParameterFormat.ToLowerInvariant() switch
+        {
+            "literal" => season,
+            "start_year" => ToStartYearSeason(season),
+            "end_year" => ToEndYearSeason(season),
+            "bibl" => ToBiblSeason(season),
+            _ => string.IsNullOrWhiteSpace(league.CountryCode)
+                ? ToStartYearSeason(season)
+                : season
+        };
+    }
+
     private static string ToStartYearSeason(string season)
     {
         var pieces = season.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         return pieces.Length > 0 && int.TryParse(pieces[0], out var startYear)
             ? startYear.ToString()
             : season;
+    }
+
+    private static string ToEndYearSeason(string season)
+    {
+        var pieces = season.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return pieces.Length > 1 && int.TryParse(pieces[1], out var endYear)
+            ? endYear.ToString()
+            : ToStartYearSeason(season);
+    }
+
+    private static string ToBiblSeason(string season)
+    {
+        var startSeason = ToStartYearSeason(season);
+        return int.TryParse(startSeason, out var startYear) && startYear >= 2022
+            ? $"{startYear}-{startYear + 1}"
+            : startSeason;
     }
 
     private static short? TryGetShort(JsonElement parent, string child1, string child2)
@@ -213,5 +279,12 @@ public class ApiSportsBasketballDataProvider(
         {
             throw new InvalidOperationException("Backfill request budget reached.");
         }
+    }
+
+    private async Task PrepareRequestAsync(BackfillExecutionContext context, CancellationToken cancellationToken)
+    {
+        EnsureRequestAvailable(context);
+        context.ConsumeRequest();
+        await rateLimiter.WaitAsync(cancellationToken);
     }
 }

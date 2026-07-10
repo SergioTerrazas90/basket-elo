@@ -16,6 +16,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<RankingSnapshot> RankingSnapshots => Set<RankingSnapshot>();
     public DbSet<EloRebuildRun> EloRebuildRuns => Set<EloRebuildRun>();
     public DbSet<BackfillJob> BackfillJobs => Set<BackfillJob>();
+    public DbSet<BackfillInspectionDecision> BackfillInspectionDecisions => Set<BackfillInspectionDecision>();
     public DbSet<IdentityHealthCheckRun> IdentityHealthCheckRuns => Set<IdentityHealthCheckRun>();
     public DbSet<IdentityHealthCheckFinding> IdentityHealthCheckFindings => Set<IdentityHealthCheckFinding>();
     public DbSet<IdentityReviewDecision> IdentityReviewDecisions => Set<IdentityReviewDecision>();
@@ -220,6 +221,22 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.Property(x => x.UpdatedAtUtc).IsRequired();
             entity.HasIndex(x => new { x.Status, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<BackfillInspectionDecision>(entity =>
+        {
+            entity.ToTable("backfill_inspection_decisions");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Provider).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Country).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.LeagueName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Season).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(60).IsRequired();
+            entity.Property(x => x.Note).HasMaxLength(1000);
+            entity.Property(x => x.ReviewedBy).HasMaxLength(200);
+            entity.Property(x => x.ReviewedAtUtc).IsRequired();
+            entity.HasIndex(x => new { x.Provider, x.Country, x.LeagueName, x.Season }).IsUnique();
+            entity.HasIndex(x => x.Status);
         });
 
         modelBuilder.Entity<IdentityHealthCheckRun>(entity =>

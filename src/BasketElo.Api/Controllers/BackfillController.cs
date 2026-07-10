@@ -60,6 +60,74 @@ public class BackfillController(
         });
     }
 
+    [HttpPost("coverage/decisions")]
+    public async Task<IActionResult> SaveInspectionDecision(
+        [FromBody] SaveBackfillInspectionDecisionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null ||
+            string.IsNullOrWhiteSpace(request.Provider) ||
+            string.IsNullOrWhiteSpace(request.Country) ||
+            string.IsNullOrWhiteSpace(request.LeagueName) ||
+            string.IsNullOrWhiteSpace(request.Season))
+        {
+            return BadRequest("provider, country, leagueName and season are required.");
+        }
+
+        var status = NormalizeInspectionStatus(request.Status);
+        if (status is null)
+        {
+            return BadRequest("status must be confirmed_empty, provider_gap, covid_partial_missing or resolved.");
+        }
+
+        var provider = request.Provider.Trim().ToLowerInvariant();
+        var country = request.Country.Trim();
+        var leagueName = request.LeagueName.Trim();
+        var season = request.Season.Trim();
+
+        var decision = await dbContext.BackfillInspectionDecisions
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Provider == provider &&
+                    x.Country == country &&
+                    x.LeagueName == leagueName &&
+                    x.Season == season,
+                cancellationToken);
+
+        if (decision is null)
+        {
+            decision = new BackfillInspectionDecision
+            {
+                Id = Guid.NewGuid(),
+                Provider = provider,
+                Country = country,
+                LeagueName = leagueName,
+                Season = season
+            };
+            dbContext.BackfillInspectionDecisions.Add(decision);
+        }
+
+        decision.Status = status;
+        decision.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+        decision.ReviewedBy = string.IsNullOrWhiteSpace(request.ReviewedBy) ? "admin" : request.ReviewedBy.Trim();
+        decision.ReviewedAtUtc = DateTime.UtcNow;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new
+        {
+            decision.Id,
+            decision.Provider,
+            decision.Country,
+            decision.LeagueName,
+            decision.Season,
+            decision.Status,
+            decision.Note,
+            decision.ReviewedBy,
+            decision.ReviewedAtUtc
+        });
+    }
+
     [HttpPost("leagues/jobs")]
     public async Task<IActionResult> TriggerLeagueBackfill([FromBody] TriggerLeagueBackfillRequest request, CancellationToken cancellationToken)
     {
@@ -141,5 +209,16 @@ public class BackfillController(
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };
+    }
+
+    private static string? NormalizeInspectionStatus(string status)
+    {
+        var normalized = status.Trim().ToLowerInvariant();
+        return normalized is BackfillInspectionStatus.ConfirmedEmpty or
+            BackfillInspectionStatus.ProviderGap or
+            BackfillInspectionStatus.CovidPartialMissing or
+            BackfillInspectionStatus.Resolved
+            ? normalized
+            : null;
     }
 }

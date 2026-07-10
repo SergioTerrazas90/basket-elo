@@ -76,7 +76,7 @@
             <div class="section-head">
                 <div>
                     <h2>Rating history</h2>
-                    <p>Last @team.History.Count rated points.</p>
+                    <p>@HistoryContextLabel(team)</p>
                 </div>
             </div>
             <div class="chart-shell">
@@ -86,7 +86,7 @@
                 }
                 else
                 {
-                    <EloEvolutionChart Series="@BuildTeamChartSeries(team)" ShowLegend="false" SharedTooltip="false" />
+                    <EloEvolutionChart Series="@BuildTeamChartSeries(team)" ShowLegend="false" SharedTooltip="false" EnableRangeNavigation="true" />
                 }
             </div>
         </section>
@@ -194,6 +194,19 @@
                         point.Rank))
                     .ToList())
         ];
+
+    private static string HistoryContextLabel(EloTeamDetailResponse team)
+    {
+        if (team.History.Count == 0)
+        {
+            return "No rated history yet.";
+        }
+
+        var first = team.History.Min(point => point.GameDateTimeUtc);
+        var last = team.History.Max(point => point.GameDateTimeUtc);
+
+        return $"{team.History.Count} rated points from {FormatDate(first)} to {FormatDate(last)}.";
+    }
 
     private static string FormatScore(EloTeamGameDto game)
         => game.TeamScore.HasValue && game.OpponentScore.HasValue

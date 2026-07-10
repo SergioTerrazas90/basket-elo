@@ -4,7 +4,8 @@ public record BasketballProviderLeague(
     string Source,
     string SourceLeagueId,
     string Name,
-    string? CountryCode);
+    string? CountryCode,
+    string SeasonParameterFormat = "default");
 
 public record BasketballProviderGame(
     string Source,
@@ -18,9 +19,23 @@ public record BasketballProviderGame(
     short? HomeScore,
     short? AwayScore);
 
-public record BackfillExecutionContext(int MaxRequests, int RequestsUsed)
+public class BackfillExecutionContext(int maxRequests, int requestsUsed)
 {
+    public int MaxRequests { get; } = maxRequests;
+
+    public int RequestsUsed { get; private set; } = requestsUsed;
+
     public bool CanUseRequest() => RequestsUsed < MaxRequests;
+
+    public void ConsumeRequest()
+    {
+        if (!CanUseRequest())
+        {
+            throw new InvalidOperationException($"Backfill request budget reached (maxRequests={MaxRequests}).");
+        }
+
+        RequestsUsed += 1;
+    }
 }
 
 public interface IBasketballDataProvider

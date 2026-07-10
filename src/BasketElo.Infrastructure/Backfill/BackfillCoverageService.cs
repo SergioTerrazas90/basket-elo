@@ -27,6 +27,11 @@ public class BackfillCoverageService(
             .Where(x => configuredLeagues.Select(l => l.Provider).Contains(x.Provider))
             .ToListAsync(cancellationToken);
 
+        var decisions = await dbContext.BackfillInspectionDecisions
+            .AsNoTracking()
+            .Where(x => configuredLeagues.Select(l => l.Provider).Contains(x.Provider))
+            .ToListAsync(cancellationToken);
+
         var aliases = await dbContext.CompetitionAliases
             .AsNoTracking()
             .Include(x => x.Competition)
@@ -35,7 +40,8 @@ public class BackfillCoverageService(
         var aliasMatches = aliases
             .Where(alias => configuredLeagues.Any(league =>
                 string.Equals(league.Provider, alias.Source, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(league.LeagueName, alias.AliasName, StringComparison.OrdinalIgnoreCase)))
+                ProviderLeagueMappings(league).Any(mapping =>
+                    string.Equals(mapping.LeagueName, alias.AliasName, StringComparison.OrdinalIgnoreCase))))
             .Select(alias => alias.Competition)
             .ToList();
 
@@ -64,7 +70,8 @@ public class BackfillCoverageService(
                 .Where(competition => aliases.Any(alias =>
                         alias.CompetitionId == competition.Id &&
                         string.Equals(alias.Source, league.Provider, StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals(alias.AliasName, league.LeagueName, StringComparison.OrdinalIgnoreCase)) ||
+                        ProviderLeagueMappings(league).Any(mapping =>
+                            string.Equals(alias.AliasName, mapping.LeagueName, StringComparison.OrdinalIgnoreCase))) ||
                     (string.Equals(competition.Name, league.LeagueName, StringComparison.OrdinalIgnoreCase) &&
                      string.Equals(DisplayCountryFromCode(competition.CountryCode), league.Country, StringComparison.OrdinalIgnoreCase)))
                 .Select(competition => competition.Id)
@@ -91,7 +98,7 @@ public class BackfillCoverageService(
             .GroupBy(game => game.SeasonId)
             .ToDictionary(group => group.Key, group => group.Count());
 
-        var rows = new List<BackfillCoverageRow>();
+        var rowCandidates = new List<BackfillCoverageCandidate>();
         foreach (var league in configuredLeagues)
         {
             competitionIdsByLeague.TryGetValue(LeagueKey(league.Provider, league.Country, league.LeagueName), out var competitionIds);
@@ -108,11 +115,12 @@ public class BackfillCoverageService(
                 var dataPresent = gameCount > 0;
                 var coverageStatus = ComputeCoverageStatus(latestJob, dataPresent);
 
-                rows.Add(new BackfillCoverageRow(
+                rowCandidates.Add(new BackfillCoverageCandidate(
                     league.Provider,
                     league.Country,
                     league.LeagueName,
                     league.DisplayName,
+                    league.CompetitionType ?? InferCompetitionType(league),
                     season,
                     coverageStatus,
                     latestJob?.FinishedAtUtc ?? latestJob?.StartedAtUtc,
@@ -122,9 +130,13 @@ public class BackfillCoverageService(
                     dataPresent,
                     gameCount,
                     latestJob?.Status,
-                    latestJob?.Id));
+                    latestJob?.Id,
+                    latestJob is not null));
             }
         }
+
+        var rows = ApplyInspectionFlags(rowCandidates);
+        rows = ApplyInspectionDecisions(rows, decisions);
 
         return new BackfillCoverageResponse(rows
             .OrderBy(x => x.Country)
@@ -204,6 +216,136 @@ public class BackfillCoverageService(
         return warnings.Distinct().ToList();
     }
 
+    private static IReadOnlyCollection<BackfillCoverageRow> ApplyInspectionFlags(IReadOnlyCollection<BackfillCoverageCandidate> rows)
+    {
+        var flaggedRows = new List<BackfillCoverageRow>();
+
+        foreach (var leagueRows in rows.GroupBy(x => LeagueKey(x.Provider, x.Country, x.LeagueName)))
+        {
+            var completedCounts = leagueRows
+                .Where(x => x.HasRun && x.DataPresent && x.GameCount > 0)
+                .Select(x => x.GameCount)
+                .Order()
+                .ToList();
+
+            var medianCompletedCount = Median(completedCounts);
+            foreach (var row in leagueRows)
+            {
+                var reasons = new List<string>();
+
+                if (row.HasRun && row.CoverageStatus == "no_data")
+                {
+                    reasons.Add("Latest completed run returned 0 games.");
+                }
+
+                if (row.WarningCount > 0)
+                {
+                    reasons.Add("Latest run completed with provider or import warnings.");
+                }
+
+                if (row.HasRun &&
+                    row.DataPresent &&
+                    medianCompletedCount is > 0 &&
+                    ShouldFlagLowCount(row, medianCompletedCount.Value))
+                {
+                    reasons.Add($"Game count is unusually low for this league ({row.GameCount} vs median {medianCompletedCount.Value:0}).");
+                }
+
+                flaggedRows.Add(row.ToCoverageRow(reasons, InspectionSeverity(row, reasons), null));
+            }
+        }
+
+        return flaggedRows;
+    }
+
+    private static IReadOnlyCollection<BackfillCoverageRow> ApplyInspectionDecisions(
+        IReadOnlyCollection<BackfillCoverageRow> rows,
+        IReadOnlyCollection<BackfillInspectionDecision> decisions)
+    {
+        var decisionsByKey = decisions.ToDictionary(
+            x => LeagueSeasonKey(x.Provider, x.Country, x.LeagueName, x.Season),
+            StringComparer.OrdinalIgnoreCase);
+
+        return rows.Select(row =>
+        {
+            if (!decisionsByKey.TryGetValue(
+                    LeagueSeasonKey(row.Provider, row.Country, row.LeagueName, row.Season),
+                    out var decision))
+            {
+                return row;
+            }
+
+            var reasons = row.InspectionReasons.ToList();
+            if (!string.IsNullOrWhiteSpace(decision.Note))
+            {
+                reasons.Add(decision.Note);
+            }
+
+            return row with
+            {
+                NeedsInspection = false,
+                InspectionReasons = reasons.Distinct().ToList(),
+                InspectionSeverity = "reviewed",
+                InspectionStatus = decision.Status,
+                InspectionNote = decision.Note,
+                InspectionReviewedAtUtc = decision.ReviewedAtUtc
+            };
+        }).ToList();
+    }
+
+    private static bool ShouldFlagLowCount(BackfillCoverageCandidate row, decimal medianCompletedCount)
+    {
+        if (medianCompletedCount <= 0)
+        {
+            return false;
+        }
+
+        if (IsSuperCup(row))
+        {
+            return row.GameCount == 0;
+        }
+
+        if (IsCup(row))
+        {
+            if (row.GameCount >= 4 && medianCompletedCount <= 20)
+            {
+                return false;
+            }
+
+            return row.GameCount < Math.Max(4m, medianCompletedCount * 0.35m);
+        }
+
+        return row.GameCount < medianCompletedCount * 0.65m;
+    }
+
+    private static string InspectionSeverity(BackfillCoverageCandidate row, IReadOnlyCollection<string> reasons)
+    {
+        if (reasons.Count == 0)
+        {
+            return "none";
+        }
+
+        if (row.CoverageStatus == "no_data")
+        {
+            return "high";
+        }
+
+        return IsCup(row) ? "medium" : "high";
+    }
+
+    private static decimal? Median(IReadOnlyList<int> values)
+    {
+        if (values.Count == 0)
+        {
+            return null;
+        }
+
+        var middle = values.Count / 2;
+        return values.Count % 2 == 1
+            ? values[middle]
+            : (values[middle - 1] + values[middle]) / 2m;
+    }
+
     private static bool TryGetString(JsonElement root, string propertyName, out string value)
     {
         value = string.Empty;
@@ -248,8 +390,6 @@ public class BackfillCoverageService(
             "ITA" => "Italy",
             "TR" => "Turkey",
             "TUR" => "Turkey",
-            "LV" => "Latvia",
-            "LVA" => "Latvia",
             "BE" => "Belgium",
             "BEL" => "Belgium",
             "DE" => "Germany",
@@ -262,12 +402,108 @@ public class BackfillCoverageService(
             "CZE" => "Czech Republic",
             "RU" => "Russia",
             "RUS" => "Russia",
+            "RS" => "Serbia",
+            "SRB" => "Serbia",
+            "HR" => "Croatia",
+            "HRV" => "Croatia",
+            "SI" => "Slovenia",
+            "SVN" => "Slovenia",
+            "LV" => "Latvia",
+            "LVA" => "Latvia",
+            "EE" => "Estonia",
+            "EST" => "Estonia",
             _ => countryCode ?? string.Empty
         };
+    }
+
+    private static string InferCompetitionType(ConfiguredBackfillLeague league)
+    {
+        if (league.Country == "Europe")
+        {
+            return "international";
+        }
+
+        return IsCup(league.LeagueName, league.CompetitionType)
+            ? "domestic_cup"
+            : "domestic_first_division";
+    }
+
+    private static bool IsCup(BackfillCoverageCandidate row)
+        => IsCup(row.LeagueName, row.CompetitionType);
+
+    private static bool IsCup(string leagueName, string? competitionType)
+    {
+        var normalizedType = competitionType ?? string.Empty;
+        return normalizedType.Contains("cup", StringComparison.OrdinalIgnoreCase) ||
+            leagueName.Contains("cup", StringComparison.OrdinalIgnoreCase) ||
+            leagueName.Contains("copa", StringComparison.OrdinalIgnoreCase) ||
+            leagueName.Contains("supercopa", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSuperCup(BackfillCoverageCandidate row)
+    {
+        return row.LeagueName.Contains("super cup", StringComparison.OrdinalIgnoreCase) ||
+            row.LeagueName.Contains("supercup", StringComparison.OrdinalIgnoreCase) ||
+            row.LeagueName.Contains("supercopa", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyCollection<ConfiguredProviderLeague> ProviderLeagueMappings(ConfiguredBackfillLeague league)
+    {
+        return league.ProviderLeagues is { Count: > 0 }
+            ? league.ProviderLeagues
+            : [new ConfiguredProviderLeague(league.Country, league.LeagueName)];
     }
 
     private readonly record struct CompetitionKey(string Country, string LeagueName);
 
     private static string LeagueKey(string provider, string country, string leagueName)
         => $"{provider}|{country}|{leagueName}";
+
+    private static string LeagueSeasonKey(string provider, string country, string leagueName, string season)
+        => $"{provider}|{country}|{leagueName}|{season}";
+
+    private sealed record BackfillCoverageCandidate(
+        string Provider,
+        string Country,
+        string LeagueName,
+        string DisplayName,
+        string CompetitionType,
+        string Season,
+        string CoverageStatus,
+        DateTime? LastRunUtc,
+        int RequestsUsed,
+        int WarningCount,
+        IReadOnlyCollection<string> Warnings,
+        bool DataPresent,
+        int GameCount,
+        string? LatestJobStatus,
+        Guid? LatestJobId,
+        bool HasRun)
+    {
+        public BackfillCoverageRow ToCoverageRow(
+            IReadOnlyCollection<string> inspectionReasons,
+            string inspectionSeverity,
+            BackfillInspectionDecision? decision)
+            => new(
+                Provider,
+                Country,
+                LeagueName,
+                DisplayName,
+                Season,
+                CoverageStatus,
+                LastRunUtc,
+                RequestsUsed,
+                WarningCount,
+                Warnings,
+                DataPresent,
+                GameCount,
+                LatestJobStatus,
+                LatestJobId,
+                inspectionReasons.Count > 0 && decision is null,
+                inspectionReasons,
+                decision is null ? inspectionSeverity : "reviewed",
+                decision?.Status,
+                decision?.Note,
+                decision?.ReviewedAtUtc);
+    }
 }

@@ -26,6 +26,7 @@ services:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo
       ApiSports__BaseUrl: https://v1.basketball.api-sports.io
       ApiSports__ApiKey: bef74529c17455cafe87dd1a6644deee
+      ApiSports__MinSecondsBetweenRequests: 7
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,6 +43,7 @@ services:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo
       ApiSports__BaseUrl: https://v1.basketball.api-sports.io
       ApiSports__ApiKey: bef74529c17455cafe87dd1a6644deee
+      ApiSports__MinSecondsBetweenRequests: 7
     depends_on:
       postgres:
         condition: service_healthy

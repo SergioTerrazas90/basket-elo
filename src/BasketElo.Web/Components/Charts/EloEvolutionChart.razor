@@ -1,7 +1,26 @@
 @using System.Globalization
 
 <div class="elo-chart">
-    <RadzenChart class="elo-radzen-chart" TooltipTolerance="40" MouseMoveThrottle="25">
+    @if (EnableRangeNavigation)
+    {
+        <div class="elo-chart-toolbar" aria-label="Chart range controls">
+            <div class="elo-chart-range-buttons">
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Full span</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowRecentHalf">Recent half</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowRecentQuarter">Recent quarter</button>
+            </div>
+            <span>@RangeLabel</span>
+        </div>
+    }
+
+    <RadzenChart class="elo-radzen-chart"
+                 TooltipTolerance="40"
+                 MouseMoveThrottle="25"
+                 AllowZoom="@EnableRangeNavigation"
+                 AllowPan="@EnableRangeNavigation"
+                 @bind-Zoom="chartZoom"
+                 @bind-ViewStart="viewStart"
+                 @bind-ViewEnd="viewEnd">
         <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="ChartTooltipTrigger.Axis" />
         <RadzenLegend Visible="@ShowLegend" Position="LegendPosition.Bottom" />
 
@@ -14,7 +33,7 @@
                               Title="@series.TeamName"
                               Stroke="@series.Color"
                               StrokeWidth="3"
-                              Smooth="false">
+                              Smooth="@Smooth">
                 <ChildContent>
                     <RadzenMarkers MarkerType="MarkerType.Circle" Size="2" Fill="@series.Color" Stroke="@series.Color" />
                 </ChildContent>
@@ -36,7 +55,7 @@
             </RadzenLineSeries>
         }
 
-        <RadzenCategoryAxis FormatString="{0:MMM yyyy}">
+        <RadzenCategoryAxis Formatter="@FormatDateAxis" LabelAutoRotation="-35">
             <RadzenAxisCrosshair Visible="true" Label="true" Snap="true" Stroke="#6b7682" />
         </RadzenCategoryAxis>
         <RadzenValueAxis Formatter="@FormatEloAxis">
@@ -56,11 +75,79 @@
     [Parameter]
     public bool SharedTooltip { get; set; } = true;
 
+    [Parameter]
+    public bool EnableRangeNavigation { get; set; }
+
+    [Parameter]
+    public bool Smooth { get; set; }
+
+    private double chartZoom = 100;
+    private double viewStart;
+    private double viewEnd = 1;
+
     private IReadOnlyList<EloChartSeries> PlottableSeries
         => Series.Where(x => x.Points.Count >= 2).ToList();
 
+    private IReadOnlyList<EloChartPoint> AllPoints
+        => PlottableSeries.SelectMany(x => x.Points).OrderBy(x => x.GameDateTimeUtc).ToList();
+
+    private string RangeLabel
+    {
+        get
+        {
+            var points = AllPoints;
+            if (points.Count == 0)
+            {
+                return "No range";
+            }
+
+            var first = points.First().GameDateTimeUtc;
+            var last = points.Last().GameDateTimeUtc;
+            var span = last - first;
+            var visibleStart = first + TimeSpan.FromTicks((long)(span.Ticks * Math.Clamp(viewStart, 0, 1)));
+            var visibleEnd = first + TimeSpan.FromTicks((long)(span.Ticks * Math.Clamp(viewEnd, 0, 1)));
+
+            return $"{FormatDate(visibleStart)} - {FormatDate(visibleEnd)}";
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!EnableRangeNavigation)
+        {
+            chartZoom = 100;
+            viewStart = 0;
+            viewEnd = 1;
+        }
+    }
+
+    private void ShowFullRange()
+    {
+        chartZoom = 100;
+        viewStart = 0;
+        viewEnd = 1;
+    }
+
+    private void ShowRecentHalf()
+        => SetRecentRange(0.5, 200);
+
+    private void ShowRecentQuarter()
+        => SetRecentRange(0.25, 400);
+
+    private void SetRecentRange(double fraction, double zoom)
+    {
+        chartZoom = zoom;
+        viewStart = 1 - fraction;
+        viewEnd = 1;
+    }
+
     private static string FormatDate(DateTime value)
         => value.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.CurrentCulture);
+
+    private static string FormatDateAxis(object value)
+        => value is DateTime date
+            ? date.ToLocalTime().ToString("MMM yyyy", CultureInfo.CurrentCulture)
+            : value?.ToString() ?? string.Empty;
 
     private static string FormatMovement(decimal value)
         => value switch

@@ -12,6 +12,7 @@ public class BackfillJobProcessor(
     BasketEloDbContext dbContext,
     IEnumerable<IBasketballDataProvider> providers,
     IIdentityHealthCheckService identityHealthCheckService,
+    IBackfillCatalog backfillCatalog,
     ILogger<BackfillJobProcessor> logger) : IBackfillJobProcessor
 {
     public async Task<bool> TryProcessNextPendingJobAsync(CancellationToken cancellationToken)
@@ -58,62 +59,100 @@ public class BackfillJobProcessor(
             throw new InvalidOperationException($"Provider '{job.Provider}' is not registered.");
         }
 
-        ConsumeRequestBudget(job);
-        var league = await provider.ResolveLeagueAsync(
-            job.Country,
-            job.LeagueName,
-            new BackfillExecutionContext(job.MaxRequests, job.RequestsUsed - 1),
-            cancellationToken);
+        var executionContext = new BackfillExecutionContext(job.MaxRequests, job.RequestsUsed);
+        var configuredLeague = backfillCatalog.GetLeagues().FirstOrDefault(x =>
+            string.Equals(x.Provider, job.Provider, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(x.Country, job.Country, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(x.LeagueName, job.LeagueName, StringComparison.OrdinalIgnoreCase));
 
-        if (league is null)
+        var providerLeagueMappings = GetProviderLeagueMappings(configuredLeague, job);
+        var resolvedLeagues = new List<BasketballProviderLeague>();
+        var allGames = new List<BasketballProviderGame>();
+        var warnings = new List<string>();
+        var hasMorePages = false;
+
+        foreach (var mapping in providerLeagueMappings)
         {
-            job.WarningCount += 1;
+            var resolvedLeague = await provider.ResolveLeagueAsync(
+                mapping.Country,
+                mapping.LeagueName,
+                executionContext,
+                cancellationToken);
+            job.RequestsUsed = executionContext.RequestsUsed;
+
+            if (resolvedLeague is null)
+            {
+                job.WarningCount += 1;
+                warnings.Add($"League not found for provider mapping '{mapping.Country}: {mapping.LeagueName}'.");
+                continue;
+            }
+
+            var league = resolvedLeague with
+            {
+                SeasonParameterFormat = mapping.SeasonParameterFormat
+            };
+            resolvedLeagues.Add(league);
+
+            var gamesResult = await provider.GetGamesAsync(
+                league,
+                job.Season,
+                executionContext,
+                cancellationToken);
+            job.RequestsUsed = executionContext.RequestsUsed;
+
+            if (gamesResult.HasMorePages)
+            {
+                hasMorePages = true;
+                job.WarningCount += 1;
+            }
+
+            job.WarningCount += gamesResult.Warnings.Count;
+            warnings.AddRange(gamesResult.Warnings.Select(warning => $"{league.Name}: {warning}"));
+            allGames.AddRange(gamesResult.Games);
+        }
+
+        if (resolvedLeagues.Count == 0)
+        {
             CompleteJob(job, BackfillJobStatus.CompletedWithWarnings, new
             {
-                message = "League not found for provided country/name.",
-                requestsUsed = job.RequestsUsed
+                message = "No provider league mapping could be resolved.",
+                requestsUsed = job.RequestsUsed,
+                warnings
             });
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        ConsumeRequestBudget(job);
-        var gamesResult = await provider.GetGamesAsync(
-            league,
-            job.Season,
-            new BackfillExecutionContext(job.MaxRequests, job.RequestsUsed - 1),
-            cancellationToken);
-
-        if (gamesResult.HasMorePages)
-        {
-            job.WarningCount += 1;
-        }
-
-        job.WarningCount += gamesResult.Warnings.Count;
-
         var summary = new BackfillSummary
         {
-            LeagueName = league.Name,
+            LeagueName = configuredLeague?.LeagueName ?? resolvedLeagues[0].Name,
             Season = job.Season,
             Source = provider.SourceKey,
             RequestsUsed = job.RequestsUsed,
-            HasMorePages = gamesResult.HasMorePages,
-            GamesFetched = gamesResult.Games.Count
+            HasMorePages = hasMorePages,
+            GamesFetched = allGames.Count
         };
 
-        if (gamesResult.HasMorePages)
+        if (hasMorePages)
         {
             summary.Warnings.Add("The provider returned more pages than the current request budget allowed, so only the first page of games was imported.");
         }
 
-        summary.Warnings.AddRange(gamesResult.Warnings);
+        summary.ProviderLeagues.AddRange(resolvedLeagues.Select(x => $"{x.Name} ({x.SourceLeagueId})"));
+        summary.Warnings.AddRange(warnings);
 
         if (!job.DryRun)
         {
-            var competition = await GetOrCreateCompetitionAsync(league, cancellationToken);
+            var competition = await GetOrCreateCompetitionAsync(resolvedLeagues[0], configuredLeague, cancellationToken);
+
+            foreach (var additionalLeague in resolvedLeagues.Skip(1))
+            {
+                await EnsureCompetitionAliasAsync(competition, additionalLeague, cancellationToken);
+            }
+
             var season = await GetOrCreateSeasonAsync(competition, job.Season, cancellationToken);
 
-            foreach (var providerGame in gamesResult.Games)
+            foreach (var providerGame in allGames)
             {
                 var homeTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceHomeTeamId, providerGame.HomeTeamName, competition.CountryCode, cancellationToken);
                 var awayTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceAwayTeamId, providerGame.AwayTeamName, competition.CountryCode, cancellationToken);
@@ -148,6 +187,8 @@ public class BackfillJobProcessor(
                 else
                 {
                     existingGame.GameDateTimeUtc = providerGame.GameDateTimeUtc;
+                    existingGame.HomeTeamId = homeTeam.Id;
+                    existingGame.AwayTeamId = awayTeam.Id;
                     existingGame.HomeScore = providerGame.HomeScore;
                     existingGame.AwayScore = providerGame.AwayScore;
                     existingGame.Status = providerGame.Status;
@@ -196,7 +237,22 @@ public class BackfillJobProcessor(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<Competition> GetOrCreateCompetitionAsync(BasketballProviderLeague providerLeague, CancellationToken cancellationToken)
+    private static IReadOnlyCollection<ConfiguredProviderLeague> GetProviderLeagueMappings(
+        ConfiguredBackfillLeague? configuredLeague,
+        BackfillJob job)
+    {
+        if (configuredLeague?.ProviderLeagues is { Count: > 0 })
+        {
+            return configuredLeague.ProviderLeagues;
+        }
+
+        return [new ConfiguredProviderLeague(job.Country, job.LeagueName)];
+    }
+
+    private async Task<Competition> GetOrCreateCompetitionAsync(
+        BasketballProviderLeague providerLeague,
+        ConfiguredBackfillLeague? configuredLeague,
+        CancellationToken cancellationToken)
     {
         var alias = await dbContext.CompetitionAliases
             .Include(x => x.Competition)
@@ -209,10 +265,14 @@ public class BackfillJobProcessor(
             return alias.Competition;
         }
 
-        var countryCode = NormalizeCountryCode(providerLeague.CountryCode);
+        var competitionName = configuredLeague?.LeagueName ?? providerLeague.Name;
+        var countryCode = NormalizeCountryCode(
+            configuredLeague is null
+                ? providerLeague.CountryCode
+                : CountryCodeFromDisplay(configuredLeague.Country));
         var competition = await dbContext.Competitions
             .FirstOrDefaultAsync(
-                x => x.Name == providerLeague.Name && x.CountryCode == countryCode,
+                x => x.Name == competitionName && x.CountryCode == countryCode,
                 cancellationToken);
 
         if (competition is null)
@@ -220,14 +280,34 @@ public class BackfillJobProcessor(
             competition = new Competition
             {
                 Id = Guid.NewGuid(),
-                Name = providerLeague.Name,
-                Type = string.IsNullOrWhiteSpace(providerLeague.CountryCode) ? "international" : "domestic_first_division",
+                Name = competitionName,
+                Type = configuredLeague?.CompetitionType ??
+                    (string.IsNullOrWhiteSpace(countryCode) ? "international" : "domestic_first_division"),
                 CountryCode = countryCode,
                 Tier = 1,
                 IsActive = true,
                 CreatedAtUtc = DateTime.UtcNow
             };
             dbContext.Competitions.Add(competition);
+        }
+
+        await EnsureCompetitionAliasAsync(competition, providerLeague, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return competition;
+    }
+
+    private async Task EnsureCompetitionAliasAsync(
+        Competition competition,
+        BasketballProviderLeague providerLeague,
+        CancellationToken cancellationToken)
+    {
+        var exists = await dbContext.CompetitionAliases.AnyAsync(
+            x => x.Source == providerLeague.Source && x.SourceCompetitionId == providerLeague.SourceLeagueId,
+            cancellationToken);
+
+        if (exists)
+        {
+            return;
         }
 
         dbContext.CompetitionAliases.Add(new CompetitionAlias
@@ -239,9 +319,6 @@ public class BackfillJobProcessor(
             AliasName = providerLeague.Name,
             CreatedAtUtc = DateTime.UtcNow
         });
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return competition;
     }
 
     private async Task<Season> GetOrCreateSeasonAsync(Competition competition, string seasonLabel, CancellationToken cancellationToken)
@@ -279,6 +356,8 @@ public class BackfillJobProcessor(
         string? countryCode,
         CancellationToken cancellationToken)
     {
+        sourceTeamId = NormalizeSourceTeamId(sourceTeamId, teamName);
+
         var alias = await dbContext.TeamAliases
             .Include(x => x.Team)
             .FirstOrDefaultAsync(
@@ -350,6 +429,25 @@ public class BackfillJobProcessor(
         return team;
     }
 
+    private static string NormalizeSourceTeamId(string sourceTeamId, string teamName)
+    {
+        if (!string.IsNullOrWhiteSpace(sourceTeamId) &&
+            sourceTeamId != "0" &&
+            !sourceTeamId.Equals("null", StringComparison.OrdinalIgnoreCase))
+        {
+            return sourceTeamId.Trim();
+        }
+
+        var normalizedName = new string(teamName
+            .Trim()
+            .ToLowerInvariant()
+            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')
+            .ToArray());
+        normalizedName = string.Join('-', normalizedName.Split('-', StringSplitOptions.RemoveEmptyEntries));
+
+        return $"name:{normalizedName}";
+    }
+
     private static (DateTime StartDateUtc, DateTime EndDateUtc) ParseSeasonDates(string seasonLabel)
     {
         var pieces = seasonLabel.Split('-', StringSplitOptions.TrimEntries);
@@ -378,14 +476,30 @@ public class BackfillJobProcessor(
         return normalized.Length <= 3 ? normalized : normalized[..3];
     }
 
-    private static void ConsumeRequestBudget(BackfillJob job)
+    private static string? CountryCodeFromDisplay(string country)
     {
-        if (job.RequestsUsed >= job.MaxRequests)
+        return country switch
         {
-            throw new InvalidOperationException($"Backfill request budget reached (maxRequests={job.MaxRequests}).");
-        }
-
-        job.RequestsUsed += 1;
+            "Spain" => "ES",
+            "France" => "FR",
+            "Lithuania" => "LT",
+            "Greece" => "GR",
+            "Italy" => "IT",
+            "Turkey" => "TR",
+            "Belgium" => "BE",
+            "Germany" => "DE",
+            "Israel" => "IL",
+            "Poland" => "PL",
+            "Czech Republic" => "CZ",
+            "Russia" => "RU",
+            "Serbia" => "RS",
+            "Croatia" => "HR",
+            "Slovenia" => "SI",
+            "Latvia" => "LV",
+            "Estonia" => "EE",
+            "Europe" => null,
+            _ => null
+        };
     }
 
     private static void CompleteJob(BackfillJob job, string status, object summary)
@@ -406,6 +520,7 @@ public class BackfillJobProcessor(
         public int GamesFetched { get; set; }
         public int GamesInserted { get; set; }
         public int GamesUpdated { get; set; }
+        public List<string> ProviderLeagues { get; } = [];
         public List<string> Warnings { get; } = [];
         public string? IdentityHealthStatus { get; set; }
         public int IdentityFindingsCount { get; set; }

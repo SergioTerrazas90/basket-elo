@@ -56,6 +56,16 @@
             </select>
         </div>
 
+        <div class="filter-field">
+            <label for="inspectionFilter">Inspection</label>
+            <select id="inspectionFilter" class="form-select" @bind="selectedInspection">
+                @foreach (var option in InspectionOptions)
+                {
+                    <option value="@option.Value">@option.Label</option>
+                }
+            </select>
+        </div>
+
         <div class="filter-field compact-toggle">
             <label for="dryRunToggle">Dry Run</label>
             <input id="dryRunToggle" class="form-check-input" type="checkbox" @bind="dryRun" />
@@ -90,7 +100,30 @@
                 <span class="summary-label">Missing</span>
                 <strong>@FilteredRows.Count(x => x.CoverageStatus == "not_started")</strong>
             </div>
+            <div class="summary-card inspection-card">
+                <span class="summary-label">Needs Inspection</span>
+                <strong>@FilteredRows.Count(x => x.NeedsInspection)</strong>
+            </div>
+            <div class="summary-card reviewed-card">
+                <span class="summary-label">Reviewed Flags</span>
+                <strong>@FilteredRows.Count(x => !string.IsNullOrWhiteSpace(x.InspectionStatus))</strong>
+            </div>
         </section>
+
+        @if (ReviewedRows.Count > 0)
+        {
+            <section class="reviewed-summary-panel" aria-label="Reviewed inspection summary">
+                @foreach (var item in ReviewedStatusSummaries)
+                {
+                    <button class="reviewed-summary-chip @(selectedInspection == item.Status ? "selected" : null)"
+                            type="button"
+                            @onclick="() => selectedInspection = item.Status">
+                        <span>@FormatInspectionStatus(item.Status)</span>
+                        <strong>@item.Count</strong>
+                    </button>
+                }
+            </section>
+        }
 
         <section class="table-section">
             <div class="section-head">
@@ -107,6 +140,7 @@
                             <th>Seasons</th>
                             <th>Completed</th>
                             <th>Warnings</th>
+                            <th>Inspect</th>
                             <th>Latest Run</th>
                             <th>Action</th>
                         </tr>
@@ -120,6 +154,7 @@
                                 <td>@league.TotalSeasons</td>
                                 <td>@league.CompletedSeasons</td>
                                 <td>@league.WarningSeasons</td>
+                                <td>@league.InspectionSeasons</td>
                                 <td>@FormatDate(league.LastRunUtc)</td>
                                 <td>
                                     <button class="btn btn-sm btn-outline-primary"
@@ -152,6 +187,7 @@
                             <th>Last Run</th>
                             <th>Requests</th>
                             <th>Warnings</th>
+                            <th>Inspect</th>
                             <th>Data</th>
                             <th>Games</th>
                             <th>Action</th>
@@ -160,7 +196,7 @@
                     <tbody>
                         @foreach (var row in FilteredRows)
                         {
-                            <tr>
+                            <tr class="@RowClass(row)">
                                 <td>@row.Country</td>
                                 <td>@row.DisplayName</td>
                                 <td>@row.Season</td>
@@ -183,6 +219,57 @@
                                                 }
                                             </ul>
                                         </details>
+                                    }
+                                </td>
+                                <td>
+                                    @if (row.NeedsInspection)
+                                    {
+                                        <details class="inspection-details">
+                                            <summary>@FormatInspectionSeverity(row.InspectionSeverity)</summary>
+                                            <ul>
+                                                @foreach (var reason in row.InspectionReasons)
+                                                {
+                                                    <li>@reason</li>
+                                                }
+                                            </ul>
+                                            <div class="inspection-actions">
+                                                <button class="btn btn-sm btn-outline-danger"
+                                                        @onclick='() => SaveInspectionDecisionAsync(row, "covid_partial_missing")'
+                                                        disabled="@isBusy">
+                                                    COVID gap
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-warning"
+                                                        @onclick='() => SaveInspectionDecisionAsync(row, "provider_gap")'
+                                                        disabled="@isBusy">
+                                                    Provider gap
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-secondary"
+                                                        @onclick='() => SaveInspectionDecisionAsync(row, "confirmed_empty")'
+                                                        disabled="@isBusy">
+                                                    Empty
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-success"
+                                                        @onclick='() => SaveInspectionDecisionAsync(row, "resolved")'
+                                                        disabled="@isBusy">
+                                                    Resolved
+                                                </button>
+                                            </div>
+                                        </details>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(row.InspectionStatus))
+                                    {
+                                        <details class="inspection-details reviewed-details">
+                                            <summary>@FormatInspectionStatus(row.InspectionStatus)</summary>
+                                            @if (!string.IsNullOrWhiteSpace(row.InspectionNote))
+                                            {
+                                                <p>@row.InspectionNote</p>
+                                            }
+                                            <span class="reviewed-date">@FormatDate(row.InspectionReviewedAtUtc)</span>
+                                        </details>
+                                    }
+                                    else
+                                    {
+                                        <span class="muted-cell">-</span>
                                     }
                                 </td>
                                 <td>@(row.DataPresent ? "Yes" : "No")</td>
@@ -213,15 +300,39 @@
     private string? selectedCountry;
     private string? selectedLeague;
     private string? selectedStatus;
+    private string selectedInspection = string.Empty;
 
     private IReadOnlyCollection<string> CountryOptions => rows.Select(x => x.Country).Distinct().OrderBy(x => x).ToList();
     private IReadOnlyCollection<string> LeagueOptions => rows.Select(x => x.DisplayName).Distinct().OrderBy(x => x).ToList();
     private static IReadOnlyCollection<string> StatusOptions => ["not_started", "in_progress", "completed", "completed_with_warnings", "dry_run", "no_data", "failed", "partial"];
+    private static IReadOnlyCollection<InspectionFilterOption> InspectionOptions =>
+    [
+        new(string.Empty, "All"),
+        new("active", "Needs inspection"),
+        new("reviewed", "Reviewed"),
+        new("provider_gap", "Provider gap"),
+        new("covid_partial_missing", "COVID partial missing"),
+        new("confirmed_empty", "Confirmed empty"),
+        new("resolved", "Resolved"),
+        new("clean", "No inspection state")
+    ];
 
     private IReadOnlyCollection<BackfillCoverageRow> FilteredRows => rows
         .Where(x => string.IsNullOrWhiteSpace(selectedCountry) || x.Country == selectedCountry)
         .Where(x => string.IsNullOrWhiteSpace(selectedLeague) || x.DisplayName == selectedLeague)
         .Where(x => string.IsNullOrWhiteSpace(selectedStatus) || x.CoverageStatus == selectedStatus)
+        .Where(MatchesInspectionFilter)
+        .ToList();
+
+    private IReadOnlyCollection<BackfillCoverageRow> ReviewedRows => rows
+        .Where(x => !string.IsNullOrWhiteSpace(x.InspectionStatus))
+        .ToList();
+
+    private IReadOnlyCollection<ReviewedStatusSummary> ReviewedStatusSummaries => ReviewedRows
+        .GroupBy(x => x.InspectionStatus!)
+        .Select(group => new ReviewedStatusSummary(group.Key, group.Count()))
+        .OrderByDescending(x => x.Count)
+        .ThenBy(x => FormatInspectionStatus(x.Status))
         .ToList();
 
     private IReadOnlyCollection<LeagueSummary> LeagueSummaries => FilteredRows
@@ -234,6 +345,7 @@
             group.Count(),
             group.Count(x => x.CoverageStatus == "completed"),
             group.Count(x => x.CoverageStatus == "completed_with_warnings"),
+            group.Count(x => x.NeedsInspection),
             group.Max(x => x.LastRunUtc)))
         .OrderBy(x => x.Country)
         .ThenBy(x => x.DisplayName)
@@ -300,6 +412,32 @@
             $"Queued configured seasons for {league.DisplayName}.");
     }
 
+    private async Task SaveInspectionDecisionAsync(BackfillCoverageRow row, string status)
+    {
+        var note = status switch
+        {
+            "covid_partial_missing" => "Reviewed: games were likely played before a COVID cancellation/suspension, but API-Sports returned no games.",
+            "provider_gap" => "Reviewed: provider data appears incomplete or unavailable for this season.",
+            "confirmed_empty" => "Reviewed: no games are expected for this configured season.",
+            "resolved" => "Reviewed: issue resolved or accepted after inspection.",
+            _ => "Reviewed."
+        };
+
+        await SubmitAsync(
+            "api/backfill/coverage/decisions",
+            new SaveBackfillInspectionDecisionRequest
+            {
+                Provider = row.Provider,
+                Country = row.Country,
+                LeagueName = row.LeagueName,
+                Season = row.Season,
+                Status = status,
+                Note = note,
+                ReviewedBy = "codex"
+            },
+            $"Marked {row.DisplayName} {row.Season} as {FormatInspectionStatus(status)}.");
+    }
+
     private async Task SubmitAsync<TRequest>(string url, TRequest request, string successMessage)
     {
         isBusy = true;
@@ -351,6 +489,45 @@
         _ => "status-empty"
     };
 
+    private static string RowClass(BackfillCoverageRow row)
+    {
+        if (row.NeedsInspection)
+        {
+            return row.InspectionSeverity == "high" ? "inspection-row inspection-row-high" : "inspection-row";
+        }
+
+        return !string.IsNullOrWhiteSpace(row.InspectionStatus) ? "reviewed-row" : string.Empty;
+    }
+
+    private bool MatchesInspectionFilter(BackfillCoverageRow row)
+    {
+        return selectedInspection switch
+        {
+            "" => true,
+            "active" => row.NeedsInspection,
+            "reviewed" => !string.IsNullOrWhiteSpace(row.InspectionStatus),
+            "clean" => !row.NeedsInspection && string.IsNullOrWhiteSpace(row.InspectionStatus),
+            _ => string.Equals(row.InspectionStatus, selectedInspection, StringComparison.OrdinalIgnoreCase)
+        };
+    }
+
+    private static string FormatInspectionSeverity(string severity) => severity switch
+    {
+        "high" => "High",
+        "medium" => "Review",
+        "reviewed" => "Reviewed",
+        _ => "Review"
+    };
+
+    private static string FormatInspectionStatus(string? status) => status switch
+    {
+        "confirmed_empty" => "Confirmed empty",
+        "provider_gap" => "Provider gap",
+        "covid_partial_missing" => "COVID partial missing",
+        "resolved" => "Resolved",
+        _ => status?.Replace('_', ' ') ?? "Reviewed"
+    };
+
     private sealed record LeagueSummary(
         string Provider,
         string Country,
@@ -359,5 +536,10 @@
         int TotalSeasons,
         int CompletedSeasons,
         int WarningSeasons,
+        int InspectionSeasons,
         DateTime? LastRunUtc);
+
+    private sealed record InspectionFilterOption(string Value, string Label);
+
+    private sealed record ReviewedStatusSummary(string Status, int Count);
 }

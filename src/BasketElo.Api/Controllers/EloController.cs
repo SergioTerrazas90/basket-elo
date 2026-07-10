@@ -328,9 +328,8 @@ public class EloController(
         var historyRows = await dbContext.RatingHistories
             .AsNoTracking()
             .Where(x => x.TeamId == teamId && x.RulesetVersion == selectedRuleset)
-            .OrderByDescending(x => x.GameDateTimeUtc)
-            .ThenByDescending(x => x.Id)
-            .Take(80)
+            .OrderBy(x => x.GameDateTimeUtc)
+            .ThenBy(x => x.Id)
             .Select(x => new EloRatingHistoryPoint(
                 x.GameDateTimeUtc,
                 x.PostElo,
@@ -350,7 +349,7 @@ public class EloController(
             rating.LastGame?.GameDateTimeUtc,
             competitionRows,
             recentGames,
-            historyRows.OrderBy(x => x.GameDateTimeUtc).ToList()));
+            historyRows));
     }
 
     [HttpPost("rebuilds")]

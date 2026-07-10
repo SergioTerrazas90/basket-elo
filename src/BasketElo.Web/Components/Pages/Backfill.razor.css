@@ -80,6 +80,49 @@
     color: #0f172a;
 }
 
+.inspection-card {
+    border-color: rgba(234, 88, 12, 0.35);
+    background: #fff7ed;
+}
+
+.reviewed-card {
+    border-color: rgba(20, 184, 166, 0.28);
+    background: #f0fdfa;
+}
+
+.reviewed-summary-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    align-items: center;
+}
+
+.reviewed-summary-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgba(20, 184, 166, 0.3);
+    border-radius: 999px;
+    background: #ffffff;
+    color: #0f766e;
+    font-weight: 700;
+}
+
+.reviewed-summary-chip strong {
+    min-width: 1.75rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: #ccfbf1;
+    color: #115e59;
+    text-align: center;
+}
+
+.reviewed-summary-chip.selected {
+    border-color: #0f766e;
+    background: #ccfbf1;
+}
+
 .table-section {
     display: grid;
     gap: 0.85rem;
@@ -152,23 +195,75 @@
     color: #475569;
 }
 
+.inspection-row {
+    --bs-table-bg: #fff7ed;
+    --bs-table-striped-bg: #ffedd5;
+}
+
+.inspection-row-high {
+    --bs-table-bg: #fee2e2;
+    --bs-table-striped-bg: #fecaca;
+}
+
+.reviewed-row {
+    --bs-table-bg: #f0fdfa;
+    --bs-table-striped-bg: #ccfbf1;
+}
+
 .warning-details {
     max-width: 22rem;
     color: #78350f;
 }
 
+.inspection-details,
+.warning-details {
+    max-width: 22rem;
+}
+
+.inspection-details {
+    color: #9a3412;
+}
+
+.reviewed-details {
+    color: #0f766e;
+}
+
+.inspection-details summary,
 .warning-details summary {
     cursor: pointer;
     font-weight: 700;
 }
 
+.inspection-details ul,
 .warning-details ul {
     margin: 0.45rem 0 0;
     padding-left: 1.15rem;
 }
 
+.inspection-details li,
 .warning-details li {
     margin-bottom: 0.3rem;
+}
+
+.inspection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.6rem;
+}
+
+.reviewed-details p {
+    margin: 0.45rem 0 0.25rem;
+}
+
+.reviewed-date {
+    display: block;
+    color: #64748b;
+    font-size: 0.82rem;
+}
+
+.muted-cell {
+    color: #94a3b8;
 }
 
 @media (max-width: 768px) {

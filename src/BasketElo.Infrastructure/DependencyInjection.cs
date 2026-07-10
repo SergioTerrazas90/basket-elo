@@ -21,6 +21,8 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString));
 
         services.Configure<ApiSportsOptions>(configuration.GetSection(ApiSportsOptions.SectionName));
+        services.AddSingleton<IApiSportsRateLimiter, ApiSportsRateLimiter>();
+        services.AddSingleton<IApiSportsLeagueCache, ApiSportsLeagueCache>();
         services.AddHttpClient<ApiSportsBasketballDataProvider>((serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ApiSportsOptions>>().Value;

@@ -225,7 +225,11 @@ public class EloController(
             return Ok(new EloRankingsEvolutionResponse(selectedRuleset, []));
         }
 
-        pointsPerTeam = Math.Clamp(pointsPerTeam, 2, 120);
+        var includeFullHistory = pointsPerTeam <= 0;
+        if (!includeFullHistory)
+        {
+            pointsPerTeam = Math.Clamp(pointsPerTeam, 2, 120);
+        }
 
         var rows = await dbContext.RatingHistories
             .AsNoTracking()
@@ -244,11 +248,14 @@ public class EloController(
             .Select(group => new EloTeamEvolutionSeries(
                 group.Key.TeamId,
                 group.Key.CanonicalName,
-                group
-                    .OrderByDescending(x => x.GameDateTimeUtc)
-                    .ThenByDescending(x => x.PostElo)
-                    .Take(pointsPerTeam)
-                    .OrderBy(x => x.GameDateTimeUtc)
+                (includeFullHistory
+                    ? group.OrderBy(x => x.GameDateTimeUtc).ThenBy(x => x.PostElo)
+                    : group
+                        .OrderByDescending(x => x.GameDateTimeUtc)
+                        .ThenByDescending(x => x.PostElo)
+                        .Take(pointsPerTeam)
+                        .OrderBy(x => x.GameDateTimeUtc)
+                        .ThenBy(x => x.PostElo))
                     .Select(x => new EloTeamEvolutionPoint(x.GameDateTimeUtc, x.PostElo))
                     .ToList()))
             .OrderBy(x => selectedTeamIds.IndexOf(x.TeamId))
@@ -261,6 +268,8 @@ public class EloController(
     public async Task<ActionResult<EloTeamDetailResponse>> GetTeam(
         Guid teamId,
         [FromQuery] string? rulesetVersion,
+        [FromQuery] int gamesPage = 1,
+        [FromQuery] int gamesPageSize = 25,
         CancellationToken cancellationToken = default)
     {
         var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, cancellationToken);
@@ -268,6 +277,9 @@ public class EloController(
         {
             return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
         }
+
+        gamesPage = Math.Max(1, gamesPage);
+        gamesPageSize = Math.Clamp(gamesPageSize, 10, 100);
 
         var rating = await dbContext.TeamRatings
             .AsNoTracking()
@@ -297,9 +309,15 @@ public class EloController(
             .OrderBy(x => x)
             .ToListAsync(cancellationToken);
 
-        var recentGames = await dbContext.RatingHistories
+        var teamGamesQuery = dbContext.RatingHistories
             .AsNoTracking()
-            .Where(x => x.TeamId == teamId && x.RulesetVersion == selectedRuleset)
+            .Where(x => x.TeamId == teamId && x.RulesetVersion == selectedRuleset);
+
+        var gamesTotalCount = await teamGamesQuery.CountAsync(cancellationToken);
+        var gamesTotalPages = Math.Max(1, (int)Math.Ceiling(gamesTotalCount / (double)gamesPageSize));
+        gamesPage = Math.Min(gamesPage, gamesTotalPages);
+
+        var recentGames = await teamGamesQuery
             .Include(x => x.Game)
             .ThenInclude(x => x.Competition)
             .Include(x => x.Game)
@@ -310,7 +328,8 @@ public class EloController(
             .ThenInclude(x => x.AwayTeam)
             .OrderByDescending(x => x.GameDateTimeUtc)
             .ThenByDescending(x => x.Id)
-            .Take(12)
+            .Skip((gamesPage - 1) * gamesPageSize)
+            .Take(gamesPageSize)
             .Select(x => new EloTeamGameDto(
                 x.GameId,
                 x.GameDateTimeUtc,
@@ -349,6 +368,10 @@ public class EloController(
             rating.LastGame?.GameDateTimeUtc,
             competitionRows,
             recentGames,
+            gamesPage,
+            gamesPageSize,
+            gamesTotalCount,
+            gamesTotalPages,
             historyRows));
     }
 

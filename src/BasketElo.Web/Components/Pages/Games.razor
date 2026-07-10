@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using BasketElo.Domain.Games
 @inject HttpClient Http
+@inject NavigationManager Navigation
 
 <PageTitle>Games</PageTitle>
 
@@ -137,8 +138,13 @@
                     <p>Showing page @response.Page of @response.TotalPages, with @response.TotalCount matching games.</p>
                 </div>
                 <div class="pager">
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || response.Page <= 1">Previous</button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || response.Page >= response.TotalPages">Next</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || response.Page <= 1">Previous</button>
+                    <label class="page-jump" for="gamesPageInput">
+                        <span>Page</span>
+                        <input id="gamesPageInput" class="form-control form-control-sm" type="number" min="1" max="@response.TotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                    </label>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || response.Page >= response.TotalPages">Next</button>
                 </div>
             </div>
 
@@ -195,6 +201,36 @@
 @code {
     private static readonly int[] PageSizeOptions = [25, 50, 100, 200];
 
+    [SupplyParameterFromQuery(Name = "country")]
+    public string? Country { get; set; }
+
+    [SupplyParameterFromQuery(Name = "league")]
+    public string? League { get; set; }
+
+    [SupplyParameterFromQuery(Name = "season")]
+    public string? Season { get; set; }
+
+    [SupplyParameterFromQuery(Name = "status")]
+    public string? Status { get; set; }
+
+    [SupplyParameterFromQuery(Name = "team")]
+    public string? Team { get; set; }
+
+    [SupplyParameterFromQuery(Name = "search")]
+    public string? Search { get; set; }
+
+    [SupplyParameterFromQuery(Name = "from")]
+    public DateTime? From { get; set; }
+
+    [SupplyParameterFromQuery(Name = "to")]
+    public DateTime? To { get; set; }
+
+    [SupplyParameterFromQuery(Name = "page")]
+    public int? Page { get; set; }
+
+    [SupplyParameterFromQuery(Name = "pageSize")]
+    public int? PageSize { get; set; }
+
     private GameBrowseResponse? response;
     private bool isBusy;
     private string? errorMessage;
@@ -208,41 +244,70 @@
     private DateTime? toDate;
     private int page = 1;
     private int pageSize = 50;
+    private int requestedPage = 1;
+    private string? lastLoadedUri;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
-        await RefreshAsync();
-    }
-
-    private async Task ApplyFiltersAsync()
-    {
-        page = 1;
-        await RefreshAsync();
-    }
-
-    private async Task PreviousPageAsync()
-    {
-        if (page <= 1)
+        var currentUri = Navigation.Uri;
+        if (currentUri == lastLoadedUri)
         {
             return;
         }
 
-        page -= 1;
+        selectedCountry = Country;
+        selectedLeague = League;
+        selectedSeason = Season;
+        selectedStatus = Status;
+        team = Team;
+        search = Search;
+        fromDate = From;
+        toDate = To;
+        page = Math.Max(1, Page ?? 1);
+        pageSize = PageSizeOptions.Contains(PageSize ?? 0) ? PageSize!.Value : 50;
+        requestedPage = page;
+        lastLoadedUri = currentUri;
+
         await RefreshAsync();
     }
 
-    private async Task NextPageAsync()
+    private Task ApplyFiltersAsync()
     {
-        if (response is null || page >= response.TotalPages)
+        NavigateToGames(1);
+        return Task.CompletedTask;
+    }
+
+    private Task PreviousPageAsync()
+    {
+        NavigateToGames(Math.Max(1, (response?.Page ?? page) - 1));
+        return Task.CompletedTask;
+    }
+
+    private Task NextPageAsync()
+    {
+        if (response is not null)
         {
-            return;
+            NavigateToGames(Math.Min(response.TotalPages, response.Page + 1));
         }
 
-        page += 1;
-        await RefreshAsync();
+        return Task.CompletedTask;
     }
 
-    private async Task ResetFiltersAsync()
+    private Task GoToRequestedPageAsync()
+    {
+        NavigateToGames(ClampRequestedPage(requestedPage, response?.TotalPages ?? 1));
+        return Task.CompletedTask;
+    }
+
+    private async Task HandlePageInputKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await GoToRequestedPageAsync();
+        }
+    }
+
+    private Task ResetFiltersAsync()
     {
         selectedCountry = null;
         selectedLeague = null;
@@ -254,7 +319,8 @@
         toDate = null;
         page = 1;
         pageSize = 50;
-        await RefreshAsync();
+        NavigateToGames(1);
+        return Task.CompletedTask;
     }
 
     private async Task RefreshAsync()
@@ -265,6 +331,11 @@
         try
         {
             response = await Http.GetFromJsonAsync<GameBrowseResponse>(BuildUri());
+            if (response is not null)
+            {
+                page = response.Page;
+                requestedPage = response.Page;
+            }
         }
         catch (Exception ex)
         {
@@ -275,6 +346,27 @@
             isBusy = false;
             StateHasChanged();
         }
+    }
+
+    private void NavigateToGames(int targetPage)
+    {
+        targetPage = ClampRequestedPage(targetPage, response?.TotalPages ?? targetPage);
+
+        var query = new Dictionary<string, object?>
+        {
+            ["country"] = selectedCountry,
+            ["league"] = selectedLeague,
+            ["season"] = selectedSeason,
+            ["status"] = selectedStatus,
+            ["team"] = team,
+            ["search"] = search,
+            ["from"] = fromDate?.ToString("yyyy-MM-dd"),
+            ["to"] = toDate?.ToString("yyyy-MM-dd"),
+            ["page"] = targetPage > 1 ? targetPage : null,
+            ["pageSize"] = pageSize != 50 ? pageSize : null
+        };
+
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters("/games", query));
     }
 
     private string BuildUri()
@@ -296,6 +388,9 @@
 
         return $"api/games?{string.Join("&", query)}";
     }
+
+    private static int ClampRequestedPage(int value, int totalPages)
+        => Math.Clamp(value, 1, Math.Max(1, totalPages));
 
     private static void Append(List<string> query, string key, string? value)
     {

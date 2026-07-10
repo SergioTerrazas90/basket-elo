@@ -3,6 +3,7 @@
 @using System.Globalization
 @using BasketElo.Domain.Elo
 @inject HttpClient Http
+@inject NavigationManager Navigation
 
 <PageTitle>@(team?.TeamName ?? "Team") - Basket ELO</PageTitle>
 
@@ -94,8 +95,17 @@
         <section class="recent-games-section">
             <div class="section-head">
                 <div>
-                    <h2>Recent rated games</h2>
-                    <p>The latest games included in this team rating.</p>
+                    <h2>Rated games</h2>
+                    <p>@GamesContextLabel(team)</p>
+                </div>
+                <div class="pager">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousGamesPageAsync" disabled="@isBusy || team.RecentGamesPage <= 1">Previous</button>
+                    <label class="page-jump" for="teamGamesPageInput">
+                        <span>Page</span>
+                        <input id="teamGamesPageInput" class="form-control form-control-sm" type="number" min="1" max="@team.RecentGamesTotalPages" @bind="requestedGamesPage" @onkeydown="HandleGamesPageInputKeyDown" />
+                    </label>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedGamesPageAsync" disabled="@isBusy">Go</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextGamesPageAsync" disabled="@isBusy || team.RecentGamesPage >= team.RecentGamesTotalPages">Next</button>
                 </div>
             </div>
 
@@ -151,9 +161,14 @@
     [SupplyParameterFromQuery(Name = "returnUrl")]
     public string? ReturnUrl { get; set; }
 
+    [SupplyParameterFromQuery(Name = "gamesPage")]
+    public int? GamesPage { get; set; }
+
     private EloTeamDetailResponse? team;
     private bool isBusy;
     private string? errorMessage;
+    private int gamesPage = 1;
+    private int requestedGamesPage = 1;
 
     private string BackHref => string.IsNullOrWhiteSpace(ReturnUrl) ? "/rankings" : "/" + ReturnUrl.TrimStart('/');
 
@@ -161,10 +176,17 @@
     {
         isBusy = true;
         errorMessage = null;
+        gamesPage = Math.Max(1, GamesPage ?? 1);
+        requestedGamesPage = gamesPage;
 
         try
         {
-            team = await Http.GetFromJsonAsync<EloTeamDetailResponse>($"api/elo/teams/{TeamId}");
+            team = await Http.GetFromJsonAsync<EloTeamDetailResponse>($"api/elo/teams/{TeamId}?gamesPage={gamesPage}&gamesPageSize=25");
+            if (team is not null)
+            {
+                gamesPage = team.RecentGamesPage;
+                requestedGamesPage = team.RecentGamesPage;
+            }
         }
         catch (Exception ex)
         {
@@ -175,6 +197,52 @@
             isBusy = false;
         }
     }
+
+    private Task PreviousGamesPageAsync()
+    {
+        NavigateToGamesPage(Math.Max(1, (team?.RecentGamesPage ?? gamesPage) - 1));
+        return Task.CompletedTask;
+    }
+
+    private Task NextGamesPageAsync()
+    {
+        if (team is not null)
+        {
+            NavigateToGamesPage(Math.Min(team.RecentGamesTotalPages, team.RecentGamesPage + 1));
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task GoToRequestedGamesPageAsync()
+    {
+        NavigateToGamesPage(ClampRequestedPage(requestedGamesPage, team?.RecentGamesTotalPages ?? 1));
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleGamesPageInputKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await GoToRequestedGamesPageAsync();
+        }
+    }
+
+    private void NavigateToGamesPage(int targetPage)
+    {
+        targetPage = ClampRequestedPage(targetPage, team?.RecentGamesTotalPages ?? targetPage);
+
+        var query = new Dictionary<string, object?>
+        {
+            ["returnUrl"] = ReturnUrl,
+            ["gamesPage"] = targetPage > 1 ? targetPage : null
+        };
+
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters($"/teams/{TeamId}", query));
+    }
+
+    private static int ClampRequestedPage(int value, int totalPages)
+        => Math.Clamp(value, 1, Math.Max(1, totalPages));
 
     private static IReadOnlyList<EloChartSeries> BuildTeamChartSeries(EloTeamDetailResponse team)
         =>
@@ -206,6 +274,19 @@
         var last = team.History.Max(point => point.GameDateTimeUtc);
 
         return $"{team.History.Count} rated points from {FormatDate(first)} to {FormatDate(last)}.";
+    }
+
+    private static string GamesContextLabel(EloTeamDetailResponse team)
+    {
+        if (team.RecentGamesTotalCount == 0)
+        {
+            return "No rated games are available for this team.";
+        }
+
+        var rangeStart = ((team.RecentGamesPage - 1) * team.RecentGamesPageSize) + 1;
+        var rangeEnd = Math.Min(team.RecentGamesTotalCount, team.RecentGamesPage * team.RecentGamesPageSize);
+
+        return $"Showing {rangeStart}-{rangeEnd} of {team.RecentGamesTotalCount} rated games. Page {team.RecentGamesPage} of {team.RecentGamesTotalPages}.";
     }
 
     private static string FormatScore(EloTeamGameDto game)

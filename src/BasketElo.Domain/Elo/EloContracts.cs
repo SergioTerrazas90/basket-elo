@@ -137,6 +137,10 @@ public sealed record EloTeamDetailResponse(
     DateTime? LastGameUtc,
     IReadOnlyCollection<string> Competitions,
     IReadOnlyCollection<EloTeamGameDto> RecentGames,
+    int RecentGamesPage,
+    int RecentGamesPageSize,
+    int RecentGamesTotalCount,
+    int RecentGamesTotalPages,
     IReadOnlyCollection<EloRatingHistoryPoint> History);
 
 public sealed record EloTeamGameDto(

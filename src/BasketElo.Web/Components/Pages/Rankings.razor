@@ -135,7 +135,7 @@
                     }
                     else
                     {
-                        <EloEvolutionChart Series="@BuildEvolutionChartSeries()" />
+                        <EloEvolutionChart Series="@BuildEvolutionChartSeries()" EnableRangeNavigation="true" />
 
                         <div class="evolution-legend legacy-links" aria-label="ELO evolution chart team links">
                             @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
@@ -158,8 +158,13 @@
                     <p>@TableContextLabel()</p>
                 </div>
                 <div class="pager">
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || response.Page <= 1">Previous</button>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || response.Page >= response.TotalPages">Next</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || response.Page <= 1">Previous</button>
+                    <label class="page-jump" for="rankingsPageInput">
+                        <span>Page</span>
+                        <input id="rankingsPageInput" class="form-control form-control-sm" type="number" min="1" max="@response.TotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                    </label>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || response.Page >= response.TotalPages">Next</button>
                 </div>
             </div>
 
@@ -255,6 +260,7 @@
     private DateTime? toDate;
     private int minimumGames;
     private int page = 1;
+    private int requestedPage = 1;
     private string? lastLoadedUri;
 
     protected override async Task OnParametersSetAsync()
@@ -273,6 +279,7 @@
         minimumGames = Math.Max(0, MinGames ?? 0);
         teamSearch = Team;
         page = Math.Max(1, Page ?? 1);
+        requestedPage = page;
         lastLoadedUri = currentUri;
 
         await RefreshAsync();
@@ -299,7 +306,7 @@
 
     private Task PreviousPageAsync()
     {
-        NavigateToRankings(Math.Max(1, page - 1));
+        NavigateToRankings(Math.Max(1, (response?.Page ?? page) - 1));
         return Task.CompletedTask;
     }
 
@@ -307,10 +314,24 @@
     {
         if (response is not null)
         {
-            NavigateToRankings(Math.Min(response.TotalPages, page + 1));
+            NavigateToRankings(Math.Min(response.TotalPages, response.Page + 1));
         }
 
         return Task.CompletedTask;
+    }
+
+    private Task GoToRequestedPageAsync()
+    {
+        NavigateToRankings(ClampRequestedPage(requestedPage, response?.TotalPages ?? 1));
+        return Task.CompletedTask;
+    }
+
+    private async Task HandlePageInputKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await GoToRequestedPageAsync();
+        }
     }
 
     private async Task RefreshAsync()
@@ -321,6 +342,11 @@
         try
         {
             response = await Http.GetFromJsonAsync<EloRankingsResponse>(BuildApiUri());
+            if (response is not null)
+            {
+                page = response.Page;
+                requestedPage = response.Page;
+            }
             evolutionRankings = await FetchEvolutionRankingsAsync();
             evolution = await FetchEvolutionAsync();
         }
@@ -336,6 +362,8 @@
 
     private void NavigateToRankings(int targetPage)
     {
+        targetPage = ClampRequestedPage(targetPage, response?.TotalPages ?? targetPage);
+
         var query = new Dictionary<string, object?>
         {
             ["country"] = selectedCountry,
@@ -350,6 +378,9 @@
 
         Navigation.NavigateTo(Navigation.GetUriWithQueryParameters("/rankings", query));
     }
+
+    private static int ClampRequestedPage(int value, int totalPages)
+        => Math.Clamp(value, 1, Math.Max(1, totalPages));
 
     private string BuildApiUri()
     {
@@ -383,7 +414,7 @@
     private string BuildEvolutionApiUri()
     {
         var teamIds = string.Join(",", evolutionRankings?.Rankings.Take(20).Select(x => x.TeamId) ?? []);
-        return $"api/elo/rankings/evolution?rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}&teamIds={Uri.EscapeDataString(teamIds)}&pointsPerTeam=60";
+        return $"api/elo/rankings/evolution?rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}&teamIds={Uri.EscapeDataString(teamIds)}&pointsPerTeam=0";
     }
 
     private async Task<EloRankingsResponse?> FetchEvolutionRankingsAsync()

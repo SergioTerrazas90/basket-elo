@@ -13,3 +13,10 @@ public sealed record EloChartPoint(
     string Color,
     decimal? EloDelta = null,
     int? Rank = null);
+
+public enum EloChartSamplingMode
+{
+    GameByGame,
+    Weekly,
+    Monthly
+}

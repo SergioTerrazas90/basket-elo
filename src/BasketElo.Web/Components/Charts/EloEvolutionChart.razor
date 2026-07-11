@@ -4,12 +4,19 @@
     @if (EnableRangeNavigation)
     {
         <div class="elo-chart-toolbar" aria-label="Chart range controls">
-            <div class="elo-chart-range-buttons">
-                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Full span</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowRecentHalf">Recent half</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowRecentQuarter">Recent quarter</button>
+            <div class="elo-chart-controls">
+                <div class="elo-chart-segment" aria-label="Chart sampling mode">
+                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.GameByGame)" @onclick="() => SetSamplingMode(EloChartSamplingMode.GameByGame)">Game by game</button>
+                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.Weekly)" @onclick="() => SetSamplingMode(EloChartSamplingMode.Weekly)">Weekly</button>
+                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.Monthly)" @onclick="() => SetSamplingMode(EloChartSamplingMode.Monthly)">Monthly</button>
+                </div>
+                <div class="elo-chart-range-buttons">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Full span</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowRecentHalf">Recent half</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowRecentQuarter">Recent quarter</button>
+                </div>
             </div>
-            <span>@RangeLabel</span>
+            <span>@ChartContextLabel</span>
         </div>
     }
 
@@ -24,7 +31,7 @@
         <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="ChartTooltipTrigger.Axis" />
         <RadzenLegend Visible="@ShowLegend" Position="LegendPosition.Bottom" />
 
-        @foreach (var series in PlottableSeries)
+        @foreach (var series in DisplaySeries)
         {
             <RadzenLineSeries Data="@series.Points"
                               TItem="EloChartPoint"
@@ -85,13 +92,32 @@
     private double viewStart;
     private double viewEnd = 1;
 
-    private IReadOnlyList<EloChartSeries> PlottableSeries
-        => Series.Where(x => x.Points.Count >= 2).ToList();
+    private EloChartSamplingMode samplingMode = EloChartSamplingMode.GameByGame;
+
+    private IReadOnlyList<EloChartSeries> SourceSeries
+        => Series
+            .Select(series => series with
+            {
+                Points = series.Points
+                    .OrderBy(point => point.GameDateTimeUtc)
+                    .ToList()
+            })
+            .Where(x => x.Points.Count >= 2)
+            .ToList();
+
+    private IReadOnlyList<EloChartSeries> DisplaySeries
+        => SourceSeries
+            .Select(series => series with
+            {
+                Points = SamplePoints(series.Points, samplingMode)
+            })
+            .Where(x => x.Points.Count >= 2)
+            .ToList();
 
     private IReadOnlyList<EloChartPoint> AllPoints
-        => PlottableSeries.SelectMany(x => x.Points).OrderBy(x => x.GameDateTimeUtc).ToList();
+        => DisplaySeries.SelectMany(x => x.Points).OrderBy(x => x.GameDateTimeUtc).ToList();
 
-    private string RangeLabel
+    private string ChartContextLabel
     {
         get
         {
@@ -107,7 +133,7 @@
             var visibleStart = first + TimeSpan.FromTicks((long)(span.Ticks * Math.Clamp(viewStart, 0, 1)));
             var visibleEnd = first + TimeSpan.FromTicks((long)(span.Ticks * Math.Clamp(viewEnd, 0, 1)));
 
-            return $"{FormatDate(visibleStart)} - {FormatDate(visibleEnd)}";
+            return $"{SamplingLabel(samplingMode)}: {FormatDate(visibleStart)} - {FormatDate(visibleEnd)}";
         }
     }
 
@@ -140,6 +166,90 @@
         viewStart = 1 - fraction;
         viewEnd = 1;
     }
+
+    private void SetSamplingMode(EloChartSamplingMode mode)
+    {
+        if (samplingMode == mode)
+        {
+            return;
+        }
+
+        samplingMode = mode;
+        ShowFullRange();
+    }
+
+    private string SamplingButtonClass(EloChartSamplingMode mode)
+        => samplingMode == mode
+            ? "btn btn-sm btn-primary"
+            : "btn btn-sm btn-outline-secondary";
+
+    private static IReadOnlyList<EloChartPoint> SamplePoints(
+        IReadOnlyList<EloChartPoint> sourcePoints,
+        EloChartSamplingMode mode)
+    {
+        if (mode == EloChartSamplingMode.GameByGame || sourcePoints.Count < 2)
+        {
+            return sourcePoints;
+        }
+
+        var points = sourcePoints.OrderBy(point => point.GameDateTimeUtc).ToList();
+        var firstBoundary = mode == EloChartSamplingMode.Weekly
+            ? EndOfIsoWeek(points[0].GameDateTimeUtc)
+            : EndOfMonth(points[0].GameDateTimeUtc);
+        var lastPointDate = points[^1].GameDateTimeUtc;
+        var sampled = new List<EloChartPoint>();
+        var cursor = firstBoundary;
+        var latestPointIndex = -1;
+        EloChartPoint? latestPoint = null;
+
+        while (cursor <= lastPointDate)
+        {
+            while (latestPointIndex + 1 < points.Count && points[latestPointIndex + 1].GameDateTimeUtc <= cursor)
+            {
+                latestPointIndex += 1;
+                latestPoint = points[latestPointIndex];
+            }
+
+            if (latestPoint is not null)
+            {
+                sampled.Add(latestPoint with { GameDateTimeUtc = cursor });
+            }
+
+            cursor = mode == EloChartSamplingMode.Weekly
+                ? cursor.AddDays(7)
+                : EndOfMonth(cursor.AddTicks(1));
+        }
+
+        if (sampled.Count == 0 || sampled[^1].GameDateTimeUtc < lastPointDate)
+        {
+            sampled.Add(points[^1]);
+        }
+
+        return sampled;
+    }
+
+    private static DateTime EndOfIsoWeek(DateTime value)
+    {
+        var utcDate = DateTime.SpecifyKind(value.Date, DateTimeKind.Utc);
+        var daysUntilSunday = ((int)DayOfWeek.Sunday - (int)utcDate.DayOfWeek + 7) % 7;
+        return utcDate.AddDays(daysUntilSunday + 1).AddTicks(-1);
+    }
+
+    private static DateTime EndOfMonth(DateTime value)
+    {
+        var utcDate = DateTime.SpecifyKind(value.Date, DateTimeKind.Utc);
+        return new DateTime(utcDate.Year, utcDate.Month, 1, 0, 0, 0, DateTimeKind.Utc)
+            .AddMonths(1)
+            .AddTicks(-1);
+    }
+
+    private static string SamplingLabel(EloChartSamplingMode mode)
+        => mode switch
+        {
+            EloChartSamplingMode.Weekly => "Weekly snapshots",
+            EloChartSamplingMode.Monthly => "Monthly snapshots",
+            _ => "Game by game"
+        };
 
     private static string FormatDate(DateTime value)
         => value.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.CurrentCulture);

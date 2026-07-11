@@ -12,6 +12,19 @@
     font-size: 0.84rem;
 }
 
+.elo-chart-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.elo-chart-segment {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
 .elo-chart-range-buttons {
     display: flex;
     flex-wrap: wrap;

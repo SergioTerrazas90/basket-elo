@@ -1,5 +1,6 @@
 @page "/games"
 @rendermode InteractiveServer
+@using System.Text.Json
 @using BasketElo.Domain.Elo
 @using BasketElo.Domain.Games
 @inject HttpClient Http
@@ -215,11 +216,12 @@
                 </table>
             </div>
 
-            <GameEloExplanationPanel Explanation="selectedExplanation"
-                                     IsLoading="isExplanationLoading"
-                                     ErrorMessage="explanationError"
-                                     OnClose="CloseExplanation" />
         </section>
+
+        <GameEloExplanationPanel Explanation="selectedExplanation"
+                                 IsLoading="isExplanationLoading"
+                                 ErrorMessage="@explanationError"
+                                 OnClose="CloseExplanation" />
     }
 </div>
 
@@ -428,17 +430,17 @@
 
         try
         {
-            var responseMessage = await Http.GetAsync($"api/elo/games/{gameId}/explanation");
+            using var responseMessage = await Http.GetAsync($"api/elo/games/{gameId}/explanation");
             if (!responseMessage.IsSuccessStatusCode)
             {
-                var body = await responseMessage.Content.ReadAsStringAsync();
-                var message = string.IsNullOrWhiteSpace(body)
-                    ? responseMessage.ReasonPhrase
-                    : body;
-                throw new InvalidOperationException(message);
+                throw new InvalidOperationException(await ReadErrorMessageAsync(responseMessage));
             }
 
             selectedExplanation = await responseMessage.Content.ReadFromJsonAsync<EloGameExplanationResponse>();
+            if (selectedExplanation is null)
+            {
+                throw new InvalidOperationException("The API returned an empty explanation.");
+            }
         }
         catch (Exception ex)
         {
@@ -462,6 +464,39 @@
         selectedExplanation = null;
         explanationError = null;
         isExplanationLoading = false;
+    }
+
+    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage responseMessage)
+    {
+        var body = await responseMessage.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return responseMessage.ReasonPhrase ?? $"HTTP {(int)responseMessage.StatusCode}";
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.String)
+            {
+                return detail.GetString() ?? body;
+            }
+
+            if (json.RootElement.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+            {
+                return title.GetString() ?? body;
+            }
+
+            if (json.RootElement.ValueKind == JsonValueKind.String)
+            {
+                return json.RootElement.GetString() ?? body;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return body;
     }
 
     private static int ClampRequestedPage(int value, int totalPages)

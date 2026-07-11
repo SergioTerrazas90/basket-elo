@@ -37,6 +37,7 @@ public static class DependencyInjection
         services.AddSingleton<IBackfillCatalog, BackfillCatalog>();
         services.AddScoped<IEloRebuildService, EloRebuildService>();
         services.AddScoped<IEloRebuildJobProcessor, EloRebuildJobProcessor>();
+        services.AddScoped<IModelLabBacktestService, ModelLabBacktestService>();
         services.AddSingleton<IEloRebuildNotificationPublisher, PostgresEloRebuildNotificationPublisher>();
         services.AddScoped<IIdentityHealthCheckService, IdentityHealthCheckService>();
 

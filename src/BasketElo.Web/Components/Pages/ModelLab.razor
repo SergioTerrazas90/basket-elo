@@ -1,0 +1,434 @@
+@page "/model-lab"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+@using System.Text.Json
+@using BasketElo.Domain.Elo
+@inject HttpClient Http
+
+<PageTitle>Model Lab - Basket ELO</PageTitle>
+
+<div class="model-lab-page">
+    <section class="lab-hero">
+        <div>
+            <p class="eyebrow">Model Lab</p>
+            <h1>Build a basketball rating model</h1>
+            <p class="intro">Tune the ELO rules, scope a historical test to one league, and see how the model performs against real results.</p>
+        </div>
+
+        @if (result is not null)
+        {
+            <div class="score-card">
+                <span>Model score</span>
+                <strong>@result.Summary.WinnerAccuracy.ToString("0.0")%</strong>
+                <small>@CompareToBaseline()</small>
+            </div>
+        }
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    @if (isLoadingOptions)
+    {
+        <section class="loading-panel">Loading Model Lab...</section>
+    }
+    else if (options is not null)
+    {
+        <section class="lab-workbench">
+            <div class="model-panel">
+                <div class="section-head">
+                    <div>
+                        <h2>Model</h2>
+                        <p>These parameters define how the system predicts and updates ratings.</p>
+                    </div>
+                </div>
+
+                <div class="control-grid">
+                    <div class="filter-field wide">
+                        <label for="modelName">Name</label>
+                        <input id="modelName" class="form-control" @bind="modelName" maxlength="80" />
+                    </div>
+
+                    <div class="filter-field">
+                        <label for="baseRating">Base rating</label>
+                        <input id="baseRating" class="form-control" type="number" min="500" max="2500" step="10" @bind="baseRating" />
+                    </div>
+
+                    <div class="filter-field">
+                        <label for="kFactor">K factor</label>
+                        <input id="kFactor" class="form-control" type="number" min="1" max="100" step="1" @bind="kFactor" />
+                    </div>
+
+                    <div class="filter-field">
+                        <label for="homeAdvantage">Home advantage</label>
+                        <input id="homeAdvantage" class="form-control" type="number" min="-200" max="300" step="5" @bind="homeAdvantageElo" />
+                    </div>
+
+                    <div class="filter-field">
+                        <label for="competitionWeight">Competition weight</label>
+                        <input id="competitionWeight" class="form-control" type="number" min="0.1" max="3" step="0.05" @bind="competitionWeight" />
+                    </div>
+
+                    <label class="toggle-field" for="usesMargin">
+                        <input id="usesMargin" type="checkbox" @bind="usesMarginAdjustment" />
+                        <span>Margin adjustment</span>
+                    </label>
+
+                    <div class="filter-field">
+                        <label for="pointScale">Point margin scale</label>
+                        <input id="pointScale" class="form-control" type="number" min="5" max="100" step="1" @bind="pointsPerEloMargin" disabled="@(!usesMarginAdjustment)" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="model-panel">
+                <div class="section-head">
+                    <div>
+                        <h2>Backtest</h2>
+                        <p>Initialization builds starting ratings. The scored window measures prediction quality.</p>
+                    </div>
+                </div>
+
+                <div class="control-grid">
+                    <div class="filter-field wide">
+                        <label for="leagueName">League</label>
+                        <select id="leagueName" class="form-select" @bind="leagueName">
+                            @foreach (var league in options.Leagues)
+                            {
+                                <option value="@league">@league</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="filter-field">
+                        <label for="initFrom">Init from</label>
+                        <input id="initFrom" class="form-control" type="date" @bind-value="initializationFrom" @bind-value:format="yyyy-MM-dd" />
+                    </div>
+
+                    <div class="filter-field">
+                        <label for="initTo">Init to</label>
+                        <input id="initTo" class="form-control" type="date" @bind-value="initializationTo" @bind-value:format="yyyy-MM-dd" />
+                    </div>
+
+                    <div class="filter-field">
+                        <label for="scoredFrom">Score from</label>
+                        <input id="scoredFrom" class="form-control" type="date" @bind-value="scoredFrom" @bind-value:format="yyyy-MM-dd" />
+                    </div>
+
+                    <div class="filter-field">
+                        <label for="scoredTo">Score to</label>
+                        <input id="scoredTo" class="form-control" type="date" @bind-value="scoredTo" @bind-value:format="yyyy-MM-dd" />
+                    </div>
+
+                    <div class="run-actions">
+                        <button type="button" class="btn btn-primary" @onclick="RunBacktestAsync" disabled="@isRunning">
+                            @(isRunning ? "Running..." : "Run backtest")
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="ResetDefaults" disabled="@isRunning">Reset</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        @if (result is not null)
+        {
+            <section class="result-summary">
+                <div>
+                    <span>Scored games</span>
+                    <strong>@result.Summary.ScoredGames</strong>
+                    <small>@result.ScoredWindow.Games games in window</small>
+                </div>
+                <div>
+                    <span>Winner accuracy</span>
+                    <strong>@result.Summary.WinnerAccuracy.ToString("0.0")%</strong>
+                    <small>Baseline @result.BaselineSummary.WinnerAccuracy.ToString("0.0")%</small>
+                </div>
+                <div>
+                    <span>Brier score</span>
+                    <strong>@result.Summary.BrierScore.ToString("0.000")</strong>
+                    <small>Lower is better</small>
+                </div>
+                <div>
+                    <span>Avg margin error</span>
+                    <strong>@result.Summary.AverageMarginError.ToString("0.0")</strong>
+                    <small>Baseline @result.BaselineSummary.AverageMarginError.ToString("0.0")</small>
+                </div>
+            </section>
+
+            <section class="result-grid">
+                <div class="result-panel">
+                    <div class="section-head compact">
+                        <div>
+                            <h2>Final ratings</h2>
+                            <p>@result.LeagueName &middot; @result.ModelName</p>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle compact-table">
+                            <thead>
+                                <tr>
+                                    <th>Rank</th>
+                                    <th>Team</th>
+                                    <th class="numeric">ELO</th>
+                                    <th class="numeric">Games</th>
+                                    <th class="numeric">Recent</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in result.Ratings.Take(25))
+                                {
+                                    <tr>
+                                        <td class="rank-cell">#@row.Rank</td>
+                                        <td>@row.TeamName</td>
+                                        <td class="numeric rating">@row.Elo.ToString("0")</td>
+                                        <td class="numeric">@row.GamesPlayed</td>
+                                        <td class="numeric"><span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="result-panel">
+                    <div class="section-head compact">
+                        <div>
+                            <h2>Performance over time</h2>
+                            <p>Monthly scoring inside the test window.</p>
+                        </div>
+                    </div>
+                    <div class="period-list">
+                        @foreach (var period in result.Periods)
+                        {
+                            <div>
+                                <span>@period.Label</span>
+                                <strong>@period.WinnerAccuracy.ToString("0.0")%</strong>
+                                <small>@period.Games games &middot; @period.AverageMarginError.ToString("0.0") margin error</small>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </section>
+
+            <section class="result-panel">
+                <div class="section-head compact">
+                    <div>
+                        <h2>Biggest misses</h2>
+                        <p>Games where the expected margin was furthest from reality.</p>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle compact-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Matchup</th>
+                                <th>Score</th>
+                                <th class="numeric">Home win</th>
+                                <th class="numeric">Expected</th>
+                                <th class="numeric">Actual</th>
+                                <th class="numeric">Error</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in result.BiggestMisses)
+                            {
+                                <tr>
+                                    <td>@row.GameDateTimeUtc.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                    <td>@row.HomeTeam vs @row.AwayTeam</td>
+                                    <td>@row.HomeScore-@row.AwayScore</td>
+                                    <td class="numeric">@row.PredictedHomeWinProbability.ToString("P0")</td>
+                                    <td class="numeric">@FormatSigned(row.PredictedHomeMargin)</td>
+                                    <td class="numeric">@FormatSigned(row.ActualHomeMargin)</td>
+                                    <td class="numeric rating">@row.MarginError.ToString("0.0")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private ModelLabOptionsResponse? options;
+    private ModelLabBacktestResponse? result;
+    private bool isLoadingOptions = true;
+    private bool isRunning;
+    private string? errorMessage;
+    private string modelName = "My model";
+    private string? leagueName;
+    private decimal baseRating;
+    private int kFactor;
+    private decimal homeAdvantageElo;
+    private bool usesMarginAdjustment;
+    private decimal pointsPerEloMargin;
+    private decimal competitionWeight;
+    private DateTime initializationFrom;
+    private DateTime initializationTo;
+    private DateTime scoredFrom;
+    private DateTime scoredTo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            options = await Http.GetFromJsonAsync<ModelLabOptionsResponse>("api/model-lab/options");
+            if (options is not null)
+            {
+                ApplyDefaults(options);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load Model Lab options: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingOptions = false;
+        }
+    }
+
+    private async Task RunBacktestAsync()
+    {
+        if (string.IsNullOrWhiteSpace(leagueName))
+        {
+            errorMessage = "Choose a league before running a backtest.";
+            return;
+        }
+
+        isRunning = true;
+        errorMessage = null;
+
+        try
+        {
+            var request = new ModelLabBacktestRequest(
+                modelName,
+                new ModelLabParameterSet(
+                    baseRating,
+                    kFactor,
+                    homeAdvantageElo,
+                    usesMarginAdjustment,
+                    usesMarginAdjustment ? pointsPerEloMargin : null,
+                    competitionWeight),
+                leagueName,
+                DateTime.SpecifyKind(initializationFrom.Date, DateTimeKind.Utc),
+                DateTime.SpecifyKind(initializationTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1),
+                DateTime.SpecifyKind(scoredFrom.Date, DateTimeKind.Utc),
+                DateTime.SpecifyKind(scoredTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1));
+
+            using var response = await Http.PostAsJsonAsync("api/model-lab/backtests", request);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            result = await response.Content.ReadFromJsonAsync<ModelLabBacktestResponse>();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not run backtest: {ex.Message}";
+        }
+        finally
+        {
+            isRunning = false;
+        }
+    }
+
+    private void ResetDefaults()
+    {
+        if (options is not null)
+        {
+            ApplyDefaults(options);
+        }
+    }
+
+    private void ApplyDefaults(ModelLabOptionsResponse response)
+    {
+        modelName = "Adjusted ELO experiment";
+        leagueName = response.Leagues.FirstOrDefault();
+        baseRating = response.Defaults.BaseRating;
+        kFactor = response.Defaults.KFactor;
+        homeAdvantageElo = response.Defaults.HomeAdvantageElo;
+        usesMarginAdjustment = response.Defaults.UsesMarginAdjustment;
+        pointsPerEloMargin = response.Defaults.PointsPerEloMargin ?? 28m;
+        competitionWeight = response.Defaults.CompetitionWeight;
+
+        var last = response.LastGameUtc?.Date ?? DateTime.UtcNow.Date;
+        scoredTo = last;
+        scoredFrom = last.AddYears(-1).AddDays(1);
+        initializationTo = scoredFrom.AddDays(-1);
+        initializationFrom = initializationTo.AddYears(-2).AddDays(1);
+
+        if (response.FirstGameUtc.HasValue && initializationFrom < response.FirstGameUtc.Value.Date)
+        {
+            initializationFrom = response.FirstGameUtc.Value.Date;
+        }
+    }
+
+    private string CompareToBaseline()
+    {
+        if (result is null)
+        {
+            return string.Empty;
+        }
+
+        var diff = result.Summary.WinnerAccuracy - result.BaselineSummary.WinnerAccuracy;
+        return diff switch
+        {
+            > 0 => $"+{diff:0.0} vs baseline",
+            < 0 => $"{diff:0.0} vs baseline",
+            _ => "even with baseline"
+        };
+    }
+
+    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return response.ReasonPhrase ?? $"HTTP {(int)response.StatusCode}";
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.ValueKind == JsonValueKind.String)
+            {
+                return json.RootElement.GetString() ?? body;
+            }
+
+            if (json.RootElement.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+            {
+                return title.GetString() ?? body;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return body;
+    }
+
+    private static string FormatMovement(decimal value)
+        => value switch
+        {
+            > 0 => $"+{value:0}",
+            < 0 => value.ToString("0"),
+            _ => "0"
+        };
+
+    private static string MovementClass(decimal value)
+        => value switch
+        {
+            > 0 => "movement-up",
+            < 0 => "movement-down",
+            _ => "movement-flat"
+        };
+
+    private static string FormatSigned(decimal value)
+        => value > 0 ? $"+{value:0.0}" : value.ToString("0.0");
+}

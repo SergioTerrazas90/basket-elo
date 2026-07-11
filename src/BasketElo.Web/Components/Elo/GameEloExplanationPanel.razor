@@ -3,14 +3,14 @@
 
 @if (IsLoading || !string.IsNullOrWhiteSpace(ErrorMessage) || Explanation is not null)
 {
-    <section class="game-elo-explainer" aria-live="polite">
+    <section class="game-elo-explainer" role="dialog" aria-modal="false" aria-live="polite" aria-labelledby="game-elo-explainer-title">
         <div class="explainer-head">
             <div>
                 <p class="eyebrow">ELO explainer</p>
-                <h3>@Title</h3>
+                <h3 id="game-elo-explainer-title">@Title</h3>
                 @if (Explanation is not null)
                 {
-                    <p>@Explanation.Competition · @Explanation.Season · @FormatDate(Explanation.GameDateTimeUtc)</p>
+                    <p>@Explanation.Competition &middot; @Explanation.Season &middot; @FormatDate(Explanation.GameDateTimeUtc)</p>
                 }
             </div>
             <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OnClose">Close</button>

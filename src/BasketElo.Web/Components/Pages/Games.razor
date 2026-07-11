@@ -1,5 +1,7 @@
 @page "/games"
 @rendermode InteractiveServer
+@using System.Text.Json
+@using BasketElo.Domain.Elo
 @using BasketElo.Domain.Games
 @inject HttpClient Http
 @inject NavigationManager Navigation
@@ -160,13 +162,14 @@
                             <th>Score</th>
                             <th>Status</th>
                             <th>Source</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (response.Games.Count == 0)
                         {
                             <tr>
-                                <td colspan="8" class="empty-state">No games match the current filters.</td>
+                                <td colspan="9" class="empty-state">No games match the current filters.</td>
                             </tr>
                         }
                         else
@@ -188,13 +191,37 @@
                                     <td>@FormatScore(game)</td>
                                     <td><span class="status-pill @StatusClass(game.Status)">@game.Status</span></td>
                                     <td>@game.Source</td>
+                                    <td>
+                                        <div class="explain-action">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => LoadExplanationAsync(game.Id)" disabled="@IsExplanationLoading(game.Id)">
+                                                @(IsExplanationLoading(game.Id) ? "Loading" : "Explain")
+                                            </button>
+                                            @if (HasExplanationError(game.Id))
+                                            {
+                                                <span class="explanation-error-indicator"
+                                                      tabindex="0"
+                                                      role="img"
+                                                      aria-label="@explanationError"
+                                                      data-tooltip="@explanationError"
+                                                      title="@explanationError">
+                                                    !
+                                                </span>
+                                            }
+                                        </div>
+                                    </td>
                                 </tr>
                             }
                         }
                     </tbody>
                 </table>
             </div>
+
         </section>
+
+        <GameEloExplanationPanel Explanation="selectedExplanation"
+                                 IsLoading="isExplanationLoading"
+                                 ErrorMessage="@explanationError"
+                                 OnClose="CloseExplanation" />
     }
 </div>
 
@@ -246,6 +273,10 @@
     private int pageSize = 50;
     private int requestedPage = 1;
     private string? lastLoadedUri;
+    private Guid? selectedExplanationGameId;
+    private EloGameExplanationResponse? selectedExplanation;
+    private bool isExplanationLoading;
+    private string? explanationError;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -351,6 +382,7 @@
     private void NavigateToGames(int targetPage)
     {
         targetPage = ClampRequestedPage(targetPage, response?.TotalPages ?? targetPage);
+        CloseExplanation();
 
         var query = new Dictionary<string, object?>
         {
@@ -387,6 +419,84 @@
         Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
 
         return $"api/games?{string.Join("&", query)}";
+    }
+
+    private async Task LoadExplanationAsync(Guid gameId)
+    {
+        selectedExplanationGameId = gameId;
+        selectedExplanation = null;
+        explanationError = null;
+        isExplanationLoading = true;
+
+        try
+        {
+            using var responseMessage = await Http.GetAsync($"api/elo/games/{gameId}/explanation");
+            if (!responseMessage.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(responseMessage));
+            }
+
+            selectedExplanation = await responseMessage.Content.ReadFromJsonAsync<EloGameExplanationResponse>();
+            if (selectedExplanation is null)
+            {
+                throw new InvalidOperationException("The API returned an empty explanation.");
+            }
+        }
+        catch (Exception ex)
+        {
+            explanationError = $"Could not load ELO explanation: {ex.Message}";
+        }
+        finally
+        {
+            isExplanationLoading = false;
+        }
+    }
+
+    private bool IsExplanationLoading(Guid gameId)
+        => isExplanationLoading && selectedExplanationGameId == gameId;
+
+    private bool HasExplanationError(Guid gameId)
+        => selectedExplanationGameId == gameId && !string.IsNullOrWhiteSpace(explanationError);
+
+    private void CloseExplanation()
+    {
+        selectedExplanationGameId = null;
+        selectedExplanation = null;
+        explanationError = null;
+        isExplanationLoading = false;
+    }
+
+    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage responseMessage)
+    {
+        var body = await responseMessage.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return responseMessage.ReasonPhrase ?? $"HTTP {(int)responseMessage.StatusCode}";
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.String)
+            {
+                return detail.GetString() ?? body;
+            }
+
+            if (json.RootElement.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+            {
+                return title.GetString() ?? body;
+            }
+
+            if (json.RootElement.ValueKind == JsonValueKind.String)
+            {
+                return json.RootElement.GetString() ?? body;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return body;
     }
 
     private static int ClampRequestedPage(int value, int totalPages)

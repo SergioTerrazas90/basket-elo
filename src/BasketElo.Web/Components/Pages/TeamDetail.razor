@@ -1,6 +1,7 @@
 @page "/teams/{TeamId:guid}"
 @rendermode InteractiveServer
 @using System.Globalization
+@using System.Text.Json
 @using BasketElo.Domain.Elo
 @inject HttpClient Http
 @inject NavigationManager Navigation
@@ -119,13 +120,14 @@
                             <th>Score</th>
                             <th class="numeric">ELO change</th>
                             <th class="numeric">After</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (team.RecentGames.Count == 0)
                         {
                             <tr>
-                                <td colspan="6" class="empty-state">No rated games are available for this team.</td>
+                                <td colspan="7" class="empty-state">No rated games are available for this team.</td>
                             </tr>
                         }
                         else
@@ -144,13 +146,24 @@
                                     <td>@FormatScore(game)</td>
                                     <td class="numeric"><span class="@MovementClass(game.EloDelta)">@FormatMovement(game.EloDelta)</span></td>
                                     <td class="numeric rating">@game.PostElo.ToString("0")</td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => LoadExplanationAsync(game.GameId)" disabled="@IsExplanationLoading(game.GameId)">
+                                            @(IsExplanationLoading(game.GameId) ? "Loading" : "Explain")
+                                        </button>
+                                    </td>
                                 </tr>
                             }
                         }
                     </tbody>
                 </table>
             </div>
+
         </section>
+
+        <GameEloExplanationPanel Explanation="selectedExplanation"
+                                 IsLoading="isExplanationLoading"
+                                 ErrorMessage="@explanationError"
+                                 OnClose="CloseExplanation" />
     }
 </div>
 
@@ -169,6 +182,10 @@
     private string? errorMessage;
     private int gamesPage = 1;
     private int requestedGamesPage = 1;
+    private Guid? selectedExplanationGameId;
+    private EloGameExplanationResponse? selectedExplanation;
+    private bool isExplanationLoading;
+    private string? explanationError;
 
     private string BackHref => string.IsNullOrWhiteSpace(ReturnUrl) ? "/rankings" : "/" + ReturnUrl.TrimStart('/');
 
@@ -231,6 +248,7 @@
     private void NavigateToGamesPage(int targetPage)
     {
         targetPage = ClampRequestedPage(targetPage, team?.RecentGamesTotalPages ?? targetPage);
+        CloseExplanation();
 
         var query = new Dictionary<string, object?>
         {
@@ -239,6 +257,81 @@
         };
 
         Navigation.NavigateTo(Navigation.GetUriWithQueryParameters($"/teams/{TeamId}", query));
+    }
+
+    private async Task LoadExplanationAsync(Guid gameId)
+    {
+        selectedExplanationGameId = gameId;
+        selectedExplanation = null;
+        explanationError = null;
+        isExplanationLoading = true;
+
+        try
+        {
+            using var responseMessage = await Http.GetAsync($"api/elo/games/{gameId}/explanation?rulesetVersion={Uri.EscapeDataString(team?.RulesetVersion ?? string.Empty)}");
+            if (!responseMessage.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(responseMessage));
+            }
+
+            selectedExplanation = await responseMessage.Content.ReadFromJsonAsync<EloGameExplanationResponse>();
+            if (selectedExplanation is null)
+            {
+                throw new InvalidOperationException("The API returned an empty explanation.");
+            }
+        }
+        catch (Exception ex)
+        {
+            explanationError = $"Could not load ELO explanation: {ex.Message}";
+        }
+        finally
+        {
+            isExplanationLoading = false;
+        }
+    }
+
+    private bool IsExplanationLoading(Guid gameId)
+        => isExplanationLoading && selectedExplanationGameId == gameId;
+
+    private void CloseExplanation()
+    {
+        selectedExplanationGameId = null;
+        selectedExplanation = null;
+        explanationError = null;
+        isExplanationLoading = false;
+    }
+
+    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage responseMessage)
+    {
+        var body = await responseMessage.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return responseMessage.ReasonPhrase ?? $"HTTP {(int)responseMessage.StatusCode}";
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.String)
+            {
+                return detail.GetString() ?? body;
+            }
+
+            if (json.RootElement.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+            {
+                return title.GetString() ?? body;
+            }
+
+            if (json.RootElement.ValueKind == JsonValueKind.String)
+            {
+                return json.RootElement.GetString() ?? body;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return body;
     }
 
     private static int ClampRequestedPage(int value, int totalPages)

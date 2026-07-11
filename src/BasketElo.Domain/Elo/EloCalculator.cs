@@ -18,24 +18,33 @@ public static class EloCalculator
         decimal awayElo,
         string rulesetVersion)
     {
+        return Calculate(homeScore, awayScore, homeElo, awayElo, GetRulesetParameters(rulesetVersion));
+    }
+
+    public static EloGameCalculation Calculate(
+        short homeScore,
+        short awayScore,
+        decimal homeElo,
+        decimal awayElo,
+        EloRulesetParameters ruleset)
+    {
         if (homeScore == awayScore)
         {
             throw new ArgumentException("ELO calculation requires a winner.", nameof(homeScore));
         }
 
-        var ruleset = GetRulesetParameters(rulesetVersion);
         var eloDiff = homeElo + ruleset.HomeAdvantageElo - awayElo;
         var expectedHomeResult = CalculateExpectedResult(eloDiff);
         var homeActualResult = homeScore > awayScore ? 1m : 0m;
         var baseHomeDelta = ruleset.KFactor * (homeActualResult - expectedHomeResult);
         var marginMultiplier = ruleset.UsesMarginAdjustment
-            ? CalculateMarginMultiplier(homeScore, awayScore, eloDiff)
+            ? CalculateMarginMultiplier(homeScore, awayScore, eloDiff, ruleset.PointsPerEloMargin ?? PointsPerEloMargin)
             : 1m;
 
         return new EloGameCalculation(
             expectedHomeResult,
             homeActualResult,
-            baseHomeDelta * marginMultiplier * CompetitionWeight,
+            baseHomeDelta * marginMultiplier * ruleset.CompetitionWeight,
             marginMultiplier);
     }
 
@@ -68,16 +77,16 @@ public static class EloCalculator
         };
     }
 
-    private static decimal CalculateExpectedResult(decimal eloDiff)
+    public static decimal CalculateExpectedResult(decimal eloDiff)
     {
         var expected = 1d / (1d + Math.Pow(10d, -(double)eloDiff / 400d));
         return (decimal)expected;
     }
 
-    private static decimal CalculateMarginMultiplier(short homeScore, short awayScore, decimal eloDiff)
+    private static decimal CalculateMarginMultiplier(short homeScore, short awayScore, decimal eloDiff, decimal pointsPerEloMargin)
     {
         var actualMargin = homeScore - awayScore;
-        var expectedMargin = eloDiff / PointsPerEloMargin;
+        var expectedMargin = eloDiff / pointsPerEloMargin;
         var winnerActualMargin = Math.Abs(actualMargin);
         var winnerExpectedMargin = actualMargin > 0 ? expectedMargin : -expectedMargin;
         var winnerOverperformance = winnerActualMargin - winnerExpectedMargin;

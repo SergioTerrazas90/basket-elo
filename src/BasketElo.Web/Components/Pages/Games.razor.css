@@ -136,6 +136,53 @@
     color: #46505a;
 }
 
+.explain-action {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.explanation-error-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 999px;
+    background: #fee2e2;
+    color: #991b1b;
+    cursor: help;
+    font-size: 0.78rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.explanation-error-indicator::after {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.45rem);
+    z-index: 20;
+    display: none;
+    width: min(24rem, 70vw);
+    padding: 0.65rem 0.75rem;
+    border-radius: 8px;
+    background: #17212b;
+    color: #ffffff;
+    content: attr(data-tooltip);
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: left;
+    white-space: normal;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+}
+
+.explanation-error-indicator:hover::after,
+.explanation-error-indicator:focus::after {
+    display: block;
+}
+
 .empty-state {
     text-align: center;
     color: #6c757d;

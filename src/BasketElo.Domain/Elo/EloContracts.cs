@@ -156,6 +156,46 @@ public sealed record EloTeamGameDto(
     decimal PostElo,
     decimal EloDelta);
 
+public sealed record EloGameExplanationResponse(
+    Guid GameId,
+    string RulesetVersion,
+    DateTime GameDateTimeUtc,
+    string Competition,
+    string Season,
+    string HomeTeam,
+    string AwayTeam,
+    short? HomeScore,
+    short? AwayScore,
+    string Status,
+    bool IsRated,
+    string? UnavailableReason,
+    EloGameTeamExplanation? Home,
+    EloGameTeamExplanation? Away,
+    EloGameRulesetExplanation Ruleset);
+
+public sealed record EloGameTeamExplanation(
+    Guid TeamId,
+    string TeamName,
+    bool WasHome,
+    decimal PreElo,
+    decimal PostElo,
+    decimal EloDelta,
+    decimal ExpectedScore,
+    decimal ActualScore,
+    int KFactorUsed,
+    decimal MarginMultiplier,
+    decimal CompetitionWeight,
+    int GamesPlayedBefore,
+    int? RatingPositionAfter);
+
+public sealed record EloGameRulesetExplanation(
+    decimal BaseRating,
+    int KFactor,
+    decimal HomeAdvantageElo,
+    decimal? PointsPerEloMargin,
+    decimal CompetitionWeight,
+    bool UsesMarginAdjustment);
+
 public sealed record EloRatingHistoryPoint(
     DateTime GameDateTimeUtc,
     decimal Elo,

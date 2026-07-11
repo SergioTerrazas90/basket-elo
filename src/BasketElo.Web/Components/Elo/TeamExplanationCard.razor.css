@@ -1,0 +1,59 @@
+.team-explanation-card {
+    border: 1px solid #d8e0e7;
+    border-radius: 8px;
+    background: #ffffff;
+    overflow: hidden;
+}
+
+.team-explanation-head {
+    padding: 0.8rem;
+    border-bottom: 1px solid #e1e7ed;
+    background: #f8fafc;
+}
+
+.team-explanation-head span {
+    display: block;
+    color: #687684;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.team-explanation-head strong {
+    display: block;
+    margin-top: 0.15rem;
+}
+
+dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    margin: 0;
+}
+
+dl div {
+    padding: 0.7rem 0.8rem;
+    border-bottom: 1px solid #edf1f5;
+}
+
+dt {
+    color: #687684;
+    font-size: 0.76rem;
+}
+
+dd {
+    margin: 0.15rem 0 0;
+    font-weight: 800;
+}
+
+.movement-up {
+    color: #087443;
+}
+
+.movement-down {
+    color: #b42318;
+}
+
+.movement-flat {
+    color: #6b7682;
+}

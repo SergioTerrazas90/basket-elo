@@ -1,5 +1,6 @@
 @page "/games"
 @rendermode InteractiveServer
+@using BasketElo.Domain.Elo
 @using BasketElo.Domain.Games
 @inject HttpClient Http
 @inject NavigationManager Navigation
@@ -160,13 +161,14 @@
                             <th>Score</th>
                             <th>Status</th>
                             <th>Source</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (response.Games.Count == 0)
                         {
                             <tr>
-                                <td colspan="8" class="empty-state">No games match the current filters.</td>
+                                <td colspan="9" class="empty-state">No games match the current filters.</td>
                             </tr>
                         }
                         else
@@ -188,12 +190,22 @@
                                     <td>@FormatScore(game)</td>
                                     <td><span class="status-pill @StatusClass(game.Status)">@game.Status</span></td>
                                     <td>@game.Source</td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => LoadExplanationAsync(game.Id)" disabled="@IsExplanationLoading(game.Id)">
+                                            @(IsExplanationLoading(game.Id) ? "Loading" : "Explain")
+                                        </button>
+                                    </td>
                                 </tr>
                             }
                         }
                     </tbody>
                 </table>
             </div>
+
+            <GameEloExplanationPanel Explanation="selectedExplanation"
+                                     IsLoading="isExplanationLoading"
+                                     ErrorMessage="explanationError"
+                                     OnClose="CloseExplanation" />
         </section>
     }
 </div>
@@ -246,6 +258,10 @@
     private int pageSize = 50;
     private int requestedPage = 1;
     private string? lastLoadedUri;
+    private Guid? selectedExplanationGameId;
+    private EloGameExplanationResponse? selectedExplanation;
+    private bool isExplanationLoading;
+    private string? explanationError;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -351,6 +367,7 @@
     private void NavigateToGames(int targetPage)
     {
         targetPage = ClampRequestedPage(targetPage, response?.TotalPages ?? targetPage);
+        CloseExplanation();
 
         var query = new Dictionary<string, object?>
         {
@@ -387,6 +404,38 @@
         Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
 
         return $"api/games?{string.Join("&", query)}";
+    }
+
+    private async Task LoadExplanationAsync(Guid gameId)
+    {
+        selectedExplanationGameId = gameId;
+        selectedExplanation = null;
+        explanationError = null;
+        isExplanationLoading = true;
+
+        try
+        {
+            selectedExplanation = await Http.GetFromJsonAsync<EloGameExplanationResponse>($"api/elo/games/{gameId}/explanation");
+        }
+        catch (Exception ex)
+        {
+            explanationError = $"Could not load ELO explanation: {ex.Message}";
+        }
+        finally
+        {
+            isExplanationLoading = false;
+        }
+    }
+
+    private bool IsExplanationLoading(Guid gameId)
+        => isExplanationLoading && selectedExplanationGameId == gameId;
+
+    private void CloseExplanation()
+    {
+        selectedExplanationGameId = null;
+        selectedExplanation = null;
+        explanationError = null;
+        isExplanationLoading = false;
     }
 
     private static int ClampRequestedPage(int value, int totalPages)

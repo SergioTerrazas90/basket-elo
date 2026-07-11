@@ -264,6 +264,78 @@ public class EloController(
         return Ok(new EloRankingsEvolutionResponse(selectedRuleset, series));
     }
 
+    [HttpGet("games/{gameId:guid}/explanation")]
+    public async Task<ActionResult<EloGameExplanationResponse>> GetGameExplanation(
+        Guid gameId,
+        [FromQuery] string? rulesetVersion,
+        CancellationToken cancellationToken = default)
+    {
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, cancellationToken);
+        if (selectedRuleset is null)
+        {
+            return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
+        }
+
+        var game = await dbContext.Games
+            .AsNoTracking()
+            .Include(x => x.Competition)
+            .Include(x => x.Season)
+            .Include(x => x.HomeTeam)
+            .Include(x => x.AwayTeam)
+            .SingleOrDefaultAsync(x => x.Id == gameId, cancellationToken);
+
+        if (game is null)
+        {
+            return NotFound();
+        }
+
+        var ruleset = EloCalculator.GetRulesetParameters(selectedRuleset);
+        var histories = await dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x => x.GameId == gameId && x.RulesetVersion == selectedRuleset)
+            .Select(x => new GameExplanationHistoryRow(
+                x.TeamId,
+                x.Team.CanonicalName,
+                x.PreElo,
+                x.PostElo,
+                x.EloDelta,
+                x.ExpectedScore,
+                x.ActualScore,
+                x.KFactorUsed,
+                x.MarginMultiplier,
+                x.CompetitionWeight,
+                x.GamesPlayedBefore,
+                x.RatingPositionAfter))
+            .ToListAsync(cancellationToken);
+
+        var homeHistory = histories.SingleOrDefault(x => x.TeamId == game.HomeTeamId);
+        var awayHistory = histories.SingleOrDefault(x => x.TeamId == game.AwayTeamId);
+        var isRated = homeHistory is not null && awayHistory is not null;
+
+        return Ok(new EloGameExplanationResponse(
+            game.Id,
+            selectedRuleset,
+            game.GameDateTimeUtc,
+            game.Competition.Name,
+            game.Season.Label,
+            game.HomeTeam.CanonicalName,
+            game.AwayTeam.CanonicalName,
+            game.HomeScore,
+            game.AwayScore,
+            game.Status,
+            isRated,
+            isRated ? null : "This game does not have rating history for the selected ruleset.",
+            homeHistory is null ? null : ToGameTeamExplanation(homeHistory, true),
+            awayHistory is null ? null : ToGameTeamExplanation(awayHistory, false),
+            new EloGameRulesetExplanation(
+                ruleset.BaseRating,
+                ruleset.KFactor,
+                ruleset.HomeAdvantageElo,
+                ruleset.PointsPerEloMargin,
+                ruleset.CompetitionWeight,
+                ruleset.UsesMarginAdjustment)));
+    }
+
     [HttpGet("teams/{teamId:guid}")]
     public async Task<ActionResult<EloTeamDetailResponse>> GetTeam(
         Guid teamId,
@@ -598,6 +670,36 @@ public class EloController(
 
     private static bool IsUniqueConstraintViolation(DbUpdateException exception)
         => exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+
+    private static EloGameTeamExplanation ToGameTeamExplanation(GameExplanationHistoryRow history, bool wasHome)
+        => new(
+            history.TeamId,
+            history.TeamName,
+            wasHome,
+            history.PreElo,
+            history.PostElo,
+            history.EloDelta,
+            history.ExpectedScore,
+            history.ActualScore,
+            history.KFactorUsed,
+            history.MarginMultiplier,
+            history.CompetitionWeight,
+            history.GamesPlayedBefore,
+            history.RatingPositionAfter);
+
+    private sealed record GameExplanationHistoryRow(
+        Guid TeamId,
+        string TeamName,
+        decimal PreElo,
+        decimal PostElo,
+        decimal EloDelta,
+        decimal ExpectedScore,
+        decimal ActualScore,
+        int KFactorUsed,
+        decimal MarginMultiplier,
+        decimal CompetitionWeight,
+        int GamesPlayedBefore,
+        int? RatingPositionAfter);
 
     private IQueryable<RatingHistory> BuildHistoryFilterQuery(
         string rulesetVersion,

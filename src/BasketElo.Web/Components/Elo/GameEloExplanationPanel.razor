@@ -1,0 +1,102 @@
+@using System.Globalization
+@using BasketElo.Domain.Elo
+
+@if (IsLoading || !string.IsNullOrWhiteSpace(ErrorMessage) || Explanation is not null)
+{
+    <section class="game-elo-explainer" aria-live="polite">
+        <div class="explainer-head">
+            <div>
+                <p class="eyebrow">ELO explainer</p>
+                <h3>@Title</h3>
+                @if (Explanation is not null)
+                {
+                    <p>@Explanation.Competition · @Explanation.Season · @FormatDate(Explanation.GameDateTimeUtc)</p>
+                }
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OnClose">Close</button>
+        </div>
+
+        @if (IsLoading)
+        {
+            <div class="explainer-state">Loading ELO explanation...</div>
+        }
+        else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+        {
+            <div class="alert alert-danger" role="alert">@ErrorMessage</div>
+        }
+        else if (Explanation is { IsRated: false })
+        {
+            <div class="explainer-state">@Explanation.UnavailableReason</div>
+        }
+        else if (Explanation?.Home is not null && Explanation.Away is not null)
+        {
+            <div class="explainer-scoreline">
+                <strong>@Explanation.HomeTeam</strong>
+                <span>@FormatScore(Explanation)</span>
+                <strong>@Explanation.AwayTeam</strong>
+            </div>
+
+            <div class="explainer-grid">
+                <TeamExplanationCard Label="Home" Team="Explanation.Home" />
+                <TeamExplanationCard Label="Away" Team="Explanation.Away" />
+            </div>
+
+            <dl class="ruleset-facts">
+                <div>
+                    <dt>Ruleset</dt>
+                    <dd>@Explanation.RulesetVersion</dd>
+                </div>
+                <div>
+                    <dt>K factor</dt>
+                    <dd>@Explanation.Ruleset.KFactor</dd>
+                </div>
+                <div>
+                    <dt>Home advantage</dt>
+                    <dd>@Explanation.Ruleset.HomeAdvantageElo.ToString("0") ELO</dd>
+                </div>
+                <div>
+                    <dt>Margin adjustment</dt>
+                    <dd>@(Explanation.Ruleset.UsesMarginAdjustment ? "On" : "Off")</dd>
+                </div>
+                @if (Explanation.Ruleset.PointsPerEloMargin.HasValue)
+                {
+                    <div>
+                        <dt>Point margin scale</dt>
+                        <dd>@Explanation.Ruleset.PointsPerEloMargin.Value.ToString("0") ELO / point</dd>
+                    </div>
+                }
+                <div>
+                    <dt>Competition weight</dt>
+                    <dd>@Explanation.Ruleset.CompetitionWeight.ToString("0.##")x</dd>
+                </div>
+            </dl>
+        }
+    </section>
+}
+
+@code {
+    [Parameter]
+    public EloGameExplanationResponse? Explanation { get; set; }
+
+    [Parameter]
+    public bool IsLoading { get; set; }
+
+    [Parameter]
+    public string? ErrorMessage { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private string Title
+        => Explanation is null
+            ? "Game rating impact"
+            : $"{Explanation.HomeTeam} vs {Explanation.AwayTeam}";
+
+    private static string FormatScore(EloGameExplanationResponse explanation)
+        => explanation.HomeScore.HasValue && explanation.AwayScore.HasValue
+            ? $"{explanation.HomeScore}-{explanation.AwayScore}"
+            : explanation.Status;
+
+    private static string FormatDate(DateTime value)
+        => value.ToLocalTime().ToString("MMM d, yyyy HH:mm", CultureInfo.CurrentCulture);
+}

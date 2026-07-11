@@ -1,0 +1,79 @@
+@using System.Globalization
+@using BasketElo.Domain.Elo
+
+<article class="team-explanation-card">
+    <div class="team-explanation-head">
+        <span>@Label</span>
+        <strong>@Team.TeamName</strong>
+    </div>
+
+    <dl>
+        <div>
+            <dt>Pre-game ELO</dt>
+            <dd>@Team.PreElo.ToString("0")</dd>
+        </div>
+        <div>
+            <dt>Post-game ELO</dt>
+            <dd>@Team.PostElo.ToString("0")</dd>
+        </div>
+        <div>
+            <dt>Change</dt>
+            <dd class="@MovementClass(Team.EloDelta)">@FormatDelta(Team.EloDelta)</dd>
+        </div>
+        <div>
+            <dt>Expected result</dt>
+            <dd>@FormatPercent(Team.ExpectedScore)</dd>
+        </div>
+        <div>
+            <dt>Actual result</dt>
+            <dd>@FormatActual(Team.ActualScore)</dd>
+        </div>
+        <div>
+            <dt>Margin multiplier</dt>
+            <dd>@Team.MarginMultiplier.ToString("0.###")x</dd>
+        </div>
+        <div>
+            <dt>Games before</dt>
+            <dd>@Team.GamesPlayedBefore</dd>
+        </div>
+        <div>
+            <dt>Rank after</dt>
+            <dd>@(Team.RatingPositionAfter.HasValue ? $"#{Team.RatingPositionAfter}" : "-")</dd>
+        </div>
+    </dl>
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public EloGameTeamExplanation Team { get; set; } = null!;
+
+    private static string FormatDelta(decimal value)
+        => value switch
+        {
+            > 0 => $"+{value:0.##}",
+            < 0 => value.ToString("0.##", CultureInfo.CurrentCulture),
+            _ => "0"
+        };
+
+    private static string FormatPercent(decimal value)
+        => value.ToString("P1", CultureInfo.CurrentCulture);
+
+    private static string FormatActual(decimal value)
+        => value switch
+        {
+            1m => "Win",
+            0m => "Loss",
+            _ => value.ToString("0.##", CultureInfo.CurrentCulture)
+        };
+
+    private static string MovementClass(decimal value)
+        => value switch
+        {
+            > 0 => "movement-up",
+            < 0 => "movement-down",
+            _ => "movement-flat"
+        };
+}

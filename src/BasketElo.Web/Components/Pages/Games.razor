@@ -191,9 +191,22 @@
                                     <td><span class="status-pill @StatusClass(game.Status)">@game.Status</span></td>
                                     <td>@game.Source</td>
                                     <td>
-                                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => LoadExplanationAsync(game.Id)" disabled="@IsExplanationLoading(game.Id)">
-                                            @(IsExplanationLoading(game.Id) ? "Loading" : "Explain")
-                                        </button>
+                                        <div class="explain-action">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => LoadExplanationAsync(game.Id)" disabled="@IsExplanationLoading(game.Id)">
+                                                @(IsExplanationLoading(game.Id) ? "Loading" : "Explain")
+                                            </button>
+                                            @if (HasExplanationError(game.Id))
+                                            {
+                                                <span class="explanation-error-indicator"
+                                                      tabindex="0"
+                                                      role="img"
+                                                      aria-label="@explanationError"
+                                                      data-tooltip="@explanationError"
+                                                      title="@explanationError">
+                                                    !
+                                                </span>
+                                            }
+                                        </div>
                                     </td>
                                 </tr>
                             }
@@ -415,7 +428,17 @@
 
         try
         {
-            selectedExplanation = await Http.GetFromJsonAsync<EloGameExplanationResponse>($"api/elo/games/{gameId}/explanation");
+            var responseMessage = await Http.GetAsync($"api/elo/games/{gameId}/explanation");
+            if (!responseMessage.IsSuccessStatusCode)
+            {
+                var body = await responseMessage.Content.ReadAsStringAsync();
+                var message = string.IsNullOrWhiteSpace(body)
+                    ? responseMessage.ReasonPhrase
+                    : body;
+                throw new InvalidOperationException(message);
+            }
+
+            selectedExplanation = await responseMessage.Content.ReadFromJsonAsync<EloGameExplanationResponse>();
         }
         catch (Exception ex)
         {
@@ -429,6 +452,9 @@
 
     private bool IsExplanationLoading(Guid gameId)
         => isExplanationLoading && selectedExplanationGameId == gameId;
+
+    private bool HasExplanationError(Guid gameId)
+        => selectedExplanationGameId == gameId && !string.IsNullOrWhiteSpace(explanationError);
 
     private void CloseExplanation()
     {

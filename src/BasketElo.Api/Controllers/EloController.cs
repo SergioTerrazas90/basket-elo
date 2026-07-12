@@ -1,3 +1,4 @@
+using BasketElo.Api.Auth;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Elo;
@@ -23,6 +24,7 @@ public class EloController(
     }
 
     [HttpGet("dashboard")]
+    [RequireInternalAdmin]
     public async Task<ActionResult<EloDashboardResponse>> GetDashboard(
         [FromQuery] string? rulesetVersion,
         [FromQuery] int limit = 10,
@@ -265,6 +267,7 @@ public class EloController(
     }
 
     [HttpGet("games/{gameId:guid}/explanation")]
+    [RequireInternalUser]
     public async Task<ActionResult<EloGameExplanationResponse>> GetGameExplanation(
         Guid gameId,
         [FromQuery] string? rulesetVersion,
@@ -337,6 +340,7 @@ public class EloController(
     }
 
     [HttpGet("teams/{teamId:guid}")]
+    [RequireInternalUser]
     public async Task<ActionResult<EloTeamDetailResponse>> GetTeam(
         Guid teamId,
         [FromQuery] string? rulesetVersion,
@@ -448,6 +452,7 @@ public class EloController(
     }
 
     [HttpPost("rebuilds")]
+    [RequireInternalAdmin]
     public async Task<ActionResult<IReadOnlyList<EloRebuildRunDto>>> Rebuild(
         [FromBody] EloRebuildRequest? request,
         CancellationToken cancellationToken)
@@ -512,6 +517,7 @@ public class EloController(
     }
 
     [HttpPost("rebuilds/{runId:guid}/cancel")]
+    [RequireInternalAdmin]
     public async Task<ActionResult<EloRebuildRunDto>> CancelRebuild(
         Guid runId,
         CancellationToken cancellationToken)
@@ -537,6 +543,7 @@ public class EloController(
     }
 
     [HttpPost("rebuilds/{runId:guid}/retry")]
+    [RequireInternalAdmin]
     public async Task<ActionResult<EloRebuildRunDto>> RetryRebuild(
         Guid runId,
         CancellationToken cancellationToken)

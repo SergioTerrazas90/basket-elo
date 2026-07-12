@@ -85,6 +85,27 @@
     color: var(--color-brand-dark);
 }
 
+.auth-state-panel {
+    max-width: 34rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-6);
+}
+
+.auth-state-panel h1 {
+    margin: 0 0 var(--space-2);
+    color: var(--color-text);
+    font-size: 1.6rem;
+    font-weight: 900;
+}
+
+.auth-state-panel p {
+    margin: 0 0 var(--space-4);
+    color: var(--color-muted);
+}
+
 #blazor-error-ui {
     position: fixed;
     right: var(--space-4);

@@ -1,0 +1,20 @@
+@using System.Security.Claims
+
+<AuthorizeView>
+    <Authorized>
+        <div class="auth-status">
+            <span>@DisplayName(context.User)</span>
+            <a href="auth/logout">Sign out</a>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <a class="auth-sign-in" href="auth/login">Sign in</a>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private static string DisplayName(ClaimsPrincipal user)
+        => user.FindFirstValue(ClaimTypes.Name)
+            ?? user.FindFirstValue(ClaimTypes.Email)
+            ?? "Signed in";
+}

@@ -150,6 +150,9 @@
                                     This controls how quickly ELO difference turns into win probability. Smaller values make the model more confident; larger values keep predictions closer to 50%.
                                 </p>
                                 <p>
+                                    For the current game, win probability uses the classic ELO curve from rating difference. It does not come directly from the expected point margin.
+                                </p>
+                                <p>
                                     Classic chess ELO uses 400, where a 400-point gap means about a 91% expected score. Basketball may calibrate near 400, but noisy data or volatile leagues may fit better around 450-550.
                                 </p>
                                 <p>
@@ -221,6 +224,7 @@
                             <div id="pointScaleInfo" class="info-panel">
                                 <p>This translates ELO difference into expected point margin. With 28, a 140-point ELO gap equals about 5 expected points.</p>
                                 <p>Smaller values make the same ELO gap imply a larger spread. Larger values make expected margins more conservative.</p>
+                                <p>This affects expected margin and margin-adjusted rating updates. Those rating updates can change future win probabilities, but the current game's probability still uses the probability scale above.</p>
                             </div>
                         }
                     </div>
@@ -450,8 +454,8 @@
                                 <th>Date</th>
                                 <th>Matchup</th>
                                 <th>Score</th>
-                                <th class="numeric">Home win</th>
-                                <th class="numeric">Expected</th>
+                                <th class="numeric">Home win prob.</th>
+                                <th class="numeric">Expected margin</th>
                                 <th class="numeric">Actual</th>
                                 <th class="numeric">Error</th>
                             </tr>

@@ -1,3 +1,4 @@
+using BasketElo.Api.Auth;
 using BasketElo.Infrastructure.Identity;
 using Microsoft.AspNetCore.Mvc;
 
@@ -5,6 +6,7 @@ namespace BasketElo.Api.Controllers;
 
 [ApiController]
 [Route("api/identity-health")]
+[RequireInternalAdmin]
 public class IdentityHealthController(IIdentityHealthCheckService identityHealthCheckService) : ControllerBase
 {
     [HttpPost("checks")]

@@ -1,3 +1,4 @@
+using BasketElo.Api.Auth;
 using BasketElo.Domain.Games;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
@@ -7,6 +8,7 @@ namespace BasketElo.Api.Controllers;
 
 [ApiController]
 [Route("api/games")]
+[RequireInternalUser]
 public class GamesController(BasketEloDbContext dbContext) : ControllerBase
 {
     [HttpGet]

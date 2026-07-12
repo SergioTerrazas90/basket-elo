@@ -1,3 +1,4 @@
+using BasketElo.Api.Auth;
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Backfill;
@@ -9,6 +10,7 @@ namespace BasketElo.Api.Controllers;
 
 [ApiController]
 [Route("api/backfill")]
+[RequireInternalAdmin]
 public class BackfillController(
     BasketEloDbContext dbContext,
     IBackfillCoverageService coverageService,

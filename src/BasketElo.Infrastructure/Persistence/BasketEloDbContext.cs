@@ -5,6 +5,12 @@ namespace BasketElo.Infrastructure.Persistence;
 
 public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : DbContext(options)
 {
+    private static readonly Guid AdminRoleId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    public DbSet<ApplicationUser> ApplicationUsers => Set<ApplicationUser>();
+    public DbSet<ApplicationUserExternalLogin> ApplicationUserExternalLogins => Set<ApplicationUserExternalLogin>();
+    public DbSet<ApplicationRole> ApplicationRoles => Set<ApplicationRole>();
+    public DbSet<ApplicationUserRole> ApplicationUserRoles => Set<ApplicationUserRole>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamAlias> TeamAliases => Set<TeamAlias>();
     public DbSet<Competition> Competitions => Set<Competition>();
@@ -24,6 +30,65 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<ApplicationUser>(entity =>
+        {
+            entity.ToTable("application_users");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Email).HasMaxLength(320).IsRequired();
+            entity.Property(x => x.NormalizedEmail).HasMaxLength(320).IsRequired();
+            entity.Property(x => x.AvatarUrl).HasMaxLength(1000);
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.Property(x => x.LastLoginAtUtc).IsRequired();
+            entity.HasIndex(x => x.NormalizedEmail).IsUnique();
+        });
+
+        modelBuilder.Entity<ApplicationUserExternalLogin>(entity =>
+        {
+            entity.ToTable("application_user_external_logins");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Provider).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.ProviderUserId).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.EmailAtLogin).HasMaxLength(320).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.Property(x => x.LastLoginAtUtc).IsRequired();
+            entity.HasOne(x => x.User)
+                .WithMany(x => x.ExternalLogins)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.Provider, x.ProviderUserId }).IsUnique();
+        });
+
+        modelBuilder.Entity<ApplicationRole>(entity =>
+        {
+            entity.ToTable("application_roles");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Key).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            entity.HasIndex(x => x.Key).IsUnique();
+            entity.HasData(new ApplicationRole
+            {
+                Id = AdminRoleId,
+                Key = ApplicationRoleKeys.Admin,
+                Name = "Admin"
+            });
+        });
+
+        modelBuilder.Entity<ApplicationUserRole>(entity =>
+        {
+            entity.ToTable("application_user_roles");
+            entity.HasKey(x => new { x.UserId, x.RoleId });
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasOne(x => x.User)
+                .WithMany(x => x.UserRoles)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Role)
+                .WithMany(x => x.UserRoles)
+                .HasForeignKey(x => x.RoleId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
 
         modelBuilder.Entity<Team>(entity =>
         {

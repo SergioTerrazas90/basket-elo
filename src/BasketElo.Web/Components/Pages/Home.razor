@@ -10,7 +10,11 @@
             The backfill dashboard shows league and season coverage, latest run status, warnings, and quick manual triggers.
         </p>
         <div class="hero-actions">
-            <a class="btn btn-primary hero-action" href="backfill">Open Backfill Coverage</a>
+            <AuthorizeView Roles="admin">
+                <Authorized>
+                    <a class="btn btn-primary hero-action" href="backfill">Open Backfill Coverage</a>
+                </Authorized>
+            </AuthorizeView>
             <a class="btn btn-outline-light hero-action" href="games">Browse Games</a>
         </div>
     </div>

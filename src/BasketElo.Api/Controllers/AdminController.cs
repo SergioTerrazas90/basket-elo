@@ -1,3 +1,4 @@
+using BasketElo.Api.Auth;
 using BasketElo.Domain.Admin;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
@@ -9,6 +10,7 @@ namespace BasketElo.Api.Controllers;
 
 [ApiController]
 [Route("api/admin")]
+[RequireInternalAdmin]
 public class AdminController(BasketEloDbContext dbContext) : ControllerBase
 {
     [HttpGet("dashboard")]

@@ -20,6 +20,7 @@ public sealed record ModelLabParameterSet(
     decimal BaseRating,
     int KFactor,
     decimal HomeAdvantageElo,
+    decimal ProbabilityScale,
     bool UsesMarginAdjustment,
     decimal? PointsPerEloMargin,
     decimal CompetitionWeight);

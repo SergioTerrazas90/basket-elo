@@ -343,14 +343,14 @@
             new EloChartSeries(
                 team.TeamId,
                 team.TeamName,
-                "#1b6ec2",
+                "#245c7a",
                 team.History
                     .OrderBy(point => point.GameDateTimeUtc)
                     .Select(point => new EloChartPoint(
                         point.GameDateTimeUtc,
                         point.Elo,
                         team.TeamName,
-                        "#1b6ec2",
+                        "#245c7a",
                         point.EloDelta,
                         point.Rank))
                     .ToList())

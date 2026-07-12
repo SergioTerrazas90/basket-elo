@@ -47,38 +47,182 @@
 
                 <div class="control-grid">
                     <div class="filter-field wide">
-                        <label for="modelName">Name</label>
+                        <div class="label-with-info">
+                            <label for="modelName">Name</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("modelName")'
+                                    aria-controls="modelNameInfo"
+                                    title="Model name context"
+                                    @onclick='() => ToggleInfoPanel("modelName")'>
+                                i
+                            </button>
+                        </div>
                         <input id="modelName" class="form-control" @bind="modelName" maxlength="80" />
+                        @if (IsInfoPanelVisible("modelName"))
+                        {
+                            <div id="modelNameInfo" class="info-panel">
+                                <p>This is only a label for the experiment you are running. It does not affect ratings, probability, or margin calculations.</p>
+                            </div>
+                        }
                     </div>
 
                     <div class="filter-field">
-                        <label for="baseRating">Base rating</label>
+                        <div class="label-with-info">
+                            <label for="baseRating">Base rating</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("baseRating")'
+                                    aria-controls="baseRatingInfo"
+                                    title="Base rating context"
+                                    @onclick='() => ToggleInfoPanel("baseRating")'>
+                                i
+                            </button>
+                        </div>
                         <input id="baseRating" class="form-control" type="number" min="500" max="2500" step="10" @bind="baseRating" />
+                        @if (IsInfoPanelVisible("baseRating"))
+                        {
+                            <div id="baseRatingInfo" class="info-panel">
+                                <p>New teams start here before they have any games in the simulation. Changing this mostly shifts the whole league up or down unless teams enter the model at different times.</p>
+                            </div>
+                        }
                     </div>
 
                     <div class="filter-field">
-                        <label for="kFactor">K factor</label>
+                        <div class="label-with-info">
+                            <label for="kFactor">K factor</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("kFactor")'
+                                    aria-controls="kFactorInfo"
+                                    title="K factor context"
+                                    @onclick='() => ToggleInfoPanel("kFactor")'>
+                                i
+                            </button>
+                        </div>
                         <input id="kFactor" class="form-control" type="number" min="1" max="100" step="1" @bind="kFactor" />
+                        @if (IsInfoPanelVisible("kFactor"))
+                        {
+                            <div id="kFactorInfo" class="info-panel">
+                                <p>This controls how quickly ratings move after each game. Higher values react faster to recent results, but can make ratings noisier.</p>
+                            </div>
+                        }
                     </div>
 
                     <div class="filter-field">
-                        <label for="homeAdvantage">Home advantage</label>
+                        <div class="label-with-info">
+                            <label for="homeAdvantage">Home advantage</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("homeAdvantage")'
+                                    aria-controls="homeAdvantageInfo"
+                                    title="Home advantage context"
+                                    @onclick='() => ToggleInfoPanel("homeAdvantage")'>
+                                i
+                            </button>
+                        </div>
                         <input id="homeAdvantage" class="form-control" type="number" min="-200" max="300" step="5" @bind="homeAdvantageElo" />
+                        @if (IsInfoPanelVisible("homeAdvantage"))
+                        {
+                            <div id="homeAdvantageInfo" class="info-panel">
+                                <p>This many ELO points are added to the home team before calculating win probability, expected margin, and the rating update.</p>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="filter-field wide">
+                        <div class="label-with-info">
+                            <label for="probabilityScale">Probability scale</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("probabilityScale")'
+                                    aria-controls="probabilityScaleInfo"
+                                    title="Probability scale context"
+                                    @onclick='() => ToggleInfoPanel("probabilityScale")'>
+                                i
+                            </button>
+                        </div>
+                        <input id="probabilityScale" class="form-control" type="number" min="200" max="800" step="25" @bind="probabilityScale" />
+                        @if (IsInfoPanelVisible("probabilityScale"))
+                        {
+                            <div id="probabilityScaleInfo" class="info-panel">
+                                <p>
+                                    This controls how quickly ELO difference turns into win probability. Smaller values make the model more confident; larger values keep predictions closer to 50%.
+                                </p>
+                                <p>
+                                    Classic chess ELO uses 400, where a 400-point gap means about a 91% expected score. Basketball may calibrate near 400, but noisy data or volatile leagues may fit better around 450-550.
+                                </p>
+                                <p>
+                                    Use Brier score and log loss to judge this parameter. Winner accuracy only checks which side is above 50%, so it will miss probability calibration issues.
+                                </p>
+                            </div>
+                        }
                     </div>
 
                     <div class="filter-field">
-                        <label for="competitionWeight">Competition weight</label>
+                        <div class="label-with-info">
+                            <label for="competitionWeight">Competition weight</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("competitionWeight")'
+                                    aria-controls="competitionWeightInfo"
+                                    title="Competition weight context"
+                                    @onclick='() => ToggleInfoPanel("competitionWeight")'>
+                                i
+                            </button>
+                        </div>
                         <input id="competitionWeight" class="form-control" type="number" min="0.1" max="3" step="0.05" @bind="competitionWeight" />
+                        @if (IsInfoPanelVisible("competitionWeight"))
+                        {
+                            <div id="competitionWeightInfo" class="info-panel">
+                                <p>This multiplies rating movement after the game. Use it to model competitions where results should count more or less than the default.</p>
+                            </div>
+                        }
                     </div>
 
-                    <label class="toggle-field" for="usesMargin">
-                        <input id="usesMargin" type="checkbox" @bind="usesMarginAdjustment" />
-                        <span>Margin adjustment</span>
-                    </label>
+                    <div class="filter-field">
+                        <div class="label-with-info">
+                            <label class="toggle-field" for="usesMargin">
+                                <input id="usesMargin" type="checkbox" @bind="usesMarginAdjustment" />
+                                <span>Margin adjustment</span>
+                            </label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("usesMargin")'
+                                    aria-controls="usesMarginInfo"
+                                    title="Margin adjustment context"
+                                    @onclick='() => ToggleInfoPanel("usesMargin")'>
+                                i
+                            </button>
+                        </div>
+                        @if (IsInfoPanelVisible("usesMargin"))
+                        {
+                            <div id="usesMarginInfo" class="info-panel">
+                                <p>When enabled, the model compares the actual margin to the expected margin and boosts or dampens the ELO update. Blowouts can move ratings more than narrow wins.</p>
+                            </div>
+                        }
+                    </div>
 
                     <div class="filter-field">
-                        <label for="pointScale">Point margin scale</label>
+                        <div class="label-with-info">
+                            <label for="pointScale">Point margin scale</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("pointScale")'
+                                    aria-controls="pointScaleInfo"
+                                    title="Point margin scale context"
+                                    @onclick='() => ToggleInfoPanel("pointScale")'>
+                                i
+                            </button>
+                        </div>
                         <input id="pointScale" class="form-control" type="number" min="5" max="100" step="1" @bind="pointsPerEloMargin" disabled="@(!usesMarginAdjustment)" />
+                        @if (IsInfoPanelVisible("pointScale"))
+                        {
+                            <div id="pointScaleInfo" class="info-panel">
+                                <p>This translates ELO difference into expected point margin. With 28, a 140-point ELO gap equals about 5 expected points.</p>
+                                <p>Smaller values make the same ELO gap imply a larger spread. Larger values make expected margins more conservative.</p>
+                            </div>
+                        }
                     </div>
                 </div>
             </div>
@@ -93,33 +237,113 @@
 
                 <div class="control-grid">
                     <div class="filter-field wide">
-                        <label for="leagueName">League</label>
+                        <div class="label-with-info">
+                            <label for="leagueName">League</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("leagueName")'
+                                    aria-controls="leagueNameInfo"
+                                    title="League context"
+                                    @onclick='() => ToggleInfoPanel("leagueName")'>
+                                i
+                            </button>
+                        </div>
                         <select id="leagueName" class="form-select" @bind="leagueName">
                             @foreach (var league in options.Leagues)
                             {
                                 <option value="@league">@league</option>
                             }
                         </select>
+                        @if (IsInfoPanelVisible("leagueName"))
+                        {
+                            <div id="leagueNameInfo" class="info-panel">
+                                <p>The backtest runs inside one league at a time. That keeps model comparisons cleaner because schedule strength, scoring style, and data coverage can vary by league.</p>
+                            </div>
+                        }
                     </div>
 
                     <div class="filter-field">
-                        <label for="initFrom">Init from</label>
+                        <div class="label-with-info">
+                            <label for="initFrom">Init from</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("initFrom")'
+                                    aria-controls="initFromInfo"
+                                    title="Initialization start context"
+                                    @onclick='() => ToggleInfoPanel("initFrom")'>
+                                i
+                            </button>
+                        </div>
                         <input id="initFrom" class="form-control" type="date" @bind-value="initializationFrom" @bind-value:format="yyyy-MM-dd" />
+                        @if (IsInfoPanelVisible("initFrom"))
+                        {
+                            <div id="initFromInfo" class="info-panel">
+                                <p>The initialization window builds ratings before scoring begins. Earlier starts give teams more history, but may include older team strength.</p>
+                            </div>
+                        }
                     </div>
 
                     <div class="filter-field">
-                        <label for="initTo">Init to</label>
+                        <div class="label-with-info">
+                            <label for="initTo">Init to</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("initTo")'
+                                    aria-controls="initToInfo"
+                                    title="Initialization end context"
+                                    @onclick='() => ToggleInfoPanel("initTo")'>
+                                i
+                            </button>
+                        </div>
                         <input id="initTo" class="form-control" type="date" @bind-value="initializationTo" @bind-value:format="yyyy-MM-dd" />
+                        @if (IsInfoPanelVisible("initTo"))
+                        {
+                            <div id="initToInfo" class="info-panel">
+                                <p>Games up to this date update ratings but do not count in the reported backtest metrics.</p>
+                            </div>
+                        }
                     </div>
 
                     <div class="filter-field">
-                        <label for="scoredFrom">Score from</label>
+                        <div class="label-with-info">
+                            <label for="scoredFrom">Score from</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("scoredFrom")'
+                                    aria-controls="scoredFromInfo"
+                                    title="Scored start context"
+                                    @onclick='() => ToggleInfoPanel("scoredFrom")'>
+                                i
+                            </button>
+                        </div>
                         <input id="scoredFrom" class="form-control" type="date" @bind-value="scoredFrom" @bind-value:format="yyyy-MM-dd" />
+                        @if (IsInfoPanelVisible("scoredFrom"))
+                        {
+                            <div id="scoredFromInfo" class="info-panel">
+                                <p>From this date onward, predictions are recorded before each game updates ratings. These games drive winner accuracy, Brier score, log loss, and margin error.</p>
+                            </div>
+                        }
                     </div>
 
                     <div class="filter-field">
-                        <label for="scoredTo">Score to</label>
+                        <div class="label-with-info">
+                            <label for="scoredTo">Score to</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("scoredTo")'
+                                    aria-controls="scoredToInfo"
+                                    title="Scored end context"
+                                    @onclick='() => ToggleInfoPanel("scoredTo")'>
+                                i
+                            </button>
+                        </div>
                         <input id="scoredTo" class="form-control" type="date" @bind-value="scoredTo" @bind-value:format="yyyy-MM-dd" />
+                        @if (IsInfoPanelVisible("scoredTo"))
+                        {
+                            <div id="scoredToInfo" class="info-panel">
+                                <p>This closes the scoring window. Use the same scored window when comparing models so metric changes come from parameters, not a different sample.</p>
+                            </div>
+                        }
                     </div>
 
                     <div class="run-actions">
@@ -264,9 +488,11 @@
     private decimal baseRating;
     private int kFactor;
     private decimal homeAdvantageElo;
+    private decimal probabilityScale;
     private bool usesMarginAdjustment;
     private decimal pointsPerEloMargin;
     private decimal competitionWeight;
+    private string? activeInfoPanel;
     private DateTime initializationFrom;
     private DateTime initializationTo;
     private DateTime scoredFrom;
@@ -311,6 +537,7 @@
                     baseRating,
                     kFactor,
                     homeAdvantageElo,
+                    probabilityScale,
                     usesMarginAdjustment,
                     usesMarginAdjustment ? pointsPerEloMargin : null,
                     competitionWeight),
@@ -353,6 +580,7 @@
         baseRating = response.Defaults.BaseRating;
         kFactor = response.Defaults.KFactor;
         homeAdvantageElo = response.Defaults.HomeAdvantageElo;
+        probabilityScale = response.Defaults.ProbabilityScale;
         usesMarginAdjustment = response.Defaults.UsesMarginAdjustment;
         pointsPerEloMargin = response.Defaults.PointsPerEloMargin ?? 28m;
         competitionWeight = response.Defaults.CompetitionWeight;
@@ -368,6 +596,12 @@
             initializationFrom = response.FirstGameUtc.Value.Date;
         }
     }
+
+    private bool IsInfoPanelVisible(string key)
+        => string.Equals(activeInfoPanel, key, StringComparison.Ordinal);
+
+    private void ToggleInfoPanel(string key)
+        => activeInfoPanel = IsInfoPanelVisible(key) ? null : key;
 
     private string CompareToBaseline()
     {

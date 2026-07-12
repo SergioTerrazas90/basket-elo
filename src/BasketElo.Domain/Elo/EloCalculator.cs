@@ -6,6 +6,7 @@ public static class EloCalculator
     public const int KFactor = 20;
     public const decimal AdjustedV1HomeAdvantageElo = 70m;
     public const decimal LegacyHomeAdvantageElo = 100m;
+    public const decimal ProbabilityScale = 400m;
     public const decimal PointsPerEloMargin = 28m;
     public const decimal CompetitionWeight = 1m;
     public const decimal MaxMarginMultiplier = 1.5m;
@@ -34,7 +35,7 @@ public static class EloCalculator
         }
 
         var eloDiff = homeElo + ruleset.HomeAdvantageElo - awayElo;
-        var expectedHomeResult = CalculateExpectedResult(eloDiff);
+        var expectedHomeResult = CalculateExpectedResult(eloDiff, ruleset.ProbabilityScale);
         var homeActualResult = homeScore > awayScore ? 1m : 0m;
         var baseHomeDelta = ruleset.KFactor * (homeActualResult - expectedHomeResult);
         var marginMultiplier = ruleset.UsesMarginAdjustment
@@ -58,28 +59,39 @@ public static class EloCalculator
                 AdjustedV1HomeAdvantageElo,
                 PointsPerEloMargin,
                 CompetitionWeight,
-                true),
+                true,
+                ProbabilityScale),
             EloRulesetVersions.BasicEloV1 => new EloRulesetParameters(
                 BaseRating,
                 KFactor,
                 LegacyHomeAdvantageElo,
                 null,
                 CompetitionWeight,
-                false),
+                false,
+                ProbabilityScale),
             EloRulesetVersions.PointMarginEloV1 => new EloRulesetParameters(
                 BaseRating,
                 KFactor,
                 LegacyHomeAdvantageElo,
                 PointsPerEloMargin,
                 CompetitionWeight,
-                true),
+                true,
+                ProbabilityScale),
             _ => throw new ArgumentException($"Unsupported ELO ruleset '{rulesetVersion}'.", nameof(rulesetVersion))
         };
     }
 
     public static decimal CalculateExpectedResult(decimal eloDiff)
+        => CalculateExpectedResult(eloDiff, ProbabilityScale);
+
+    public static decimal CalculateExpectedResult(decimal eloDiff, decimal probabilityScale)
     {
-        var expected = 1d / (1d + Math.Pow(10d, -(double)eloDiff / 400d));
+        if (probabilityScale <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(probabilityScale), "Probability scale must be greater than zero.");
+        }
+
+        var expected = 1d / (1d + Math.Pow(10d, -(double)eloDiff / (double)probabilityScale));
         return (decimal)expected;
     }
 
@@ -114,4 +126,5 @@ public sealed record EloRulesetParameters(
     decimal HomeAdvantageElo,
     decimal? PointsPerEloMargin,
     decimal CompetitionWeight,
-    bool UsesMarginAdjustment);
+    bool UsesMarginAdjustment,
+    decimal ProbabilityScale = EloCalculator.ProbabilityScale);

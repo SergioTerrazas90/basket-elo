@@ -1,45 +1,54 @@
 .hero-shell {
-    margin-top: 1.5rem;
-    padding: 2rem;
-    border-radius: 24px;
+    margin-top: var(--space-2);
+    padding: var(--space-8);
+    border: 1px solid rgba(255, 250, 240, 0.16);
+    border-radius: var(--radius-lg);
     background:
-        radial-gradient(circle at top left, rgba(255, 196, 80, 0.35), transparent 28%),
-        linear-gradient(145deg, #0f172a 0%, #16324f 55%, #1b4332 100%);
-    color: #f8fafc;
-    box-shadow: 0 22px 40px rgba(15, 23, 42, 0.18);
+        linear-gradient(135deg, rgba(216, 135, 34, 0.24), transparent 38%),
+        linear-gradient(145deg, #211813 0%, #173b4f 58%, #1e685b 100%);
+    color: var(--color-inverse);
+    box-shadow: var(--shadow-md);
 }
 
 .hero-copy {
-    max-width: 42rem;
+    max-width: 44rem;
 }
 
 .eyebrow {
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--space-3);
+    color: var(--color-accent);
+    font-size: 0.76rem;
+    font-weight: 850;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    letter-spacing: 0.18em;
-    font-size: 0.78rem;
-    color: #facc15;
 }
 
 .hero-shell h1 {
-    margin-bottom: 1rem;
-    font-size: clamp(2rem, 4vw, 3.2rem);
-    line-height: 1.05;
+    margin-bottom: var(--space-4);
+    color: var(--color-inverse);
+    font-size: clamp(2rem, 4vw, 3.35rem);
+    line-height: 1.04;
 }
 
 .hero-text {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-5);
+    color: rgba(255, 250, 240, 0.82);
     font-size: 1.05rem;
-    color: rgba(248, 250, 252, 0.84);
 }
 
 .hero-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--space-3);
 }
 
 .hero-action {
     padding-inline: 1.35rem;
-    font-weight: 600;
+    font-weight: 760;
+}
+
+@media (max-width: 760px) {
+    .hero-shell {
+        padding: var(--space-5);
+    }
 }

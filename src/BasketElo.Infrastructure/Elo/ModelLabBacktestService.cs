@@ -115,7 +115,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             if (isScored)
             {
                 var eloDiff = home.Elo + parameters.HomeAdvantageElo - away.Elo;
-                var predictedHomeWinProbability = EloCalculator.CalculateExpectedResult(eloDiff);
+                var predictedHomeWinProbability = EloCalculator.CalculateExpectedResult(eloDiff, parameters.ProbabilityScale);
                 var predictedHomeMargin = parameters.PointsPerEloMargin.HasValue && parameters.PointsPerEloMargin.Value > 0
                     ? eloDiff / parameters.PointsPerEloMargin.Value
                     : 0m;
@@ -284,6 +284,11 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             throw new ArgumentException("Home advantage must be between -200 and 300 ELO.");
         }
 
+        if (request.Parameters.ProbabilityScale is < 200m or > 800m)
+        {
+            throw new ArgumentException("Probability scale must be between 200 and 800 ELO.");
+        }
+
         if (request.Parameters.CompetitionWeight is <= 0m or > 3m)
         {
             throw new ArgumentException("Competition weight must be greater than 0 and at most 3.");
@@ -303,13 +308,15 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             parameters.HomeAdvantageElo,
             parameters.PointsPerEloMargin,
             parameters.CompetitionWeight,
-            parameters.UsesMarginAdjustment);
+            parameters.UsesMarginAdjustment,
+            parameters.ProbabilityScale);
 
     private static ModelLabParameterSet ToParameterSet(EloRulesetParameters parameters)
         => new(
             parameters.BaseRating,
             parameters.KFactor,
             parameters.HomeAdvantageElo,
+            parameters.ProbabilityScale,
             parameters.UsesMarginAdjustment,
             parameters.PointsPerEloMargin,
             parameters.CompetitionWeight);

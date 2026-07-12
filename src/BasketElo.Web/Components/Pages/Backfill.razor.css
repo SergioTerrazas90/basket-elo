@@ -1,22 +1,28 @@
 .backfill-page {
     display: grid;
-    gap: 1.5rem;
-    padding-block: 1rem 2.5rem;
+    gap: var(--space-5);
+    padding-block: var(--space-2) var(--space-8);
 }
 
 .page-header {
     display: flex;
-    justify-content: space-between;
-    gap: 1rem;
     align-items: end;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-5);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, var(--color-surface) 0%, #f7ead5 100%);
+    box-shadow: var(--shadow-sm);
 }
 
 .eyebrow {
     margin: 0 0 0.35rem;
-    text-transform: uppercase;
-    letter-spacing: 0.16em;
+    color: var(--color-accent-dark);
     font-size: 0.76rem;
-    color: #9a3412;
+    font-weight: 850;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
 }
 
 .page-header h1,
@@ -27,27 +33,22 @@
 .intro,
 .section-head p {
     margin: 0.45rem 0 0;
-    color: #475569;
+    color: var(--color-muted);
 }
 
 .filters-panel {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 1rem;
-    padding: 1rem;
-    border-radius: 20px;
-    background: linear-gradient(135deg, rgba(14, 116, 144, 0.08), rgba(245, 158, 11, 0.12));
-    border: 1px solid rgba(148, 163, 184, 0.28);
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: rgba(242, 234, 223, 0.78);
 }
 
 .filter-field {
     display: grid;
     gap: 0.35rem;
-}
-
-.filter-field label {
-    font-weight: 600;
-    color: #1f2937;
 }
 
 .compact-toggle {
@@ -57,44 +58,45 @@
 .summary-panel {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 1rem;
+    gap: var(--space-3);
 }
 
 .summary-card {
-    padding: 1rem 1.1rem;
-    border-radius: 18px;
-    background: #ffffff;
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
 }
 
 .summary-label {
     display: block;
-    margin-bottom: 0.4rem;
-    color: #64748b;
-    font-size: 0.88rem;
+    margin-bottom: 0.35rem;
+    color: var(--color-subtle);
+    font-size: 0.84rem;
+    font-weight: 720;
 }
 
 .summary-card strong {
-    font-size: 1.75rem;
-    color: #0f172a;
+    color: var(--color-text);
+    font-size: 1.55rem;
 }
 
 .inspection-card {
-    border-color: rgba(234, 88, 12, 0.35);
-    background: #fff7ed;
+    border-color: rgba(181, 84, 49, 0.34);
+    background: var(--color-rust-soft);
 }
 
 .reviewed-card {
-    border-color: rgba(20, 184, 166, 0.28);
-    background: #f0fdfa;
+    border-color: rgba(31, 122, 104, 0.28);
+    background: var(--color-teal-soft);
 }
 
 .reviewed-summary-panel {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.65rem;
     align-items: center;
+    gap: var(--space-2);
 }
 
 .reviewed-summary-chip {
@@ -102,30 +104,30 @@
     align-items: center;
     gap: 0.55rem;
     padding: 0.5rem 0.75rem;
-    border: 1px solid rgba(20, 184, 166, 0.3);
-    border-radius: 999px;
-    background: #ffffff;
-    color: #0f766e;
-    font-weight: 700;
+    border: 1px solid rgba(31, 122, 104, 0.28);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    color: var(--color-teal);
+    font-weight: 780;
 }
 
 .reviewed-summary-chip strong {
     min-width: 1.75rem;
     padding: 0.1rem 0.45rem;
-    border-radius: 999px;
-    background: #ccfbf1;
-    color: #115e59;
+    border-radius: var(--radius-pill);
+    background: var(--color-teal-soft);
+    color: var(--color-teal);
     text-align: center;
 }
 
 .reviewed-summary-chip.selected {
-    border-color: #0f766e;
-    background: #ccfbf1;
+    border-color: var(--color-teal);
+    background: var(--color-teal-soft);
 }
 
 .table-section {
     display: grid;
-    gap: 0.85rem;
+    gap: var(--space-3);
 }
 
 .section-head {
@@ -134,104 +136,60 @@
 }
 
 .coverage-table {
-    background: #fff;
-    border-radius: 18px;
     overflow: hidden;
-    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.05);
-}
-
-.coverage-table thead {
-    background: #eff6ff;
 }
 
 .coverage-table th {
-    border-bottom: none;
-    color: #0f172a;
+    color: var(--color-muted);
 }
 
 .status-pill {
     display: inline-flex;
     align-items: center;
     padding: 0.28rem 0.65rem;
-    border-radius: 999px;
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
+    border-radius: var(--radius-pill);
+    font-size: 0.76rem;
+    font-weight: 800;
     letter-spacing: 0.04em;
-}
-
-.status-completed {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.status-warning {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.status-dry-run {
-    background: #ccfbf1;
-    color: #0f766e;
-}
-
-.status-failed {
-    background: #fee2e2;
-    color: #b91c1c;
-}
-
-.status-progress {
-    background: #dbeafe;
-    color: #1d4ed8;
-}
-
-.status-partial {
-    background: #ede9fe;
-    color: #6d28d9;
-}
-
-.status-empty {
-    background: #e2e8f0;
-    color: #475569;
+    text-transform: uppercase;
 }
 
 .inspection-row {
-    --bs-table-bg: #fff7ed;
-    --bs-table-striped-bg: #ffedd5;
+    --bs-table-bg: #fff2df;
+    --bs-table-striped-bg: #ffe8c2;
 }
 
 .inspection-row-high {
-    --bs-table-bg: #fee2e2;
-    --bs-table-striped-bg: #fecaca;
+    --bs-table-bg: #f8ded6;
+    --bs-table-striped-bg: #f3c7ba;
 }
 
 .reviewed-row {
-    --bs-table-bg: #f0fdfa;
-    --bs-table-striped-bg: #ccfbf1;
+    --bs-table-bg: #e7f4ef;
+    --bs-table-striped-bg: #d5ece4;
+}
+
+.warning-details,
+.inspection-details {
+    max-width: 22rem;
 }
 
 .warning-details {
-    max-width: 22rem;
-    color: #78350f;
-}
-
-.inspection-details,
-.warning-details {
-    max-width: 22rem;
+    color: var(--status-warning-text);
 }
 
 .inspection-details {
-    color: #9a3412;
+    color: var(--color-rust);
 }
 
 .reviewed-details {
-    color: #0f766e;
+    color: var(--color-teal);
 }
 
 .inspection-details summary,
 .warning-details summary {
     cursor: pointer;
-    font-weight: 700;
+    font-weight: 780;
 }
 
 .inspection-details ul,
@@ -258,17 +216,18 @@
 
 .reviewed-date {
     display: block;
-    color: #64748b;
+    color: var(--color-subtle);
     font-size: 0.82rem;
 }
 
 .muted-cell {
-    color: #94a3b8;
+    color: var(--color-subtle);
 }
 
 @media (max-width: 768px) {
     .page-header {
         align-items: start;
         flex-direction: column;
+        padding: var(--space-4);
     }
 }

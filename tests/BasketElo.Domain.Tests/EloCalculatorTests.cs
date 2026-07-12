@@ -45,9 +45,42 @@ public class EloCalculatorTests
         var result = EloCalculator.Calculate(90, 80, 1500m, 1500m, EloRulesetVersions.AdjustedV1);
 
         Assert.Equal(70m, parameters.HomeAdvantageElo);
+        Assert.Equal(EloCalculator.ProbabilityScale, parameters.ProbabilityScale);
         Assert.Equal(EloCalculator.PointsPerEloMargin, parameters.PointsPerEloMargin);
         Assert.True(parameters.UsesMarginAdjustment);
         Assert.InRange(result.ExpectedHomeResult, 0.5993m, 0.5994m);
+    }
+
+    [Fact]
+    public void CalculateExpectedResult_SmallerProbabilityScaleIsMoreConfident()
+    {
+        var defaultScale = EloCalculator.CalculateExpectedResult(100m);
+        var smallerScale = EloCalculator.CalculateExpectedResult(100m, 300m);
+        var largerScale = EloCalculator.CalculateExpectedResult(100m, 500m);
+
+        Assert.InRange(defaultScale, 0.6400m, 0.6401m);
+        Assert.True(smallerScale > defaultScale);
+        Assert.True(largerScale < defaultScale);
+    }
+
+    [Fact]
+    public void Calculate_UsesCustomProbabilityScaleInRulesetParameters()
+    {
+        var defaultScale = EloCalculator.Calculate(
+            90,
+            80,
+            1500m,
+            1400m,
+            new EloRulesetParameters(1500m, 20, 0m, null, 1m, false));
+        var smallerScale = EloCalculator.Calculate(
+            90,
+            80,
+            1500m,
+            1400m,
+            new EloRulesetParameters(1500m, 20, 0m, null, 1m, false, 300m));
+
+        Assert.True(smallerScale.ExpectedHomeResult > defaultScale.ExpectedHomeResult);
+        Assert.True(smallerScale.HomeDelta < defaultScale.HomeDelta);
     }
 
     [Fact]

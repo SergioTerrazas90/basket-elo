@@ -305,12 +305,13 @@ public sealed class ModelLabController(
             "Sign in to save models.",
             false,
             null,
+            0,
             "ACB"));
         return false;
     }
 
     private static ModelLabLimitErrorResponse ToLimitError(ModelLabLimitException ex)
-        => new(ex.Code, ex.Message, ex.UpgradeRequired, ex.SavedModelLimit, ex.AllowedLeagueName);
+        => new(ex.Code, ex.Message, ex.UpgradeRequired, ex.SavedModelLimit, ex.StoredRunLimit, ex.AllowedLeagueName);
 
     private static ModelLabEntitlementResponse ToEntitlementResponse(ModelLabEntitlement entitlement)
         => new(
@@ -318,5 +319,6 @@ public sealed class ModelLabController(
             entitlement.CanSaveModels,
             entitlement.IsPaid,
             entitlement.SavedModelLimit,
+            entitlement.StoredRunLimit,
             entitlement.RequiredLeagueName);
 }

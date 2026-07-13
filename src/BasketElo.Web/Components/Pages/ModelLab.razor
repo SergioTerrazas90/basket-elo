@@ -130,6 +130,10 @@
                                 }
                             </div>
                         }
+                        @if (IsKnownStoredRunLimitReached)
+                        {
+                            <p class="model-status">Stored run limit reached. Delete an old run before saving another.</p>
+                        }
                     </div>
                 }
 
@@ -727,7 +731,12 @@
             !isRunning &&
             !isSavingRun &&
             !isSavingModel &&
+            !IsKnownStoredRunLimitReached &&
             !string.Equals(lastSavedRunSignature, BuildCurrentRunSignature(), StringComparison.Ordinal);
+
+    private bool IsKnownStoredRunLimitReached
+        => entitlement?.StoredRunLimit is > 0 &&
+            savedRuns.Count >= entitlement.StoredRunLimit.Value;
 
     private bool CanUseMultiCompetitionScopes
         => entitlement?.IsPaid == true && string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName);
@@ -771,8 +780,8 @@
         => entitlement?.PlanKey switch
         {
             "anonymous" => $"Anonymous users can run Model Lab backtests for {entitlement.RequiredLeagueName ?? "ACB"} only. Sign in to save models.",
-            "free" => $"Free users can run and save Model Lab work for {entitlement.RequiredLeagueName ?? "ACB"} only.",
-            "paid" => "Paid users can run single, selected, or all-competition backtests across all available competitions.",
+            "free" => $"Free users can run and save Model Lab work for {entitlement.RequiredLeagueName ?? "ACB"} only, with 1 stored run.",
+            "paid" => $"Paid users can run single, selected, or all-competition backtests and store up to {entitlement.StoredRunLimit ?? 100} runs.",
             _ => string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName)
                 ? "Paid users can run single, selected, or all-competition backtests across all available competitions."
                 : $"Current plan users can run and save Model Lab work for {entitlement.RequiredLeagueName} only."

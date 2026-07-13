@@ -45,6 +45,7 @@ public sealed class ModelLabRunService(
 
         var scopeType = NormalizeScopeType(request.ScopeType);
         EnforceScopeLimit(entitlement, model.LeagueName, scopeType);
+        await EnforceStoredRunLimitAsync(ownerUserId, entitlement, cancellationToken);
 
         var backtestRequest = new ModelLabBacktestRequest(
             model.Name,
@@ -322,6 +323,38 @@ public sealed class ModelLabRunService(
                 entitlement.SavedModelLimit,
                 entitlement.RequiredLeagueName);
         }
+    }
+
+    private async Task EnforceStoredRunLimitAsync(
+        Guid ownerUserId,
+        ModelLabEntitlement entitlement,
+        CancellationToken cancellationToken)
+    {
+        if (!entitlement.StoredRunLimit.HasValue)
+        {
+            return;
+        }
+
+        var runCount = await dbContext.ModelLabRuns
+            .AsNoTracking()
+            .CountAsync(x => x.OwnerUserId == ownerUserId, cancellationToken);
+
+        if (runCount < entitlement.StoredRunLimit.Value)
+        {
+            return;
+        }
+
+        var message = entitlement.IsPaid
+            ? $"Paid users can store up to {entitlement.StoredRunLimit.Value} Model Lab runs. Delete an old run before saving another."
+            : $"Free users can store one Model Lab run. Delete your existing run or upgrade for up to 100 saved runs.";
+
+        throw new ModelLabLimitException(
+            "stored_run_limit_reached",
+            message,
+            !entitlement.IsPaid,
+            entitlement.SavedModelLimit,
+            entitlement.RequiredLeagueName,
+            entitlement.StoredRunLimit);
     }
 
     private static string NormalizeScopeType(string? scopeType)

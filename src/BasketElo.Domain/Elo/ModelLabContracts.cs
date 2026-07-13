@@ -87,6 +87,7 @@ public sealed record ModelLabLimitErrorResponse(
     string Message,
     bool UpgradeRequired,
     int? SavedModelLimit,
+    int? StoredRunLimit,
     string? AllowedLeagueName);
 
 public sealed record ModelLabEntitlementResponse(
@@ -94,6 +95,7 @@ public sealed record ModelLabEntitlementResponse(
     bool CanSaveModels,
     bool IsPaid,
     int? SavedModelLimit,
+    int? StoredRunLimit,
     string? RequiredLeagueName);
 
 public sealed record ModelLabBacktestResponse(

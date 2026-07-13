@@ -5,4 +5,5 @@ public sealed record ModelLabEntitlement(
     bool CanSaveModels,
     bool IsPaid,
     int? SavedModelLimit,
+    int? StoredRunLimit,
     string? RequiredLeagueName);

@@ -9,6 +9,9 @@ public sealed class ModelLabEntitlementService(
     BasketEloDbContext dbContext,
     IOptions<ModelLabPlanOptions> options) : IModelLabEntitlementService
 {
+    public ModelLabEntitlement GetAnonymous()
+        => new("anonymous", false, false, 0, options.Value.FreeLeagueName);
+
     public async Task<ModelLabEntitlement> GetAsync(Guid ownerUserId, CancellationToken cancellationToken)
     {
         var user = await dbContext.ApplicationUsers
@@ -19,7 +22,7 @@ public sealed class ModelLabEntitlementService(
 
         if (user is null)
         {
-            return new ModelLabEntitlement("anonymous", false, false, 0, options.Value.FreeLeagueName);
+            return GetAnonymous();
         }
 
         var normalizedEmail = AuthOptions.NormalizeEmail(user.Email);

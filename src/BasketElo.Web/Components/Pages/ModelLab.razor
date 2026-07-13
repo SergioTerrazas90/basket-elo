@@ -294,7 +294,7 @@
                             </button>
                         </div>
                         <select id="leagueName" class="form-select" @bind="leagueName">
-                            @foreach (var league in options.Leagues)
+                            @foreach (var league in AvailableLeagues)
                             {
                                 <option value="@league">@league</option>
                             }
@@ -305,7 +305,7 @@
                                 <p>The backtest runs inside one league at a time. That keeps model comparisons cleaner because schedule strength, scoring style, and data coverage can vary by league.</p>
                             </div>
                         }
-                        <p class="field-note">Free users can save models for ACB only. Paid users can save models across leagues.</p>
+                        <p class="field-note">@LeagueAccessNote</p>
                     </div>
 
                     <div class="filter-field">
@@ -528,6 +528,7 @@
     private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
 
     private ModelLabOptionsResponse? options;
+    private ModelLabEntitlementResponse? entitlement;
     private ModelLabBacktestResponse? result;
     private List<ModelLabModelSummaryResponse> savedModels = [];
     private bool isLoadingOptions = true;
@@ -565,6 +566,7 @@
                     authenticationState.User.Identity?.IsAuthenticated == true;
             }
 
+            entitlement = await Http.GetFromJsonAsync<ModelLabEntitlementResponse>("api/model-lab/entitlement");
             options = await Http.GetFromJsonAsync<ModelLabOptionsResponse>("api/model-lab/options");
             if (options is not null)
             {
@@ -597,6 +599,48 @@
 
     private bool CanUseSelectedModel
         => CanSaveModels && !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
+
+    private IReadOnlyCollection<string> AvailableLeagues
+    {
+        get
+        {
+            if (options is null)
+            {
+                return [];
+            }
+
+            if (string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName))
+            {
+                return options.Leagues;
+            }
+
+            var requiredLeague = entitlement.RequiredLeagueName;
+            return options.Leagues
+                .Where(x => string.Equals(x, requiredLeague, StringComparison.OrdinalIgnoreCase))
+                .DefaultIfEmpty(requiredLeague)
+                .ToList();
+        }
+    }
+
+    private string LeagueAccessNote
+        => entitlement?.PlanKey switch
+        {
+            "anonymous" => $"Anonymous users can run Model Lab backtests for {entitlement.RequiredLeagueName ?? "ACB"} only. Sign in to save models.",
+            "free" => $"Free users can run and save Model Lab work for {entitlement.RequiredLeagueName ?? "ACB"} only.",
+            "paid" => "Paid users can run and save models across all available leagues.",
+            _ => string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName)
+                ? "Paid users can run and save models across all available leagues."
+                : $"Current plan users can run and save Model Lab work for {entitlement.RequiredLeagueName} only."
+        };
+
+    private string PlanLabel
+        => entitlement?.PlanKey switch
+        {
+            "anonymous" => "Anonymous",
+            "free" => "Free",
+            "paid" => "Paid",
+            _ => "Current plan"
+        };
 
     private static string FormatSavedModelOption(ModelLabModelSummaryResponse model)
         => $"{model.Name} - v{model.CurrentVersion.VersionNumber}";
@@ -886,7 +930,7 @@
         selectedModelIdText = model.Id.ToString();
         modelName = model.Name;
         modelDescription = model.Description;
-        leagueName = model.LeagueName;
+        leagueName = NormalizeLeagueForEntitlement(model.LeagueName);
         ApplyParameters(model.CurrentVersion.Parameters);
     }
 
@@ -894,7 +938,7 @@
     {
         modelName = "Adjusted ELO experiment";
         modelDescription = null;
-        leagueName = response.Leagues.FirstOrDefault();
+        leagueName = NormalizeLeagueForEntitlement(response.Leagues.FirstOrDefault());
         ApplyParameters(response.Defaults);
 
         var last = response.LastGameUtc?.Date ?? DateTime.UtcNow.Date;
@@ -918,6 +962,18 @@
         usesMarginAdjustment = parameters.UsesMarginAdjustment;
         pointsPerEloMargin = parameters.PointsPerEloMargin ?? 28m;
         competitionWeight = parameters.CompetitionWeight;
+    }
+
+    private string? NormalizeLeagueForEntitlement(string? requestedLeague)
+    {
+        if (!string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName))
+        {
+            return entitlement.RequiredLeagueName;
+        }
+
+        return string.IsNullOrWhiteSpace(requestedLeague)
+            ? AvailableLeagues.FirstOrDefault()
+            : requestedLeague;
     }
 
     private bool IsInfoPanelVisible(string key)

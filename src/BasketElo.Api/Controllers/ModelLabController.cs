@@ -18,6 +18,12 @@ public sealed class ModelLabController(
         return Ok(await backtestService.GetOptionsAsync(cancellationToken));
     }
 
+    [HttpGet("entitlement")]
+    public async Task<ActionResult<ModelLabEntitlementResponse>> GetEntitlement(CancellationToken cancellationToken)
+    {
+        return Ok(ToEntitlementResponse(await GetRequestEntitlementAsync(cancellationToken)));
+    }
+
     [HttpGet("models")]
     [RequireInternalUser]
     public async Task<ActionResult<IReadOnlyCollection<ModelLabModelSummaryResponse>>> ListModels(
@@ -132,11 +138,42 @@ public sealed class ModelLabController(
     {
         try
         {
+            EnforceLeagueLimit(await GetRequestEntitlementAsync(cancellationToken), request.LeagueName);
             return Ok(await backtestService.RunAsync(request, cancellationToken));
+        }
+        catch (ModelLabLimitException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
         }
         catch (ArgumentException ex)
         {
             return BadRequest(ex.Message);
+        }
+    }
+
+    private async Task<ModelLabEntitlement> GetRequestEntitlementAsync(CancellationToken cancellationToken)
+    {
+        var authMode = Request.Headers[InternalAuthHeaders.AuthMode].ToString();
+        if (string.Equals(authMode, "google", StringComparison.OrdinalIgnoreCase) &&
+            Guid.TryParse(Request.Headers[InternalAuthHeaders.UserId].ToString(), out var userId))
+        {
+            return await entitlementService.GetAsync(userId, cancellationToken);
+        }
+
+        return entitlementService.GetAnonymous();
+    }
+
+    private static void EnforceLeagueLimit(ModelLabEntitlement entitlement, string leagueName)
+    {
+        if (!string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName) &&
+            !string.Equals(leagueName, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ModelLabLimitException(
+                "league_restricted",
+                $"{entitlement.PlanKey} users can run Model Lab backtests for {entitlement.RequiredLeagueName} only.",
+                true,
+                entitlement.SavedModelLimit,
+                entitlement.RequiredLeagueName);
         }
     }
 
@@ -163,4 +200,12 @@ public sealed class ModelLabController(
 
     private static ModelLabLimitErrorResponse ToLimitError(ModelLabLimitException ex)
         => new(ex.Code, ex.Message, ex.UpgradeRequired, ex.SavedModelLimit, ex.AllowedLeagueName);
+
+    private static ModelLabEntitlementResponse ToEntitlementResponse(ModelLabEntitlement entitlement)
+        => new(
+            entitlement.PlanKey,
+            entitlement.CanSaveModels,
+            entitlement.IsPaid,
+            entitlement.SavedModelLimit,
+            entitlement.RequiredLeagueName);
 }

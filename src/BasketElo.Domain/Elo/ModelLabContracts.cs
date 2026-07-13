@@ -73,6 +73,13 @@ public sealed record ModelLabLimitErrorResponse(
     int? SavedModelLimit,
     string? AllowedLeagueName);
 
+public sealed record ModelLabEntitlementResponse(
+    string PlanKey,
+    bool CanSaveModels,
+    bool IsPaid,
+    int? SavedModelLimit,
+    string? RequiredLeagueName);
+
 public sealed record ModelLabBacktestResponse(
     string ModelName,
     string LeagueName,

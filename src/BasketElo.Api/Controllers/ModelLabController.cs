@@ -122,13 +122,23 @@ public sealed class ModelLabController(
             return loginResult;
         }
 
-        var model = await modelService.SetArchivedAsync(
-            GetCurrentUserId(),
-            modelId,
-            request.IsArchived,
-            cancellationToken);
+        try
+        {
+            var ownerUserId = GetCurrentUserId();
+            var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+            var model = await modelService.SetArchivedAsync(
+                ownerUserId,
+                entitlement,
+                modelId,
+                request.IsArchived,
+                cancellationToken);
 
-        return model is null ? NotFound() : Ok(model);
+            return model is null ? NotFound() : Ok(model);
+        }
+        catch (ModelLabLimitException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
+        }
     }
 
     [HttpPost("backtests")]

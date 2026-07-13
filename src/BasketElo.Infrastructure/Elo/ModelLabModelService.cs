@@ -81,6 +81,7 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
         CancellationToken cancellationToken)
     {
         var normalized = NormalizeAndValidate(request);
+        EnforceCanSave(entitlement);
         EnforceLeagueLimit(entitlement, normalized.LeagueName);
 
         var model = await FindOwnedModel(ownerUserId, modelId)
@@ -121,16 +122,7 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
         string leagueName,
         CancellationToken cancellationToken)
     {
-        if (!entitlement.CanSaveModels)
-        {
-            throw new ModelLabLimitException(
-                "login_required",
-                "Sign in to save models.",
-                false,
-                entitlement.SavedModelLimit,
-                entitlement.RequiredLeagueName);
-        }
-
+        EnforceCanSave(entitlement);
         EnforceLeagueLimit(entitlement, leagueName);
 
         if (entitlement.SavedModelLimit.HasValue)
@@ -150,6 +142,21 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
         }
     }
 
+    private static void EnforceCanSave(ModelLabEntitlement entitlement)
+    {
+        if (entitlement.CanSaveModels)
+        {
+            return;
+        }
+
+        throw new ModelLabLimitException(
+            "login_required",
+            "Sign in to save models.",
+            false,
+            entitlement.SavedModelLimit,
+            entitlement.RequiredLeagueName);
+    }
+
     private static void EnforceLeagueLimit(ModelLabEntitlement entitlement, string leagueName)
     {
         if (!string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName) &&
@@ -166,10 +173,13 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
 
     public async Task<ModelLabModelDetailResponse?> SetArchivedAsync(
         Guid ownerUserId,
+        ModelLabEntitlement entitlement,
         Guid modelId,
         bool isArchived,
         CancellationToken cancellationToken)
     {
+        EnforceCanSave(entitlement);
+
         var model = await FindOwnedModel(ownerUserId, modelId)
             .SingleOrDefaultAsync(cancellationToken);
 

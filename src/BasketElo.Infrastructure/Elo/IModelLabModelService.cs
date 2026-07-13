@@ -29,6 +29,7 @@ public interface IModelLabModelService
 
     Task<ModelLabModelDetailResponse?> SetArchivedAsync(
         Guid ownerUserId,
+        ModelLabEntitlement entitlement,
         Guid modelId,
         bool isArchived,
         CancellationToken cancellationToken);

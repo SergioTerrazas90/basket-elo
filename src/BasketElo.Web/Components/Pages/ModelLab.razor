@@ -51,25 +51,28 @@
                 </div>
 
                 <div class="saved-model-panel">
-                    <div class="saved-model-row">
-                        <div class="filter-field saved-model-select">
-                            <label for="savedModel">Saved model</label>
-                            <select id="savedModel" class="form-select" value="@selectedModelIdText" @onchange="OnSelectedModelChangedAsync" disabled="@(isLoadingModels || savedModels.Count == 0)">
-                                <option value="">@SavedModelPlaceholder</option>
-                                @foreach (var savedModel in savedModels)
-                                {
-                                    <option value="@savedModel.Id">@FormatSavedModelOption(savedModel)</option>
-                                }
-                            </select>
-                        </div>
+                    @if (CanSaveModels)
+                    {
+                        <div class="saved-model-row">
+                            <div class="filter-field saved-model-select">
+                                <label for="savedModel">Saved model</label>
+                                <select id="savedModel" class="form-select" value="@selectedModelIdText" @onchange="OnSelectedModelChangedAsync" disabled="@(isLoadingModels || savedModels.Count == 0)">
+                                    <option value="">@SavedModelPlaceholder</option>
+                                    @foreach (var savedModel in savedModels)
+                                    {
+                                        <option value="@savedModel.Id">@FormatSavedModelOption(savedModel)</option>
+                                    }
+                                </select>
+                            </div>
 
-                        <div class="saved-model-actions">
-                            <button type="button" class="btn btn-outline-secondary" @onclick="LoadSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Load</button>
-                            <button type="button" class="btn btn-primary" @onclick="SaveNewModelAsync" disabled="@(!CanSaveModels || isSavingModel)">Save new</button>
-                            <button type="button" class="btn btn-outline-secondary" @onclick="UpdateSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Update</button>
-                            <button type="button" class="btn btn-outline-danger" @onclick="ArchiveSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Archive</button>
+                            <div class="saved-model-actions">
+                                <button type="button" class="btn btn-outline-secondary" @onclick="LoadSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Load</button>
+                                <button type="button" class="btn btn-primary" @onclick="SaveNewModelAsync" disabled="@isSavingModel">Save new</button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="UpdateSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Update</button>
+                                <button type="button" class="btn btn-outline-danger" @onclick="ArchiveSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Archive</button>
+                            </div>
                         </div>
-                    </div>
+                    }
 
                     @if (!string.IsNullOrWhiteSpace(modelStatusMessage))
                     {
@@ -595,7 +598,7 @@
     private string SavedModelPlaceholder
         => isLoadingModels ? "Loading saved models..." : "No saved model selected";
 
-    private bool CanSaveModels => AuthOptions.Value.Enabled && isRealSignedIn;
+    private bool CanSaveModels => isRealSignedIn && entitlement?.CanSaveModels == true;
 
     private bool CanUseSelectedModel
         => CanSaveModels && !isSavingModel && Guid.TryParse(selectedModelIdText, out _);

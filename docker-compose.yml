@@ -24,6 +24,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo
+      InternalAuth__SharedSecret: ${BASKET_ELO_INTERNAL_AUTH_SECRET:-local-dev-secret}
       ApiSports__BaseUrl: https://v1.basketball.api-sports.io
       ApiSports__ApiKey: bef74529c17455cafe87dd1a6644deee
       ApiSports__MinSecondsBetweenRequests: 7
@@ -59,6 +60,10 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ApiBaseUrl: http://api:8080
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo
+      Auth__AdminEmails: ${BASKET_ELO_ADMIN_EMAILS:-}
+      InternalAuth__SharedSecret: ${BASKET_ELO_INTERNAL_AUTH_SECRET:-local-dev-secret}
+      Authentication__Google__ClientId: ${BASKET_ELO_GOOGLE_CLIENT_ID:-}
+      Authentication__Google__ClientSecret: ${BASKET_ELO_GOOGLE_CLIENT_SECRET:-}
     depends_on:
       - api
     ports:

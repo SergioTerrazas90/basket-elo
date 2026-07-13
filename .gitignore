@@ -5,3 +5,6 @@
 *.suo
 *.cache
 artifacts/
+.env
+.env.*
+!.env.example

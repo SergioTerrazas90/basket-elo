@@ -1,13 +1,12 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Components.Authorization;
 
 namespace BasketElo.Web.Auth;
 
 public sealed class AuthenticatedApiHttpMessageHandler(
-    AuthenticationStateProvider authenticationStateProvider,
+    IHttpContextAccessor httpContextAccessor,
     IConfiguration configuration) : DelegatingHandler
 {
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var sharedSecret = configuration["InternalAuth:SharedSecret"];
         if (!string.IsNullOrWhiteSpace(sharedSecret))
@@ -15,9 +14,8 @@ public sealed class AuthenticatedApiHttpMessageHandler(
             request.Headers.TryAddWithoutValidation(InternalAuthHeaders.SharedSecret, sharedSecret);
         }
 
-        var authState = await authenticationStateProvider.GetAuthenticationStateAsync();
-        var user = authState.User;
-        if (user.Identity?.IsAuthenticated == true)
+        var user = httpContextAccessor.HttpContext?.User;
+        if (user?.Identity?.IsAuthenticated == true)
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!string.IsNullOrWhiteSpace(userId))
@@ -37,6 +35,6 @@ public sealed class AuthenticatedApiHttpMessageHandler(
             }
         }
 
-        return await base.SendAsync(request, cancellationToken);
+        return base.SendAsync(request, cancellationToken);
     }
 }

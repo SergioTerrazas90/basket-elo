@@ -646,6 +646,7 @@
     private string modelName = "My model";
     private string? modelDescription;
     private string selectedModelIdText = string.Empty;
+    private string? lastSavedRunSignature;
     private string scopeType = ModelLabScopeTypes.SingleCompetition;
     private string? leagueName;
     private HashSet<Guid> selectedCompetitionIds = [];
@@ -712,7 +713,11 @@
         => CanSaveModels && !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
 
     private bool CanCreateStoredRun
-        => CanSaveModels && !isRunning && !isSavingRun && !isSavingModel;
+        => CanSaveModels &&
+            !isRunning &&
+            !isSavingRun &&
+            !isSavingModel &&
+            !string.Equals(lastSavedRunSignature, BuildCurrentRunSignature(), StringComparison.Ordinal);
 
     private bool CanUseMultiCompetitionScopes
         => entitlement?.IsPaid == true && string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName);
@@ -1154,6 +1159,7 @@
 
             result = createdRun.Result;
             selectedModelIdText = model.Id.ToString();
+            lastSavedRunSignature = BuildCurrentRunSignature();
             await LoadSavedModelsAsync();
             selectedModelIdText = model.Id.ToString();
             await LoadSavedRunsAsync();
@@ -1236,6 +1242,36 @@
         => scopeType == ModelLabScopeTypes.SelectedCompetitions
             ? selectedCompetitionIds.ToList()
             : null;
+
+    private string BuildCurrentRunSignature()
+    {
+        var competitionIds = scopeType == ModelLabScopeTypes.SelectedCompetitions
+            ? string.Join(",", selectedCompetitionIds.OrderBy(x => x))
+            : string.Empty;
+        var pointsPerMargin = usesMarginAdjustment
+            ? pointsPerEloMargin.ToString("0.####")
+            : string.Empty;
+
+        return string.Join("|", [
+            selectedModelIdText.Trim(),
+            (modelName ?? string.Empty).Trim(),
+            (modelDescription ?? string.Empty).Trim(),
+            (leagueName ?? string.Empty).Trim(),
+            scopeType,
+            competitionIds,
+            initializationFrom.Date.ToString("O"),
+            initializationTo.Date.ToString("O"),
+            scoredFrom.Date.ToString("O"),
+            scoredTo.Date.ToString("O"),
+            baseRating.ToString("0.####"),
+            kFactor.ToString(),
+            homeAdvantageElo.ToString("0.####"),
+            probabilityScale.ToString("0.####"),
+            usesMarginAdjustment.ToString(),
+            pointsPerMargin,
+            competitionWeight.ToString("0.####")
+        ]);
+    }
 
     private void ApplySavedModel(ModelLabModelDetailResponse model)
     {

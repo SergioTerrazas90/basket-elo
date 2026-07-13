@@ -148,7 +148,7 @@ public sealed class ModelLabController(
     {
         try
         {
-            EnforceLeagueLimit(await GetRequestEntitlementAsync(cancellationToken), request.LeagueName);
+            EnforceBacktestScopeLimit(await GetRequestEntitlementAsync(cancellationToken), request);
             return Ok(await backtestService.RunAsync(request, cancellationToken));
         }
         catch (ModelLabLimitException ex)
@@ -173,10 +173,15 @@ public sealed class ModelLabController(
         return entitlementService.GetAnonymous();
     }
 
-    private static void EnforceLeagueLimit(ModelLabEntitlement entitlement, string leagueName)
+    private static void EnforceBacktestScopeLimit(ModelLabEntitlement entitlement, ModelLabBacktestRequest request)
     {
+        var scopeType = string.IsNullOrWhiteSpace(request.ScopeType)
+            ? ModelLabScopeTypes.SingleCompetition
+            : request.ScopeType.Trim();
+
         if (!string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName) &&
-            !string.Equals(leagueName, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase))
+            (!string.Equals(scopeType, ModelLabScopeTypes.SingleCompetition, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(request.LeagueName, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase)))
         {
             throw new ModelLabLimitException(
                 "league_restricted",

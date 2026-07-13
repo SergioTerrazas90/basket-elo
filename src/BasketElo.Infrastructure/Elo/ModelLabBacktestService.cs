@@ -21,6 +21,10 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 .Select(x => x.DisplayName)
                 .OrderBy(x => x)
                 .ToList(),
+            leagueOptions
+                .OrderBy(x => x.DisplayName)
+                .Select(x => new ModelLabCompetitionOption(x.Id, x.Name, x.DisplayName, x.CountryCode))
+                .ToList(),
             await games
                 .Select(x => x.Season.Label)
                 .Distinct()
@@ -38,7 +42,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         var baselineParameters = EloCalculator.GetRulesetParameters(EloRulesetVersions.AdjustedV1);
         var fromUtc = Min(request.InitializationFromUtc, request.ScoredFromUtc);
         var toUtc = Max(request.InitializationToUtc, request.ScoredToUtc);
-        var competitionId = await ResolveCompetitionIdAsync(request.LeagueName, cancellationToken);
+        var scope = await ResolveScopeAsync(request, cancellationToken);
 
         var gameQuery = dbContext.Games
             .AsNoTracking()
@@ -49,8 +53,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 x.AwayScore.HasValue &&
                 x.HomeScore != x.AwayScore);
 
-        gameQuery = competitionId.HasValue
-            ? gameQuery.Where(x => x.CompetitionId == competitionId.Value)
+        gameQuery = scope.CompetitionIds is { Count: > 0 }
+            ? gameQuery.Where(x => scope.CompetitionIds.Contains(x.CompetitionId))
             : gameQuery.Where(x => x.Competition.Name == request.LeagueName);
 
         var games = await gameQuery
@@ -75,7 +79,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
 
         return new ModelLabBacktestResponse(
             string.IsNullOrWhiteSpace(request.ModelName) ? "Untitled model" : request.ModelName.Trim(),
-            request.LeagueName,
+            scope.DisplayName,
             request.Parameters,
             new ModelLabBacktestWindow(
                 request.InitializationFromUtc,
@@ -113,14 +117,60 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             .Select(x => new LeagueOption(
                 x.Id,
                 x.Name,
-                duplicateNames.Contains(x.Name) ? $"{x.Name} ({FormatCountryCode(x.CountryCode)})" : x.Name))
+                duplicateNames.Contains(x.Name) ? $"{x.Name} ({FormatCountryCode(x.CountryCode)})" : x.Name,
+                x.CountryCode))
             .ToList();
+    }
+
+    private async Task<ResolvedScope> ResolveScopeAsync(ModelLabBacktestRequest request, CancellationToken cancellationToken)
+    {
+        var leagueOptions = await GetLeagueOptionsAsync(cancellationToken);
+        var scopeType = NormalizeScopeType(request.ScopeType);
+        if (scopeType == ModelLabScopeTypes.AllCompetitions)
+        {
+            return new ResolvedScope(
+                "All competitions",
+                leagueOptions.Select(x => x.Id).Distinct().ToList());
+        }
+
+        if (scopeType == ModelLabScopeTypes.SelectedCompetitions)
+        {
+            var requestedIds = request.CompetitionIds?
+                .Where(x => x != Guid.Empty)
+                .Distinct()
+                .ToList() ?? [];
+
+            if (requestedIds.Count == 0)
+            {
+                throw new ArgumentException("Choose at least one competition before running a selected-competition backtest.");
+            }
+
+            var validIds = leagueOptions.Select(x => x.Id).ToHashSet();
+            var unknownIds = requestedIds.Where(x => !validIds.Contains(x)).ToList();
+            if (unknownIds.Count > 0)
+            {
+                throw new ArgumentException("One or more selected competitions are not available for Model Lab.");
+            }
+
+            return new ResolvedScope(
+                requestedIds.Count == 1
+                    ? leagueOptions.First(x => x.Id == requestedIds[0]).DisplayName
+                    : $"{requestedIds.Count} competitions",
+                requestedIds);
+        }
+
+        var competitionId = ResolveCompetitionId(request.LeagueName, leagueOptions);
+        return new ResolvedScope(request.LeagueName, competitionId.HasValue ? [competitionId.Value] : []);
     }
 
     private async Task<Guid?> ResolveCompetitionIdAsync(string leagueName, CancellationToken cancellationToken)
     {
+        return ResolveCompetitionId(leagueName, await GetLeagueOptionsAsync(cancellationToken));
+    }
+
+    private static Guid? ResolveCompetitionId(string leagueName, IReadOnlyCollection<LeagueOption> leagueOptions)
+    {
         var normalizedLeagueName = leagueName.Trim();
-        var leagueOptions = await GetLeagueOptionsAsync(cancellationToken);
         var displayMatch = leagueOptions.FirstOrDefault(x =>
             string.Equals(x.DisplayName, normalizedLeagueName, StringComparison.OrdinalIgnoreCase));
         if (displayMatch is not null)
@@ -133,6 +183,16 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             .ToList();
 
         return nameMatches.Count == 1 ? nameMatches[0].Id : null;
+    }
+
+    private static string NormalizeScopeType(string? scopeType)
+    {
+        return scopeType?.Trim().ToLowerInvariant() switch
+        {
+            ModelLabScopeTypes.SelectedCompetitions => ModelLabScopeTypes.SelectedCompetitions,
+            ModelLabScopeTypes.AllCompetitions => ModelLabScopeTypes.AllCompetitions,
+            _ => ModelLabScopeTypes.SingleCompetition
+        };
     }
 
     private static SimulationResult RunSimulation(
@@ -382,5 +442,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
 
     private sealed record CompetitionOption(Guid Id, string Name, string? CountryCode);
 
-    private sealed record LeagueOption(Guid Id, string Name, string DisplayName);
+    private sealed record LeagueOption(Guid Id, string Name, string DisplayName, string? CountryCode);
+
+    private sealed record ResolvedScope(string DisplayName, IReadOnlyCollection<Guid> CompetitionIds);
 }

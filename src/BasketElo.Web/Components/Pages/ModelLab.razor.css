@@ -136,6 +136,22 @@
     font-weight: 650;
 }
 
+.competition-multi-select {
+    min-height: 12rem;
+}
+
+.scope-summary {
+    min-height: 2.4rem;
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+    color: var(--color-brand-dark);
+    padding: 0.45rem 0.7rem;
+    font-weight: 800;
+}
+
 .filter-field {
     display: flex;
     flex-direction: column;

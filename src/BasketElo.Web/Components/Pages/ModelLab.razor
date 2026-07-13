@@ -288,7 +288,35 @@
                 <div class="control-grid">
                     <div class="filter-field wide">
                         <div class="label-with-info">
-                            <label for="leagueName">League</label>
+                            <label for="scopeType">Scope</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("scopeType")'
+                                    aria-controls="scopeTypeInfo"
+                                    title="Scope context"
+                                    @onclick='() => ToggleInfoPanel("scopeType")'>
+                                i
+                            </button>
+                        </div>
+                        <select id="scopeType" class="form-select" value="@scopeType" @onchange="OnScopeTypeChanged">
+                            <option value="@ModelLabScopeTypes.SingleCompetition">Single competition</option>
+                            @if (CanUseMultiCompetitionScopes)
+                            {
+                                <option value="@ModelLabScopeTypes.SelectedCompetitions">Selected competitions</option>
+                                <option value="@ModelLabScopeTypes.AllCompetitions">All competitions</option>
+                            }
+                        </select>
+                        @if (IsInfoPanelVisible("scopeType"))
+                        {
+                            <div id="scopeTypeInfo" class="info-panel">
+                                <p>Selected and all-competition runs use one shared rating pool. Games are processed chronologically across the whole selected scope.</p>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="filter-field wide">
+                        <div class="label-with-info">
+                            <label for="leagueName">@CompetitionSelectorLabel</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("leagueName")'
@@ -298,16 +326,40 @@
                                 i
                             </button>
                         </div>
-                        <select id="leagueName" class="form-select" @bind="leagueName">
-                            @foreach (var league in AvailableLeagues)
-                            {
-                                <option value="@league">@league</option>
-                            }
-                        </select>
+                        @if (scopeType == ModelLabScopeTypes.SelectedCompetitions)
+                        {
+                            <select id="leagueName" class="form-select competition-multi-select" multiple size="10" @onchange="OnSelectedCompetitionsChanged">
+                                @foreach (var competition in AvailableCompetitions)
+                                {
+                                    <option value="@competition.Id" selected="@selectedCompetitionIds.Contains(competition.Id)">@competition.DisplayName</option>
+                                }
+                            </select>
+                            <p class="field-note">@SelectedCompetitionNote</p>
+                        }
+                        else if (scopeType == ModelLabScopeTypes.AllCompetitions)
+                        {
+                            <div class="scope-summary">@AvailableCompetitions.Count competitions selected</div>
+                        }
+                        else
+                        {
+                            <select id="leagueName" class="form-select" @bind="leagueName">
+                                @foreach (var league in AvailableLeagues)
+                                {
+                                    <option value="@league">@league</option>
+                                }
+                            </select>
+                        }
                         @if (IsInfoPanelVisible("leagueName"))
                         {
                             <div id="leagueNameInfo" class="info-panel">
-                                <p>The backtest runs inside one league at a time. That keeps model comparisons cleaner because schedule strength, scoring style, and data coverage can vary by league.</p>
+                                @if (scopeType == ModelLabScopeTypes.SingleCompetition)
+                                {
+                                    <p>The backtest runs inside one competition. Use this when you want clean league-specific model comparisons.</p>
+                                }
+                                else
+                                {
+                                    <p>The backtest processes all selected competitions in one shared model universe. Cross-competition games affect ratings naturally when they exist.</p>
+                                }
                             </div>
                         }
                         <p class="field-note">@LeagueAccessNote</p>
@@ -546,7 +598,9 @@
     private string modelName = "My model";
     private string? modelDescription;
     private string selectedModelIdText = string.Empty;
+    private string scopeType = ModelLabScopeTypes.SingleCompetition;
     private string? leagueName;
+    private HashSet<Guid> selectedCompetitionIds = [];
     private decimal baseRating;
     private int kFactor;
     private decimal homeAdvantageElo;
@@ -608,7 +662,10 @@
     private bool CanUseSelectedModel
         => CanSaveModels && !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
 
-    private IReadOnlyCollection<string> AvailableLeagues
+    private bool CanUseMultiCompetitionScopes
+        => entitlement?.IsPaid == true && string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName);
+
+    private IReadOnlyCollection<ModelLabCompetitionOption> AvailableCompetitions
     {
         get
         {
@@ -619,14 +676,27 @@
 
             if (string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName))
             {
-                return options.Leagues;
+                return options.Competitions;
             }
 
             var requiredLeague = entitlement.RequiredLeagueName;
-            return options.Leagues
-                .Where(x => string.Equals(x, requiredLeague, StringComparison.OrdinalIgnoreCase))
-                .DefaultIfEmpty(requiredLeague)
+            return options.Competitions
+                .Where(x =>
+                    string.Equals(x.DisplayName, requiredLeague, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(x.Name, requiredLeague, StringComparison.OrdinalIgnoreCase))
+                .DefaultIfEmpty(new ModelLabCompetitionOption(Guid.Empty, requiredLeague, requiredLeague, null))
                 .ToList();
+        }
+    }
+
+    private IReadOnlyCollection<string> AvailableLeagues
+    {
+        get
+        {
+            var competitions = AvailableCompetitions;
+            return competitions.Count == 0
+                ? []
+                : competitions.Select(x => x.DisplayName).ToList();
         }
     }
 
@@ -635,10 +705,26 @@
         {
             "anonymous" => $"Anonymous users can run Model Lab backtests for {entitlement.RequiredLeagueName ?? "ACB"} only. Sign in to save models.",
             "free" => $"Free users can run and save Model Lab work for {entitlement.RequiredLeagueName ?? "ACB"} only.",
-            "paid" => "Paid users can run and save models across all available leagues.",
+            "paid" => "Paid users can run single, selected, or all-competition backtests across all available competitions.",
             _ => string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName)
-                ? "Paid users can run and save models across all available leagues."
+                ? "Paid users can run single, selected, or all-competition backtests across all available competitions."
                 : $"Current plan users can run and save Model Lab work for {entitlement.RequiredLeagueName} only."
+        };
+
+    private string CompetitionSelectorLabel
+        => scopeType switch
+        {
+            ModelLabScopeTypes.SelectedCompetitions => "Competitions",
+            ModelLabScopeTypes.AllCompetitions => "Competitions",
+            _ => "Competition"
+        };
+
+    private string SelectedCompetitionNote
+        => selectedCompetitionIds.Count switch
+        {
+            0 => "Choose at least one competition.",
+            1 => "1 competition selected.",
+            _ => $"{selectedCompetitionIds.Count} competitions selected."
         };
 
     private string PlanLabel
@@ -652,6 +738,37 @@
 
     private static string FormatSavedModelOption(ModelLabModelSummaryResponse model)
         => $"{model.Name} - v{model.CurrentVersion.VersionNumber}";
+
+    private void OnScopeTypeChanged(ChangeEventArgs args)
+    {
+        scopeType = args.Value?.ToString() ?? ModelLabScopeTypes.SingleCompetition;
+        if (!CanUseMultiCompetitionScopes)
+        {
+            scopeType = ModelLabScopeTypes.SingleCompetition;
+        }
+
+        if (scopeType == ModelLabScopeTypes.SelectedCompetitions && selectedCompetitionIds.Count == 0)
+        {
+            var selected = FindCompetition(leagueName) ?? AvailableCompetitions.FirstOrDefault();
+            if (selected is not null && selected.Id != Guid.Empty)
+            {
+                selectedCompetitionIds.Add(selected.Id);
+            }
+        }
+    }
+
+    private void OnSelectedCompetitionsChanged(ChangeEventArgs args)
+    {
+        selectedCompetitionIds = args.Value switch
+        {
+            string[] values => values
+                .Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty)
+                .Where(x => x != Guid.Empty)
+                .ToHashSet(),
+            string value when Guid.TryParse(value, out var id) && id != Guid.Empty => [id],
+            _ => []
+        };
+    }
 
     private async Task OnSelectedModelChangedAsync(ChangeEventArgs args)
     {
@@ -866,9 +983,17 @@
 
     private async Task RunBacktestAsync()
     {
-        if (string.IsNullOrWhiteSpace(leagueName))
+        NormalizeScopeForEntitlement();
+
+        if (scopeType == ModelLabScopeTypes.SelectedCompetitions && selectedCompetitionIds.Count == 0)
         {
-            errorMessage = "Choose a league before running a backtest.";
+            errorMessage = "Choose at least one competition before running a backtest.";
+            return;
+        }
+
+        if (scopeType == ModelLabScopeTypes.SingleCompetition && string.IsNullOrWhiteSpace(leagueName))
+        {
+            errorMessage = "Choose a competition before running a backtest.";
             return;
         }
 
@@ -880,11 +1005,13 @@
             var request = new ModelLabBacktestRequest(
                 modelName,
                 BuildParameterSet(),
-                leagueName,
+                BuildRequestLeagueName(),
                 DateTime.SpecifyKind(initializationFrom.Date, DateTimeKind.Utc),
                 DateTime.SpecifyKind(initializationTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1),
                 DateTime.SpecifyKind(scoredFrom.Date, DateTimeKind.Utc),
-                DateTime.SpecifyKind(scoredTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1));
+                DateTime.SpecifyKind(scoredTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1),
+                scopeType,
+                BuildRequestCompetitionIds());
 
             using var response = await Http.PostAsJsonAsync("api/model-lab/backtests", request);
             if (!response.IsSuccessStatusCode)
@@ -933,11 +1060,27 @@
             usesMarginAdjustment ? pointsPerEloMargin : null,
             competitionWeight);
 
+    private string BuildRequestLeagueName()
+        => scopeType switch
+        {
+            ModelLabScopeTypes.AllCompetitions => "All competitions",
+            ModelLabScopeTypes.SelectedCompetitions => selectedCompetitionIds.Count == 1
+                ? AvailableCompetitions.FirstOrDefault(x => selectedCompetitionIds.Contains(x.Id))?.DisplayName ?? "Selected competition"
+                : $"{selectedCompetitionIds.Count} competitions",
+            _ => leagueName ?? string.Empty
+        };
+
+    private IReadOnlyCollection<Guid>? BuildRequestCompetitionIds()
+        => scopeType == ModelLabScopeTypes.SelectedCompetitions
+            ? selectedCompetitionIds.ToList()
+            : null;
+
     private void ApplySavedModel(ModelLabModelDetailResponse model)
     {
         selectedModelIdText = model.Id.ToString();
         modelName = model.Name;
         modelDescription = model.Description;
+        scopeType = ModelLabScopeTypes.SingleCompetition;
         leagueName = NormalizeLeagueForEntitlement(model.LeagueName);
         ApplyParameters(model.CurrentVersion.Parameters);
     }
@@ -946,7 +1089,13 @@
     {
         modelName = "Adjusted ELO experiment";
         modelDescription = null;
+        scopeType = ModelLabScopeTypes.SingleCompetition;
         leagueName = NormalizeLeagueForEntitlement(response.Leagues.FirstOrDefault());
+        selectedCompetitionIds = AvailableCompetitions
+            .Take(2)
+            .Where(x => x.Id != Guid.Empty)
+            .Select(x => x.Id)
+            .ToHashSet();
         ApplyParameters(response.Defaults);
 
         var last = response.LastGameUtc?.Date ?? DateTime.UtcNow.Date;
@@ -974,6 +1123,8 @@
 
     private string? NormalizeLeagueForEntitlement(string? requestedLeague)
     {
+        NormalizeScopeForEntitlement();
+
         if (!string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName))
         {
             return entitlement.RequiredLeagueName;
@@ -982,6 +1133,27 @@
         return string.IsNullOrWhiteSpace(requestedLeague)
             ? AvailableLeagues.FirstOrDefault()
             : requestedLeague;
+    }
+
+    private void NormalizeScopeForEntitlement()
+    {
+        if (!CanUseMultiCompetitionScopes)
+        {
+            scopeType = ModelLabScopeTypes.SingleCompetition;
+            selectedCompetitionIds = [];
+        }
+    }
+
+    private ModelLabCompetitionOption? FindCompetition(string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return null;
+        }
+
+        return AvailableCompetitions.FirstOrDefault(x =>
+            string.Equals(x.DisplayName, displayName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(x.Name, displayName, StringComparison.OrdinalIgnoreCase));
     }
 
     private bool IsInfoPanelVisible(string key)

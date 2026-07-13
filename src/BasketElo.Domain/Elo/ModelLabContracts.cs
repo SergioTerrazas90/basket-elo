@@ -3,9 +3,23 @@ namespace BasketElo.Domain.Elo;
 public sealed record ModelLabOptionsResponse(
     ModelLabParameterSet Defaults,
     IReadOnlyCollection<string> Leagues,
+    IReadOnlyCollection<ModelLabCompetitionOption> Competitions,
     IReadOnlyCollection<string> Seasons,
     DateTime? FirstGameUtc,
     DateTime? LastGameUtc);
+
+public static class ModelLabScopeTypes
+{
+    public const string SingleCompetition = "single_competition";
+    public const string SelectedCompetitions = "selected_competitions";
+    public const string AllCompetitions = "all_competitions";
+}
+
+public sealed record ModelLabCompetitionOption(
+    Guid Id,
+    string Name,
+    string DisplayName,
+    string? CountryCode);
 
 public sealed record ModelLabBacktestRequest(
     string? ModelName,
@@ -14,7 +28,9 @@ public sealed record ModelLabBacktestRequest(
     DateTime InitializationFromUtc,
     DateTime InitializationToUtc,
     DateTime ScoredFromUtc,
-    DateTime ScoredToUtc);
+    DateTime ScoredToUtc,
+    string ScopeType = ModelLabScopeTypes.SingleCompetition,
+    IReadOnlyCollection<Guid>? CompetitionIds = null);
 
 public sealed record ModelLabParameterSet(
     decimal BaseRating,

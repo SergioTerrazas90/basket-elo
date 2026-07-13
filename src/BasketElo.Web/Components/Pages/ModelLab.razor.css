@@ -95,6 +95,40 @@
     gap: var(--space-3);
 }
 
+.saved-model-panel {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid rgba(36, 92, 122, 0.2);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+}
+
+.saved-model-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto;
+    align-items: end;
+    gap: var(--space-3);
+}
+
+.saved-model-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+
+.saved-model-actions .btn {
+    min-height: 2.4rem;
+}
+
+.model-status {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: 0.88rem;
+    font-weight: 650;
+}
+
 .filter-field {
     display: flex;
     flex-direction: column;
@@ -284,5 +318,13 @@
     .lab-workbench,
     .result-grid {
         grid-template-columns: 1fr;
+    }
+
+    .saved-model-row {
+        grid-template-columns: 1fr;
+    }
+
+    .saved-model-actions {
+        justify-content: flex-start;
     }
 }

@@ -5,6 +5,7 @@
 **/.idea
 **/.vscode
 README.md
+artifacts/
 .env
 .env.*
 !.env.example

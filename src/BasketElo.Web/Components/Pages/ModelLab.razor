@@ -1,5 +1,6 @@
 @page "/model-lab"
 @rendermode InteractiveServer
+@using System.Net
 @using System.Net.Http.Json
 @using System.Text.Json
 @using BasketElo.Domain.Elo
@@ -45,6 +46,33 @@
                     </div>
                 </div>
 
+                <div class="saved-model-panel">
+                    <div class="saved-model-row">
+                        <div class="filter-field saved-model-select">
+                            <label for="savedModel">Saved model</label>
+                            <select id="savedModel" class="form-select" @bind="selectedModelIdText" disabled="@(isLoadingModels || savedModels.Count == 0)">
+                                <option value="">@SavedModelPlaceholder</option>
+                                @foreach (var savedModel in savedModels)
+                                {
+                                    <option value="@savedModel.Id">@savedModel.Name - v@savedModel.CurrentVersion.VersionNumber</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="saved-model-actions">
+                            <button type="button" class="btn btn-outline-secondary" @onclick="LoadSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Load</button>
+                            <button type="button" class="btn btn-primary" @onclick="SaveNewModelAsync" disabled="@isSavingModel">Save new</button>
+                            <button type="button" class="btn btn-outline-secondary" @onclick="UpdateSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Update</button>
+                            <button type="button" class="btn btn-outline-danger" @onclick="ArchiveSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Archive</button>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(modelStatusMessage))
+                    {
+                        <p class="model-status">@modelStatusMessage</p>
+                    }
+                </div>
+
                 <div class="control-grid">
                     <div class="filter-field wide">
                         <div class="label-with-info">
@@ -65,6 +93,11 @@
                                 <p>This is only a label for the experiment you are running. It does not affect ratings, probability, or margin calculations.</p>
                             </div>
                         }
+                    </div>
+
+                    <div class="filter-field wide">
+                        <label for="modelDescription">Description</label>
+                        <textarea id="modelDescription" class="form-control" rows="2" @bind="modelDescription" maxlength="1000"></textarea>
                     </div>
 
                     <div class="filter-field">
@@ -484,10 +517,16 @@
 @code {
     private ModelLabOptionsResponse? options;
     private ModelLabBacktestResponse? result;
+    private List<ModelLabModelSummaryResponse> savedModels = [];
     private bool isLoadingOptions = true;
+    private bool isLoadingModels;
     private bool isRunning;
+    private bool isSavingModel;
     private string? errorMessage;
+    private string? modelStatusMessage;
     private string modelName = "My model";
+    private string? modelDescription;
+    private string selectedModelIdText = string.Empty;
     private string? leagueName;
     private decimal baseRating;
     private int kFactor;
@@ -511,6 +550,8 @@
             {
                 ApplyDefaults(options);
             }
+
+            await LoadSavedModelsAsync();
         }
         catch (Exception ex)
         {
@@ -519,6 +560,178 @@
         finally
         {
             isLoadingOptions = false;
+        }
+    }
+
+    private string SavedModelPlaceholder
+        => isLoadingModels ? "Loading saved models..." : "No saved model selected";
+
+    private bool CanUseSelectedModel
+        => !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
+
+    private async Task LoadSavedModelsAsync()
+    {
+        isLoadingModels = true;
+        modelStatusMessage = null;
+
+        try
+        {
+            using var response = await Http.GetAsync("api/model-lab/models");
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                savedModels = [];
+                selectedModelIdText = string.Empty;
+                modelStatusMessage = "Sign in to save and load models.";
+                return;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            savedModels = await response.Content.ReadFromJsonAsync<List<ModelLabModelSummaryResponse>>() ?? [];
+        }
+        catch (Exception ex)
+        {
+            modelStatusMessage = $"Could not load saved models: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingModels = false;
+        }
+    }
+
+    private async Task LoadSelectedModelAsync()
+    {
+        if (!Guid.TryParse(selectedModelIdText, out var modelId))
+        {
+            return;
+        }
+
+        isSavingModel = true;
+        modelStatusMessage = null;
+
+        try
+        {
+            using var response = await Http.GetAsync($"api/model-lab/models/{modelId}");
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            var model = await response.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>()
+                ?? throw new InvalidOperationException("The saved model response was empty.");
+            ApplySavedModel(model);
+            modelStatusMessage = $"Loaded {model.Name} v{model.CurrentVersion.VersionNumber}.";
+        }
+        catch (Exception ex)
+        {
+            modelStatusMessage = $"Could not load saved model: {ex.Message}";
+        }
+        finally
+        {
+            isSavingModel = false;
+        }
+    }
+
+    private async Task SaveNewModelAsync()
+    {
+        isSavingModel = true;
+        modelStatusMessage = null;
+
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/model-lab/models", BuildSaveRequest());
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            var model = await response.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>()
+                ?? throw new InvalidOperationException("The saved model response was empty.");
+            selectedModelIdText = model.Id.ToString();
+            ApplySavedModel(model);
+            await LoadSavedModelsAsync();
+            selectedModelIdText = model.Id.ToString();
+            modelStatusMessage = $"Saved {model.Name} v{model.CurrentVersion.VersionNumber}.";
+        }
+        catch (Exception ex)
+        {
+            modelStatusMessage = $"Could not save model: {ex.Message}";
+        }
+        finally
+        {
+            isSavingModel = false;
+        }
+    }
+
+    private async Task UpdateSelectedModelAsync()
+    {
+        if (!Guid.TryParse(selectedModelIdText, out var modelId))
+        {
+            return;
+        }
+
+        isSavingModel = true;
+        modelStatusMessage = null;
+
+        try
+        {
+            using var response = await Http.PutAsJsonAsync($"api/model-lab/models/{modelId}", BuildSaveRequest());
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            var model = await response.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>()
+                ?? throw new InvalidOperationException("The saved model response was empty.");
+            ApplySavedModel(model);
+            await LoadSavedModelsAsync();
+            selectedModelIdText = model.Id.ToString();
+            modelStatusMessage = $"Updated {model.Name} to v{model.CurrentVersion.VersionNumber}.";
+        }
+        catch (Exception ex)
+        {
+            modelStatusMessage = $"Could not update model: {ex.Message}";
+        }
+        finally
+        {
+            isSavingModel = false;
+        }
+    }
+
+    private async Task ArchiveSelectedModelAsync()
+    {
+        if (!Guid.TryParse(selectedModelIdText, out var modelId))
+        {
+            return;
+        }
+
+        isSavingModel = true;
+        modelStatusMessage = null;
+
+        try
+        {
+            using var response = await Http.PostAsJsonAsync(
+                $"api/model-lab/models/{modelId}/archive",
+                new ArchiveModelLabModelRequest(true));
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            selectedModelIdText = string.Empty;
+            await LoadSavedModelsAsync();
+            modelStatusMessage = "Archived saved model.";
+        }
+        catch (Exception ex)
+        {
+            modelStatusMessage = $"Could not archive model: {ex.Message}";
+        }
+        finally
+        {
+            isSavingModel = false;
         }
     }
 
@@ -537,14 +750,7 @@
         {
             var request = new ModelLabBacktestRequest(
                 modelName,
-                new ModelLabParameterSet(
-                    baseRating,
-                    kFactor,
-                    homeAdvantageElo,
-                    probabilityScale,
-                    usesMarginAdjustment,
-                    usesMarginAdjustment ? pointsPerEloMargin : null,
-                    competitionWeight),
+                BuildParameterSet(),
                 leagueName,
                 DateTime.SpecifyKind(initializationFrom.Date, DateTimeKind.Utc),
                 DateTime.SpecifyKind(initializationTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1),
@@ -574,20 +780,43 @@
         if (options is not null)
         {
             ApplyDefaults(options);
+            selectedModelIdText = string.Empty;
+            modelDescription = null;
+            modelStatusMessage = null;
         }
+    }
+
+    private SaveModelLabModelRequest BuildSaveRequest()
+        => new(
+            modelName,
+            modelDescription,
+            BuildParameterSet(),
+            null);
+
+    private ModelLabParameterSet BuildParameterSet()
+        => new(
+            baseRating,
+            kFactor,
+            homeAdvantageElo,
+            probabilityScale,
+            usesMarginAdjustment,
+            usesMarginAdjustment ? pointsPerEloMargin : null,
+            competitionWeight);
+
+    private void ApplySavedModel(ModelLabModelDetailResponse model)
+    {
+        selectedModelIdText = model.Id.ToString();
+        modelName = model.Name;
+        modelDescription = model.Description;
+        ApplyParameters(model.CurrentVersion.Parameters);
     }
 
     private void ApplyDefaults(ModelLabOptionsResponse response)
     {
         modelName = "Adjusted ELO experiment";
+        modelDescription = null;
         leagueName = response.Leagues.FirstOrDefault();
-        baseRating = response.Defaults.BaseRating;
-        kFactor = response.Defaults.KFactor;
-        homeAdvantageElo = response.Defaults.HomeAdvantageElo;
-        probabilityScale = response.Defaults.ProbabilityScale;
-        usesMarginAdjustment = response.Defaults.UsesMarginAdjustment;
-        pointsPerEloMargin = response.Defaults.PointsPerEloMargin ?? 28m;
-        competitionWeight = response.Defaults.CompetitionWeight;
+        ApplyParameters(response.Defaults);
 
         var last = response.LastGameUtc?.Date ?? DateTime.UtcNow.Date;
         scoredTo = last;
@@ -599,6 +828,17 @@
         {
             initializationFrom = response.FirstGameUtc.Value.Date;
         }
+    }
+
+    private void ApplyParameters(ModelLabParameterSet parameters)
+    {
+        baseRating = parameters.BaseRating;
+        kFactor = parameters.KFactor;
+        homeAdvantageElo = parameters.HomeAdvantageElo;
+        probabilityScale = parameters.ProbabilityScale;
+        usesMarginAdjustment = parameters.UsesMarginAdjustment;
+        pointsPerEloMargin = parameters.PointsPerEloMargin ?? 28m;
+        competitionWeight = parameters.CompetitionWeight;
     }
 
     private bool IsInfoPanelVisible(string key)

@@ -1,10 +1,12 @@
 @page "/model-lab"
 @rendermode InteractiveServer
+@using System.Security.Claims
 @using System.Net
 @using System.Net.Http.Json
 @using System.Text.Json
 @using BasketElo.Domain.Elo
 @using BasketElo.Infrastructure.Identity
+@using BasketElo.Web.Auth
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.Options
 @inject HttpClient Http
@@ -565,8 +567,11 @@
             if (AuthenticationStateTask is not null)
             {
                 var authenticationState = await AuthenticationStateTask;
-                isRealSignedIn = AuthOptions.Value.Enabled &&
-                    authenticationState.User.Identity?.IsAuthenticated == true;
+                isRealSignedIn = authenticationState.User.Identity?.IsAuthenticated == true &&
+                    string.Equals(
+                        authenticationState.User.FindFirstValue(AuthClaimTypes.AuthMode),
+                        "google",
+                        StringComparison.OrdinalIgnoreCase);
             }
 
             entitlement = await Http.GetFromJsonAsync<ModelLabEntitlementResponse>("api/model-lab/entitlement");

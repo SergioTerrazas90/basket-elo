@@ -30,7 +30,7 @@ services:
       ApiSports__MinSecondsBetweenRequests: 7
       ModelLab__FreeSavedModelLimit: ${BASKET_ELO_FREE_SAVED_MODEL_LIMIT:-1}
       ModelLab__FreeLeagueName: ${BASKET_ELO_FREE_LEAGUE_NAME:-ACB}
-      ModelLab__PaidEmails: ${BASKET_ELO_PAID_EMAILS:-}
+      ModelLab__PaidEmails: ${BASKET_ELO_PAID_EMAILS:-dev-paid@basket-elo.local}
     depends_on:
       postgres:
         condition: service_healthy

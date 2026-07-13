@@ -1,4 +1,5 @@
 using BasketElo.Web.Components;
+using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using BasketElo.Web.Auth;
@@ -11,7 +12,7 @@ using Radzen;
 using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
-var authDisabledUserId = Guid.Parse("00000000-0000-0000-0000-000000000024");
+const string devPersonaCookieName = "BasketElo.DevPersona";
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -142,7 +143,17 @@ if (!authOptions.Enabled)
 {
     app.Use(async (httpContext, next) =>
     {
-        httpContext.User = CreateAuthDisabledPrincipal(authDisabledUserId);
+        var persona = ResolveDevPersona(httpContext.Request.Cookies[devPersonaCookieName]);
+        if (persona.UserId.HasValue)
+        {
+            await EnsureDevPersonaUserAsync(httpContext, persona);
+            httpContext.User = CreateDevPersonaPrincipal(persona);
+        }
+        else
+        {
+            httpContext.User = new ClaimsPrincipal(new ClaimsIdentity());
+        }
+
         await next(httpContext);
     });
 }
@@ -186,6 +197,28 @@ app.MapGet("/auth/logout", async (HttpContext httpContext) =>
     return Results.Redirect("/");
 });
 
+app.MapGet("/dev/persona", (HttpContext httpContext, string? persona, string? returnUrl) =>
+{
+    if (authOptions.Enabled)
+    {
+        return Results.NotFound();
+    }
+
+    var selectedPersona = ResolveDevPersona(persona).Key;
+    httpContext.Response.Cookies.Append(
+        devPersonaCookieName,
+        selectedPersona,
+        new CookieOptions
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            SameSite = SameSiteMode.Lax,
+            MaxAge = TimeSpan.FromDays(30)
+        });
+
+    return Results.Redirect(NormalizeReturnUrl(httpContext, returnUrl));
+});
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
@@ -222,17 +255,108 @@ static bool PortsMatch(int? requestPort, int refererPort)
     return requestPort is null || refererPort == requestPort.Value;
 }
 
-static ClaimsPrincipal CreateAuthDisabledPrincipal(Guid userId)
+static DevPersona ResolveDevPersona(string? key)
+{
+    return key?.Trim().ToLowerInvariant() switch
+    {
+        "free" => new DevPersona(
+            "free",
+            "Free user",
+            Guid.Parse("00000000-0000-0000-0000-000000000025"),
+            "dev-free@basket-elo.local",
+            []),
+        "paid" => new DevPersona(
+            "paid",
+            "Paying user",
+            Guid.Parse("00000000-0000-0000-0000-000000000026"),
+            "dev-paid@basket-elo.local",
+            []),
+        "admin" => new DevPersona(
+            "admin",
+            "Admin user",
+            Guid.Parse("00000000-0000-0000-0000-000000000024"),
+            "dev-admin@basket-elo.local",
+            [ApplicationRoleKeys.Admin]),
+        _ => new DevPersona("anonymous", "Anonymous", null, null, [])
+    };
+}
+
+static async Task EnsureDevPersonaUserAsync(HttpContext httpContext, DevPersona persona)
+{
+    if (!persona.UserId.HasValue || string.IsNullOrWhiteSpace(persona.Email))
+    {
+        return;
+    }
+
+    var dbContext = httpContext.RequestServices.GetRequiredService<BasketEloDbContext>();
+    var now = DateTime.UtcNow;
+    var normalizedEmail = AuthOptions.NormalizeEmail(persona.Email);
+    var user = await dbContext.ApplicationUsers
+        .Include(x => x.UserRoles)
+        .SingleOrDefaultAsync(x => x.Id == persona.UserId.Value, httpContext.RequestAborted);
+
+    if (user is null)
+    {
+        user = new ApplicationUser
+        {
+            Id = persona.UserId.Value,
+            CreatedAtUtc = now
+        };
+        dbContext.ApplicationUsers.Add(user);
+    }
+
+    user.DisplayName = persona.DisplayName;
+    user.Email = persona.Email;
+    user.NormalizedEmail = normalizedEmail;
+    user.LastLoginAtUtc = now;
+
+    if (persona.Roles.Count > 0)
+    {
+        var roles = await dbContext.ApplicationRoles
+            .Where(x => persona.Roles.Contains(x.Key))
+            .ToListAsync(httpContext.RequestAborted);
+
+        foreach (var role in roles)
+        {
+            if (user.UserRoles.Any(x => x.RoleId == role.Id))
+            {
+                continue;
+            }
+
+            user.UserRoles.Add(new ApplicationUserRole
+            {
+                UserId = user.Id,
+                RoleId = role.Id,
+                CreatedAtUtc = now
+            });
+        }
+    }
+
+    await dbContext.SaveChangesAsync(httpContext.RequestAborted);
+}
+
+static ClaimsPrincipal CreateDevPersonaPrincipal(DevPersona persona)
 {
     var identity = new ClaimsIdentity(
         [
-            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
-            new Claim(ClaimTypes.Name, "Local access"),
-            new Claim(ClaimTypes.Email, "local@basket-elo"),
-            new Claim(ClaimTypes.Role, "admin"),
-            new Claim(AuthClaimTypes.AuthMode, "auth-disabled")
+            new Claim(ClaimTypes.NameIdentifier, persona.UserId!.Value.ToString()),
+            new Claim(ClaimTypes.Name, persona.DisplayName),
+            new Claim(ClaimTypes.Email, persona.Email!),
+            new Claim(AuthClaimTypes.AuthMode, "google")
         ],
-        "AuthDisabled");
+        "DevPersona");
+
+    foreach (var role in persona.Roles)
+    {
+        identity.AddClaim(new Claim(ClaimTypes.Role, role));
+    }
 
     return new ClaimsPrincipal(identity);
 }
+
+sealed record DevPersona(
+    string Key,
+    string DisplayName,
+    Guid? UserId,
+    string? Email,
+    IReadOnlyCollection<string> Roles);

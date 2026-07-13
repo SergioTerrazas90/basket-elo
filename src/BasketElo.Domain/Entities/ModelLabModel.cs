@@ -14,4 +14,5 @@ public class ModelLabModel
 
     public ApplicationUser OwnerUser { get; set; } = null!;
     public ICollection<ModelLabModelVersion> Versions { get; set; } = new List<ModelLabModelVersion>();
+    public ICollection<ModelLabRun> Runs { get; set; } = new List<ModelLabRun>();
 }

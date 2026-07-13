@@ -453,6 +453,12 @@
                         <button type="button" class="btn btn-primary" @onclick="RunBacktestAsync" disabled="@isRunning">
                             @(isRunning ? "Running..." : "Run backtest")
                         </button>
+                        @if (CanSaveModels)
+                        {
+                            <button type="button" class="btn btn-outline-primary" @onclick="CreateStoredRunAsync" disabled="@(!CanCreateStoredRun)">
+                                @(isSavingRun ? "Saving..." : "Save run")
+                            </button>
+                        }
                         <button type="button" class="btn btn-outline-secondary" @onclick="ResetDefaults" disabled="@isRunning">Reset</button>
                     </div>
                 </div>
@@ -465,7 +471,7 @@
                 <div>
                     <span>Scored games</span>
                     <strong>@result.Summary.ScoredGames</strong>
-                    <small>@result.ScoredWindow.Games games in window</small>
+                    <small>@(result.RunId.HasValue ? $"Saved run {result.RunId.Value.ToString()[..8]}" : $"{result.ScoredWindow.Games} games in window")</small>
                 </div>
                 <div>
                     <span>Winner accuracy</span>
@@ -592,6 +598,7 @@
     private bool isLoadingModels;
     private bool isRunning;
     private bool isSavingModel;
+    private bool isSavingRun;
     private bool isRealSignedIn;
     private string? errorMessage;
     private string? modelStatusMessage;
@@ -661,6 +668,9 @@
 
     private bool CanUseSelectedModel
         => CanSaveModels && !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
+
+    private bool CanCreateStoredRun
+        => CanUseSelectedModel && !isRunning && !isSavingRun;
 
     private bool CanUseMultiCompetitionScopes
         => entitlement?.IsPaid == true && string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName);
@@ -1028,6 +1038,60 @@
         finally
         {
             isRunning = false;
+        }
+    }
+
+    private async Task CreateStoredRunAsync()
+    {
+        NormalizeScopeForEntitlement();
+
+        if (!Guid.TryParse(selectedModelIdText, out var modelId))
+        {
+            errorMessage = "Choose a saved model before saving a run.";
+            return;
+        }
+
+        if (scopeType == ModelLabScopeTypes.SelectedCompetitions && selectedCompetitionIds.Count == 0)
+        {
+            errorMessage = "Choose at least one competition before saving a run.";
+            return;
+        }
+
+        isSavingRun = true;
+        errorMessage = null;
+        modelStatusMessage = null;
+
+        try
+        {
+            var request = new CreateModelLabRunRequest(
+                modelId,
+                null,
+                DateTime.SpecifyKind(initializationFrom.Date, DateTimeKind.Utc),
+                DateTime.SpecifyKind(initializationTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1),
+                DateTime.SpecifyKind(scoredFrom.Date, DateTimeKind.Utc),
+                DateTime.SpecifyKind(scoredTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1),
+                scopeType,
+                BuildRequestCompetitionIds());
+
+            using var response = await Http.PostAsJsonAsync("api/model-lab/runs", request);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            var createdRun = await response.Content.ReadFromJsonAsync<ModelLabRunCreateResponse>()
+                ?? throw new InvalidOperationException("The saved run response was empty.");
+
+            result = createdRun.Result;
+            modelStatusMessage = $"Saved run {createdRun.RunId.ToString()[..8]}.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not save run: {ex.Message}";
+        }
+        finally
+        {
+            isSavingRun = false;
         }
     }
 

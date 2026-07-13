@@ -106,7 +106,56 @@ public sealed record ModelLabBacktestResponse(
     ModelLabBacktestSummary BaselineSummary,
     IReadOnlyCollection<ModelLabRatingRow> Ratings,
     IReadOnlyCollection<ModelLabPredictionRow> BiggestMisses,
+    IReadOnlyCollection<ModelLabPeriodMetric> Periods,
+    Guid? RunId = null);
+
+public sealed record CreateModelLabRunRequest(
+    Guid ModelId,
+    Guid? ModelVersionId,
+    DateTime InitializationFromUtc,
+    DateTime InitializationToUtc,
+    DateTime ScoredFromUtc,
+    DateTime ScoredToUtc,
+    string ScopeType = ModelLabScopeTypes.SingleCompetition,
+    IReadOnlyCollection<Guid>? CompetitionIds = null);
+
+public sealed record ModelLabRunCreateResponse(
+    Guid RunId,
+    Guid ModelId,
+    Guid ModelVersionId,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc,
+    ModelLabBacktestResponse Result);
+
+public sealed record ModelLabRunSummaryResponse(
+    Guid Id,
+    Guid ModelId,
+    Guid ModelVersionId,
+    string ModelName,
+    string LeagueName,
+    string ScopeType,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc,
+    ModelLabBacktestWindow InitializationWindow,
+    ModelLabBacktestWindow ScoredWindow,
+    ModelLabBacktestSummary Summary,
+    ModelLabBacktestSummary BaselineSummary);
+
+public sealed record ModelLabRunDetailResponse(
+    ModelLabRunSummaryResponse Run,
+    IReadOnlyCollection<ModelLabCompetitionOption> Scopes,
+    IReadOnlyCollection<ModelLabRatingRow> Ratings,
+    IReadOnlyCollection<ModelLabPredictionRow> BiggestMisses,
     IReadOnlyCollection<ModelLabPeriodMetric> Periods);
+
+public sealed record ModelLabRunPredictionPageResponse(
+    Guid RunId,
+    int Total,
+    int Skip,
+    int Take,
+    IReadOnlyCollection<ModelLabPredictionRow> Items);
 
 public sealed record ModelLabBacktestWindow(
     DateTime FromUtc,
@@ -132,9 +181,13 @@ public sealed record ModelLabRatingRow(
 
 public sealed record ModelLabPredictionRow(
     Guid GameId,
+    Guid CompetitionId,
+    string CompetitionName,
     DateTime GameDateTimeUtc,
     string Season,
+    Guid HomeTeamId,
     string HomeTeam,
+    Guid AwayTeamId,
     string AwayTeam,
     short HomeScore,
     short AwayScore,

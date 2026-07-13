@@ -10,6 +10,7 @@ namespace BasketElo.Api.Controllers;
 public sealed class ModelLabController(
     IModelLabBacktestService backtestService,
     IModelLabModelService modelService,
+    IModelLabRunService runService,
     IModelLabEntitlementService entitlementService) : ControllerBase
 {
     [HttpGet("options")]
@@ -138,6 +139,86 @@ public sealed class ModelLabController(
         catch (ModelLabLimitException ex)
         {
             return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
+        }
+    }
+
+    [HttpGet("runs")]
+    [RequireInternalUser]
+    public async Task<ActionResult<IReadOnlyCollection<ModelLabRunSummaryResponse>>> ListRuns(
+        [FromQuery] int take,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        return Ok(await runService.ListAsync(GetCurrentUserId(), take <= 0 ? 50 : take, cancellationToken));
+    }
+
+    [HttpGet("runs/{runId:guid}")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunDetailResponse>> GetRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        var run = await runService.GetAsync(GetCurrentUserId(), runId, cancellationToken);
+        return run is null ? NotFound() : Ok(run);
+    }
+
+    [HttpGet("runs/{runId:guid}/predictions")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunPredictionPageResponse>> GetRunPredictions(
+        Guid runId,
+        [FromQuery] int skip,
+        [FromQuery] int take,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        var page = await runService.GetPredictionsAsync(
+            GetCurrentUserId(),
+            runId,
+            skip,
+            take <= 0 ? 100 : take,
+            cancellationToken);
+
+        return page is null ? NotFound() : Ok(page);
+    }
+
+    [HttpPost("runs")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunCreateResponse>> CreateRun(
+        [FromBody] CreateModelLabRunRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        try
+        {
+            var ownerUserId = GetCurrentUserId();
+            var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+            var run = await runService.CreateAsync(ownerUserId, entitlement, request, cancellationToken);
+            return run is null ? NotFound() : CreatedAtAction(nameof(GetRun), new { runId = run.RunId }, run);
+        }
+        catch (ModelLabLimitException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
         }
     }
 

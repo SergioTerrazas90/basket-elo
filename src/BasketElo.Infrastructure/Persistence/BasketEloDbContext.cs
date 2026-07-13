@@ -13,6 +13,11 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<ApplicationUserRole> ApplicationUserRoles => Set<ApplicationUserRole>();
     public DbSet<ModelLabModel> ModelLabModels => Set<ModelLabModel>();
     public DbSet<ModelLabModelVersion> ModelLabModelVersions => Set<ModelLabModelVersion>();
+    public DbSet<ModelLabRun> ModelLabRuns => Set<ModelLabRun>();
+    public DbSet<ModelLabRunScope> ModelLabRunScopes => Set<ModelLabRunScope>();
+    public DbSet<ModelLabRunPrediction> ModelLabRunPredictions => Set<ModelLabRunPrediction>();
+    public DbSet<ModelLabRunRating> ModelLabRunRatings => Set<ModelLabRunRating>();
+    public DbSet<ModelLabRunPeriodMetric> ModelLabRunPeriodMetrics => Set<ModelLabRunPeriodMetric>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamAlias> TeamAliases => Set<TeamAlias>();
     public DbSet<Competition> Competitions => Set<Competition>();
@@ -132,6 +137,157 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(x => new { x.ModelId, x.VersionNumber }).IsUnique();
             entity.HasIndex(x => x.CreatedAtUtc);
+        });
+
+        modelBuilder.Entity<ModelLabRun>(entity =>
+        {
+            entity.ToTable("model_lab_runs");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ModelName).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.LeagueName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.ScopeType).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.InitializationFromUtc).IsRequired();
+            entity.Property(x => x.InitializationToUtc).IsRequired();
+            entity.Property(x => x.InitializationGames).IsRequired();
+            entity.Property(x => x.ScoredFromUtc).IsRequired();
+            entity.Property(x => x.ScoredToUtc).IsRequired();
+            entity.Property(x => x.ScoredGames).IsRequired();
+            entity.Property(x => x.CorrectWinners).IsRequired();
+            entity.Property(x => x.WinnerAccuracy).HasPrecision(6, 2).IsRequired();
+            entity.Property(x => x.BrierScore).HasPrecision(8, 4).IsRequired();
+            entity.Property(x => x.LogLoss).HasPrecision(8, 4).IsRequired();
+            entity.Property(x => x.AverageMarginError).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.AveragePredictedHomeWinProbability).HasPrecision(6, 2).IsRequired();
+            entity.Property(x => x.BaselineScoredGames).IsRequired();
+            entity.Property(x => x.BaselineCorrectWinners).IsRequired();
+            entity.Property(x => x.BaselineWinnerAccuracy).HasPrecision(6, 2).IsRequired();
+            entity.Property(x => x.BaselineBrierScore).HasPrecision(8, 4).IsRequired();
+            entity.Property(x => x.BaselineLogLoss).HasPrecision(8, 4).IsRequired();
+            entity.Property(x => x.BaselineAverageMarginError).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.BaselineAveragePredictedHomeWinProbability).HasPrecision(6, 2).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.Property(x => x.ErrorMessage).HasMaxLength(4000);
+            entity.HasOne(x => x.OwnerUser)
+                .WithMany(x => x.ModelLabRuns)
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Model)
+                .WithMany(x => x.Runs)
+                .HasForeignKey(x => x.ModelId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.ModelVersion)
+                .WithMany(x => x.Runs)
+                .HasForeignKey(x => x.ModelVersionId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.OwnerUserId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.OwnerUserId, x.Status, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.ModelId, x.CreatedAtUtc });
+            entity.HasIndex(x => x.ModelVersionId);
+        });
+
+        modelBuilder.Entity<ModelLabRunScope>(entity =>
+        {
+            entity.ToTable("model_lab_run_scopes");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.CompetitionName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.CountryCode).HasMaxLength(3);
+            entity.HasOne(x => x.Run)
+                .WithMany(x => x.Scopes)
+                .HasForeignKey(x => x.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Competition)
+                .WithMany()
+                .HasForeignKey(x => x.CompetitionId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.RunId, x.CompetitionId }).IsUnique();
+        });
+
+        modelBuilder.Entity<ModelLabRunPrediction>(entity =>
+        {
+            entity.ToTable("model_lab_run_predictions");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.CompetitionName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Season).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.HomeTeamName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.AwayTeamName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.PredictedHomeWinProbability).HasPrecision(6, 4).IsRequired();
+            entity.Property(x => x.PredictedHomeMargin).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.ActualHomeMargin).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.MarginError).HasPrecision(10, 2).IsRequired();
+            entity.HasOne(x => x.Run)
+                .WithMany(x => x.Predictions)
+                .HasForeignKey(x => x.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.OwnerUser)
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Game)
+                .WithMany()
+                .HasForeignKey(x => x.GameId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Competition)
+                .WithMany()
+                .HasForeignKey(x => x.CompetitionId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.HomeTeam)
+                .WithMany()
+                .HasForeignKey(x => x.HomeTeamId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.AwayTeam)
+                .WithMany()
+                .HasForeignKey(x => x.AwayTeamId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.RunId, x.GameId }).IsUnique();
+            entity.HasIndex(x => new { x.RunId, x.GameDateTimeUtc });
+            entity.HasIndex(x => new { x.RunId, x.CompetitionId, x.GameDateTimeUtc });
+            entity.HasIndex(x => new { x.RunId, x.MarginError }).IsDescending(false, true);
+            entity.HasIndex(x => new { x.OwnerUserId, x.RunId });
+        });
+
+        modelBuilder.Entity<ModelLabRunRating>(entity =>
+        {
+            entity.ToTable("model_lab_run_ratings");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.TeamName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Elo).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.RecentMovement).HasPrecision(10, 2).IsRequired();
+            entity.HasOne(x => x.Run)
+                .WithMany(x => x.Ratings)
+                .HasForeignKey(x => x.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.OwnerUser)
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Team)
+                .WithMany()
+                .HasForeignKey(x => x.TeamId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.RunId, x.TeamId }).IsUnique();
+            entity.HasIndex(x => new { x.RunId, x.Rank });
+            entity.HasIndex(x => new { x.RunId, x.Elo }).IsDescending(false, true);
+            entity.HasIndex(x => new { x.OwnerUserId, x.RunId });
+        });
+
+        modelBuilder.Entity<ModelLabRunPeriodMetric>(entity =>
+        {
+            entity.ToTable("model_lab_run_period_metrics");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.PeriodKey).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.WinnerAccuracy).HasPrecision(6, 2).IsRequired();
+            entity.Property(x => x.AverageMarginError).HasPrecision(10, 2).IsRequired();
+            entity.HasOne(x => x.Run)
+                .WithMany(x => x.PeriodMetrics)
+                .HasForeignKey(x => x.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.OwnerUser)
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.RunId, x.PeriodKey }).IsUnique();
+            entity.HasIndex(x => new { x.OwnerUserId, x.RunId });
         });
 
         modelBuilder.Entity<Team>(entity =>

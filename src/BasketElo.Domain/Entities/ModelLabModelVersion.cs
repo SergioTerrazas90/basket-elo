@@ -17,4 +17,5 @@ public class ModelLabModelVersion
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public ModelLabModel Model { get; set; } = null!;
+    public ICollection<ModelLabRun> Runs { get; set; } = new List<ModelLabRun>();
 }

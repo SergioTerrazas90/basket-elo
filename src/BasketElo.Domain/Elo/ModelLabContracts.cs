@@ -25,6 +25,44 @@ public sealed record ModelLabParameterSet(
     decimal? PointsPerEloMargin,
     decimal CompetitionWeight);
 
+public sealed record ModelLabModelSummaryResponse(
+    Guid Id,
+    string Name,
+    string? Description,
+    bool IsArchived,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc,
+    DateTime? ArchivedAtUtc,
+    ModelLabModelVersionResponse CurrentVersion);
+
+public sealed record ModelLabModelDetailResponse(
+    Guid Id,
+    Guid OwnerUserId,
+    string Name,
+    string? Description,
+    bool IsArchived,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc,
+    DateTime? ArchivedAtUtc,
+    ModelLabModelVersionResponse CurrentVersion,
+    IReadOnlyCollection<ModelLabModelVersionResponse> Versions);
+
+public sealed record ModelLabModelVersionResponse(
+    Guid Id,
+    int VersionNumber,
+    string ParameterSchemaVersion,
+    ModelLabParameterSet Parameters,
+    string? ExtensionDataJson,
+    DateTime CreatedAtUtc);
+
+public sealed record SaveModelLabModelRequest(
+    string Name,
+    string? Description,
+    ModelLabParameterSet Parameters,
+    string? ExtensionDataJson);
+
+public sealed record ArchiveModelLabModelRequest(bool IsArchived);
+
 public sealed record ModelLabBacktestResponse(
     string ModelName,
     string LeagueName,

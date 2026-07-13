@@ -11,6 +11,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<ApplicationUserExternalLogin> ApplicationUserExternalLogins => Set<ApplicationUserExternalLogin>();
     public DbSet<ApplicationRole> ApplicationRoles => Set<ApplicationRole>();
     public DbSet<ApplicationUserRole> ApplicationUserRoles => Set<ApplicationUserRole>();
+    public DbSet<ModelLabModel> ModelLabModels => Set<ModelLabModel>();
+    public DbSet<ModelLabModelVersion> ModelLabModelVersions => Set<ModelLabModelVersion>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamAlias> TeamAliases => Set<TeamAlias>();
     public DbSet<Competition> Competitions => Set<Competition>();
@@ -88,6 +90,46 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .WithMany(x => x.UserRoles)
                 .HasForeignKey(x => x.RoleId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ModelLabModel>(entity =>
+        {
+            entity.ToTable("model_lab_models");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(1000);
+            entity.Property(x => x.IsArchived).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.Property(x => x.UpdatedAtUtc).IsRequired();
+            entity.HasOne(x => x.OwnerUser)
+                .WithMany(x => x.ModelLabModels)
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.OwnerUserId, x.IsArchived, x.UpdatedAtUtc });
+            entity.HasIndex(x => new { x.OwnerUserId, x.Name });
+        });
+
+        modelBuilder.Entity<ModelLabModelVersion>(entity =>
+        {
+            entity.ToTable("model_lab_model_versions");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.VersionNumber).IsRequired();
+            entity.Property(x => x.ParameterSchemaVersion).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.BaseRating).HasPrecision(8, 2).IsRequired();
+            entity.Property(x => x.KFactor).IsRequired();
+            entity.Property(x => x.HomeAdvantageElo).HasPrecision(8, 2).IsRequired();
+            entity.Property(x => x.ProbabilityScale).HasPrecision(8, 2).IsRequired();
+            entity.Property(x => x.UsesMarginAdjustment).IsRequired();
+            entity.Property(x => x.PointsPerEloMargin).HasPrecision(8, 2);
+            entity.Property(x => x.CompetitionWeight).HasPrecision(6, 4).IsRequired();
+            entity.Property(x => x.ExtensionDataJson).HasColumnType("jsonb");
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasOne(x => x.Model)
+                .WithMany(x => x.Versions)
+                .HasForeignKey(x => x.ModelId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.ModelId, x.VersionNumber }).IsUnique();
+            entity.HasIndex(x => x.CreatedAtUtc);
         });
 
         modelBuilder.Entity<Team>(entity =>

@@ -11,6 +11,7 @@ using Radzen;
 using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
+var authDisabledUserId = Guid.Parse("00000000-0000-0000-0000-000000000024");
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -140,7 +141,7 @@ if (!authOptions.Enabled)
 {
     app.Use(async (httpContext, next) =>
     {
-        httpContext.User = CreateAuthDisabledPrincipal();
+        httpContext.User = CreateAuthDisabledPrincipal(authDisabledUserId);
         await next(httpContext);
     });
 }
@@ -220,11 +221,11 @@ static bool PortsMatch(int? requestPort, int refererPort)
     return requestPort is null || refererPort == requestPort.Value;
 }
 
-static ClaimsPrincipal CreateAuthDisabledPrincipal()
+static ClaimsPrincipal CreateAuthDisabledPrincipal(Guid userId)
 {
     var identity = new ClaimsIdentity(
         [
-            new Claim(ClaimTypes.NameIdentifier, "auth-disabled"),
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
             new Claim(ClaimTypes.Name, "Local access"),
             new Claim(ClaimTypes.Email, "local@basket-elo"),
             new Claim(ClaimTypes.Role, "admin")

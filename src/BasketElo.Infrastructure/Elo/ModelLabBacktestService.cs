@@ -269,36 +269,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             throw new ArgumentException("The scored start date must be before its end date.");
         }
 
-        if (request.Parameters.KFactor is < 1 or > 100)
-        {
-            throw new ArgumentException("K factor must be between 1 and 100.");
-        }
-
-        if (request.Parameters.BaseRating is < 500m or > 2500m)
-        {
-            throw new ArgumentException("Base rating must be between 500 and 2500.");
-        }
-
-        if (request.Parameters.HomeAdvantageElo is < -200m or > 300m)
-        {
-            throw new ArgumentException("Home advantage must be between -200 and 300 ELO.");
-        }
-
-        if (request.Parameters.ProbabilityScale is < 200m or > 800m)
-        {
-            throw new ArgumentException("Probability scale must be between 200 and 800 ELO.");
-        }
-
-        if (request.Parameters.CompetitionWeight is <= 0m or > 3m)
-        {
-            throw new ArgumentException("Competition weight must be greater than 0 and at most 3.");
-        }
-
-        if (request.Parameters.UsesMarginAdjustment &&
-            (!request.Parameters.PointsPerEloMargin.HasValue || request.Parameters.PointsPerEloMargin.Value is < 5m or > 100m))
-        {
-            throw new ArgumentException("Point margin scale must be between 5 and 100 ELO per point when margin adjustment is on.");
-        }
+        ModelLabParameterValidator.Validate(request.Parameters);
     }
 
     private static EloRulesetParameters ToRulesetParameters(ModelLabParameterSet parameters)

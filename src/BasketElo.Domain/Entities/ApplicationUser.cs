@@ -12,4 +12,5 @@ public class ApplicationUser
 
     public ICollection<ApplicationUserExternalLogin> ExternalLogins { get; set; } = new List<ApplicationUserExternalLogin>();
     public ICollection<ApplicationUserRole> UserRoles { get; set; } = new List<ApplicationUserRole>();
+    public ICollection<ModelLabModel> ModelLabModels { get; set; } = new List<ModelLabModel>();
 }

@@ -86,6 +86,45 @@
                     }
                 </div>
 
+                @if (CanSaveModels)
+                {
+                    <div class="saved-run-panel">
+                        <div class="section-head compact">
+                            <div>
+                                <h2>Saved runs</h2>
+                                <p>Recent persisted backtests for this account.</p>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="LoadSavedRunsAsync" disabled="@isLoadingRuns">
+                                @(isLoadingRuns ? "Loading..." : "Refresh")
+                            </button>
+                        </div>
+
+                        @if (isLoadingRuns)
+                        {
+                            <p class="model-status">Loading saved runs...</p>
+                        }
+                        else if (savedRuns.Count == 0)
+                        {
+                            <p class="model-status">No saved runs yet.</p>
+                        }
+                        else
+                        {
+                            <div class="saved-run-list">
+                                @foreach (var run in savedRuns)
+                                {
+                                    <a class="saved-run-link" href="@($"model-lab/runs/{run.Id}")">
+                                        <span>
+                                            <strong>@run.ModelName</strong>
+                                            <small>@run.LeagueName &middot; @FormatRunDate(run.CreatedAtUtc)</small>
+                                        </span>
+                                        <span class="saved-run-metric">@run.Summary.WinnerAccuracy.ToString("0.0")%</span>
+                                    </a>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+
                 <div class="control-grid">
                     <div class="filter-field wide">
                         <div class="label-with-info">
@@ -594,8 +633,10 @@
     private ModelLabEntitlementResponse? entitlement;
     private ModelLabBacktestResponse? result;
     private List<ModelLabModelSummaryResponse> savedModels = [];
+    private List<ModelLabRunSummaryResponse> savedRuns = [];
     private bool isLoadingOptions = true;
     private bool isLoadingModels;
+    private bool isLoadingRuns;
     private bool isRunning;
     private bool isSavingModel;
     private bool isSavingRun;
@@ -645,6 +686,7 @@
             if (CanSaveModels)
             {
                 await LoadSavedModelsAsync();
+                await LoadSavedRunsAsync();
             }
             else
             {
@@ -749,6 +791,9 @@
     private static string FormatSavedModelOption(ModelLabModelSummaryResponse model)
         => $"{model.Name} - v{model.CurrentVersion.VersionNumber}";
 
+    private static string FormatRunDate(DateTime value)
+        => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
     private void OnScopeTypeChanged(ChangeEventArgs args)
     {
         scopeType = args.Value?.ToString() ?? ModelLabScopeTypes.SingleCompetition;
@@ -831,6 +876,36 @@
         finally
         {
             isLoadingModels = false;
+        }
+    }
+
+    private async Task LoadSavedRunsAsync()
+    {
+        if (!CanSaveModels)
+        {
+            savedRuns = [];
+            return;
+        }
+
+        isLoadingRuns = true;
+
+        try
+        {
+            using var response = await Http.GetAsync("api/model-lab/runs?take=5");
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            savedRuns = await response.Content.ReadFromJsonAsync<List<ModelLabRunSummaryResponse>>() ?? [];
+        }
+        catch (Exception ex)
+        {
+            modelStatusMessage = $"Could not load saved runs: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingRuns = false;
         }
     }
 
@@ -1083,7 +1158,8 @@
                 ?? throw new InvalidOperationException("The saved run response was empty.");
 
             result = createdRun.Result;
-            modelStatusMessage = $"Saved run {createdRun.RunId.ToString()[..8]}.";
+            await LoadSavedRunsAsync();
+            modelStatusMessage = $"Saved run {createdRun.RunId.ToString()[..8]}. Open it from Saved runs.";
         }
         catch (Exception ex)
         {

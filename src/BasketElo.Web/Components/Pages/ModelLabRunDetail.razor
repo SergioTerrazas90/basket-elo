@@ -1,0 +1,457 @@
+@page "/model-lab/runs/{RunId:guid}"
+@rendermode InteractiveServer
+@using System.Net
+@using System.Net.Http.Json
+@using System.Text.Json
+@using BasketElo.Domain.Elo
+@inject HttpClient Http
+
+<PageTitle>Model Run - Basket ELO</PageTitle>
+
+<div class="model-run-page">
+    <section class="run-hero">
+        <div>
+            <p class="eyebrow">Model Lab</p>
+            <h1>Saved run</h1>
+            @if (detail is not null)
+            {
+                <p class="intro">@detail.Run.ModelName &middot; @detail.Run.LeagueName &middot; @FormatDateTime(detail.Run.CreatedAtUtc)</p>
+            }
+            else
+            {
+                <p class="intro">Persisted backtest output for a saved model.</p>
+            }
+        </div>
+
+        <a class="btn btn-outline-secondary" href="model-lab">Back to Model Lab</a>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    @if (isLoading)
+    {
+        <section class="loading-panel">Loading saved run...</section>
+    }
+    else if (detail is null)
+    {
+        <section class="empty-state">This run was not found for the current user.</section>
+    }
+    else
+    {
+        <section class="run-status-panel">
+            <div>
+                <span class="@StatusClass(detail.Run.Status)">@FormatStatus(detail.Run.Status)</span>
+                <strong>@detail.Run.ModelName</strong>
+                <small>@FormatScope(detail.Run.ScopeType) &middot; @FormatWindow(detail.Run.ScoredWindow)</small>
+            </div>
+            <div>
+                <span>Run ID</span>
+                <strong>@detail.Run.Id.ToString()[..8]</strong>
+                <small>@detail.Scopes.Count scoped competition@(detail.Scopes.Count == 1 ? string.Empty : "s")</small>
+            </div>
+            <div>
+                <span>Competitions</span>
+                <strong>@FormatScopeNames(detail.Scopes)</strong>
+                <small>Model version @detail.Run.ModelVersionId.ToString()[..8]</small>
+            </div>
+        </section>
+
+        <section class="result-summary">
+            <div>
+                <span>Scored games</span>
+                <strong>@detail.Run.Summary.ScoredGames</strong>
+                <small>@detail.Run.ScoredWindow.Games games in window</small>
+            </div>
+            <div>
+                <span>Winner accuracy</span>
+                <strong>@detail.Run.Summary.WinnerAccuracy.ToString("0.0")%</strong>
+                <small>Baseline @detail.Run.BaselineSummary.WinnerAccuracy.ToString("0.0")%</small>
+            </div>
+            <div>
+                <span>Brier score</span>
+                <strong>@detail.Run.Summary.BrierScore.ToString("0.000")</strong>
+                <small>Lower is better</small>
+            </div>
+            <div>
+                <span>Avg margin error</span>
+                <strong>@detail.Run.Summary.AverageMarginError.ToString("0.0")</strong>
+                <small>Baseline @detail.Run.BaselineSummary.AverageMarginError.ToString("0.0")</small>
+            </div>
+        </section>
+
+        <section class="result-grid">
+            <div class="result-panel">
+                <div class="section-head compact">
+                    <div>
+                        <h2>Final ratings</h2>
+                        <p>Top teams at the end of the scoped run.</p>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle compact-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Team</th>
+                                <th class="numeric">ELO</th>
+                                <th class="numeric">Games</th>
+                                <th class="numeric">Recent</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in detail.Ratings)
+                            {
+                                <tr>
+                                    <td class="rank-cell">#@row.Rank</td>
+                                    <td>@row.TeamName</td>
+                                    <td class="numeric rating">@row.Elo.ToString("0")</td>
+                                    <td class="numeric">@row.GamesPlayed</td>
+                                    <td class="numeric"><span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="result-panel">
+                <div class="section-head compact">
+                    <div>
+                        <h2>Performance over time</h2>
+                        <p>Monthly scoring inside the saved run.</p>
+                    </div>
+                </div>
+                <div class="period-list">
+                    @foreach (var period in detail.Periods)
+                    {
+                        <div>
+                            <span>@period.Label</span>
+                            <strong>@period.WinnerAccuracy.ToString("0.0")%</strong>
+                            <small>@period.Games games &middot; @period.AverageMarginError.ToString("0.0") margin error</small>
+                        </div>
+                    }
+                </div>
+            </div>
+        </section>
+
+        <section class="result-panel">
+            <div class="section-head compact">
+                <div>
+                    <h2>Biggest misses</h2>
+                    <p>Games where expected margin was furthest from reality.</p>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle compact-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Competition</th>
+                            <th>Matchup</th>
+                            <th>Score</th>
+                            <th class="numeric">Home win prob.</th>
+                            <th class="numeric">Expected</th>
+                            <th class="numeric">Actual</th>
+                            <th class="numeric">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in detail.BiggestMisses)
+                        {
+                            <tr>
+                                <td>@FormatDate(row.GameDateTimeUtc)</td>
+                                <td>@row.CompetitionName</td>
+                                <td>@row.HomeTeam vs @row.AwayTeam</td>
+                                <td>@row.HomeScore-@row.AwayScore</td>
+                                <td class="numeric">@row.PredictedHomeWinProbability.ToString("P0")</td>
+                                <td class="numeric">@FormatSigned(row.PredictedHomeMargin)</td>
+                                <td class="numeric">@FormatSigned(row.ActualHomeMargin)</td>
+                                <td class="numeric rating">@row.MarginError.ToString("0.0")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="result-panel">
+            <div class="section-head compact">
+                <div>
+                    <h2>Predictions</h2>
+                    @if (predictionPage is not null)
+                    {
+                        <p>@predictionPage.Total total predictions &middot; rows @(predictionPage.Total == 0 ? 0 : predictionPage.Skip + 1)-@Math.Min(predictionPage.Skip + predictionPage.Items.Count, predictionPage.Total)</p>
+                    }
+                    else
+                    {
+                        <p>Server-side paginated scored games.</p>
+                    }
+                </div>
+                <div class="prediction-actions">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPredictionPageAsync" disabled="@(!CanGoPrevious)">
+                        Previous
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPredictionPageAsync" disabled="@(!CanGoNext)">
+                        Next
+                    </button>
+                </div>
+            </div>
+
+            @if (isLoadingPredictions)
+            {
+                <div class="loading-panel compact-loading">Loading predictions...</div>
+            }
+            else if (predictionPage is null || predictionPage.Items.Count == 0)
+            {
+                <div class="empty-state compact-empty">No predictions stored for this page.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle compact-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Competition</th>
+                                <th>Matchup</th>
+                                <th>Score</th>
+                                <th class="numeric">Home win prob.</th>
+                                <th class="numeric">Expected</th>
+                                <th class="numeric">Actual</th>
+                                <th class="numeric">Error</th>
+                                <th>Pick</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in predictionPage.Items)
+                            {
+                                <tr>
+                                    <td>@FormatDate(row.GameDateTimeUtc)</td>
+                                    <td>@row.CompetitionName</td>
+                                    <td>@row.HomeTeam vs @row.AwayTeam</td>
+                                    <td>@row.HomeScore-@row.AwayScore</td>
+                                    <td class="numeric">@row.PredictedHomeWinProbability.ToString("P0")</td>
+                                    <td class="numeric">@FormatSigned(row.PredictedHomeMargin)</td>
+                                    <td class="numeric">@FormatSigned(row.ActualHomeMargin)</td>
+                                    <td class="numeric">@row.MarginError.ToString("0.0")</td>
+                                    <td><span class="@PickClass(row.PickedWinner)">@(row.PickedWinner ? "Correct" : "Miss")</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public Guid RunId { get; set; }
+
+    private const int PredictionPageSize = 50;
+
+    private ModelLabRunDetailResponse? detail;
+    private ModelLabRunPredictionPageResponse? predictionPage;
+    private bool isLoading = true;
+    private bool isLoadingPredictions;
+    private string? errorMessage;
+    private int predictionSkip;
+
+    private bool CanGoPrevious => predictionPage is not null && predictionPage.Skip > 0 && !isLoadingPredictions;
+
+    private bool CanGoNext => predictionPage is not null &&
+        predictionPage.Skip + predictionPage.Items.Count < predictionPage.Total &&
+        !isLoadingPredictions;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadRunAsync();
+    }
+
+    private async Task LoadRunAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        predictionSkip = 0;
+
+        try
+        {
+            using var response = await Http.GetAsync($"api/model-lab/runs/{RunId}");
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                detail = null;
+                predictionPage = null;
+                return;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            detail = await response.Content.ReadFromJsonAsync<ModelLabRunDetailResponse>()
+                ?? throw new InvalidOperationException("The saved run response was empty.");
+            await LoadPredictionsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load saved run: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadPredictionsAsync()
+    {
+        isLoadingPredictions = true;
+
+        try
+        {
+            using var response = await Http.GetAsync(
+                $"api/model-lab/runs/{RunId}/predictions?skip={predictionSkip}&take={PredictionPageSize}");
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            predictionPage = await response.Content.ReadFromJsonAsync<ModelLabRunPredictionPageResponse>()
+                ?? throw new InvalidOperationException("The predictions response was empty.");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load predictions: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingPredictions = false;
+        }
+    }
+
+    private async Task PreviousPredictionPageAsync()
+    {
+        predictionSkip = Math.Max(0, predictionSkip - PredictionPageSize);
+        await LoadPredictionsAsync();
+    }
+
+    private async Task NextPredictionPageAsync()
+    {
+        if (predictionPage is null)
+        {
+            return;
+        }
+
+        predictionSkip = Math.Min(predictionPage.Total, predictionPage.Skip + PredictionPageSize);
+        await LoadPredictionsAsync();
+    }
+
+    private static string FormatStatus(string status)
+        => string.IsNullOrWhiteSpace(status)
+            ? "Unknown"
+            : string.Concat(status[..1].ToUpperInvariant(), status[1..].Replace('_', ' '));
+
+    private static string StatusClass(string status)
+        => status?.Trim().ToLowerInvariant() switch
+        {
+            "completed" => "status-pill status-completed",
+            "failed" => "status-pill status-failed",
+            "running" => "status-pill status-progress",
+            "pending" => "status-pill status-warning",
+            _ => "status-pill status-empty"
+        };
+
+    private static string PickClass(bool pickedWinner)
+        => pickedWinner ? "pick-correct" : "pick-miss";
+
+    private static string FormatScope(string scopeType)
+        => scopeType switch
+        {
+            ModelLabScopeTypes.SelectedCompetitions => "Selected competitions",
+            ModelLabScopeTypes.AllCompetitions => "All competitions",
+            _ => "Single competition"
+        };
+
+    private static string FormatScopeNames(IReadOnlyCollection<ModelLabCompetitionOption> scopes)
+    {
+        if (scopes.Count == 0)
+        {
+            return "No competitions";
+        }
+
+        var names = scopes
+            .Select(x => x.DisplayName)
+            .OrderBy(x => x)
+            .Take(3)
+            .ToList();
+
+        return scopes.Count <= 3
+            ? string.Join(", ", names)
+            : $"{string.Join(", ", names)} +{scopes.Count - 3}";
+    }
+
+    private static string FormatWindow(ModelLabBacktestWindow window)
+        => $"{window.FromUtc.ToLocalTime():yyyy-MM-dd} to {window.ToUtc.ToLocalTime():yyyy-MM-dd}";
+
+    private static string FormatDate(DateTime value)
+        => value.ToLocalTime().ToString("yyyy-MM-dd");
+
+    private static string FormatDateTime(DateTime value)
+        => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    private static string FormatMovement(decimal value)
+        => value switch
+        {
+            > 0 => $"+{value:0}",
+            < 0 => value.ToString("0"),
+            _ => "0"
+        };
+
+    private static string MovementClass(decimal value)
+        => value switch
+        {
+            > 0 => "movement-up",
+            < 0 => "movement-down",
+            _ => "movement-flat"
+        };
+
+    private static string FormatSigned(decimal value)
+        => value > 0 ? $"+{value:0.0}" : value.ToString("0.0");
+
+    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return response.ReasonPhrase ?? $"HTTP {(int)response.StatusCode}";
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.ValueKind == JsonValueKind.String)
+            {
+                return json.RootElement.GetString() ?? body;
+            }
+
+            if (json.RootElement.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+            {
+                return title.GetString() ?? body;
+            }
+
+            if (json.RootElement.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String)
+            {
+                return message.GetString() ?? body;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return body;
+    }
+}

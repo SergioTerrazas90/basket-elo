@@ -156,6 +156,20 @@ public sealed class ModelLabController(
         return Ok(await runService.ListAsync(GetCurrentUserId(), take <= 0 ? 50 : take, cancellationToken));
     }
 
+    [HttpGet("runs/quota")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunQuotaResponse>> GetRunQuota(CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        var ownerUserId = GetCurrentUserId();
+        var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+        return Ok(await runService.GetQuotaAsync(ownerUserId, entitlement, cancellationToken));
+    }
+
     [HttpGet("runs/{runId:guid}")]
     [RequireInternalUser]
     public async Task<ActionResult<ModelLabRunDetailResponse>> GetRun(
@@ -302,7 +316,7 @@ public sealed class ModelLabController(
 
         loginResult = Unauthorized(new ModelLabLimitErrorResponse(
             "login_required",
-            "Sign in to save models.",
+            "Sign in to save Model Lab work.",
             false,
             null,
             0,

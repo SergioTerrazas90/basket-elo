@@ -15,6 +15,11 @@ public interface IModelLabRunService
         int take,
         CancellationToken cancellationToken);
 
+    Task<ModelLabRunQuotaResponse> GetQuotaAsync(
+        Guid ownerUserId,
+        ModelLabEntitlement entitlement,
+        CancellationToken cancellationToken);
+
     Task<ModelLabRunDetailResponse?> GetAsync(
         Guid ownerUserId,
         Guid runId,

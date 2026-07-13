@@ -94,9 +94,12 @@
                                 <h2>Saved runs</h2>
                                 <p>Recent persisted backtests for this account.</p>
                             </div>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="LoadSavedRunsAsync" disabled="@isLoadingRuns">
-                                @(isLoadingRuns ? "Loading..." : "Refresh")
-                            </button>
+                            <div class="saved-run-toolbar">
+                                <span class="run-quota">@StoredRunQuotaText</span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="LoadSavedRunsAsync" disabled="@isLoadingRuns">
+                                    @(isLoadingRuns ? "Loading..." : "Refresh")
+                                </button>
+                            </div>
                         </div>
 
                         @if (isLoadingRuns)
@@ -132,7 +135,7 @@
                         }
                         @if (IsKnownStoredRunLimitReached)
                         {
-                            <p class="model-status">Stored run limit reached. Delete an old run before saving another.</p>
+                            <p class="model-status">@StoredRunLimitMessage</p>
                         }
                     </div>
                 }
@@ -512,6 +515,10 @@
                         }
                         <button type="button" class="btn btn-outline-secondary" @onclick="ResetDefaults" disabled="@isRunning">Reset</button>
                     </div>
+                    @if (CanSaveModels && !string.IsNullOrWhiteSpace(SaveRunUnavailableReason))
+                    {
+                        <p class="field-note save-run-note">@SaveRunUnavailableReason</p>
+                    }
                 </div>
             </div>
         </section>
@@ -646,6 +653,7 @@
     private ModelLabBacktestResponse? result;
     private List<ModelLabModelSummaryResponse> savedModels = [];
     private List<ModelLabRunSummaryResponse> savedRuns = [];
+    private ModelLabRunQuotaResponse? runQuota;
     private bool isLoadingOptions = true;
     private bool isLoadingModels;
     private bool isLoadingRuns;
@@ -735,8 +743,45 @@
             !string.Equals(lastSavedRunSignature, BuildCurrentRunSignature(), StringComparison.Ordinal);
 
     private bool IsKnownStoredRunLimitReached
-        => entitlement?.StoredRunLimit is > 0 &&
-            savedRuns.Count >= entitlement.StoredRunLimit.Value;
+        => runQuota?.IsLimitReached == true ||
+            (runQuota is null && entitlement?.StoredRunLimit is > 0 && savedRuns.Count >= entitlement.StoredRunLimit.Value);
+
+    private string StoredRunQuotaText
+        => runQuota?.StoredRunLimit is int limit
+            ? $"Saved runs: {runQuota.StoredRuns}/{limit}"
+            : runQuota is not null
+                ? $"Saved runs: {runQuota.StoredRuns}"
+                : entitlement?.StoredRunLimit is int entitlementLimit
+                    ? $"Saved runs: 0/{entitlementLimit}"
+                    : "Saved runs";
+
+    private string StoredRunLimitMessage
+        => entitlement?.IsPaid == true
+            ? $"Stored run limit reached. Paid users can store up to {entitlement.StoredRunLimit ?? 100} runs."
+            : "Stored run limit reached. Free users can store one run. Delete it or upgrade for up to 100 saved runs.";
+
+    private string? SaveRunUnavailableReason
+    {
+        get
+        {
+            if (!CanSaveModels || isRunning || isSavingRun || isSavingModel)
+            {
+                return null;
+            }
+
+            if (IsKnownStoredRunLimitReached)
+            {
+                return StoredRunLimitMessage;
+            }
+
+            if (string.Equals(lastSavedRunSignature, BuildCurrentRunSignature(), StringComparison.Ordinal))
+            {
+                return "Change model parameters, dates, or scope before saving another run.";
+            }
+
+            return null;
+        }
+    }
 
     private bool CanUseMultiCompetitionScopes
         => entitlement?.IsPaid == true && string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName);
@@ -908,6 +953,7 @@
         if (!CanSaveModels)
         {
             savedRuns = [];
+            runQuota = null;
             return;
         }
 
@@ -915,6 +961,14 @@
 
         try
         {
+            using var quotaResponse = await Http.GetAsync("api/model-lab/runs/quota");
+            if (!quotaResponse.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(quotaResponse));
+            }
+
+            runQuota = await quotaResponse.Content.ReadFromJsonAsync<ModelLabRunQuotaResponse>();
+
             using var response = await Http.GetAsync("api/model-lab/runs?take=5");
             if (!response.IsSuccessStatusCode)
             {
@@ -959,7 +1013,7 @@
                 lastSavedRunSignature = null;
             }
 
-            savedRuns = savedRuns.Where(x => x.Id != runId).ToList();
+            await LoadSavedRunsAsync();
             confirmingDeleteRunId = null;
             modelStatusMessage = $"Deleted run {runId.ToString()[..8]}.";
         }

@@ -143,6 +143,20 @@
     gap: var(--space-2);
 }
 
+.saved-run-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+
+.run-quota {
+    color: var(--color-teal);
+    font-size: 0.86rem;
+    font-weight: 850;
+}
+
 .saved-run-item {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -296,6 +310,10 @@
     align-items: end;
     flex-wrap: wrap;
     gap: var(--space-2);
+}
+
+.save-run-note {
+    grid-column: 1 / -1;
 }
 
 .result-summary {

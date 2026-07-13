@@ -192,6 +192,18 @@ public sealed class ModelLabRunService(
         return runs.Select(ToSummaryResponse).ToList();
     }
 
+    public async Task<ModelLabRunQuotaResponse> GetQuotaAsync(
+        Guid ownerUserId,
+        ModelLabEntitlement entitlement,
+        CancellationToken cancellationToken)
+    {
+        var runCount = await CountRunsAsync(ownerUserId, cancellationToken);
+        return new ModelLabRunQuotaResponse(
+            runCount,
+            entitlement.StoredRunLimit,
+            entitlement.StoredRunLimit.HasValue && runCount >= entitlement.StoredRunLimit.Value);
+    }
+
     public async Task<ModelLabRunDetailResponse?> GetAsync(
         Guid ownerUserId,
         Guid runId,
@@ -335,9 +347,7 @@ public sealed class ModelLabRunService(
             return;
         }
 
-        var runCount = await dbContext.ModelLabRuns
-            .AsNoTracking()
-            .CountAsync(x => x.OwnerUserId == ownerUserId, cancellationToken);
+        var runCount = await CountRunsAsync(ownerUserId, cancellationToken);
 
         if (runCount < entitlement.StoredRunLimit.Value)
         {
@@ -356,6 +366,11 @@ public sealed class ModelLabRunService(
             entitlement.RequiredLeagueName,
             entitlement.StoredRunLimit);
     }
+
+    private Task<int> CountRunsAsync(Guid ownerUserId, CancellationToken cancellationToken)
+        => dbContext.ModelLabRuns
+            .AsNoTracking()
+            .CountAsync(x => x.OwnerUserId == ownerUserId, cancellationToken);
 
     private static string NormalizeScopeType(string? scopeType)
         => scopeType?.Trim().ToLowerInvariant() switch

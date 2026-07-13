@@ -145,6 +145,11 @@ public sealed record ModelLabRunSummaryResponse(
     ModelLabBacktestSummary Summary,
     ModelLabBacktestSummary BaselineSummary);
 
+public sealed record ModelLabRunQuotaResponse(
+    int StoredRuns,
+    int? StoredRunLimit,
+    bool IsLimitReached);
+
 public sealed record ModelLabRunDetailResponse(
     ModelLabRunSummaryResponse Run,
     IReadOnlyCollection<ModelLabCompetitionOption> Scopes,

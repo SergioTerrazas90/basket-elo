@@ -122,6 +122,57 @@
     min-height: 2.4rem;
 }
 
+.editor-state-panel {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid rgba(36, 92, 122, 0.18);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+}
+
+.editor-state-panel > div {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.editor-state-panel strong {
+    color: var(--color-text);
+    font-size: 0.98rem;
+}
+
+.editor-state-panel small,
+.editor-state-panel p {
+    margin: 0;
+    color: var(--color-subtle);
+    font-size: 0.84rem;
+    font-weight: 650;
+}
+
+.state-pill {
+    justify-self: start;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-pill);
+    font-size: 0.76rem;
+    font-weight: 850;
+}
+
+.state-saved {
+    background: var(--status-success-bg);
+    color: var(--status-success-text);
+}
+
+.state-unsaved {
+    background: var(--status-warning-bg);
+    color: var(--status-warning-text);
+}
+
+.state-selected,
+.state-draft {
+    background: var(--color-brand-soft);
+    color: var(--color-brand-dark);
+}
+
 .model-status {
     margin: 0;
     color: var(--color-muted);

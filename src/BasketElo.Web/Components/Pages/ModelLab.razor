@@ -69,10 +69,23 @@
 
                             <div class="saved-model-actions">
                                 <button type="button" class="btn btn-outline-secondary" @onclick="LoadSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Load</button>
-                                <button type="button" class="btn btn-primary" @onclick="SaveNewModelAsync" disabled="@isSavingModel">Save new</button>
-                                <button type="button" class="btn btn-outline-secondary" @onclick="UpdateSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Update</button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="StartNewDraft" disabled="@isSavingModel">New draft</button>
+                                <button type="button" class="btn btn-primary" @onclick="SaveNewModelAsync" disabled="@isSavingModel">Save as new</button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="UpdateSelectedModelAsync" disabled="@(!CanUpdateSelectedModel)">Update</button>
                                 <button type="button" class="btn btn-outline-danger" @onclick="ArchiveSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Archive</button>
                             </div>
+                        </div>
+
+                        <div class="editor-state-panel">
+                            <div>
+                                <span class="@EditorStateClass">@EditorStateLabel</span>
+                                <strong>@EditorStateTitle</strong>
+                                <small>@EditorStateDetail</small>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(UpdateUnavailableReason))
+                            {
+                                <p>@UpdateUnavailableReason</p>
+                            }
                         </div>
                     }
 
@@ -668,6 +681,9 @@
     private string modelName = "My model";
     private string? modelDescription;
     private string selectedModelIdText = string.Empty;
+    private ModelLabModelDetailResponse? loadedModel;
+    private string? loadedModelSignature;
+    private string? loadedModelVersionSignature;
     private string? lastSavedRunSignature;
     private string scopeType = ModelLabScopeTypes.SingleCompetition;
     private string? leagueName;
@@ -733,6 +749,89 @@
 
     private bool CanUseSelectedModel
         => CanSaveModels && !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
+
+    private bool CanUpdateSelectedModel
+        => CanUseSelectedModel && IsSelectedModelDirty;
+
+    private bool HasSelectedModel
+        => Guid.TryParse(selectedModelIdText, out _);
+
+    private bool IsLoadedSelectedModel
+        => loadedModel is not null &&
+            Guid.TryParse(selectedModelIdText, out var modelId) &&
+            loadedModel.Id == modelId;
+
+    private bool IsSelectedModelDirty
+        => IsLoadedSelectedModel &&
+            !string.Equals(loadedModelSignature, BuildCurrentModelSignature(), StringComparison.Ordinal);
+
+    private bool HasParameterChanges
+        => IsLoadedSelectedModel &&
+            !string.Equals(loadedModelVersionSignature, BuildCurrentVersionSignature(), StringComparison.Ordinal);
+
+    private string EditorStateLabel
+        => IsLoadedSelectedModel
+            ? IsSelectedModelDirty
+                ? "Unsaved"
+                : "Saved"
+            : HasSelectedModel
+                ? "Selected"
+                : "Draft";
+
+    private string EditorStateClass
+        => IsLoadedSelectedModel
+            ? IsSelectedModelDirty
+                ? "state-pill state-unsaved"
+                : "state-pill state-saved"
+            : HasSelectedModel
+                ? "state-pill state-selected"
+                : "state-pill state-draft";
+
+    private string EditorStateTitle
+        => IsLoadedSelectedModel
+            ? $"{loadedModel!.Name} v{loadedModel.CurrentVersion.VersionNumber}"
+            : HasSelectedModel
+                ? "Saved model selected"
+                : "Unsaved model draft";
+
+    private string EditorStateDetail
+        => IsLoadedSelectedModel
+            ? IsSelectedModelDirty
+                ? HasParameterChanges
+                    ? $"Updating will create version {loadedModel!.CurrentVersion.VersionNumber + 1}."
+                    : "Only name, description, or competition changed. Updating will keep the same version."
+                : "Editor matches the saved model."
+            : HasSelectedModel
+                ? "Load the selected model before editing or updating it."
+                : "Save as new to keep this model for future runs.";
+
+    private string? UpdateUnavailableReason
+    {
+        get
+        {
+            if (!CanSaveModels || isSavingModel)
+            {
+                return null;
+            }
+
+            if (!HasSelectedModel)
+            {
+                return "Choose a saved model before updating.";
+            }
+
+            if (!IsLoadedSelectedModel)
+            {
+                return "Load the selected model before updating.";
+            }
+
+            if (!IsSelectedModelDirty)
+            {
+                return "No model changes to update.";
+            }
+
+            return null;
+        }
+    }
 
     private bool CanCreateStoredRun
         => CanSaveModels &&
@@ -898,6 +997,9 @@
     {
         selectedModelIdText = args.Value?.ToString() ?? string.Empty;
         modelStatusMessage = null;
+        loadedModel = null;
+        loadedModelSignature = null;
+        loadedModelVersionSignature = null;
 
         if (string.IsNullOrWhiteSpace(selectedModelIdText))
         {
@@ -913,6 +1015,9 @@
         {
             savedModels = [];
             selectedModelIdText = string.Empty;
+            loadedModel = null;
+            loadedModelSignature = null;
+            loadedModelVersionSignature = null;
             modelStatusMessage = "Sign in to save models.";
             return;
         }
@@ -927,6 +1032,9 @@
             {
                 savedModels = [];
                 selectedModelIdText = string.Empty;
+                loadedModel = null;
+                loadedModelSignature = null;
+                loadedModelVersionSignature = null;
                 modelStatusMessage = "Sign in to save and load models.";
                 return;
             }
@@ -1054,6 +1162,7 @@
             var model = await response.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>()
                 ?? throw new InvalidOperationException("The saved model response was empty.");
             ApplySavedModel(model);
+            lastSavedRunSignature = null;
             modelStatusMessage = $"Loaded {model.Name} v{model.CurrentVersion.VersionNumber}.";
         }
         catch (Exception ex)
@@ -1091,6 +1200,10 @@
             ApplySavedModel(model);
             await LoadSavedModelsAsync();
             selectedModelIdText = model.Id.ToString();
+            loadedModel = model;
+            loadedModelSignature = BuildCurrentModelSignature();
+            loadedModelVersionSignature = BuildCurrentVersionSignature();
+            lastSavedRunSignature = null;
             modelStatusMessage = $"Saved {model.Name} v{model.CurrentVersion.VersionNumber}.";
         }
         catch (Exception ex)
@@ -1116,6 +1229,18 @@
             return;
         }
 
+        if (!IsLoadedSelectedModel)
+        {
+            modelStatusMessage = "Load the selected model before updating.";
+            return;
+        }
+
+        if (!IsSelectedModelDirty)
+        {
+            modelStatusMessage = "No model changes to update.";
+            return;
+        }
+
         isSavingModel = true;
         modelStatusMessage = null;
 
@@ -1132,6 +1257,10 @@
             ApplySavedModel(model);
             await LoadSavedModelsAsync();
             selectedModelIdText = model.Id.ToString();
+            loadedModel = model;
+            loadedModelSignature = BuildCurrentModelSignature();
+            loadedModelVersionSignature = BuildCurrentVersionSignature();
+            lastSavedRunSignature = null;
             modelStatusMessage = $"Updated {model.Name} to v{model.CurrentVersion.VersionNumber}.";
         }
         catch (Exception ex)
@@ -1171,6 +1300,9 @@
             }
 
             selectedModelIdText = string.Empty;
+            loadedModel = null;
+            loadedModelSignature = null;
+            loadedModelVersionSignature = null;
             await LoadSavedModelsAsync();
             modelStatusMessage = "Archived saved model.";
         }
@@ -1273,6 +1405,9 @@
             result = createdRun.Result;
             selectedModelIdText = model.Id.ToString();
             lastSavedRunSignature = BuildCurrentRunSignature();
+            loadedModel = model;
+            loadedModelSignature = BuildCurrentModelSignature();
+            loadedModelVersionSignature = BuildCurrentVersionSignature();
             await LoadSavedModelsAsync();
             selectedModelIdText = model.Id.ToString();
             await LoadSavedRunsAsync();
@@ -1291,6 +1426,11 @@
     private async Task<ModelLabModelDetailResponse> SaveCurrentModelForRunAsync()
     {
         HttpResponseMessage response;
+        if (IsLoadedSelectedModel && !IsSelectedModelDirty)
+        {
+            return loadedModel!;
+        }
+
         if (Guid.TryParse(selectedModelIdText, out var modelId))
         {
             response = await Http.PutAsJsonAsync($"api/model-lab/models/{modelId}", BuildSaveRequest());
@@ -1307,9 +1447,21 @@
                 throw new InvalidOperationException(await ReadErrorMessageAsync(response));
             }
 
-            return await response.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>()
+            var model = await response.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>()
                 ?? throw new InvalidOperationException("The saved model response was empty.");
+            ApplySavedModel(model);
+            return model;
         }
+    }
+
+    private void StartNewDraft()
+    {
+        selectedModelIdText = string.Empty;
+        loadedModel = null;
+        loadedModelSignature = null;
+        loadedModelVersionSignature = null;
+        lastSavedRunSignature = null;
+        modelStatusMessage = "Editing a new unsaved model draft.";
     }
 
     private void ResetDefaults()
@@ -1318,6 +1470,10 @@
         {
             ApplyDefaults(options);
             selectedModelIdText = string.Empty;
+            loadedModel = null;
+            loadedModelSignature = null;
+            loadedModelVersionSignature = null;
+            lastSavedRunSignature = null;
             modelDescription = null;
             modelStatusMessage = null;
         }
@@ -1386,6 +1542,31 @@
         ]);
     }
 
+    private string BuildCurrentModelSignature()
+        => string.Join("|", [
+            (modelName ?? string.Empty).Trim(),
+            (modelDescription ?? string.Empty).Trim(),
+            (leagueName ?? string.Empty).Trim(),
+            BuildCurrentVersionSignature()
+        ]);
+
+    private string BuildCurrentVersionSignature()
+    {
+        var pointsPerMargin = usesMarginAdjustment
+            ? pointsPerEloMargin.ToString("0.####")
+            : string.Empty;
+
+        return string.Join("|", [
+            baseRating.ToString("0.####"),
+            kFactor.ToString(),
+            homeAdvantageElo.ToString("0.####"),
+            probabilityScale.ToString("0.####"),
+            usesMarginAdjustment.ToString(),
+            pointsPerMargin,
+            competitionWeight.ToString("0.####")
+        ]);
+    }
+
     private void ApplySavedModel(ModelLabModelDetailResponse model)
     {
         selectedModelIdText = model.Id.ToString();
@@ -1394,6 +1575,9 @@
         scopeType = ModelLabScopeTypes.SingleCompetition;
         leagueName = NormalizeLeagueForEntitlement(model.LeagueName);
         ApplyParameters(model.CurrentVersion.Parameters);
+        loadedModel = model;
+        loadedModelSignature = BuildCurrentModelSignature();
+        loadedModelVersionSignature = BuildCurrentVersionSignature();
     }
 
     private void ApplyDefaults(ModelLabOptionsResponse response)

@@ -140,6 +140,13 @@ app.UseAntiforgery();
 
 app.MapGet("/auth/login", (HttpContext httpContext, IConfiguration configuration, string? returnUrl) =>
 {
+    var normalizedReturnUrl = NormalizeReturnUrl(httpContext, returnUrl);
+
+    if (httpContext.User.Identity?.IsAuthenticated == true)
+    {
+        return Results.Redirect(normalizedReturnUrl);
+    }
+
     if (string.IsNullOrWhiteSpace(configuration["Authentication:Google:ClientId"]) ||
         string.IsNullOrWhiteSpace(configuration["Authentication:Google:ClientSecret"]))
     {
@@ -151,7 +158,7 @@ app.MapGet("/auth/login", (HttpContext httpContext, IConfiguration configuration
     return Results.Challenge(
         new AuthenticationProperties
         {
-            RedirectUri = NormalizeReturnUrl(httpContext, returnUrl)
+            RedirectUri = normalizedReturnUrl
         },
         [GoogleDefaults.AuthenticationScheme]);
 });
@@ -170,13 +177,30 @@ app.Run();
 
 static string NormalizeReturnUrl(HttpContext httpContext, string? returnUrl)
 {
-    if (!string.IsNullOrWhiteSpace(returnUrl) && Uri.TryCreate(returnUrl, UriKind.Relative, out _))
+    if (!string.IsNullOrWhiteSpace(returnUrl) &&
+        Uri.TryCreate(returnUrl, UriKind.Relative, out _) &&
+        !IsAuthPath(returnUrl))
     {
         return returnUrl;
     }
 
     var fallback = httpContext.Request.Headers.Referer.ToString();
-    return Uri.TryCreate(fallback, UriKind.Absolute, out var referer) && referer.Host == httpContext.Request.Host.Host
+    return Uri.TryCreate(fallback, UriKind.Absolute, out var referer) &&
+        referer.Host == httpContext.Request.Host.Host &&
+        PortsMatch(httpContext.Request.Host.Port, referer.Port) &&
+        !IsAuthPath(referer.PathAndQuery)
         ? referer.PathAndQuery
         : "/";
+}
+
+static bool IsAuthPath(string path)
+{
+    var normalizedPath = path.StartsWith('/') ? path : $"/{path}";
+    return normalizedPath.StartsWith("/auth/", StringComparison.OrdinalIgnoreCase) ||
+        normalizedPath.StartsWith("/signin-google", StringComparison.OrdinalIgnoreCase);
+}
+
+static bool PortsMatch(int? requestPort, int refererPort)
+{
+    return requestPort is null || refererPort == requestPort.Value;
 }

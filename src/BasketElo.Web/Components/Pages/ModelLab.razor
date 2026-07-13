@@ -712,7 +712,7 @@
         => CanSaveModels && !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
 
     private bool CanCreateStoredRun
-        => CanUseSelectedModel && !isRunning && !isSavingRun;
+        => CanSaveModels && !isRunning && !isSavingRun && !isSavingModel;
 
     private bool CanUseMultiCompetitionScopes
         => entitlement?.IsPaid == true && string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName);
@@ -1120,12 +1120,6 @@
     {
         NormalizeScopeForEntitlement();
 
-        if (!Guid.TryParse(selectedModelIdText, out var modelId))
-        {
-            errorMessage = "Choose a saved model before saving a run.";
-            return;
-        }
-
         if (scopeType == ModelLabScopeTypes.SelectedCompetitions && selectedCompetitionIds.Count == 0)
         {
             errorMessage = "Choose at least one competition before saving a run.";
@@ -1138,9 +1132,10 @@
 
         try
         {
+            var model = await SaveCurrentModelForRunAsync();
             var request = new CreateModelLabRunRequest(
-                modelId,
-                null,
+                model.Id,
+                model.CurrentVersion.Id,
                 DateTime.SpecifyKind(initializationFrom.Date, DateTimeKind.Utc),
                 DateTime.SpecifyKind(initializationTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1),
                 DateTime.SpecifyKind(scoredFrom.Date, DateTimeKind.Utc),
@@ -1158,8 +1153,11 @@
                 ?? throw new InvalidOperationException("The saved run response was empty.");
 
             result = createdRun.Result;
+            selectedModelIdText = model.Id.ToString();
+            await LoadSavedModelsAsync();
+            selectedModelIdText = model.Id.ToString();
             await LoadSavedRunsAsync();
-            modelStatusMessage = $"Saved run {createdRun.RunId.ToString()[..8]}. Open it from Saved runs.";
+            modelStatusMessage = $"Saved {model.Name} v{model.CurrentVersion.VersionNumber} and run {createdRun.RunId.ToString()[..8]}.";
         }
         catch (Exception ex)
         {
@@ -1168,6 +1166,30 @@
         finally
         {
             isSavingRun = false;
+        }
+    }
+
+    private async Task<ModelLabModelDetailResponse> SaveCurrentModelForRunAsync()
+    {
+        HttpResponseMessage response;
+        if (Guid.TryParse(selectedModelIdText, out var modelId))
+        {
+            response = await Http.PutAsJsonAsync($"api/model-lab/models/{modelId}", BuildSaveRequest());
+        }
+        else
+        {
+            response = await Http.PostAsJsonAsync("api/model-lab/models", BuildSaveRequest());
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            return await response.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>()
+                ?? throw new InvalidOperationException("The saved model response was empty.");
         }
     }
 

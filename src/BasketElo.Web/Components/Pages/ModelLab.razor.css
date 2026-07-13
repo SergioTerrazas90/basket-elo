@@ -143,7 +143,7 @@
     gap: var(--space-2);
 }
 
-.saved-run-link {
+.saved-run-item {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
@@ -152,13 +152,24 @@
     border: 1px solid rgba(31, 122, 104, 0.24);
     border-radius: var(--radius-md);
     background: var(--color-surface);
+}
+
+.saved-run-link {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
     color: var(--color-text);
     text-decoration: none;
 }
 
+.saved-run-item:has(.saved-run-link:hover),
+.saved-run-item:has(.saved-run-link:focus) {
+    border-color: var(--color-teal);
+}
+
 .saved-run-link:hover,
 .saved-run-link:focus {
-    border-color: var(--color-teal);
     color: var(--color-text);
 }
 
@@ -175,6 +186,12 @@
 .saved-run-metric {
     color: var(--color-teal);
     font-weight: 900;
+}
+
+@media (max-width: 640px) {
+    .saved-run-item {
+        grid-template-columns: 1fr;
+    }
 }
 
 .field-note {

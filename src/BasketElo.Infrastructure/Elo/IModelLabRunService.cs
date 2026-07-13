@@ -26,4 +26,9 @@ public interface IModelLabRunService
         int skip,
         int take,
         CancellationToken cancellationToken);
+
+    Task<bool> DeleteAsync(
+        Guid ownerUserId,
+        Guid runId,
+        CancellationToken cancellationToken);
 }

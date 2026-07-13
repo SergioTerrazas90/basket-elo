@@ -5,6 +5,7 @@
 @using System.Text.Json
 @using BasketElo.Domain.Elo
 @inject HttpClient Http
+@inject NavigationManager Navigation
 
 <PageTitle>Model Run - Basket ELO</PageTitle>
 
@@ -23,7 +24,15 @@
             }
         </div>
 
-        <a class="btn btn-outline-secondary" href="model-lab">Back to Model Lab</a>
+        <div class="run-hero-actions">
+            @if (detail is not null)
+            {
+                <button type="button" class="btn btn-outline-danger" @onclick="DeleteRunAsync" disabled="@isDeleting">
+                    @(confirmDelete ? "Confirm delete" : isDeleting ? "Deleting..." : "Delete run")
+                </button>
+            }
+            <a class="btn btn-outline-secondary" href="model-lab">Back to Model Lab</a>
+        </div>
     </section>
 
     @if (!string.IsNullOrWhiteSpace(errorMessage))
@@ -258,6 +267,8 @@
     private ModelLabRunPredictionPageResponse? predictionPage;
     private bool isLoading = true;
     private bool isLoadingPredictions;
+    private bool confirmDelete;
+    private bool isDeleting;
     private string? errorMessage;
     private int predictionSkip;
 
@@ -348,6 +359,38 @@
 
         predictionSkip = Math.Min(predictionPage.Total, predictionPage.Skip + PredictionPageSize);
         await LoadPredictionsAsync();
+    }
+
+    private async Task DeleteRunAsync()
+    {
+        if (!confirmDelete)
+        {
+            confirmDelete = true;
+            return;
+        }
+
+        isDeleting = true;
+        errorMessage = null;
+
+        try
+        {
+            using var response = await Http.DeleteAsync($"api/model-lab/runs/{RunId}");
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            Navigation.NavigateTo("model-lab");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not delete run: {ex.Message}";
+            confirmDelete = false;
+        }
+        finally
+        {
+            isDeleting = false;
+        }
     }
 
     private static string FormatStatus(string status)

@@ -291,6 +291,24 @@ public sealed class ModelLabRunService(
         return new ModelLabRunPredictionPageResponse(runId, total, safeSkip, pageSize, rows);
     }
 
+    public async Task<bool> DeleteAsync(
+        Guid ownerUserId,
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        var run = await dbContext.ModelLabRuns
+            .FirstOrDefaultAsync(x => x.Id == runId && x.OwnerUserId == ownerUserId, cancellationToken);
+
+        if (run is null)
+        {
+            return false;
+        }
+
+        dbContext.ModelLabRuns.Remove(run);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     private static void EnforceScopeLimit(ModelLabEntitlement entitlement, string leagueName, string scopeType)
     {
         if (!string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName) &&

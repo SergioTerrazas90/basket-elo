@@ -112,13 +112,21 @@
                             <div class="saved-run-list">
                                 @foreach (var run in savedRuns)
                                 {
-                                    <a class="saved-run-link" href="@($"model-lab/runs/{run.Id}")">
-                                        <span>
-                                            <strong>@run.ModelName</strong>
-                                            <small>@run.LeagueName &middot; @FormatRunDate(run.CreatedAtUtc)</small>
-                                        </span>
-                                        <span class="saved-run-metric">@run.Summary.WinnerAccuracy.ToString("0.0")%</span>
-                                    </a>
+                                    <div class="saved-run-item">
+                                        <a class="saved-run-link" href="@($"model-lab/runs/{run.Id}")">
+                                            <span>
+                                                <strong>@run.ModelName</strong>
+                                                <small>@run.LeagueName &middot; @FormatRunDate(run.CreatedAtUtc)</small>
+                                            </span>
+                                            <span class="saved-run-metric">@run.Summary.WinnerAccuracy.ToString("0.0")%</span>
+                                        </a>
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-danger"
+                                                @onclick="() => DeleteSavedRunAsync(run.Id)"
+                                                disabled="@(deletingRunId == run.Id)">
+                                            @(confirmingDeleteRunId == run.Id ? "Confirm" : deletingRunId == run.Id ? "Deleting..." : "Delete")
+                                        </button>
+                                    </div>
                                 }
                             </div>
                         }
@@ -641,6 +649,8 @@
     private bool isSavingModel;
     private bool isSavingRun;
     private bool isRealSignedIn;
+    private Guid? confirmingDeleteRunId;
+    private Guid? deletingRunId;
     private string? errorMessage;
     private string? modelStatusMessage;
     private string modelName = "My model";
@@ -911,6 +921,46 @@
         finally
         {
             isLoadingRuns = false;
+        }
+    }
+
+    private async Task DeleteSavedRunAsync(Guid runId)
+    {
+        if (confirmingDeleteRunId != runId)
+        {
+            confirmingDeleteRunId = runId;
+            return;
+        }
+
+        deletingRunId = runId;
+        errorMessage = null;
+        modelStatusMessage = null;
+
+        try
+        {
+            using var response = await Http.DeleteAsync($"api/model-lab/runs/{runId}");
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            if (result?.RunId == runId)
+            {
+                result = null;
+                lastSavedRunSignature = null;
+            }
+
+            savedRuns = savedRuns.Where(x => x.Id != runId).ToList();
+            confirmingDeleteRunId = null;
+            modelStatusMessage = $"Deleted run {runId.ToString()[..8]}.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not delete run: {ex.Message}";
+        }
+        finally
+        {
+            deletingRunId = null;
         }
     }
 

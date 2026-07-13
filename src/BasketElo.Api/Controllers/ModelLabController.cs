@@ -194,6 +194,21 @@ public sealed class ModelLabController(
         return page is null ? NotFound() : Ok(page);
     }
 
+    [HttpDelete("runs/{runId:guid}")]
+    [RequireInternalUser]
+    public async Task<ActionResult> DeleteRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        var deleted = await runService.DeleteAsync(GetCurrentUserId(), runId, cancellationToken);
+        return deleted ? NoContent() : NotFound();
+    }
+
     [HttpPost("runs")]
     [RequireInternalUser]
     public async Task<ActionResult<ModelLabRunCreateResponse>> CreateRun(

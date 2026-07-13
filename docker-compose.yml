@@ -60,6 +60,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ApiBaseUrl: http://api:8080
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo
+      Auth__Enabled: ${BASKET_ELO_AUTH_ENABLED:-false}
       Auth__AdminEmails: ${BASKET_ELO_ADMIN_EMAILS:-}
       InternalAuth__SharedSecret: ${BASKET_ELO_INTERNAL_AUTH_SECRET:-local-dev-secret}
       Authentication__Google__ClientId: ${BASKET_ELO_GOOGLE_CLIENT_ID:-}

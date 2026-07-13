@@ -4,6 +4,8 @@ public sealed class AuthOptions
 {
     public const string SectionName = "Auth";
 
+    public bool Enabled { get; set; }
+
     public string AdminEmails { get; set; } = string.Empty;
 
     public IReadOnlySet<string> GetNormalizedAdminEmails()

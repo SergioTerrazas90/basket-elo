@@ -22,6 +22,7 @@ builder.Services.AddSingleton<EloRebuildNotificationCenter>();
 builder.Services.AddHostedService<PostgresEloRebuildNotificationListener>();
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.AddScoped<IApplicationUserLoginService, ApplicationUserLoginService>();
+var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>() ?? new AuthOptions();
 
 var connectionString = builder.Configuration.GetConnectionString("Postgres")
     ?? "Host=localhost;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo";
@@ -49,7 +50,7 @@ var authenticationBuilder = builder.Services
         options.ExpireTimeSpan = TimeSpan.FromDays(14);
     });
 
-if (isGoogleLoginConfigured)
+if (authOptions.Enabled && isGoogleLoginConfigured)
 {
     authenticationBuilder.AddGoogle(options =>
     {
@@ -135,12 +136,26 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStaticFiles();
 app.UseAuthentication();
+if (!authOptions.Enabled)
+{
+    app.Use(async (httpContext, next) =>
+    {
+        httpContext.User = CreateAuthDisabledPrincipal();
+        await next(httpContext);
+    });
+}
+
 app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapGet("/auth/login", (HttpContext httpContext, IConfiguration configuration, string? returnUrl) =>
 {
     var normalizedReturnUrl = NormalizeReturnUrl(httpContext, returnUrl);
+
+    if (!authOptions.Enabled)
+    {
+        return Results.Redirect(normalizedReturnUrl);
+    }
 
     if (httpContext.User.Identity?.IsAuthenticated == true)
     {
@@ -203,4 +218,18 @@ static bool IsAuthPath(string path)
 static bool PortsMatch(int? requestPort, int refererPort)
 {
     return requestPort is null || refererPort == requestPort.Value;
+}
+
+static ClaimsPrincipal CreateAuthDisabledPrincipal()
+{
+    var identity = new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "auth-disabled"),
+            new Claim(ClaimTypes.Name, "Local access"),
+            new Claim(ClaimTypes.Email, "local@basket-elo"),
+            new Claim(ClaimTypes.Role, "admin")
+        ],
+        "AuthDisabled");
+
+    return new ClaimsPrincipal(identity);
 }

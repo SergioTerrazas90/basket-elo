@@ -54,7 +54,7 @@
                                 <option value="">@SavedModelPlaceholder</option>
                                 @foreach (var savedModel in savedModels)
                                 {
-                                    <option value="@savedModel.Id">@savedModel.Name - v@savedModel.CurrentVersion.VersionNumber</option>
+                                    <option value="@savedModel.Id">@FormatSavedModelOption(savedModel)</option>
                                 }
                             </select>
                         </div>
@@ -568,6 +568,9 @@
 
     private bool CanUseSelectedModel
         => !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
+
+    private static string FormatSavedModelOption(ModelLabModelSummaryResponse model)
+        => $"{model.Name} - v{model.CurrentVersion.VersionNumber}";
 
     private async Task OnSelectedModelChangedAsync(ChangeEventArgs args)
     {

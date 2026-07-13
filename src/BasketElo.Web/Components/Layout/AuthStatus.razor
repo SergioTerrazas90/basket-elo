@@ -1,9 +1,7 @@
 @using System.Security.Claims
 @using BasketElo.Infrastructure.Identity
-@using BasketElo.Web.Auth
 @using Microsoft.Extensions.Options
 @inject IOptions<AuthOptions> AuthOptions
-@inject NavigationManager Navigation
 
 @if (AuthOptions.Value.Enabled)
 {
@@ -25,22 +23,22 @@ else
         <Authorized>
             <div class="dev-persona-switch">
                 <label for="devPersona">Testing as</label>
-                <select id="devPersona" class="dev-persona-select" value="@CurrentPersona(context.User)" @onchange="ChangePersona">
-                    <option value="anonymous">Anonymous</option>
-                    <option value="free">Free</option>
-                    <option value="paid">Paying</option>
-                    <option value="admin">Admin</option>
+                <select id="devPersona" class="dev-persona-select" onchange="window.location.href='/dev/persona?persona=' + encodeURIComponent(this.value) + '&returnUrl=' + encodeURIComponent(window.location.pathname + window.location.search)">
+                    @foreach (var persona in Personas)
+                    {
+                        <option value="@persona.Key" selected="@(persona.Key == CurrentPersona(context.User))">@persona.Label</option>
+                    }
                 </select>
             </div>
         </Authorized>
         <NotAuthorized>
             <div class="dev-persona-switch">
                 <label for="devPersona">Testing as</label>
-                <select id="devPersona" class="dev-persona-select" value="anonymous" @onchange="ChangePersona">
-                    <option value="anonymous">Anonymous</option>
-                    <option value="free">Free</option>
-                    <option value="paid">Paying</option>
-                    <option value="admin">Admin</option>
+                <select id="devPersona" class="dev-persona-select" onchange="window.location.href='/dev/persona?persona=' + encodeURIComponent(this.value) + '&returnUrl=' + encodeURIComponent(window.location.pathname + window.location.search)">
+                    @foreach (var persona in Personas)
+                    {
+                        <option value="@persona.Key" selected="@(persona.Key == "anonymous")">@persona.Label</option>
+                    }
                 </select>
             </div>
         </NotAuthorized>
@@ -69,13 +67,13 @@ else
         return user.IsInRole("admin") ? "admin" : "anonymous";
     }
 
-    private void ChangePersona(ChangeEventArgs args)
-    {
-        var persona = args.Value?.ToString() ?? "anonymous";
-        var currentUri = new Uri(Navigation.Uri);
-        var returnUrl = currentUri.PathAndQuery;
-        Navigation.NavigateTo(
-            $"dev/persona?persona={Uri.EscapeDataString(persona)}&returnUrl={Uri.EscapeDataString(returnUrl)}",
-            forceLoad: true);
-    }
+    private static readonly IReadOnlyCollection<PersonaOption> Personas =
+    [
+        new("anonymous", "Anonymous"),
+        new("free", "Free"),
+        new("paid", "Paying"),
+        new("admin", "Admin")
+    ];
+
+    private sealed record PersonaOption(string Key, string Label);
 }

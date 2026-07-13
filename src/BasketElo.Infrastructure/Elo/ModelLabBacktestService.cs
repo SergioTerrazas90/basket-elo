@@ -13,14 +13,14 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
     {
         var games = dbContext.Games.AsNoTracking();
         var defaults = EloCalculator.GetRulesetParameters(EloRulesetVersions.AdjustedV1);
+        var leagueOptions = await GetLeagueOptionsAsync(cancellationToken);
 
         return new ModelLabOptionsResponse(
             ToParameterSet(defaults),
-            await games
-                .Select(x => x.Competition.Name)
-                .Distinct()
+            leagueOptions
+                .Select(x => x.DisplayName)
                 .OrderBy(x => x)
-                .ToListAsync(cancellationToken),
+                .ToList(),
             await games
                 .Select(x => x.Season.Label)
                 .Distinct()
@@ -38,16 +38,22 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         var baselineParameters = EloCalculator.GetRulesetParameters(EloRulesetVersions.AdjustedV1);
         var fromUtc = Min(request.InitializationFromUtc, request.ScoredFromUtc);
         var toUtc = Max(request.InitializationToUtc, request.ScoredToUtc);
+        var competitionId = await ResolveCompetitionIdAsync(request.LeagueName, cancellationToken);
 
-        var games = await dbContext.Games
+        var gameQuery = dbContext.Games
             .AsNoTracking()
             .Where(x =>
-                x.Competition.Name == request.LeagueName &&
                 x.GameDateTimeUtc >= fromUtc &&
                 x.GameDateTimeUtc <= toUtc &&
                 x.HomeScore.HasValue &&
                 x.AwayScore.HasValue &&
-                x.HomeScore != x.AwayScore)
+                x.HomeScore != x.AwayScore);
+
+        gameQuery = competitionId.HasValue
+            ? gameQuery.Where(x => x.CompetitionId == competitionId.Value)
+            : gameQuery.Where(x => x.Competition.Name == request.LeagueName);
+
+        var games = await gameQuery
             .OrderBy(x => x.GameDateTimeUtc)
             .ThenBy(x => x.Source)
             .ThenBy(x => x.SourceGameId)
@@ -87,6 +93,46 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 .Take(MaxMissesReturned)
                 .ToList(),
             custom.Periods);
+    }
+
+    private async Task<IReadOnlyCollection<LeagueOption>> GetLeagueOptionsAsync(CancellationToken cancellationToken)
+    {
+        var competitions = await dbContext.Games
+            .AsNoTracking()
+            .Select(x => new CompetitionOption(x.CompetitionId, x.Competition.Name, x.Competition.CountryCode))
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var duplicateNames = competitions
+            .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .Where(x => x.Count() > 1)
+            .Select(x => x.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return competitions
+            .Select(x => new LeagueOption(
+                x.Id,
+                x.Name,
+                duplicateNames.Contains(x.Name) ? $"{x.Name} ({FormatCountryCode(x.CountryCode)})" : x.Name))
+            .ToList();
+    }
+
+    private async Task<Guid?> ResolveCompetitionIdAsync(string leagueName, CancellationToken cancellationToken)
+    {
+        var normalizedLeagueName = leagueName.Trim();
+        var leagueOptions = await GetLeagueOptionsAsync(cancellationToken);
+        var displayMatch = leagueOptions.FirstOrDefault(x =>
+            string.Equals(x.DisplayName, normalizedLeagueName, StringComparison.OrdinalIgnoreCase));
+        if (displayMatch is not null)
+        {
+            return displayMatch.Id;
+        }
+
+        var nameMatches = leagueOptions
+            .Where(x => string.Equals(x.Name, normalizedLeagueName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return nameMatches.Count == 1 ? nameMatches[0].Id : null;
     }
 
     private static SimulationResult RunSimulation(
@@ -302,6 +348,9 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
 
     private static decimal RoundPercentage(decimal value) => Math.Round(value * 100m, 1, MidpointRounding.AwayFromZero);
 
+    private static string FormatCountryCode(string? countryCode)
+        => string.IsNullOrWhiteSpace(countryCode) ? "INT" : countryCode.Trim().ToUpperInvariant();
+
     private sealed record BacktestGame(
         Guid Id,
         DateTime GameDateTimeUtc,
@@ -330,4 +379,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
 
         public Queue<decimal> RecentDeltas { get; } = new();
     }
+
+    private sealed record CompetitionOption(Guid Id, string Name, string? CountryCode);
+
+    private sealed record LeagueOption(Guid Id, string Name, string DisplayName);
 }

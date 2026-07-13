@@ -17,4 +17,5 @@ public sealed record ModelLabBacktestExecutionResult(
     ModelLabBacktestResponse Response,
     IReadOnlyCollection<ModelLabCompetitionOption> ScopeCompetitions,
     IReadOnlyCollection<ModelLabPredictionRow> Predictions,
+    IReadOnlyCollection<ModelLabPredictionRow> BaselinePredictions,
     IReadOnlyCollection<ModelLabRatingRow> Ratings);

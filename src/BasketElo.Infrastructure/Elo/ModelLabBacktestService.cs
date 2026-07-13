@@ -110,6 +110,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             response,
             scope.Competitions,
             custom.ScoredPredictions,
+            baseline.ScoredPredictions,
             custom.Ratings);
     }
 

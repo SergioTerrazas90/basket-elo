@@ -163,6 +163,21 @@
     font-weight: 850;
 }
 
+.delta-good {
+    color: var(--status-success-text);
+    font-weight: 850;
+}
+
+.delta-bad {
+    color: var(--status-danger-text);
+    font-weight: 850;
+}
+
+.delta-flat {
+    color: var(--color-muted);
+    font-weight: 750;
+}
+
 .rank-cell,
 .rating {
     color: var(--color-brand-dark);

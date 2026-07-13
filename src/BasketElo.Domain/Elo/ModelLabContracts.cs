@@ -15,6 +15,14 @@ public static class ModelLabScopeTypes
     public const string AllCompetitions = "all_competitions";
 }
 
+public static class ModelLabMetricSegmentTypes
+{
+    public const string FullRun = "full_run";
+    public const string Season = "season";
+    public const string Competition = "competition";
+    public const string Month = "month";
+}
+
 public sealed record ModelLabCompetitionOption(
     Guid Id,
     string Name,
@@ -155,7 +163,8 @@ public sealed record ModelLabRunDetailResponse(
     IReadOnlyCollection<ModelLabCompetitionOption> Scopes,
     IReadOnlyCollection<ModelLabRatingRow> Ratings,
     IReadOnlyCollection<ModelLabPredictionRow> BiggestMisses,
-    IReadOnlyCollection<ModelLabPeriodMetric> Periods);
+    IReadOnlyCollection<ModelLabPeriodMetric> Periods,
+    IReadOnlyCollection<ModelLabRunMetricBreakdownResponse> MetricBreakdowns);
 
 public sealed record ModelLabRunPredictionPageResponse(
     Guid RunId,
@@ -163,6 +172,15 @@ public sealed record ModelLabRunPredictionPageResponse(
     int Skip,
     int Take,
     IReadOnlyCollection<ModelLabPredictionRow> Items);
+
+public sealed record ModelLabRunMetricBreakdownResponse(
+    string SegmentType,
+    string SegmentKey,
+    string Label,
+    Guid? CompetitionId,
+    string? Season,
+    ModelLabBacktestSummary Summary,
+    ModelLabBacktestSummary BaselineSummary);
 
 public sealed record ModelLabBacktestWindow(
     DateTime FromUtc,

@@ -153,6 +153,16 @@ public sealed class ModelLabRunService(
             });
         }
 
+        foreach (var breakdown in BuildMetricBreakdowns(
+            ownerUserId,
+            result.Summary,
+            result.BaselineSummary,
+            execution.Predictions,
+            execution.BaselinePredictions))
+        {
+            run.MetricBreakdowns.Add(breakdown);
+        }
+
         var autoDetectChanges = dbContext.ChangeTracker.AutoDetectChangesEnabled;
         dbContext.ChangeTracker.AutoDetectChangesEnabled = false;
         try
@@ -262,12 +272,22 @@ public sealed class ModelLabRunService(
                 x.AverageMarginError))
             .ToListAsync(cancellationToken);
 
+        var metricBreakdowns = await dbContext.ModelLabRunMetricBreakdowns
+            .AsNoTracking()
+            .Where(x => x.RunId == runId && x.OwnerUserId == ownerUserId)
+            .ToListAsync(cancellationToken);
+
         return new ModelLabRunDetailResponse(
             ToSummaryResponse(run),
             scopes,
             ratings,
             biggestMisses,
-            periods);
+            periods,
+            metricBreakdowns
+                .OrderBy(x => SegmentSort(x.SegmentType))
+                .ThenBy(x => x.Label)
+                .Select(ToMetricBreakdownResponse)
+                .ToList());
     }
 
     public async Task<ModelLabRunPredictionPageResponse?> GetPredictionsAsync(
@@ -372,6 +392,154 @@ public sealed class ModelLabRunService(
             .AsNoTracking()
             .CountAsync(x => x.OwnerUserId == ownerUserId, cancellationToken);
 
+    private static IReadOnlyCollection<ModelLabRunMetricBreakdown> BuildMetricBreakdowns(
+        Guid ownerUserId,
+        ModelLabBacktestSummary summary,
+        ModelLabBacktestSummary baselineSummary,
+        IReadOnlyCollection<ModelLabPredictionRow> predictions,
+        IReadOnlyCollection<ModelLabPredictionRow> baselinePredictions)
+    {
+        var baselineByGameId = baselinePredictions.ToDictionary(x => x.GameId);
+        var rows = new List<ModelLabRunMetricBreakdown>
+        {
+            CreateMetricBreakdown(
+                ownerUserId,
+                ModelLabMetricSegmentTypes.FullRun,
+                ModelLabMetricSegmentTypes.FullRun,
+                "Full run",
+                null,
+                null,
+                summary,
+                baselineSummary)
+        };
+
+        rows.AddRange(predictions
+            .GroupBy(x => x.Season)
+            .OrderByDescending(x => x.Key)
+            .Select(group => CreateMetricBreakdown(
+                ownerUserId,
+                ModelLabMetricSegmentTypes.Season,
+                group.Key,
+                group.Key,
+                null,
+                group.Key,
+                BuildSummary(group),
+                BuildSummary(GetBaselineRows(group, baselineByGameId)))));
+
+        rows.AddRange(predictions
+            .GroupBy(x => new { x.CompetitionId, x.CompetitionName })
+            .OrderBy(x => x.Key.CompetitionName)
+            .Select(group => CreateMetricBreakdown(
+                ownerUserId,
+                ModelLabMetricSegmentTypes.Competition,
+                group.Key.CompetitionId.ToString(),
+                group.Key.CompetitionName,
+                group.Key.CompetitionId,
+                null,
+                BuildSummary(group),
+                BuildSummary(GetBaselineRows(group, baselineByGameId)))));
+
+        rows.AddRange(predictions
+            .GroupBy(x => new DateTime(x.GameDateTimeUtc.Year, x.GameDateTimeUtc.Month, 1))
+            .OrderBy(x => x.Key)
+            .Select(group => CreateMetricBreakdown(
+                ownerUserId,
+                ModelLabMetricSegmentTypes.Month,
+                group.Key.ToString("yyyy-MM"),
+                group.Key.ToString("yyyy-MM"),
+                null,
+                null,
+                BuildSummary(group),
+                BuildSummary(GetBaselineRows(group, baselineByGameId)))));
+
+        return rows;
+    }
+
+    private static ModelLabRunMetricBreakdown CreateMetricBreakdown(
+        Guid ownerUserId,
+        string segmentType,
+        string segmentKey,
+        string label,
+        Guid? competitionId,
+        string? season,
+        ModelLabBacktestSummary summary,
+        ModelLabBacktestSummary baselineSummary)
+        => new()
+        {
+            OwnerUserId = ownerUserId,
+            SegmentType = segmentType,
+            SegmentKey = segmentKey,
+            Label = label,
+            CompetitionId = competitionId,
+            Season = season,
+            ScoredGames = summary.ScoredGames,
+            CorrectWinners = summary.CorrectWinners,
+            WinnerAccuracy = summary.WinnerAccuracy,
+            BrierScore = summary.BrierScore,
+            LogLoss = summary.LogLoss,
+            AverageMarginError = summary.AverageMarginError,
+            AveragePredictedHomeWinProbability = summary.AveragePredictedHomeWinProbability,
+            BaselineScoredGames = baselineSummary.ScoredGames,
+            BaselineCorrectWinners = baselineSummary.CorrectWinners,
+            BaselineWinnerAccuracy = baselineSummary.WinnerAccuracy,
+            BaselineBrierScore = baselineSummary.BrierScore,
+            BaselineLogLoss = baselineSummary.LogLoss,
+            BaselineAverageMarginError = baselineSummary.AverageMarginError,
+            BaselineAveragePredictedHomeWinProbability = baselineSummary.AveragePredictedHomeWinProbability
+        };
+
+    private static IReadOnlyCollection<ModelLabPredictionRow> GetBaselineRows(
+        IEnumerable<ModelLabPredictionRow> customRows,
+        IReadOnlyDictionary<Guid, ModelLabPredictionRow> baselineByGameId)
+        => customRows
+            .Select(x => baselineByGameId.TryGetValue(x.GameId, out var baseline) ? baseline : null)
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .ToList();
+
+    private static ModelLabBacktestSummary BuildSummary(IEnumerable<ModelLabPredictionRow> predictions)
+    {
+        var rows = predictions.ToList();
+        if (rows.Count == 0)
+        {
+            return new ModelLabBacktestSummary(0, 0, 0m, 0m, 0m, 0m, 0m);
+        }
+
+        var correct = rows.Count(x => x.PickedWinner);
+        var brier = rows.Average(x =>
+        {
+            var actual = x.HomeScore > x.AwayScore ? 1m : 0m;
+            return Math.Pow((double)(x.PredictedHomeWinProbability - actual), 2d);
+        });
+        var logLoss = rows.Average(x =>
+        {
+            var actual = x.HomeScore > x.AwayScore ? 1m : 0m;
+            var probability = Math.Clamp(x.PredictedHomeWinProbability, 0.001m, 0.999m);
+            return actual == 1m
+                ? -Math.Log((double)probability)
+                : -Math.Log((double)(1m - probability));
+        });
+
+        return new ModelLabBacktestSummary(
+            rows.Count,
+            correct,
+            RoundPercentage(correct / (decimal)rows.Count),
+            RoundProbability((decimal)brier),
+            RoundProbability((decimal)logLoss),
+            RoundRating(rows.Average(x => x.MarginError)),
+            RoundPercentage(rows.Average(x => x.PredictedHomeWinProbability)));
+    }
+
+    private static int SegmentSort(string segmentType)
+        => segmentType switch
+        {
+            ModelLabMetricSegmentTypes.FullRun => 0,
+            ModelLabMetricSegmentTypes.Competition => 1,
+            ModelLabMetricSegmentTypes.Season => 2,
+            ModelLabMetricSegmentTypes.Month => 3,
+            _ => 4
+        };
+
     private static string NormalizeScopeType(string? scopeType)
         => scopeType?.Trim().ToLowerInvariant() switch
         {
@@ -426,6 +594,30 @@ public sealed class ModelLabRunService(
                 run.BaselineAverageMarginError,
                 run.BaselineAveragePredictedHomeWinProbability));
 
+    private static ModelLabRunMetricBreakdownResponse ToMetricBreakdownResponse(ModelLabRunMetricBreakdown metric)
+        => new(
+            metric.SegmentType,
+            metric.SegmentKey,
+            metric.Label,
+            metric.CompetitionId,
+            metric.Season,
+            new ModelLabBacktestSummary(
+                metric.ScoredGames,
+                metric.CorrectWinners,
+                metric.WinnerAccuracy,
+                metric.BrierScore,
+                metric.LogLoss,
+                metric.AverageMarginError,
+                metric.AveragePredictedHomeWinProbability),
+            new ModelLabBacktestSummary(
+                metric.BaselineScoredGames,
+                metric.BaselineCorrectWinners,
+                metric.BaselineWinnerAccuracy,
+                metric.BaselineBrierScore,
+                metric.BaselineLogLoss,
+                metric.BaselineAverageMarginError,
+                metric.BaselineAveragePredictedHomeWinProbability));
+
     private static ModelLabPredictionRow ToPredictionRow(ModelLabRunPrediction prediction)
         => new(
             prediction.GameId,
@@ -444,4 +636,10 @@ public sealed class ModelLabRunService(
             prediction.ActualHomeMargin,
             prediction.MarginError,
             prediction.PickedWinner);
+
+    private static decimal RoundRating(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private static decimal RoundProbability(decimal value) => Math.Round(value, 4, MidpointRounding.AwayFromZero);
+
+    private static decimal RoundPercentage(decimal value) => Math.Round(value * 100m, 1, MidpointRounding.AwayFromZero);
 }

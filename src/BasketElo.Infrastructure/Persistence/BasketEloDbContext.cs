@@ -18,6 +18,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<ModelLabRunPrediction> ModelLabRunPredictions => Set<ModelLabRunPrediction>();
     public DbSet<ModelLabRunRating> ModelLabRunRatings => Set<ModelLabRunRating>();
     public DbSet<ModelLabRunPeriodMetric> ModelLabRunPeriodMetrics => Set<ModelLabRunPeriodMetric>();
+    public DbSet<ModelLabRunMetricBreakdown> ModelLabRunMetricBreakdowns => Set<ModelLabRunMetricBreakdown>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamAlias> TeamAliases => Set<TeamAlias>();
     public DbSet<Competition> Competitions => Set<Competition>();
@@ -288,6 +289,47 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.RunId, x.PeriodKey }).IsUnique();
             entity.HasIndex(x => new { x.OwnerUserId, x.RunId });
+        });
+
+        modelBuilder.Entity<ModelLabRunMetricBreakdown>(entity =>
+        {
+            entity.ToTable("model_lab_run_metric_breakdowns");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.SegmentType).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.SegmentKey).HasMaxLength(220).IsRequired();
+            entity.Property(x => x.Label).HasMaxLength(220).IsRequired();
+            entity.Property(x => x.Season).HasMaxLength(20);
+            entity.Property(x => x.ScoredGames).IsRequired();
+            entity.Property(x => x.CorrectWinners).IsRequired();
+            entity.Property(x => x.WinnerAccuracy).HasPrecision(6, 2).IsRequired();
+            entity.Property(x => x.BrierScore).HasPrecision(8, 4).IsRequired();
+            entity.Property(x => x.LogLoss).HasPrecision(8, 4).IsRequired();
+            entity.Property(x => x.AverageMarginError).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.AveragePredictedHomeWinProbability).HasPrecision(6, 2).IsRequired();
+            entity.Property(x => x.BaselineScoredGames).IsRequired();
+            entity.Property(x => x.BaselineCorrectWinners).IsRequired();
+            entity.Property(x => x.BaselineWinnerAccuracy).HasPrecision(6, 2).IsRequired();
+            entity.Property(x => x.BaselineBrierScore).HasPrecision(8, 4).IsRequired();
+            entity.Property(x => x.BaselineLogLoss).HasPrecision(8, 4).IsRequired();
+            entity.Property(x => x.BaselineAverageMarginError).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.BaselineAveragePredictedHomeWinProbability).HasPrecision(6, 2).IsRequired();
+            entity.HasOne(x => x.Run)
+                .WithMany(x => x.MetricBreakdowns)
+                .HasForeignKey(x => x.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.OwnerUser)
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Competition)
+                .WithMany()
+                .HasForeignKey(x => x.CompetitionId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.RunId, x.SegmentType, x.SegmentKey }).IsUnique();
+            entity.HasIndex(x => new { x.OwnerUserId, x.RunId });
+            entity.HasIndex(x => new { x.RunId, x.SegmentType });
+            entity.HasIndex(x => new { x.RunId, x.CompetitionId });
+            entity.HasIndex(x => new { x.RunId, x.Season });
         });
 
         modelBuilder.Entity<Team>(entity =>

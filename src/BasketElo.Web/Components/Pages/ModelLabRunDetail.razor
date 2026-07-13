@@ -91,6 +91,58 @@
             </div>
         </section>
 
+        <section class="result-panel">
+            <div class="section-head compact">
+                <div>
+                    <h2>Metric breakdowns</h2>
+                    <p>Persisted aggregates by competition, season, and month. Deltas compare this model against the baseline.</p>
+                </div>
+            </div>
+            @if (VisibleMetricBreakdowns.Count == 0)
+            {
+                <div class="empty-state compact-empty">No metric breakdowns were stored for this run.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle compact-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Segment</th>
+                                <th class="numeric">Games</th>
+                                <th class="numeric">Accuracy</th>
+                                <th class="numeric">vs baseline</th>
+                                <th class="numeric">Brier</th>
+                                <th class="numeric">vs baseline</th>
+                                <th class="numeric">Margin error</th>
+                                <th class="numeric">vs baseline</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in VisibleMetricBreakdowns)
+                            {
+                                var accuracyDelta = row.Summary.WinnerAccuracy - row.BaselineSummary.WinnerAccuracy;
+                                var brierDelta = row.Summary.BrierScore - row.BaselineSummary.BrierScore;
+                                var marginDelta = row.Summary.AverageMarginError - row.BaselineSummary.AverageMarginError;
+                                <tr>
+                                    <td>@FormatSegmentType(row.SegmentType)</td>
+                                    <td>@row.Label</td>
+                                    <td class="numeric">@row.Summary.ScoredGames</td>
+                                    <td class="numeric rating">@row.Summary.WinnerAccuracy.ToString("0.0")%</td>
+                                    <td class="numeric"><span class="@AccuracyDeltaClass(accuracyDelta)">@FormatPercentagePointDelta(accuracyDelta)</span></td>
+                                    <td class="numeric">@row.Summary.BrierScore.ToString("0.000")</td>
+                                    <td class="numeric"><span class="@ErrorDeltaClass(brierDelta)">@FormatDecimalDelta(brierDelta, "0.000")</span></td>
+                                    <td class="numeric">@row.Summary.AverageMarginError.ToString("0.0")</td>
+                                    <td class="numeric"><span class="@ErrorDeltaClass(marginDelta)">@FormatDecimalDelta(marginDelta, "0.0")</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
         <section class="result-grid">
             <div class="result-panel">
                 <div class="section-head compact">
@@ -278,6 +330,11 @@
         predictionPage.Skip + predictionPage.Items.Count < predictionPage.Total &&
         !isLoadingPredictions;
 
+    private IReadOnlyCollection<ModelLabRunMetricBreakdownResponse> VisibleMetricBreakdowns
+        => detail?.MetricBreakdowns
+            .Where(x => x.SegmentType != ModelLabMetricSegmentTypes.FullRun)
+            .ToList() ?? [];
+
     protected override async Task OnParametersSetAsync()
     {
         await LoadRunAsync();
@@ -411,12 +468,38 @@
     private static string PickClass(bool pickedWinner)
         => pickedWinner ? "pick-correct" : "pick-miss";
 
+    private static string AccuracyDeltaClass(decimal value)
+        => value switch
+        {
+            > 0 => "delta-good",
+            < 0 => "delta-bad",
+            _ => "delta-flat"
+        };
+
+    private static string ErrorDeltaClass(decimal value)
+        => value switch
+        {
+            < 0 => "delta-good",
+            > 0 => "delta-bad",
+            _ => "delta-flat"
+        };
+
     private static string FormatScope(string scopeType)
         => scopeType switch
         {
             ModelLabScopeTypes.SelectedCompetitions => "Selected competitions",
             ModelLabScopeTypes.AllCompetitions => "All competitions",
             _ => "Single competition"
+        };
+
+    private static string FormatSegmentType(string segmentType)
+        => segmentType switch
+        {
+            ModelLabMetricSegmentTypes.Competition => "Competition",
+            ModelLabMetricSegmentTypes.Season => "Season",
+            ModelLabMetricSegmentTypes.Month => "Month",
+            ModelLabMetricSegmentTypes.FullRun => "Full run",
+            _ => "Other"
         };
 
     private static string FormatScopeNames(IReadOnlyCollection<ModelLabCompetitionOption> scopes)
@@ -464,6 +547,12 @@
 
     private static string FormatSigned(decimal value)
         => value > 0 ? $"+{value:0.0}" : value.ToString("0.0");
+
+    private static string FormatPercentagePointDelta(decimal value)
+        => value > 0 ? $"+{value:0.0} pp" : $"{value:0.0} pp";
+
+    private static string FormatDecimalDelta(decimal value, string format)
+        => value > 0 ? $"+{value.ToString(format)}" : value.ToString(format);
 
     private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
     {

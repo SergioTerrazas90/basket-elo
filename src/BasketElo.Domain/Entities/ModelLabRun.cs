@@ -40,6 +40,7 @@ public class ModelLabRun
     public ICollection<ModelLabRunPrediction> Predictions { get; set; } = new List<ModelLabRunPrediction>();
     public ICollection<ModelLabRunRating> Ratings { get; set; } = new List<ModelLabRunRating>();
     public ICollection<ModelLabRunPeriodMetric> PeriodMetrics { get; set; } = new List<ModelLabRunPeriodMetric>();
+    public ICollection<ModelLabRunMetricBreakdown> MetricBreakdowns { get; set; } = new List<ModelLabRunMetricBreakdown>();
 }
 
 public static class ModelLabRunStatuses

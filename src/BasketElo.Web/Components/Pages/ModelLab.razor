@@ -50,7 +50,7 @@
                     <div class="saved-model-row">
                         <div class="filter-field saved-model-select">
                             <label for="savedModel">Saved model</label>
-                            <select id="savedModel" class="form-select" @bind="selectedModelIdText" disabled="@(isLoadingModels || savedModels.Count == 0)">
+                            <select id="savedModel" class="form-select" value="@selectedModelIdText" @onchange="OnSelectedModelChangedAsync" disabled="@(isLoadingModels || savedModels.Count == 0)">
                                 <option value="">@SavedModelPlaceholder</option>
                                 @foreach (var savedModel in savedModels)
                                 {
@@ -568,6 +568,19 @@
 
     private bool CanUseSelectedModel
         => !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
+
+    private async Task OnSelectedModelChangedAsync(ChangeEventArgs args)
+    {
+        selectedModelIdText = args.Value?.ToString() ?? string.Empty;
+        modelStatusMessage = null;
+
+        if (string.IsNullOrWhiteSpace(selectedModelIdText))
+        {
+            return;
+        }
+
+        await LoadSelectedModelAsync();
+    }
 
     private async Task LoadSavedModelsAsync()
     {

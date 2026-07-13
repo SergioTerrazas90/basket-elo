@@ -90,6 +90,7 @@ if (authOptions.Enabled && isGoogleLoginConfigured)
                 identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, login.UserId.ToString()));
                 identity.AddClaim(new Claim(ClaimTypes.Email, login.Email));
                 identity.AddClaim(new Claim(ClaimTypes.Name, login.DisplayName));
+                identity.AddClaim(new Claim(AuthClaimTypes.AuthMode, "google"));
 
                 if (!string.IsNullOrWhiteSpace(login.AvatarUrl))
                 {
@@ -228,7 +229,8 @@ static ClaimsPrincipal CreateAuthDisabledPrincipal(Guid userId)
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
             new Claim(ClaimTypes.Name, "Local access"),
             new Claim(ClaimTypes.Email, "local@basket-elo"),
-            new Claim(ClaimTypes.Role, "admin")
+            new Claim(ClaimTypes.Role, "admin"),
+            new Claim(AuthClaimTypes.AuthMode, "auth-disabled")
         ],
         "AuthDisabled");
 

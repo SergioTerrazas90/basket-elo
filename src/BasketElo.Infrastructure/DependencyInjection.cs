@@ -21,6 +21,7 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString));
 
         services.Configure<ApiSportsOptions>(configuration.GetSection(ApiSportsOptions.SectionName));
+        services.Configure<ModelLabPlanOptions>(configuration.GetSection(ModelLabPlanOptions.SectionName));
         services.AddSingleton<IApiSportsRateLimiter, ApiSportsRateLimiter>();
         services.AddSingleton<IApiSportsLeagueCache, ApiSportsLeagueCache>();
         services.AddHttpClient<ApiSportsBasketballDataProvider>((serviceProvider, client) =>
@@ -39,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<IEloRebuildJobProcessor, EloRebuildJobProcessor>();
         services.AddScoped<IModelLabBacktestService, ModelLabBacktestService>();
         services.AddScoped<IModelLabModelService, ModelLabModelService>();
+        services.AddScoped<IModelLabEntitlementService, ModelLabEntitlementService>();
         services.AddSingleton<IEloRebuildNotificationPublisher, PostgresEloRebuildNotificationPublisher>();
         services.AddScoped<IIdentityHealthCheckService, IdentityHealthCheckService>();
 

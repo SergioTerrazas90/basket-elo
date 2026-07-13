@@ -23,6 +23,18 @@ public sealed class AuthenticatedApiHttpMessageHandler(
                 request.Headers.TryAddWithoutValidation(InternalAuthHeaders.UserId, userId);
             }
 
+            var email = user.FindFirstValue(ClaimTypes.Email);
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                request.Headers.TryAddWithoutValidation(InternalAuthHeaders.Email, email);
+            }
+
+            var authMode = user.FindFirstValue(AuthClaimTypes.AuthMode) ?? user.Identity.AuthenticationType;
+            if (!string.IsNullOrWhiteSpace(authMode))
+            {
+                request.Headers.TryAddWithoutValidation(InternalAuthHeaders.AuthMode, authMode);
+            }
+
             var roles = user.FindAll(ClaimTypes.Role)
                 .Select(x => x.Value)
                 .Where(x => !string.IsNullOrWhiteSpace(x))

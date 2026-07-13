@@ -16,11 +16,13 @@ public interface IModelLabModelService
 
     Task<ModelLabModelDetailResponse> CreateAsync(
         Guid ownerUserId,
+        ModelLabEntitlement entitlement,
         SaveModelLabModelRequest request,
         CancellationToken cancellationToken);
 
     Task<ModelLabModelDetailResponse?> UpdateAsync(
         Guid ownerUserId,
+        ModelLabEntitlement entitlement,
         Guid modelId,
         SaveModelLabModelRequest request,
         CancellationToken cancellationToken);

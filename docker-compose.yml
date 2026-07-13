@@ -28,6 +28,9 @@ services:
       ApiSports__BaseUrl: https://v1.basketball.api-sports.io
       ApiSports__ApiKey: bef74529c17455cafe87dd1a6644deee
       ApiSports__MinSecondsBetweenRequests: 7
+      ModelLab__FreeSavedModelLimit: ${BASKET_ELO_FREE_SAVED_MODEL_LIMIT:-1}
+      ModelLab__FreeLeagueName: ${BASKET_ELO_FREE_LEAGUE_NAME:-ACB}
+      ModelLab__PaidEmails: ${BASKET_ELO_PAID_EMAILS:-}
     depends_on:
       postgres:
         condition: service_healthy

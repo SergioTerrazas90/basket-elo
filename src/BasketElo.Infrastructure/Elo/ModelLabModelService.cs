@@ -43,12 +43,14 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
 
     public async Task<ModelLabModelDetailResponse> CreateAsync(
         Guid ownerUserId,
+        ModelLabEntitlement entitlement,
         SaveModelLabModelRequest request,
         CancellationToken cancellationToken)
     {
         var normalized = NormalizeAndValidate(request);
         var now = DateTime.UtcNow;
 
+        await EnforceCreateLimitsAsync(ownerUserId, entitlement, normalized.LeagueName, cancellationToken);
         await EnsureOwnerUserExistsAsync(ownerUserId, now, cancellationToken);
 
         var model = new ModelLabModel
@@ -56,6 +58,7 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
             OwnerUserId = ownerUserId,
             Name = normalized.Name,
             Description = normalized.Description,
+            LeagueName = normalized.LeagueName,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
             Versions =
@@ -72,11 +75,14 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
 
     public async Task<ModelLabModelDetailResponse?> UpdateAsync(
         Guid ownerUserId,
+        ModelLabEntitlement entitlement,
         Guid modelId,
         SaveModelLabModelRequest request,
         CancellationToken cancellationToken)
     {
         var normalized = NormalizeAndValidate(request);
+        EnforceLeagueLimit(entitlement, normalized.LeagueName);
+
         var model = await FindOwnedModel(ownerUserId, modelId)
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -88,6 +94,7 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
         var now = DateTime.UtcNow;
         model.Name = normalized.Name;
         model.Description = normalized.Description;
+        model.LeagueName = normalized.LeagueName;
         model.UpdatedAtUtc = now;
 
         var currentVersion = GetCurrentVersion(model);
@@ -106,6 +113,55 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return ToDetailResponse(model);
+    }
+
+    private async Task EnforceCreateLimitsAsync(
+        Guid ownerUserId,
+        ModelLabEntitlement entitlement,
+        string leagueName,
+        CancellationToken cancellationToken)
+    {
+        if (!entitlement.CanSaveModels)
+        {
+            throw new ModelLabLimitException(
+                "login_required",
+                "Sign in to save models.",
+                false,
+                entitlement.SavedModelLimit,
+                entitlement.RequiredLeagueName);
+        }
+
+        EnforceLeagueLimit(entitlement, leagueName);
+
+        if (entitlement.SavedModelLimit.HasValue)
+        {
+            var modelCount = await dbContext.ModelLabModels
+                .CountAsync(x => x.OwnerUserId == ownerUserId, cancellationToken);
+
+            if (modelCount >= entitlement.SavedModelLimit.Value)
+            {
+                throw new ModelLabLimitException(
+                    "free_model_limit_reached",
+                    $"Free users can save one model total. Update your existing model or upgrade for more saved models.",
+                    true,
+                    entitlement.SavedModelLimit,
+                    entitlement.RequiredLeagueName);
+            }
+        }
+    }
+
+    private static void EnforceLeagueLimit(ModelLabEntitlement entitlement, string leagueName)
+    {
+        if (!string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName) &&
+            !string.Equals(leagueName, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ModelLabLimitException(
+                "free_league_restricted",
+                $"Free users can save models for {entitlement.RequiredLeagueName} only.",
+                true,
+                entitlement.SavedModelLimit,
+                entitlement.RequiredLeagueName);
+        }
     }
 
     public async Task<ModelLabModelDetailResponse?> SetArchivedAsync(
@@ -177,6 +233,17 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
             throw new ArgumentException($"Model description must be {MaxDescriptionLength} characters or fewer.");
         }
 
+        var leagueName = request.LeagueName.Trim();
+        if (string.IsNullOrWhiteSpace(leagueName))
+        {
+            throw new ArgumentException("Choose a league before saving a model.");
+        }
+
+        if (leagueName.Length > 200)
+        {
+            throw new ArgumentException("League name must be 200 characters or fewer.");
+        }
+
         var extensionDataJson = string.IsNullOrWhiteSpace(request.ExtensionDataJson)
             ? null
             : request.ExtensionDataJson.Trim();
@@ -199,7 +266,7 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
 
         ModelLabParameterValidator.Validate(request.Parameters);
 
-        return new NormalizedModelRequest(name, description, request.Parameters, extensionDataJson);
+        return new NormalizedModelRequest(name, description, leagueName, request.Parameters, extensionDataJson);
     }
 
     private static ModelLabModelVersion CreateVersion(
@@ -240,6 +307,7 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
             model.Id,
             model.Name,
             model.Description,
+            model.LeagueName,
             model.IsArchived,
             model.CreatedAtUtc,
             model.UpdatedAtUtc,
@@ -252,6 +320,7 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
             model.OwnerUserId,
             model.Name,
             model.Description,
+            model.LeagueName,
             model.IsArchived,
             model.CreatedAtUtc,
             model.UpdatedAtUtc,
@@ -285,6 +354,7 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
     private sealed record NormalizedModelRequest(
         string Name,
         string? Description,
+        string LeagueName,
         ModelLabParameterSet Parameters,
         string? ExtensionDataJson);
 }

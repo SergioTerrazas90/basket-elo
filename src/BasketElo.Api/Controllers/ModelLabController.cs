@@ -9,7 +9,8 @@ namespace BasketElo.Api.Controllers;
 [Route("api/model-lab")]
 public sealed class ModelLabController(
     IModelLabBacktestService backtestService,
-    IModelLabModelService modelService) : ControllerBase
+    IModelLabModelService modelService,
+    IModelLabEntitlementService entitlementService) : ControllerBase
 {
     [HttpGet("options")]
     public async Task<ActionResult<ModelLabOptionsResponse>> GetOptions(CancellationToken cancellationToken)
@@ -23,6 +24,11 @@ public sealed class ModelLabController(
         [FromQuery] bool includeArchived,
         CancellationToken cancellationToken)
     {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
         return Ok(await modelService.ListAsync(GetCurrentUserId(), includeArchived, cancellationToken));
     }
 
@@ -32,6 +38,11 @@ public sealed class ModelLabController(
         Guid modelId,
         CancellationToken cancellationToken)
     {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
         var model = await modelService.GetAsync(GetCurrentUserId(), modelId, cancellationToken);
         return model is null ? NotFound() : Ok(model);
     }
@@ -42,10 +53,21 @@ public sealed class ModelLabController(
         [FromBody] SaveModelLabModelRequest request,
         CancellationToken cancellationToken)
     {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
         try
         {
-            var model = await modelService.CreateAsync(GetCurrentUserId(), request, cancellationToken);
+            var ownerUserId = GetCurrentUserId();
+            var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+            var model = await modelService.CreateAsync(ownerUserId, entitlement, request, cancellationToken);
             return CreatedAtAction(nameof(GetModel), new { modelId = model.Id }, model);
+        }
+        catch (ModelLabLimitException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
         }
         catch (ArgumentException ex)
         {
@@ -60,10 +82,21 @@ public sealed class ModelLabController(
         [FromBody] SaveModelLabModelRequest request,
         CancellationToken cancellationToken)
     {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
         try
         {
-            var model = await modelService.UpdateAsync(GetCurrentUserId(), modelId, request, cancellationToken);
+            var ownerUserId = GetCurrentUserId();
+            var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+            var model = await modelService.UpdateAsync(ownerUserId, entitlement, modelId, request, cancellationToken);
             return model is null ? NotFound() : Ok(model);
+        }
+        catch (ModelLabLimitException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
         }
         catch (ArgumentException ex)
         {
@@ -78,6 +111,11 @@ public sealed class ModelLabController(
         [FromBody] ArchiveModelLabModelRequest request,
         CancellationToken cancellationToken)
     {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
         var model = await modelService.SetArchivedAsync(
             GetCurrentUserId(),
             modelId,
@@ -104,4 +142,25 @@ public sealed class ModelLabController(
 
     private Guid GetCurrentUserId()
         => Guid.Parse(Request.Headers[InternalAuthHeaders.UserId].ToString());
+
+    private bool TryRequireRealUser(out ActionResult loginResult)
+    {
+        var authMode = Request.Headers[InternalAuthHeaders.AuthMode].ToString();
+        if (string.Equals(authMode, "google", StringComparison.OrdinalIgnoreCase))
+        {
+            loginResult = Ok();
+            return true;
+        }
+
+        loginResult = Unauthorized(new ModelLabLimitErrorResponse(
+            "login_required",
+            "Sign in to save models.",
+            false,
+            null,
+            "ACB"));
+        return false;
+    }
+
+    private static ModelLabLimitErrorResponse ToLimitError(ModelLabLimitException ex)
+        => new(ex.Code, ex.Message, ex.UpgradeRequired, ex.SavedModelLimit, ex.AllowedLeagueName);
 }

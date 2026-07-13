@@ -29,6 +29,7 @@ public sealed record ModelLabModelSummaryResponse(
     Guid Id,
     string Name,
     string? Description,
+    string LeagueName,
     bool IsArchived,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
@@ -40,6 +41,7 @@ public sealed record ModelLabModelDetailResponse(
     Guid OwnerUserId,
     string Name,
     string? Description,
+    string LeagueName,
     bool IsArchived,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
@@ -58,10 +60,18 @@ public sealed record ModelLabModelVersionResponse(
 public sealed record SaveModelLabModelRequest(
     string Name,
     string? Description,
+    string LeagueName,
     ModelLabParameterSet Parameters,
     string? ExtensionDataJson);
 
 public sealed record ArchiveModelLabModelRequest(bool IsArchived);
+
+public sealed record ModelLabLimitErrorResponse(
+    string Code,
+    string Message,
+    bool UpgradeRequired,
+    int? SavedModelLimit,
+    string? AllowedLeagueName);
 
 public sealed record ModelLabBacktestResponse(
     string ModelName,

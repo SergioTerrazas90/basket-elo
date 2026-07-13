@@ -4,7 +4,11 @@
 @using System.Net.Http.Json
 @using System.Text.Json
 @using BasketElo.Domain.Elo
+@using BasketElo.Infrastructure.Identity
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Options
 @inject HttpClient Http
+@inject IOptions<AuthOptions> AuthOptions
 
 <PageTitle>Model Lab - Basket ELO</PageTitle>
 
@@ -61,7 +65,7 @@
 
                         <div class="saved-model-actions">
                             <button type="button" class="btn btn-outline-secondary" @onclick="LoadSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Load</button>
-                            <button type="button" class="btn btn-primary" @onclick="SaveNewModelAsync" disabled="@isSavingModel">Save new</button>
+                            <button type="button" class="btn btn-primary" @onclick="SaveNewModelAsync" disabled="@(!CanSaveModels || isSavingModel)">Save new</button>
                             <button type="button" class="btn btn-outline-secondary" @onclick="UpdateSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Update</button>
                             <button type="button" class="btn btn-outline-danger" @onclick="ArchiveSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Archive</button>
                         </div>
@@ -70,6 +74,10 @@
                     @if (!string.IsNullOrWhiteSpace(modelStatusMessage))
                     {
                         <p class="model-status">@modelStatusMessage</p>
+                    }
+                    else if (!CanSaveModels)
+                    {
+                        <p class="model-status">Sign in to save models. You can still run temporary backtests without saving.</p>
                     }
                 </div>
 
@@ -297,6 +305,7 @@
                                 <p>The backtest runs inside one league at a time. That keeps model comparisons cleaner because schedule strength, scoring style, and data coverage can vary by league.</p>
                             </div>
                         }
+                        <p class="field-note">Free users can save models for ACB only. Paid users can save models across leagues.</p>
                     </div>
 
                     <div class="filter-field">
@@ -515,6 +524,9 @@
 </div>
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
     private ModelLabOptionsResponse? options;
     private ModelLabBacktestResponse? result;
     private List<ModelLabModelSummaryResponse> savedModels = [];
@@ -522,6 +534,7 @@
     private bool isLoadingModels;
     private bool isRunning;
     private bool isSavingModel;
+    private bool isRealSignedIn;
     private string? errorMessage;
     private string? modelStatusMessage;
     private string modelName = "My model";
@@ -545,13 +558,27 @@
     {
         try
         {
+            if (AuthenticationStateTask is not null)
+            {
+                var authenticationState = await AuthenticationStateTask;
+                isRealSignedIn = AuthOptions.Value.Enabled &&
+                    authenticationState.User.Identity?.IsAuthenticated == true;
+            }
+
             options = await Http.GetFromJsonAsync<ModelLabOptionsResponse>("api/model-lab/options");
             if (options is not null)
             {
                 ApplyDefaults(options);
             }
 
-            await LoadSavedModelsAsync();
+            if (CanSaveModels)
+            {
+                await LoadSavedModelsAsync();
+            }
+            else
+            {
+                modelStatusMessage = "Sign in to save models.";
+            }
         }
         catch (Exception ex)
         {
@@ -566,8 +593,10 @@
     private string SavedModelPlaceholder
         => isLoadingModels ? "Loading saved models..." : "No saved model selected";
 
+    private bool CanSaveModels => AuthOptions.Value.Enabled && isRealSignedIn;
+
     private bool CanUseSelectedModel
-        => !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
+        => CanSaveModels && !isSavingModel && Guid.TryParse(selectedModelIdText, out _);
 
     private static string FormatSavedModelOption(ModelLabModelSummaryResponse model)
         => $"{model.Name} - v{model.CurrentVersion.VersionNumber}";
@@ -587,6 +616,14 @@
 
     private async Task LoadSavedModelsAsync()
     {
+        if (!CanSaveModels)
+        {
+            savedModels = [];
+            selectedModelIdText = string.Empty;
+            modelStatusMessage = "Sign in to save models.";
+            return;
+        }
+
         isLoadingModels = true;
         modelStatusMessage = null;
 
@@ -620,6 +657,12 @@
 
     private async Task LoadSelectedModelAsync()
     {
+        if (!CanSaveModels)
+        {
+            modelStatusMessage = "Sign in to save models.";
+            return;
+        }
+
         if (!Guid.TryParse(selectedModelIdText, out var modelId))
         {
             return;
@@ -653,6 +696,12 @@
 
     private async Task SaveNewModelAsync()
     {
+        if (!CanSaveModels)
+        {
+            modelStatusMessage = "Sign in to save models.";
+            return;
+        }
+
         isSavingModel = true;
         modelStatusMessage = null;
 
@@ -684,6 +733,12 @@
 
     private async Task UpdateSelectedModelAsync()
     {
+        if (!CanSaveModels)
+        {
+            modelStatusMessage = "Sign in to save models.";
+            return;
+        }
+
         if (!Guid.TryParse(selectedModelIdText, out var modelId))
         {
             return;
@@ -719,6 +774,12 @@
 
     private async Task ArchiveSelectedModelAsync()
     {
+        if (!CanSaveModels)
+        {
+            modelStatusMessage = "Sign in to save models.";
+            return;
+        }
+
         if (!Guid.TryParse(selectedModelIdText, out var modelId))
         {
             return;
@@ -806,6 +867,7 @@
         => new(
             modelName,
             modelDescription,
+            leagueName ?? string.Empty,
             BuildParameterSet(),
             null);
 
@@ -824,6 +886,7 @@
         selectedModelIdText = model.Id.ToString();
         modelName = model.Name;
         modelDescription = model.Description;
+        leagueName = model.LeagueName;
         ApplyParameters(model.CurrentVersion.Parameters);
     }
 
@@ -898,6 +961,11 @@
             if (json.RootElement.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
             {
                 return title.GetString() ?? body;
+            }
+
+            if (json.RootElement.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String)
+            {
+                return message.GetString() ?? body;
             }
         }
         catch (JsonException)

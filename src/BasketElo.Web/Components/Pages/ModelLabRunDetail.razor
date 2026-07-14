@@ -469,20 +469,24 @@
         => pickedWinner ? "pick-correct" : "pick-miss";
 
     private static string AccuracyDeltaClass(decimal value)
-        => value switch
+    {
+        if (value > 0)
         {
-            > 0 => "delta-good",
-            < 0 => "delta-bad",
-            _ => "delta-flat"
-        };
+            return "delta-good";
+        }
+
+        return value < 0 ? "delta-bad" : "delta-flat";
+    }
 
     private static string ErrorDeltaClass(decimal value)
-        => value switch
+    {
+        if (value < 0)
         {
-            < 0 => "delta-good",
-            > 0 => "delta-bad",
-            _ => "delta-flat"
-        };
+            return "delta-good";
+        }
+
+        return value > 0 ? "delta-bad" : "delta-flat";
+    }
 
     private static string FormatScope(string scopeType)
         => scopeType switch
@@ -530,20 +534,24 @@
         => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 
     private static string FormatMovement(decimal value)
-        => value switch
+    {
+        if (value > 0)
         {
-            > 0 => $"+{value:0}",
-            < 0 => value.ToString("0"),
-            _ => "0"
-        };
+            return $"+{value:0}";
+        }
+
+        return value < 0 ? value.ToString("0") : "0";
+    }
 
     private static string MovementClass(decimal value)
-        => value switch
+    {
+        if (value > 0)
         {
-            > 0 => "movement-up",
-            < 0 => "movement-down",
-            _ => "movement-flat"
-        };
+            return "movement-up";
+        }
+
+        return value < 0 ? "movement-down" : "movement-flat";
+    }
 
     private static string FormatSigned(decimal value)
         => value > 0 ? $"+{value:0.0}" : value.ToString("0.0");

@@ -116,6 +116,37 @@ public sealed record EloRankingsEvolutionResponse(
     string RulesetVersion,
     IReadOnlyCollection<EloTeamEvolutionSeries> Series);
 
+public sealed record EloMoversResponse(
+    string RulesetVersion,
+    string Direction,
+    DateTime WindowStartUtc,
+    DateTime WindowEndUtc,
+    IReadOnlyCollection<EloMoverRow> Movers,
+    EloMoversSummary Summary,
+    int Page,
+    int PageSize,
+    int TotalCount,
+    int TotalPages);
+
+public sealed record EloMoverRow(
+    Guid TeamId,
+    int Rank,
+    string TeamName,
+    string Country,
+    decimal CurrentElo,
+    decimal StartElo,
+    decimal EndElo,
+    decimal EloChange,
+    int GamesInWindow,
+    DateTime FirstGameUtc,
+    DateTime LastGameUtc);
+
+public sealed record EloMoversSummary(
+    int TeamsWithMovement,
+    int FilteredTeams,
+    int WindowGames,
+    bool IsFiltered);
+
 public sealed record EloTeamEvolutionSeries(
     Guid TeamId,
     string TeamName,
@@ -141,6 +172,7 @@ public sealed record EloTeamDetailResponse(
     int RecentGamesPageSize,
     int RecentGamesTotalCount,
     int RecentGamesTotalPages,
+    IReadOnlyCollection<EloTeamFormSummary> RecentForms,
     IReadOnlyCollection<EloRatingHistoryPoint> History);
 
 public sealed record EloTeamGameDto(
@@ -155,6 +187,26 @@ public sealed record EloTeamGameDto(
     decimal PreElo,
     decimal PostElo,
     decimal EloDelta);
+
+public sealed record EloTeamFormSummary(
+    int WindowGames,
+    int GamesAvailable,
+    int Wins,
+    int Losses,
+    decimal TotalEloChange,
+    decimal AverageOpponentPreElo,
+    EloTeamFormGame? BestWin,
+    EloTeamFormGame? WorstLoss);
+
+public sealed record EloTeamFormGame(
+    Guid GameId,
+    DateTime GameDateTimeUtc,
+    string Opponent,
+    bool WasHome,
+    short? TeamScore,
+    short? OpponentScore,
+    decimal EloDelta,
+    decimal OpponentPreElo);
 
 public sealed record EloGameExplanationResponse(
     Guid GameId,

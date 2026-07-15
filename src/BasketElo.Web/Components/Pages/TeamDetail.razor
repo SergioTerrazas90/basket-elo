@@ -56,6 +56,56 @@
             </div>
         </section>
 
+        @if (team.RecentForms.Count > 0)
+        {
+            <section class="form-section">
+                <div class="section-head">
+                    <div>
+                        <h2>Recent form</h2>
+                        <p>Latest rated games summarized by record, rating movement, and opponent strength.</p>
+                    </div>
+                </div>
+
+                <div class="form-grid">
+                    @foreach (var form in team.RecentForms)
+                    {
+                        <article class="form-card">
+                            <div class="form-card-head">
+                                <span>Last @form.WindowGames</span>
+                                <strong>@FormatRecord(form)</strong>
+                            </div>
+
+                            <dl class="form-stats">
+                                <div>
+                                    <dt>Rated games</dt>
+                                    <dd>@form.GamesAvailable</dd>
+                                </div>
+                                <div>
+                                    <dt>ELO change</dt>
+                                    <dd class="@MovementClass(form.TotalEloChange)">@FormatMovement(form.TotalEloChange)</dd>
+                                </div>
+                                <div>
+                                    <dt>Avg opponent</dt>
+                                    <dd>@FormatRating(form.AverageOpponentPreElo)</dd>
+                                </div>
+                            </dl>
+
+                            <div class="form-highlights">
+                                <div>
+                                    <span>Best win</span>
+                                    <strong>@FormatFormGame(form.BestWin)</strong>
+                                </div>
+                                <div>
+                                    <span>Worst loss</span>
+                                    <strong>@FormatFormGame(form.WorstLoss)</strong>
+                                </div>
+                            </div>
+                        </article>
+                    }
+                </div>
+            </section>
+        }
+
         <section class="team-context">
             <div>
                 <h2>Competitions</h2>
@@ -391,6 +441,9 @@
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";
 
+    private static string FormatRating(decimal value)
+        => value == 0 ? "-" : value.ToString("0");
+
     private static string FormatMovement(decimal value)
         => value switch
         {
@@ -398,6 +451,24 @@
             < 0 => value.ToString("0"),
             _ => "0"
         };
+
+    private static string FormatRecord(EloTeamFormSummary form)
+        => form.GamesAvailable == 0 ? "No games" : $"{form.Wins}-{form.Losses}";
+
+    private static string FormatFormGame(EloTeamFormGame? game)
+    {
+        if (game is null)
+        {
+            return "-";
+        }
+
+        var location = game.WasHome ? "vs" : "at";
+        var score = game.TeamScore.HasValue && game.OpponentScore.HasValue
+            ? $" {game.TeamScore}-{game.OpponentScore}"
+            : string.Empty;
+
+        return $"{location} {game.Opponent}{score} ({FormatMovement(game.EloDelta)})";
+    }
 
     private static string MovementClass(decimal value)
         => value switch

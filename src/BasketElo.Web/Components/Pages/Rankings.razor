@@ -51,17 +51,6 @@
         </div>
 
         <div class="filter-field">
-            <label for="competitionFilter">Competition</label>
-            <select id="competitionFilter" class="form-select" @bind="selectedCompetition">
-                <option value="">All competitions</option>
-                @foreach (var option in response?.Filters.Competitions ?? [])
-                {
-                    <option value="@option">@option</option>
-                }
-            </select>
-        </div>
-
-        <div class="filter-field">
             <label for="seasonFilter">Season</label>
             <select id="seasonFilter" class="form-select" @bind="selectedSeason">
                 <option value="">Any season</option>
@@ -93,6 +82,15 @@
         </div>
     </section>
 
+    <nav class="ranking-view-tabs" aria-label="Ranking views">
+        <button type="button" class='@ViewTabClass("rankings")' @onclick='() => SelectViewAsync("rankings")' disabled="@isBusy">
+            Rankings
+        </button>
+        <button type="button" class='@ViewTabClass("movers")' @onclick='() => SelectViewAsync("movers")' disabled="@isBusy">
+            Biggest movers
+        </button>
+    </nav>
+
     @if (isBusy && response is null)
     {
         <section class="loading-panel">Loading rankings...</section>
@@ -118,7 +116,90 @@
             </div>
         </section>
 
-        @if (response.Rankings.Count > 0)
+        @if (selectedView == "movers")
+        {
+            <section class="movers-section">
+                <div class="section-head">
+                    <div>
+                        <h2>@MoversTitle()</h2>
+                        <p>@MoversContextLabel()</p>
+                    </div>
+                    <div class="pager">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || (movers?.Page ?? page) <= 1">Previous</button>
+                        <label class="page-jump" for="moversPageInput">
+                            <span>Page</span>
+                            <input id="moversPageInput" class="form-control form-control-sm" type="number" min="1" max="@(movers?.TotalPages ?? 1)" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                        </label>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || (movers?.Page ?? page) >= (movers?.TotalPages ?? 1)">Next</button>
+                    </div>
+                </div>
+
+                <div class="movers-toolbar" aria-label="Movement controls">
+                    <label for="moverDirection">
+                        <span>Movement</span>
+                        <select id="moverDirection" class="form-select form-select-sm" value="@selectedMoverDirection" @onchange="ChangeMoverDirectionAsync">
+                            <option value="risers">Risers</option>
+                            <option value="fallers">Fallers</option>
+                        </select>
+                    </label>
+                    <label for="windowDays">
+                        <span>Window</span>
+                        <select id="windowDays" class="form-select form-select-sm" value="@selectedWindowDays" @onchange="ChangeMoverWindowAsync">
+                            <option value="7">7 days</option>
+                            <option value="30">30 days</option>
+                            <option value="90">90 days</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="table-responsive ranking-table-wrap">
+                    <table class="table table-hover align-middle ranking-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Team</th>
+                                <th>Country</th>
+                                <th class="numeric">Change</th>
+                                <th class="numeric">Start</th>
+                                <th class="numeric">End</th>
+                                <th class="numeric">Current</th>
+                                <th class="numeric">Games</th>
+                                <th>Latest</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (movers is null || movers.Movers.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="9" class="empty-state">No rating movement is available for the selected scope.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var row in movers.Movers)
+                                {
+                                    <tr class="team-row" tabindex="0" @onclick="() => OpenTeam(row.TeamId)" @onkeydown="args => OpenTeamFromKeyboard(args, row.TeamId)">
+                                        <td class="rank-cell">#@row.Rank</td>
+                                        <td>
+                                            <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
+                                        </td>
+                                        <td>@row.Country</td>
+                                        <td class="numeric"><span class="@MovementClass(row.EloChange)">@FormatMovement(row.EloChange)</span></td>
+                                        <td class="numeric">@row.StartElo.ToString("0")</td>
+                                        <td class="numeric">@row.EndElo.ToString("0")</td>
+                                        <td class="numeric rating">@row.CurrentElo.ToString("0")</td>
+                                        <td class="numeric">@row.GamesInWindow</td>
+                                        <td>@FormatDate(row.LastGameUtc)</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+        @if (selectedView != "movers" && response.Rankings.Count > 0)
         {
             <section class="evolution-section">
                 <div class="section-head">
@@ -126,9 +207,12 @@
                         <h2>ELO evolution</h2>
                         <p>@EvolutionContextLabel()</p>
                     </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ToggleChartSize">
+                        @(isChartExpanded ? "Compact chart" : "Expand chart")
+                    </button>
                 </div>
 
-                <div class="evolution-chart" role="img" aria-label="ELO evolution for teams in the current ranking table">
+                <div class="@EvolutionChartClass" role="img" aria-label="ELO evolution for teams in the current ranking table">
                     @if (EvolutionSeries.Count < 1 || EvolutionSeries.All(x => x.Points.Count < 2))
                     {
                         <div class="empty-state">Not enough rated games for an evolution chart yet.</div>
@@ -151,83 +235,83 @@
             </section>
         }
 
-        <section class="rankings-table-section">
-            <div class="section-head">
-                <div>
-                    <h2>Ranking table</h2>
-                    <p>@TableContextLabel()</p>
+        @if (selectedView != "movers")
+        {
+            <section class="rankings-table-section">
+                <div class="section-head">
+                    <div>
+                        <h2>Ranking table</h2>
+                        <p>@TableContextLabel()</p>
+                    </div>
+                    <div class="pager">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || CurrentPage <= 1">Previous</button>
+                        <label class="page-jump" for="rankingsPageInput">
+                            <span>Page</span>
+                            <input id="rankingsPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                        </label>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || CurrentPage >= CurrentTotalPages">Next</button>
+                    </div>
                 </div>
-                <div class="pager">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || response.Page <= 1">Previous</button>
-                    <label class="page-jump" for="rankingsPageInput">
-                        <span>Page</span>
-                        <input id="rankingsPageInput" class="form-control form-control-sm" type="number" min="1" max="@response.TotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
-                    </label>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || response.Page >= response.TotalPages">Next</button>
-                </div>
-            </div>
 
-            <div class="table-responsive ranking-table-wrap">
-                <table class="table table-hover align-middle ranking-table">
-                    <thead>
-                        <tr>
-                            <th>Rank</th>
-                            @if (response.Summary.IsFiltered)
-                            {
-                                <th>Global</th>
-                            }
-                            <th>Team</th>
-                            <th>Country</th>
-                            <th class="numeric">ELO</th>
-                            <th class="numeric">Games</th>
-                            <th class="numeric">Recent</th>
-                            <th>Last game</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (response.Rankings.Count == 0)
-                        {
+                <div class="table-responsive ranking-table-wrap">
+                    <table class="table table-hover align-middle ranking-table">
+                        <thead>
                             <tr>
-                                <td colspan="8" class="empty-state">No teams match the current filters.</td>
+                                <th>Rank</th>
+                                @if (response.Summary.IsFiltered)
+                                {
+                                    <th>Global</th>
+                                }
+                                <th>Team</th>
+                                <th>Country</th>
+                                <th class="numeric">ELO</th>
+                                <th class="numeric">Games</th>
+                                <th class="numeric">Recent</th>
+                                <th>Last game</th>
                             </tr>
-                        }
-                        else
-                        {
-                            @foreach (var row in response.Rankings)
+                        </thead>
+                        <tbody>
+                            @if (response.Rankings.Count == 0)
                             {
-                                <tr class="team-row" tabindex="0" @onclick="() => OpenTeam(row.TeamId)" @onkeydown="args => OpenTeamFromKeyboard(args, row.TeamId)">
-                                    <td class="rank-cell">#@row.Rank</td>
-                                    @if (response.Summary.IsFiltered)
-                                    {
-                                        <td class="muted-rank">#@row.GlobalRank</td>
-                                    }
-                                    <td>
-                                        <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
-                                    </td>
-                                    <td>@row.Country</td>
-                                    <td class="numeric rating">@row.Elo.ToString("0")</td>
-                                    <td class="numeric">@row.GamesPlayed</td>
-                                    <td class="numeric">
-                                        <span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span>
-                                    </td>
-                                    <td>@FormatDate(row.LastGameUtc)</td>
+                                <tr>
+                                    <td colspan="8" class="empty-state">No teams match the current filters.</td>
                                 </tr>
                             }
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </section>
+                            else
+                            {
+                                @foreach (var row in response.Rankings)
+                                {
+                                    <tr class="team-row" tabindex="0" @onclick="() => OpenTeam(row.TeamId)" @onkeydown="args => OpenTeamFromKeyboard(args, row.TeamId)">
+                                        <td class="rank-cell">#@row.Rank</td>
+                                        @if (response.Summary.IsFiltered)
+                                        {
+                                            <td class="muted-rank">#@row.GlobalRank</td>
+                                        }
+                                        <td>
+                                            <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
+                                        </td>
+                                        <td>@row.Country</td>
+                                        <td class="numeric rating">@row.Elo.ToString("0")</td>
+                                        <td class="numeric">@row.GamesPlayed</td>
+                                        <td class="numeric">
+                                            <span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span>
+                                        </td>
+                                        <td>@FormatDate(row.LastGameUtc)</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
     }
 </div>
 
 @code {
     [SupplyParameterFromQuery(Name = "country")]
     public string? Country { get; set; }
-
-    [SupplyParameterFromQuery(Name = "competition")]
-    public string? Competition { get; set; }
 
     [SupplyParameterFromQuery(Name = "season")]
     public string? Season { get; set; }
@@ -244,16 +328,26 @@
     [SupplyParameterFromQuery(Name = "team")]
     public string? Team { get; set; }
 
+    [SupplyParameterFromQuery(Name = "view")]
+    public string? View { get; set; }
+
+    [SupplyParameterFromQuery(Name = "movement")]
+    public string? Movement { get; set; }
+
+    [SupplyParameterFromQuery(Name = "windowDays")]
+    public int? WindowDays { get; set; }
+
     [SupplyParameterFromQuery(Name = "page")]
     public int? Page { get; set; }
 
     private EloRankingsResponse? response;
+    private EloMoversResponse? movers;
     private EloRankingsEvolutionResponse? evolution;
     private EloRankingsResponse? evolutionRankings;
     private bool isBusy;
+    private bool isChartExpanded;
     private string? errorMessage;
     private string? selectedCountry;
-    private string? selectedCompetition;
     private string? selectedSeason;
     private string? teamSearch;
     private DateTime? fromDate;
@@ -261,7 +355,14 @@
     private int minimumGames;
     private int page = 1;
     private int requestedPage = 1;
+    private string selectedView = "rankings";
+    private string selectedMoverDirection = "risers";
+    private int selectedWindowDays = 30;
     private string? lastLoadedUri;
+    private string? lastRankingsApiUri;
+    private string? lastMoversApiUri;
+    private string? lastEvolutionRankingsApiUri;
+    private string? lastEvolutionApiUri;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -272,12 +373,14 @@
         }
 
         selectedCountry = Country;
-        selectedCompetition = Competition;
         selectedSeason = Season;
         fromDate = From;
         toDate = To;
         minimumGames = Math.Max(0, MinGames ?? 0);
         teamSearch = Team;
+        selectedView = string.Equals(View, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
+        selectedMoverDirection = string.Equals(Movement, "fallers", StringComparison.OrdinalIgnoreCase) ? "fallers" : "risers";
+        selectedWindowDays = WindowDays is 7 or 30 or 90 ? WindowDays.Value : 30;
         page = Math.Max(1, Page ?? 1);
         requestedPage = page;
         lastLoadedUri = currentUri;
@@ -294,7 +397,6 @@
     private Task ResetFiltersAsync()
     {
         selectedCountry = null;
-        selectedCompetition = null;
         selectedSeason = null;
         fromDate = null;
         toDate = null;
@@ -304,25 +406,51 @@
         return Task.CompletedTask;
     }
 
+    private Task SelectViewAsync(string view)
+    {
+        selectedView = string.Equals(view, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private Task ChangeMoverDirectionAsync(ChangeEventArgs args)
+    {
+        selectedMoverDirection = string.Equals(args.Value?.ToString(), "fallers", StringComparison.OrdinalIgnoreCase)
+            ? "fallers"
+            : "risers";
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private Task ChangeMoverWindowAsync(ChangeEventArgs args)
+    {
+        selectedWindowDays = int.TryParse(args.Value?.ToString(), out var value) && value is 7 or 30 or 90
+            ? value
+            : 30;
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private void ToggleChartSize()
+    {
+        isChartExpanded = !isChartExpanded;
+    }
+
     private Task PreviousPageAsync()
     {
-        NavigateToRankings(Math.Max(1, (response?.Page ?? page) - 1));
+        NavigateToRankings(Math.Max(1, CurrentPage - 1));
         return Task.CompletedTask;
     }
 
     private Task NextPageAsync()
     {
-        if (response is not null)
-        {
-            NavigateToRankings(Math.Min(response.TotalPages, response.Page + 1));
-        }
-
+        NavigateToRankings(Math.Min(CurrentTotalPages, CurrentPage + 1));
         return Task.CompletedTask;
     }
 
     private Task GoToRequestedPageAsync()
     {
-        NavigateToRankings(ClampRequestedPage(requestedPage, response?.TotalPages ?? 1));
+        NavigateToRankings(ClampRequestedPage(requestedPage, CurrentTotalPages));
         return Task.CompletedTask;
     }
 
@@ -341,14 +469,39 @@
 
         try
         {
-            response = await Http.GetFromJsonAsync<EloRankingsResponse>(BuildApiUri());
+            var rankingsUri = BuildApiUri();
+            if (response is null || !string.Equals(rankingsUri, lastRankingsApiUri, StringComparison.Ordinal))
+            {
+                response = await Http.GetFromJsonAsync<EloRankingsResponse>(rankingsUri);
+                lastRankingsApiUri = rankingsUri;
+            }
+
             if (response is not null)
             {
                 page = response.Page;
                 requestedPage = response.Page;
             }
-            evolutionRankings = await FetchEvolutionRankingsAsync();
-            evolution = await FetchEvolutionAsync();
+
+            if (selectedView == "movers")
+            {
+                var moversUri = BuildMoversApiUri();
+                if (movers is null || !string.Equals(moversUri, lastMoversApiUri, StringComparison.Ordinal))
+                {
+                    movers = await Http.GetFromJsonAsync<EloMoversResponse>(moversUri);
+                    lastMoversApiUri = moversUri;
+                }
+
+                if (movers is not null)
+                {
+                    page = movers.Page;
+                    requestedPage = movers.Page;
+                }
+            }
+            else
+            {
+                evolutionRankings = await FetchEvolutionRankingsAsync();
+                evolution = await FetchEvolutionAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -362,12 +515,16 @@
 
     private void NavigateToRankings(int targetPage)
     {
-        targetPage = ClampRequestedPage(targetPage, response?.TotalPages ?? targetPage);
+        targetPage = ClampRequestedPage(targetPage, CurrentTotalPages);
+        page = targetPage;
+        lastLoadedUri = null;
 
         var query = new Dictionary<string, object?>
         {
+            ["view"] = selectedView == "movers" ? selectedView : null,
+            ["movement"] = selectedView == "movers" ? selectedMoverDirection : null,
+            ["windowDays"] = selectedView == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
             ["country"] = selectedCountry,
-            ["competition"] = selectedCompetition,
             ["season"] = selectedSeason,
             ["from"] = fromDate?.ToString("yyyy-MM-dd"),
             ["to"] = toDate?.ToString("yyyy-MM-dd"),
@@ -382,6 +539,20 @@
     private static int ClampRequestedPage(int value, int totalPages)
         => Math.Clamp(value, 1, Math.Max(1, totalPages));
 
+    private int CurrentPage => selectedView == "movers"
+        ? movers?.Page ?? page
+        : response?.Page ?? page;
+
+    private int CurrentTotalPages => selectedView == "movers"
+        ? movers?.TotalPages ?? page
+        : response?.TotalPages ?? page;
+
+    private string ViewTabClass(string view)
+        => selectedView == view ? "view-tab active" : "view-tab";
+
+    private string EvolutionChartClass
+        => isChartExpanded ? "evolution-chart expanded" : "evolution-chart";
+
     private string BuildApiUri()
     {
         var query = new List<string>
@@ -391,7 +562,6 @@
         };
 
         Append(query, "country", selectedCountry);
-        Append(query, "competition", selectedCompetition);
         Append(query, "season", selectedSeason);
         Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
         Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
@@ -401,6 +571,27 @@
         return $"api/elo/rankings?{string.Join("&", query)}";
     }
 
+    private string BuildMoversApiUri()
+    {
+        var query = new List<string>
+        {
+            "pageSize=25",
+            $"page={page}",
+            $"direction={Uri.EscapeDataString(selectedMoverDirection)}",
+            $"windowDays={selectedWindowDays}"
+        };
+
+        Append(query, "rulesetVersion", response?.RulesetVersion);
+        Append(query, "country", selectedCountry);
+        Append(query, "season", selectedSeason);
+        Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
+        Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
+        Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
+        Append(query, "team", teamSearch);
+
+        return $"api/elo/rankings/movers?{string.Join("&", query)}";
+    }
+
     private async Task<EloRankingsEvolutionResponse?> FetchEvolutionAsync()
     {
         if (evolutionRankings is null || evolutionRankings.Rankings.Count == 0)
@@ -408,13 +599,21 @@
             return null;
         }
 
-        return await Http.GetFromJsonAsync<EloRankingsEvolutionResponse>(BuildEvolutionApiUri());
+        var evolutionUri = BuildEvolutionApiUri();
+        if (evolution is not null && string.Equals(evolutionUri, lastEvolutionApiUri, StringComparison.Ordinal))
+        {
+            return evolution;
+        }
+
+        var result = await Http.GetFromJsonAsync<EloRankingsEvolutionResponse>(evolutionUri);
+        lastEvolutionApiUri = evolutionUri;
+        return result;
     }
 
     private string BuildEvolutionApiUri()
     {
         var teamIds = string.Join(",", evolutionRankings?.Rankings.Take(20).Select(x => x.TeamId) ?? []);
-        return $"api/elo/rankings/evolution?rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}&teamIds={Uri.EscapeDataString(teamIds)}&pointsPerTeam=0";
+        return $"api/elo/rankings/evolution?rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}&teamIds={Uri.EscapeDataString(teamIds)}&pointsPerTeam=60";
     }
 
     private async Task<EloRankingsResponse?> FetchEvolutionRankingsAsync()
@@ -424,7 +623,20 @@
             return null;
         }
 
-        return await Http.GetFromJsonAsync<EloRankingsResponse>(BuildEvolutionRankingsApiUri());
+        if (response.Page == 1 && response.Rankings.Count >= Math.Min(20, response.TotalCount))
+        {
+            return response;
+        }
+
+        var evolutionRankingsUri = BuildEvolutionRankingsApiUri();
+        if (evolutionRankings is not null && string.Equals(evolutionRankingsUri, lastEvolutionRankingsApiUri, StringComparison.Ordinal))
+        {
+            return evolutionRankings;
+        }
+
+        var result = await Http.GetFromJsonAsync<EloRankingsResponse>(evolutionRankingsUri);
+        lastEvolutionRankingsApiUri = evolutionRankingsUri;
+        return result;
     }
 
     private string BuildEvolutionRankingsApiUri()
@@ -436,7 +648,6 @@
         };
 
         Append(query, "country", selectedCountry);
-        Append(query, "competition", selectedCompetition);
         Append(query, "season", selectedSeason);
         Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
         Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
@@ -474,6 +685,22 @@
         var scope = response.Summary.IsFiltered ? "filtered teams" : "rated teams";
 
         return $"Showing {rangeStart}-{rangeEnd} of {response.TotalCount} {scope}. Page {response.Page} of {response.TotalPages}.";
+    }
+
+    private string MoversTitle()
+        => selectedMoverDirection == "fallers" ? "Biggest fallers" : "Biggest risers";
+
+    private string MoversContextLabel()
+    {
+        if (movers is null)
+        {
+            return "Loading rating movement.";
+        }
+
+        var rangeStart = movers.TotalCount == 0 ? 0 : ((movers.Page - 1) * movers.PageSize) + 1;
+        var rangeEnd = Math.Min(movers.TotalCount, movers.Page * movers.PageSize);
+
+        return $"Showing {rangeStart}-{rangeEnd} of {movers.TotalCount} teams from {FormatDate(movers.WindowStartUtc)} to {FormatDate(movers.WindowEndUtc)}.";
     }
 
     private IReadOnlyList<EloChartSeries> BuildEvolutionChartSeries()

@@ -103,6 +103,65 @@
     gap: var(--space-2);
 }
 
+.ranking-view-tabs {
+    display: inline-flex;
+    align-self: flex-start;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.view-tab {
+    min-width: 8.5rem;
+    padding: 0.55rem 0.85rem;
+    border: 0;
+    border-radius: calc(var(--radius-md) - 4px);
+    background: transparent;
+    color: var(--color-muted);
+    font-weight: 800;
+}
+
+.view-tab:hover,
+.view-tab:focus-visible {
+    color: var(--color-brand-dark);
+    background: rgba(216, 135, 34, 0.1);
+}
+
+.view-tab.active {
+    color: #fff;
+    background: var(--color-brand);
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.16);
+}
+
+.movers-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: end;
+    padding: var(--space-3);
+    border: 1px solid rgba(200, 183, 157, 0.72);
+    border-radius: var(--radius-md);
+    background: rgba(255, 253, 248, 0.72);
+}
+
+.movers-toolbar label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    color: var(--color-muted);
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.movers-toolbar select {
+    width: auto;
+    min-width: 8.5rem;
+}
+
 .page-jump {
     display: flex;
     align-items: center;
@@ -138,7 +197,8 @@
     font-size: 1.25rem;
 }
 
-.rankings-table-section {
+.rankings-table-section,
+.movers-section {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
@@ -166,6 +226,10 @@
     display: block;
     width: 100%;
     height: 320px;
+}
+
+.evolution-chart.expanded svg {
+    height: 560px;
 }
 
 .axis-label {
@@ -209,7 +273,13 @@
 }
 
 .ranking-table-wrap {
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
+.ranking-table {
+    min-width: 760px;
 }
 
 .ranking-table th {

@@ -30,9 +30,6 @@ public class EloRebuildService(
             await dbContext.RatingHistories
                 .Where(x => x.RulesetVersion == rulesetVersion)
                 .ExecuteDeleteAsync(cancellationToken);
-            await dbContext.RankingSnapshots
-                .Where(x => x.RulesetVersion == rulesetVersion)
-                .ExecuteDeleteAsync(cancellationToken);
             await dbContext.TeamRatings
                 .Where(x => x.RulesetVersion == rulesetVersion)
                 .ExecuteDeleteAsync(cancellationToken);
@@ -55,7 +52,6 @@ public class EloRebuildService(
 
             var ratings = new Dictionary<Guid, RatingState>();
             var histories = new List<RatingHistory>(games.Count * 2);
-            var latestGameDate = games.Count > 0 ? games[^1].GameDateTimeUtc : (DateTime?)null;
 
             foreach (var game in games)
             {
@@ -135,25 +131,6 @@ public class EloRebuildService(
                 LastGameId = x.Value.LastGameId,
                 UpdatedAtUtc = DateTime.UtcNow
             }));
-
-            if (latestGameDate.HasValue)
-            {
-                var snapshotDate = DateOnly.FromDateTime(latestGameDate.Value);
-                var position = 1;
-                dbContext.RankingSnapshots.AddRange(ratings
-                    .OrderByDescending(x => x.Value.Elo)
-                    .ThenBy(x => x.Key)
-                    .Select(x => new RankingSnapshot
-                    {
-                        Id = Guid.NewGuid(),
-                        SnapshotDate = snapshotDate,
-                        TeamId = x.Key,
-                        RulesetVersion = rulesetVersion,
-                        Elo = RoundRating(x.Value.Elo),
-                        Position = position++,
-                        CreatedAtUtc = DateTime.UtcNow
-                    }));
-            }
 
             run.Status = EloRebuildRunStatus.Completed;
             run.FinishedAtUtc = DateTime.UtcNow;

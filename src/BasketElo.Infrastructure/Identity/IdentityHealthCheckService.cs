@@ -751,21 +751,6 @@ public class IdentityHealthCheckService(
             .Where(x => x.OpponentTeamId == sourceTeam.Id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.OpponentTeamId, targetTeam.Id), cancellationToken);
 
-        var duplicateSnapshotIds = await dbContext.RankingSnapshots
-            .Where(sourceSnapshot =>
-                sourceSnapshot.TeamId == sourceTeam.Id &&
-                dbContext.RankingSnapshots.Any(targetSnapshot =>
-                    targetSnapshot.SnapshotDate == sourceSnapshot.SnapshotDate &&
-                    targetSnapshot.TeamId == targetTeam.Id))
-            .Select(x => x.Id)
-            .ToListAsync(cancellationToken);
-        await dbContext.RankingSnapshots
-            .Where(x => duplicateSnapshotIds.Contains(x.Id))
-            .ExecuteDeleteAsync(cancellationToken);
-        await dbContext.RankingSnapshots
-            .Where(x => x.TeamId == sourceTeam.Id)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.TeamId, targetTeam.Id), cancellationToken);
-
         var sourceRatings = await dbContext.TeamRatings
             .Where(x => x.TeamId == sourceTeam.Id)
             .ToListAsync(cancellationToken);

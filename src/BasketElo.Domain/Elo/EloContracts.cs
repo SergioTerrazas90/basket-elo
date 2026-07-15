@@ -83,6 +83,7 @@ public sealed record EloRankingsResponse(
     IReadOnlyCollection<EloRankingRow> Rankings,
     EloRankingFilterOptions Filters,
     EloRankingSummary Summary,
+    EloRankingArchiveMetadata Archive,
     int Page,
     int PageSize,
     int TotalCount,
@@ -111,6 +112,12 @@ public sealed record EloRankingSummary(
     string? TopTeamName,
     decimal? TopTeamElo,
     bool IsFiltered);
+
+public sealed record EloRankingArchiveMetadata(
+    string Mode,
+    DateTime? RequestedAsOfUtc,
+    DateTime? EffectiveAsOfUtc,
+    string? EmptyReason);
 
 public sealed record EloRankingsEvolutionResponse(
     string RulesetVersion,

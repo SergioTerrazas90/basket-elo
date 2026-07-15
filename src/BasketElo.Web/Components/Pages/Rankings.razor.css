@@ -197,6 +197,27 @@
     font-size: 1.25rem;
 }
 
+.archive-state {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid rgba(36, 92, 122, 0.28);
+    border-radius: var(--radius-md);
+    background: var(--status-info-bg);
+    color: var(--status-info-text);
+}
+
+.archive-state strong,
+.archive-state span {
+    display: block;
+}
+
+.archive-state strong {
+    font-weight: 850;
+}
+
 .rankings-table-section,
 .movers-section {
     display: flex;
@@ -367,6 +388,11 @@
 
     .filter-actions {
         align-items: stretch;
+    }
+
+    .archive-state {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .pager {

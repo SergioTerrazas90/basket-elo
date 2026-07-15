@@ -27,7 +27,6 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<Game> Games => Set<Game>();
     public DbSet<TeamRating> TeamRatings => Set<TeamRating>();
     public DbSet<RatingHistory> RatingHistories => Set<RatingHistory>();
-    public DbSet<RankingSnapshot> RankingSnapshots => Set<RankingSnapshot>();
     public DbSet<EloRebuildRun> EloRebuildRuns => Set<EloRebuildRun>();
     public DbSet<BackfillJob> BackfillJobs => Set<BackfillJob>();
     public DbSet<BackfillInspectionDecision> BackfillInspectionDecisions => Set<BackfillInspectionDecision>();
@@ -478,23 +477,6 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.TeamId, x.RulesetVersion, x.GameDateTimeUtc });
             entity.HasIndex(x => new { x.GameId, x.TeamId, x.RulesetVersion }).IsUnique();
-        });
-
-        modelBuilder.Entity<RankingSnapshot>(entity =>
-        {
-            entity.ToTable("ranking_snapshots");
-            entity.HasKey(x => x.Id);
-            entity.Property(x => x.SnapshotDate).IsRequired();
-            entity.Property(x => x.RulesetVersion).HasMaxLength(50).IsRequired();
-            entity.Property(x => x.Elo).HasPrecision(8, 2).IsRequired();
-            entity.Property(x => x.Position).IsRequired();
-            entity.Property(x => x.CreatedAtUtc).IsRequired();
-            entity.HasOne(x => x.Team)
-                .WithMany()
-                .HasForeignKey(x => x.TeamId)
-                .OnDelete(DeleteBehavior.Cascade);
-            entity.HasIndex(x => new { x.SnapshotDate, x.RulesetVersion, x.Position });
-            entity.HasIndex(x => new { x.SnapshotDate, x.TeamId, x.RulesetVersion }).IsUnique();
         });
 
         modelBuilder.Entity<EloRebuildRun>(entity =>

@@ -19,7 +19,7 @@
         @if (response?.Summary is not null)
         {
             <div class="leader-strip" aria-label="Top ranked team">
-                <span>Strongest right now</span>
+                <span>@LeaderLabel()</span>
                 <strong>@(response.Summary.TopTeamName ?? "-")</strong>
                 <small>@FormatRating(response.Summary.TopTeamElo)</small>
             </div>
@@ -59,6 +59,11 @@
                     <option value="@option">@option</option>
                 }
             </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="asOfDate">As of</label>
+            <input id="asOfDate" class="form-control" type="date" @bind-value="archiveDate" @bind-value:format="yyyy-MM-dd" disabled="@IsMoversView" />
         </div>
 
         <div class="filter-field">
@@ -107,7 +112,7 @@
                 <strong>@response.Summary.FilteredTeams</strong>
             </div>
             <div>
-                <span>Latest rated game</span>
+                <span>@LatestGameLabel()</span>
                 <strong>@FormatDate(response.Summary.LatestGameUtc)</strong>
             </div>
             <div>
@@ -115,6 +120,14 @@
                 <strong>@response.RulesetVersion</strong>
             </div>
         </section>
+
+        @if (IsArchiveMode)
+        {
+            <section class="archive-state">
+                <strong>@ArchiveStateTitle()</strong>
+                <span>@ArchiveStateDetail()</span>
+            </section>
+        }
 
         @if (selectedView == "movers")
         {
@@ -322,6 +335,9 @@
     [SupplyParameterFromQuery(Name = "to")]
     public DateTime? To { get; set; }
 
+    [SupplyParameterFromQuery(Name = "asOfDate")]
+    public DateTime? AsOfDate { get; set; }
+
     [SupplyParameterFromQuery(Name = "minGames")]
     public int? MinGames { get; set; }
 
@@ -352,6 +368,7 @@
     private string? teamSearch;
     private DateTime? fromDate;
     private DateTime? toDate;
+    private DateTime? archiveDate;
     private int minimumGames;
     private int page = 1;
     private int requestedPage = 1;
@@ -376,6 +393,7 @@
         selectedSeason = Season;
         fromDate = From;
         toDate = To;
+        archiveDate = AsOfDate;
         minimumGames = Math.Max(0, MinGames ?? 0);
         teamSearch = Team;
         selectedView = string.Equals(View, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
@@ -400,6 +418,7 @@
         selectedSeason = null;
         fromDate = null;
         toDate = null;
+        archiveDate = null;
         minimumGames = 0;
         teamSearch = null;
         NavigateToRankings(1);
@@ -409,6 +428,10 @@
     private Task SelectViewAsync(string view)
     {
         selectedView = string.Equals(view, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
+        if (selectedView == "movers")
+        {
+            archiveDate = null;
+        }
         NavigateToRankings(1);
         return Task.CompletedTask;
     }
@@ -528,6 +551,7 @@
             ["season"] = selectedSeason,
             ["from"] = fromDate?.ToString("yyyy-MM-dd"),
             ["to"] = toDate?.ToString("yyyy-MM-dd"),
+            ["asOfDate"] = selectedView == "rankings" ? archiveDate?.ToString("yyyy-MM-dd") : null,
             ["minGames"] = minimumGames > 0 ? minimumGames : null,
             ["team"] = teamSearch,
             ["page"] = targetPage > 1 ? targetPage : null
@@ -565,6 +589,7 @@
         Append(query, "season", selectedSeason);
         Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
         Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
+        Append(query, "asOfDate", NormalizeDate(archiveDate)?.ToString("O"));
         Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
         Append(query, "team", teamSearch);
 
@@ -613,7 +638,16 @@
     private string BuildEvolutionApiUri()
     {
         var teamIds = string.Join(",", evolutionRankings?.Rankings.Take(20).Select(x => x.TeamId) ?? []);
-        return $"api/elo/rankings/evolution?rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}&teamIds={Uri.EscapeDataString(teamIds)}&pointsPerTeam=60";
+        var query = new List<string>
+        {
+            $"rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}",
+            $"teamIds={Uri.EscapeDataString(teamIds)}",
+            "pointsPerTeam=60"
+        };
+
+        Append(query, "toUtc", NormalizeInclusiveDateEnd(archiveDate)?.ToString("O"));
+
+        return $"api/elo/rankings/evolution?{string.Join("&", query)}";
     }
 
     private async Task<EloRankingsResponse?> FetchEvolutionRankingsAsync()
@@ -651,6 +685,7 @@
         Append(query, "season", selectedSeason);
         Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
         Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
+        Append(query, "asOfDate", NormalizeDate(archiveDate)?.ToString("O"));
         Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
         Append(query, "team", teamSearch);
 
@@ -669,7 +704,9 @@
             .ToList() ?? [];
 
     private string EvolutionContextLabel()
-        => response?.Summary.IsFiltered == true
+        => IsArchiveMode
+            ? "Rating history for the top 20 teams in the archived result set."
+            : response?.Summary.IsFiltered == true
             ? "Rating history for the top 20 teams in the current filtered result set."
             : "Rating history for the top 20 teams overall.";
 
@@ -685,6 +722,44 @@
         var scope = response.Summary.IsFiltered ? "filtered teams" : "rated teams";
 
         return $"Showing {rangeStart}-{rangeEnd} of {response.TotalCount} {scope}. Page {response.Page} of {response.TotalPages}.";
+    }
+
+    private bool IsArchiveMode
+        => string.Equals(response?.Archive.Mode, "archive", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsMoversView
+        => string.Equals(selectedView, "movers", StringComparison.OrdinalIgnoreCase);
+
+    private string LeaderLabel()
+        => IsArchiveMode ? "Strongest as of" : "Strongest right now";
+
+    private string LatestGameLabel()
+        => IsArchiveMode ? "Rated through" : "Latest rated game";
+
+    private string ArchiveStateTitle()
+        => response?.Archive.RequestedAsOfUtc is null
+            ? "Archived rankings"
+            : $"Rankings as of {FormatDate(response.Archive.RequestedAsOfUtc)}";
+
+    private string ArchiveStateDetail()
+    {
+        if (!string.IsNullOrWhiteSpace(response?.Archive.EmptyReason))
+        {
+            return response.Archive.EmptyReason;
+        }
+
+        if (response?.Archive.EffectiveAsOfUtc is null)
+        {
+            return "No rated games are available for this archive date.";
+        }
+
+        if (response.Archive.RequestedAsOfUtc.HasValue &&
+            response.Archive.EffectiveAsOfUtc.Value.Date < response.Archive.RequestedAsOfUtc.Value.Date)
+        {
+            return $"Using the latest rated game available before that date: {FormatDate(response.Archive.EffectiveAsOfUtc)}.";
+        }
+
+        return $"Using ratings through {FormatDate(response.Archive.EffectiveAsOfUtc)}.";
     }
 
     private string MoversTitle()

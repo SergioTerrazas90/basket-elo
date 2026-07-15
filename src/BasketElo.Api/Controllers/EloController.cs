@@ -100,6 +100,7 @@ public class EloController(
         [FromQuery] string? season,
         [FromQuery] DateTime? fromUtc,
         [FromQuery] DateTime? toUtc,
+        [FromQuery] DateTime? asOfDate,
         [FromQuery] int? minGames,
         [FromQuery] string? team,
         [FromQuery] int page = 1,
@@ -115,6 +116,132 @@ public class EloController(
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 10, 100);
         var minimumGames = Math.Max(0, minGames ?? 0);
+
+        if (asOfDate.HasValue)
+        {
+            var requestedAsOfUtc = DateTime.SpecifyKind(asOfDate.Value.Date, DateTimeKind.Utc);
+            var cutoffUtc = requestedAsOfUtc.AddDays(1).AddTicks(-1);
+
+            var archiveHistoryRows = await dbContext.RatingHistories
+                .AsNoTracking()
+                .Where(x => x.RulesetVersion == selectedRuleset && x.GameDateTimeUtc <= cutoffUtc)
+                .Select(x => new HistoricalRankingRow(
+                    x.TeamId,
+                    x.Team.CanonicalName,
+                    x.Team.CountryCode,
+                    x.GameId,
+                    x.GameDateTimeUtc,
+                    x.PostElo,
+                    x.GamesPlayedBefore + 1))
+                .ToListAsync(cancellationToken);
+
+            var globalArchiveRatings = archiveHistoryRows
+                .GroupBy(x => x.TeamId)
+                .Select(group => group
+                    .OrderByDescending(x => x.GameDateTimeUtc)
+                    .ThenByDescending(x => x.GameId)
+                    .First())
+                .OrderByDescending(x => x.Elo)
+                .ThenBy(x => x.TeamName)
+                .ToList();
+
+            var archiveGlobalRanks = globalArchiveRatings
+                .Select((rating, index) => new { rating.TeamId, Rank = index + 1 })
+                .ToDictionary(x => x.TeamId, x => x.Rank);
+
+            var archiveFilteredTeamIds = globalArchiveRatings.Select(x => x.TeamId).ToHashSet();
+
+            if (!string.IsNullOrWhiteSpace(country))
+            {
+                archiveFilteredTeamIds.IntersectWith(globalArchiveRatings
+                    .Where(x => IsCountryMatch(x.CountryCode, country))
+                    .Select(x => x.TeamId));
+            }
+
+            if (!string.IsNullOrWhiteSpace(team))
+            {
+                archiveFilteredTeamIds.IntersectWith(globalArchiveRatings
+                    .Where(x => x.TeamName.Contains(team, StringComparison.OrdinalIgnoreCase))
+                    .Select(x => x.TeamId));
+            }
+
+            if (minimumGames > 0)
+            {
+                archiveFilteredTeamIds.IntersectWith(globalArchiveRatings
+                    .Where(x => x.GamesPlayed >= minimumGames)
+                    .Select(x => x.TeamId));
+            }
+
+            if (HasHistoryFilter(competition, season, fromUtc, toUtc))
+            {
+                var historyTeamIds = await BuildHistoryFilterQuery(selectedRuleset, competition, season, fromUtc, toUtc)
+                    .Where(x => x.GameDateTimeUtc <= cutoffUtc)
+                    .Select(x => x.TeamId)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+
+                archiveFilteredTeamIds.IntersectWith(historyTeamIds);
+            }
+
+            var archiveFilteredRatings = globalArchiveRatings
+                .Where(x => archiveFilteredTeamIds.Contains(x.TeamId))
+                .OrderByDescending(x => x.Elo)
+                .ThenBy(x => x.TeamName)
+                .ToList();
+
+            var archiveRecentMovement = await GetRecentMovementAsync(
+                selectedRuleset,
+                archiveFilteredRatings.Select(x => x.TeamId).ToList(),
+                cutoffUtc,
+                cancellationToken);
+
+            var archiveFilteredCount = archiveFilteredRatings.Count;
+            var archiveTotalPages = Math.Max(1, (int)Math.Ceiling(archiveFilteredCount / (double)pageSize));
+            page = Math.Min(page, archiveTotalPages);
+
+            var archivePageRatings = archiveFilteredRatings
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            var archiveRows = archivePageRatings
+                .Select((rating, index) => new EloRankingRow(
+                    rating.TeamId,
+                    ((page - 1) * pageSize) + index + 1,
+                    archiveGlobalRanks[rating.TeamId],
+                    rating.TeamName,
+                    DisplayCountryFromCode(rating.CountryCode),
+                    rating.Elo,
+                    rating.GamesPlayed,
+                    archiveRecentMovement.GetValueOrDefault(rating.TeamId),
+                    rating.GameDateTimeUtc))
+                .ToList();
+
+            var latestRatedGameUtc = globalArchiveRatings.Count == 0
+                ? null
+                : globalArchiveRatings.Max(x => (DateTime?)x.GameDateTimeUtc);
+
+            return Ok(new EloRankingsResponse(
+                selectedRuleset,
+                archiveRows,
+                await BuildRankingFilterOptionsAsync(selectedRuleset, cancellationToken),
+                new EloRankingSummary(
+                    globalArchiveRatings.Count,
+                    archiveFilteredCount,
+                    latestRatedGameUtc,
+                    globalArchiveRatings.FirstOrDefault()?.TeamName,
+                    globalArchiveRatings.FirstOrDefault()?.Elo,
+                    IsFiltered(country, competition, season, fromUtc, toUtc, minimumGames, team)),
+                new EloRankingArchiveMetadata(
+                    "archive",
+                    requestedAsOfUtc,
+                    latestRatedGameUtc,
+                    globalArchiveRatings.Count == 0 ? "No rating history exists at or before the selected date." : null),
+                page,
+                pageSize,
+                archiveFilteredCount,
+                archiveTotalPages));
+        }
 
         var globalRatings = await dbContext.TeamRatings
             .AsNoTracking()
@@ -171,6 +298,7 @@ public class EloController(
         var recentMovement = await GetRecentMovementAsync(
             selectedRuleset,
             filteredRatings.Select(x => x.TeamId).ToList(),
+            null,
             cancellationToken);
 
         var filteredCount = filteredRatings.Count;
@@ -206,6 +334,7 @@ public class EloController(
                 globalRatings.FirstOrDefault()?.Team.CanonicalName,
                 globalRatings.FirstOrDefault()?.Elo,
                 IsFiltered(country, competition, season, fromUtc, toUtc, minimumGames, team)),
+            new EloRankingArchiveMetadata("current", null, null, null),
             page,
             pageSize,
             filteredCount,
@@ -216,6 +345,7 @@ public class EloController(
     public async Task<ActionResult<EloRankingsEvolutionResponse>> GetRankingEvolution(
         [FromQuery] string? rulesetVersion,
         [FromQuery] string? teamIds,
+        [FromQuery] DateTime? toUtc,
         [FromQuery] int pointsPerTeam = 60,
         CancellationToken cancellationToken = default)
     {
@@ -236,6 +366,9 @@ public class EloController(
         {
             pointsPerTeam = Math.Clamp(pointsPerTeam, 2, 120);
         }
+        var cutoffUtc = toUtc.HasValue
+            ? DateTime.SpecifyKind(toUtc.Value.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1)
+            : DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc);
 
         var rows = await dbContext.Database
             .SqlQueryRaw<EvolutionHistorySqlRow>(
@@ -255,12 +388,14 @@ public class EloController(
                     INNER JOIN teams t ON t."Id" = rh."TeamId"
                     WHERE rh."RulesetVersion" = @rulesetVersion
                       AND rh."TeamId" = ANY(@teamIds)
+                      AND rh."GameDateTimeUtc" <= @cutoffUtc
                 ) ranked
                 WHERE @includeFullHistory OR "RowNumber" <= @pointsPerTeam
                 ORDER BY "TeamId", "GameDateTimeUtc", "Elo"
                 """,
                 new NpgsqlParameter("rulesetVersion", selectedRuleset),
                 new NpgsqlParameter("teamIds", selectedTeamIds.ToArray()) { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid },
+                new NpgsqlParameter("cutoffUtc", cutoffUtc),
                 new NpgsqlParameter("includeFullHistory", includeFullHistory),
                 new NpgsqlParameter("pointsPerTeam", pointsPerTeam))
             .ToListAsync(cancellationToken);
@@ -578,7 +713,7 @@ public class EloController(
             .AsNoTracking()
             .CountAsync(x => x.RulesetVersion == selectedRuleset && x.Elo > rating.Elo, cancellationToken) + 1;
 
-        var recentMovement = (await GetRecentMovementAsync(selectedRuleset, [teamId], cancellationToken))
+        var recentMovement = (await GetRecentMovementAsync(selectedRuleset, [teamId], null, cancellationToken))
             .GetValueOrDefault(teamId);
 
         var competitionRows = await dbContext.RatingHistories
@@ -1039,6 +1174,15 @@ public class EloController(
         public decimal Elo { get; set; }
     }
 
+    private sealed record HistoricalRankingRow(
+        Guid TeamId,
+        string TeamName,
+        string? CountryCode,
+        Guid GameId,
+        DateTime GameDateTimeUtc,
+        decimal Elo,
+        int GamesPlayed);
+
     private IQueryable<RatingHistory> BuildHistoryFilterQuery(
         string rulesetVersion,
         string? competition,
@@ -1115,6 +1259,7 @@ public class EloController(
     private async Task<Dictionary<Guid, decimal>> GetRecentMovementAsync(
         string rulesetVersion,
         IReadOnlyCollection<Guid> teamIds,
+        DateTime? toUtc,
         CancellationToken cancellationToken)
     {
         if (teamIds.Count == 0)
@@ -1122,9 +1267,16 @@ public class EloController(
             return [];
         }
 
-        var rows = await dbContext.RatingHistories
+        var query = dbContext.RatingHistories
             .AsNoTracking()
-            .Where(x => x.RulesetVersion == rulesetVersion && teamIds.Contains(x.TeamId))
+            .Where(x => x.RulesetVersion == rulesetVersion && teamIds.Contains(x.TeamId));
+
+        if (toUtc.HasValue)
+        {
+            query = query.Where(x => x.GameDateTimeUtc <= toUtc.Value);
+        }
+
+        var rows = await query
             .OrderByDescending(x => x.GameDateTimeUtc)
             .ThenByDescending(x => x.Id)
             .Select(x => new { x.TeamId, x.EloDelta })

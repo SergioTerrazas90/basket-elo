@@ -642,7 +642,7 @@
         {
             $"rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}",
             $"teamIds={Uri.EscapeDataString(teamIds)}",
-            "pointsPerTeam=60"
+            "pointsPerTeam=0"
         };
 
         Append(query, "toUtc", NormalizeInclusiveDateEnd(archiveDate)?.ToString("O"));

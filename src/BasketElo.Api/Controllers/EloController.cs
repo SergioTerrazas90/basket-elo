@@ -346,7 +346,7 @@ public class EloController(
         [FromQuery] string? rulesetVersion,
         [FromQuery] string? teamIds,
         [FromQuery] DateTime? toUtc,
-        [FromQuery] int pointsPerTeam = 60,
+        [FromQuery] int pointsPerTeam = 0,
         CancellationToken cancellationToken = default)
     {
         var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, cancellationToken);

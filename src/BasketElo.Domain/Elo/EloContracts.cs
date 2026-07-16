@@ -174,7 +174,9 @@ public sealed record EloTeamEvolutionSeries(
 
 public sealed record EloTeamEvolutionPoint(
     DateTime GameDateTimeUtc,
-    decimal Elo);
+    decimal Elo,
+    decimal? EloDelta = null,
+    int? Rank = null);
 
 public sealed record EloTeamDetailResponse(
     Guid TeamId,

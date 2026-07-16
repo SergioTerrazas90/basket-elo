@@ -272,6 +272,7 @@
                                            SharedTooltip="false"
                                            HeightPixels="@ChartHeightPixels"
                                            DataRevision="@evolutionDataRevision"
+                                           IsRefining="@isEvolutionRefining"
                                            ViewportRefinementRequested="@QueueEvolutionRefinementAsync"
                                            FullRangeRequested="@RestoreFullEvolutionAsync" />
 
@@ -439,6 +440,7 @@
     private string? lastEvolutionRankingsApiUri;
     private string? lastEvolutionApiUri;
     private long evolutionDataRevision;
+    private bool isEvolutionRefining;
     private CancellationTokenSource? evolutionRefinementCancellation;
     private readonly Dictionary<string, EloRankingsEvolutionResponse> evolutionRangeCache = new(StringComparer.Ordinal);
     private readonly Queue<string> evolutionRangeCacheOrder = new();
@@ -859,6 +861,7 @@
         CancelEvolutionRefinement();
         var cancellation = new CancellationTokenSource();
         evolutionRefinementCancellation = cancellation;
+        isEvolutionRefining = true;
         _ = RefineEvolutionAsync(range, cancellation);
         return Task.CompletedTask;
     }
@@ -910,6 +913,8 @@
             if (ReferenceEquals(evolutionRefinementCancellation, cancellation))
             {
                 evolutionRefinementCancellation = null;
+                isEvolutionRefining = false;
+                await InvokeAsync(StateHasChanged);
             }
 
             cancellation.Dispose();
@@ -948,6 +953,7 @@
         var cancellation = evolutionRefinementCancellation;
         evolutionRefinementCancellation = null;
         cancellation?.Cancel();
+        isEvolutionRefining = false;
     }
 
     private async Task<EloRankingsResponse?> FetchEvolutionRankingsAsync()

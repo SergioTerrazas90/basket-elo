@@ -31,6 +31,27 @@
     gap: 0.4rem;
 }
 
+.elo-chart-context {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.elo-chart-refinement-slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.85rem;
+    height: 0.85rem;
+    flex: 0 0 0.85rem;
+}
+
+.elo-chart-refinement-spinner {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-width: 0.12em;
+}
+
 .elo-radzen-chart {
     display: block;
     width: 100%;

@@ -456,6 +456,8 @@ public class EloController(
                         t."CanonicalName" AS "TeamName",
                         rh."GameDateTimeUtc",
                         rh."PostElo" AS "Elo",
+                        rh."EloDelta",
+                        rh."RatingPositionAfter" AS "Rank",
                         row_number() OVER (
                             PARTITION BY rh."TeamId"
                             ORDER BY rh."GameDateTimeUtc", rh."PostElo"
@@ -497,7 +499,7 @@ public class EloController(
                     FROM ranked
                 ), sampled AS (
                     SELECT DISTINCT ON ("TeamId", "SampleBucket")
-                        "TeamId", "TeamName", "GameDateTimeUtc", "Elo"
+                        "TeamId", "TeamName", "GameDateTimeUtc", "Elo", "EloDelta", "Rank"
                     FROM bucketed
                     ORDER BY
                         "TeamId",
@@ -508,7 +510,7 @@ public class EloController(
                             greatest(@pointsPerTeam - 1, 1)
                         )
                 )
-                SELECT "TeamId", "TeamName", "GameDateTimeUtc", "Elo"
+                SELECT "TeamId", "TeamName", "GameDateTimeUtc", "Elo", "EloDelta", "Rank"
                 FROM sampled
                 ORDER BY "TeamId", "GameDateTimeUtc", "Elo"
                 """,
@@ -535,7 +537,7 @@ public class EloController(
                 group
                     .OrderBy(x => x.GameDateTimeUtc)
                     .ThenBy(x => x.Elo)
-                    .Select(x => new EloTeamEvolutionPoint(x.GameDateTimeUtc, x.Elo))
+                    .Select(x => new EloTeamEvolutionPoint(x.GameDateTimeUtc, x.Elo, x.EloDelta, x.Rank))
                     .ToList()))
             .OrderBy(x => selectedTeamIds.IndexOf(x.TeamId))
             .ToList();
@@ -1386,6 +1388,10 @@ public class EloController(
         public DateTime GameDateTimeUtc { get; set; }
 
         public decimal Elo { get; set; }
+
+        public decimal? EloDelta { get; set; }
+
+        public int? Rank { get; set; }
     }
 
     private sealed record HistoricalRankingRow(

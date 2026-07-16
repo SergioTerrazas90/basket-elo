@@ -1,6 +1,7 @@
 @page "/teams/{TeamId:guid}"
 @attribute [Authorize]
-@rendermode InteractiveServer
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@implements IAsyncDisposable
 @using System.Globalization
 @using System.Text.Json
 @using BasketElo.Domain.Elo
@@ -139,7 +140,14 @@
                 }
                 else
                 {
-                    <EloEvolutionChart Series="@BuildTeamChartSeries(team)" ShowLegend="false" SharedTooltip="false" EnableRangeNavigation="true" />
+                    <EloEvolutionChart Series="@teamHistoryChartSeries"
+                                       ShowLegend="false"
+                                       SharedTooltip="false"
+                                       EnableRangeNavigation="true"
+                                       DataRevision="@teamHistoryDataRevision"
+                                       IsRefining="@isTeamHistoryRefining"
+                                       ViewportRefinementRequested="@QueueTeamHistoryRefinementAsync"
+                                       FullRangeRequested="@RestoreFullTeamHistoryAsync" />
                 }
             </div>
         </section>
@@ -240,6 +248,16 @@
     private EloGameExplanationResponse? selectedExplanation;
     private bool isExplanationLoading;
     private string? explanationError;
+    private IReadOnlyList<EloChartSeries> teamHistoryChartSeries = [];
+    private IReadOnlyList<EloChartSeries> fullTeamHistoryChartSeries = [];
+    private long teamHistoryDataRevision;
+    private bool isTeamHistoryRefining;
+    private CancellationTokenSource? teamHistoryRefinementCancellation;
+    private readonly Dictionary<string, EloRankingsEvolutionResponse> teamHistoryRangeCache = new(StringComparer.Ordinal);
+    private readonly Queue<string> teamHistoryRangeCacheOrder = new();
+
+    private const int HistoryRefinementDebounceMilliseconds = 600;
+    private const int HistoryRangeCacheLimit = 8;
 
     private string BackHref => string.IsNullOrWhiteSpace(ReturnUrl) ? "/rankings" : "/" + ReturnUrl.TrimStart('/');
 
@@ -247,6 +265,9 @@
     {
         isBusy = true;
         errorMessage = null;
+        CancelTeamHistoryRefinement();
+        teamHistoryRangeCache.Clear();
+        teamHistoryRangeCacheOrder.Clear();
         gamesPage = Math.Max(1, GamesPage ?? 1);
         requestedGamesPage = gamesPage;
 
@@ -258,6 +279,9 @@
             {
                 gamesPage = team.RecentGamesPage;
                 requestedGamesPage = team.RecentGamesPage;
+                teamHistoryChartSeries = BuildTeamChartSeries(team);
+                fullTeamHistoryChartSeries = teamHistoryChartSeries;
+                teamHistoryDataRevision++;
             }
         }
         catch (Exception ex)
@@ -412,6 +436,154 @@
                     .ToList())
         ];
 
+    private static IReadOnlyList<EloChartSeries> BuildTeamChartSeries(
+        EloRankingsEvolutionResponse evolution,
+        EloTeamDetailResponse team)
+    {
+        var history = evolution.Series.FirstOrDefault(x => x.TeamId == team.TeamId);
+        if (history is null)
+        {
+            return [];
+        }
+
+        return
+        [
+            new EloChartSeries(
+                history.TeamId,
+                history.TeamName,
+                "#245c7a",
+                history.Points
+                    .OrderBy(point => point.GameDateTimeUtc)
+                    .Select(point => new EloChartPoint(
+                        point.GameDateTimeUtc,
+                        point.Elo,
+                        history.TeamName,
+                        "#245c7a",
+                        point.EloDelta,
+                        point.Rank))
+                    .ToList())
+        ];
+    }
+
+    private Task QueueTeamHistoryRefinementAsync(EloChartViewportRange range)
+    {
+        CancelTeamHistoryRefinement();
+        var cancellation = new CancellationTokenSource();
+        teamHistoryRefinementCancellation = cancellation;
+        isTeamHistoryRefining = true;
+        _ = RefineTeamHistoryAsync(range, cancellation);
+        return Task.CompletedTask;
+    }
+
+    private async Task RefineTeamHistoryAsync(EloChartViewportRange range, CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await Task.Delay(HistoryRefinementDebounceMilliseconds, cancellation.Token);
+            if (team is null)
+            {
+                return;
+            }
+
+            var fromUtc = DateTime.SpecifyKind(range.FromUtc.Date, DateTimeKind.Utc);
+            var toUtc = DateTime.SpecifyKind(range.ToUtc.Date, DateTimeKind.Utc);
+            var historyUri = BuildTeamHistoryApiUri(team, fromUtc, toUtc);
+
+            if (!teamHistoryRangeCache.TryGetValue(historyUri, out var refinedHistory))
+            {
+                refinedHistory = await Http.GetFromJsonAsync<EloRankingsEvolutionResponse>(historyUri, cancellation.Token);
+                if (refinedHistory is null)
+                {
+                    return;
+                }
+
+                AddTeamHistoryRangeToCache(historyUri, refinedHistory);
+            }
+
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(teamHistoryRefinementCancellation, cancellation) || team is null)
+            {
+                return;
+            }
+
+            var refinedSeries = BuildTeamChartSeries(refinedHistory, team);
+            if (refinedSeries.Count == 0 || refinedSeries[0].Points.Count < 2)
+            {
+                return;
+            }
+
+            teamHistoryChartSeries = refinedSeries;
+            teamHistoryDataRevision++;
+            errorMessage = null;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(teamHistoryRefinementCancellation, cancellation))
+            {
+                errorMessage = $"Could not refine chart detail: {ex.Message}";
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(teamHistoryRefinementCancellation, cancellation))
+            {
+                teamHistoryRefinementCancellation = null;
+                isTeamHistoryRefining = false;
+                await InvokeAsync(StateHasChanged);
+            }
+
+            cancellation.Dispose();
+        }
+    }
+
+    private static string BuildTeamHistoryApiUri(EloTeamDetailResponse team, DateTime fromUtc, DateTime toUtc)
+        => $"api/elo/rankings/evolution?rulesetVersion={Uri.EscapeDataString(team.RulesetVersion)}" +
+           $"&pool={Uri.EscapeDataString(team.EloPoolKey)}" +
+           $"&teamIds={team.TeamId}" +
+           $"&pointsPerTeam={EloEvolutionLimits.DefaultPointsPerTeam}" +
+           $"&fromUtc={Uri.EscapeDataString(fromUtc.ToString("O"))}" +
+           $"&toUtc={Uri.EscapeDataString(toUtc.ToString("O"))}";
+
+    private Task RestoreFullTeamHistoryAsync()
+    {
+        CancelTeamHistoryRefinement();
+        if (!ReferenceEquals(teamHistoryChartSeries, fullTeamHistoryChartSeries))
+        {
+            teamHistoryChartSeries = fullTeamHistoryChartSeries;
+            teamHistoryDataRevision++;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void AddTeamHistoryRangeToCache(string uri, EloRankingsEvolutionResponse response)
+    {
+        if (teamHistoryRangeCache.ContainsKey(uri))
+        {
+            return;
+        }
+
+        teamHistoryRangeCache[uri] = response;
+        teamHistoryRangeCacheOrder.Enqueue(uri);
+        while (teamHistoryRangeCacheOrder.Count > HistoryRangeCacheLimit)
+        {
+            teamHistoryRangeCache.Remove(teamHistoryRangeCacheOrder.Dequeue());
+        }
+    }
+
+    private void CancelTeamHistoryRefinement()
+    {
+        var cancellation = teamHistoryRefinementCancellation;
+        teamHistoryRefinementCancellation = null;
+        cancellation?.Cancel();
+        isTeamHistoryRefining = false;
+    }
+
     private static string HistoryContextLabel(EloTeamDetailResponse team)
     {
         if (team.History.Count == 0)
@@ -482,4 +654,10 @@
             < 0 => "movement-down",
             _ => "movement-flat"
         };
+
+    public ValueTask DisposeAsync()
+    {
+        CancelTeamHistoryRefinement();
+        return ValueTask.CompletedTask;
+    }
 }

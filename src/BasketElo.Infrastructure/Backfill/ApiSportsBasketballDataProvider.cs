@@ -145,6 +145,8 @@ public class ApiSportsBasketballDataProvider(
             var teams = item.GetProperty("teams");
             var home = teams.GetProperty("home");
             var away = teams.GetProperty("away");
+            var homeSourceTeamId = home.GetProperty("id").ToString();
+            var awaySourceTeamId = away.GetProperty("id").ToString();
 
             short? homeScore = null;
             short? awayScore = null;
@@ -159,9 +161,9 @@ public class ApiSportsBasketballDataProvider(
                 sourceGameId,
                 date,
                 status,
-                home.GetProperty("id").ToString(),
+                homeSourceTeamId,
                 home.GetProperty("name").GetString() ?? "Unknown Home",
-                away.GetProperty("id").ToString(),
+                awaySourceTeamId,
                 away.GetProperty("name").GetString() ?? "Unknown Away",
                 homeScore,
                 awayScore,
@@ -169,7 +171,13 @@ public class ApiSportsBasketballDataProvider(
                     BuildSourceUrl(uri),
                     seasonParameter,
                     fetchedAtUtc,
-                    ParserVersion)));
+                    ParserVersion),
+                NbaApiSportsCatalog.GetExclusionReason(
+                    league.SourceLeagueId,
+                    season,
+                    date,
+                    homeSourceTeamId,
+                    awaySourceTeamId)));
         }
 
         return (games, hasMorePages, warnings);

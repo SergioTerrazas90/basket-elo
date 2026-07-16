@@ -18,7 +18,8 @@ public record BasketballProviderGame(
     string AwayTeamName,
     short? HomeScore,
     short? AwayScore,
-    BasketballProviderGameProvenance? Provenance = null);
+    BasketballProviderGameProvenance? Provenance = null,
+    string? ExclusionReason = null);
 
 public sealed record BasketballProviderGameProvenance(
     string? SourceUrl,

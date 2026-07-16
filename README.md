@@ -146,7 +146,7 @@ Queue an inclusive configured season range:
 ```powershell
 curl.exe -X POST "http://localhost:5001/api/backfill/leagues/range/jobs" `
   -H "Content-Type: application/json" `
-  -d '{"provider":"basketball-reference","country":"United States","leagueName":"NBA","startSeason":"1946-1947","endSeason":"1959-1960","onlyMissing":true,"replaceExisting":false,"dryRun":true,"maxRequests":8}'
+  -d '{"provider":"basketball-reference","country":"United States","leagueName":"NBA","startSeason":"1946-1947","endSeason":"1959-1960","onlyMissing":true,"replaceExisting":false,"newestFirst":true,"dryRun":true,"maxRequests":8}'
 ```
 
 Pending/running seasons are deduplicated. Transient HTTP 408, 429, 5xx, transport,

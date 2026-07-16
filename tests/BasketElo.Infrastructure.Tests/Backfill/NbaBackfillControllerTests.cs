@@ -48,6 +48,27 @@ public class NbaBackfillControllerTests
     }
 
     [Fact]
+    public async Task RangeTriggerCanQueueNewestSeasonFirst()
+    {
+        await using var dbContext = CreateDbContext();
+        var controller = CreateController(dbContext);
+        var request = CreateRangeRequest("1946-1947", "1948-1949", onlyMissing: false) with
+        {
+            NewestFirst = true
+        };
+
+        var result = await controller.TriggerLeagueRangeBackfill(request, CancellationToken.None);
+
+        var response = Assert.IsType<QueueBackfillJobsResponse>(Assert.IsType<AcceptedResult>(result).Value);
+        Assert.True(response.NewestFirst);
+        var queuedSeasons = await dbContext.BackfillJobs
+            .OrderBy(job => job.CreatedAtUtc)
+            .Select(job => job.Season)
+            .ToListAsync();
+        Assert.Equal(["1948-1949", "1947-1948", "1946-1947"], queuedSeasons);
+    }
+
+    [Fact]
     public async Task OnlyMissingSkipsSeasonThatAlreadyContainsProviderGames()
     {
         await using var dbContext = CreateDbContext();

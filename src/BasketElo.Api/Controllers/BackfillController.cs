@@ -159,6 +159,7 @@ public class BackfillController(
             seasons,
             onlyMissing: false,
             replaceExisting: false,
+            newestFirst: false,
             request.DryRun,
             request.MaxRequests,
             cancellationToken);
@@ -217,6 +218,7 @@ public class BackfillController(
             seasons,
             request.OnlyMissing,
             request.ReplaceExisting,
+            request.NewestFirst,
             request.DryRun,
             request.MaxRequests,
             cancellationToken);
@@ -246,6 +248,7 @@ public class BackfillController(
         IReadOnlyCollection<string> seasons,
         bool onlyMissing,
         bool replaceExisting,
+        bool newestFirst,
         bool dryRun,
         int maxRequests,
         CancellationToken cancellationToken)
@@ -272,7 +275,10 @@ public class BackfillController(
         var jobs = new List<BackfillJob>();
         var skippedActive = 0;
         var skippedExisting = 0;
-        foreach (var season in seasons)
+        var orderedSeasons = newestFirst
+            ? seasons.OrderByDescending(SeasonLabelNormalizer.ParseStartYear)
+            : seasons.OrderBy(SeasonLabelNormalizer.ParseStartYear);
+        foreach (var season in orderedSeasons)
         {
             if (active.Contains(season))
             {
@@ -311,6 +317,7 @@ public class BackfillController(
             seasons.Last(),
             onlyMissing,
             replaceExisting,
+            newestFirst,
             seasons.Count,
             jobs.Count,
             skippedActive,

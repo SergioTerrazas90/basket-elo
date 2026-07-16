@@ -101,6 +101,7 @@ public class BackfillJobProcessor(
         var providerLeagueMappings = GetProviderLeagueMappings(configuredLeague, job);
         var resolvedLeagues = new List<BasketballProviderLeague>();
         var allGames = new List<BasketballProviderGame>();
+        var filteredGameReasons = new Dictionary<string, int>(StringComparer.Ordinal);
         var warnings = new List<string>();
         var hasMorePages = false;
         var canonicalSeason = SeasonLabelNormalizer.ToFullSeasonLabel(job.Season);
@@ -161,7 +162,17 @@ public class BackfillJobProcessor(
 
             job.WarningCount += gamesResult.Warnings.Count;
             warnings.AddRange(gamesResult.Warnings.Select(warning => $"{league.Name}: {warning}"));
-            allGames.AddRange(gamesResult.Games);
+            foreach (var game in gamesResult.Games)
+            {
+                if (game.ExclusionReason is null)
+                {
+                    allGames.Add(game);
+                    continue;
+                }
+
+                filteredGameReasons[game.ExclusionReason] =
+                    filteredGameReasons.GetValueOrDefault(game.ExclusionReason) + 1;
+            }
         }
 
         if (resolvedLeagues.Count == 0)
@@ -183,8 +194,12 @@ public class BackfillJobProcessor(
             Source = provider.SourceKey,
             RequestsUsed = job.RequestsUsed,
             HasMorePages = hasMorePages,
-            GamesFetched = allGames.Count
+            GamesFetched = allGames.Count + filteredGameReasons.Values.Sum(),
+            GamesFiltered = filteredGameReasons.Values.Sum()
         };
+        summary.FilteredGameReasons.AddRange(filteredGameReasons
+            .OrderBy(x => x.Key)
+            .Select(x => $"{x.Key}:{x.Value}"));
 
         if (hasMorePages)
         {
@@ -468,6 +483,12 @@ public class BackfillJobProcessor(
                 StringComparison.OrdinalIgnoreCase)
             ? NbaFranchiseCatalog.Resolve(sourceTeamId, teamName, SeasonLabelNormalizer.ParseStartYear(season))
             : null;
+        var apiSportsCanonicalName = string.Equals(
+                source,
+                ApiSportsBasketballDataProvider.Source,
+                StringComparison.OrdinalIgnoreCase)
+            ? NbaApiSportsCatalog.GetCanonicalName(sourceTeamId)
+            : null;
 
         var alias = await dbContext.TeamAliases
             .Include(x => x.Team)
@@ -500,6 +521,12 @@ public class BackfillJobProcessor(
                     alias.ValidToUtc = validToUtc;
                     aliasChanged = true;
                 }
+            }
+
+            if (apiSportsCanonicalName is not null && alias.Team.CanonicalName != apiSportsCanonicalName)
+            {
+                alias.Team.CanonicalName = apiSportsCanonicalName;
+                aliasChanged = true;
             }
 
             if (alias.Team.CountryCode == "UNK" && !string.IsNullOrWhiteSpace(countryCode))
@@ -560,13 +587,21 @@ public class BackfillJobProcessor(
                     existingTeam.CountryCode == countryCode,
                 cancellationToken);
         }
+        else if (apiSportsCanonicalName is not null)
+        {
+            team = await dbContext.Teams.FirstOrDefaultAsync(
+                existingTeam =>
+                    existingTeam.CanonicalName == apiSportsCanonicalName &&
+                    existingTeam.CountryCode == countryCode,
+                cancellationToken);
+        }
 
         if (team is null)
         {
             team = new Team
             {
                 Id = Guid.NewGuid(),
-                CanonicalName = franchiseMatch?.Franchise.CanonicalName ?? teamName,
+                CanonicalName = franchiseMatch?.Franchise.CanonicalName ?? apiSportsCanonicalName ?? teamName,
                 CountryCode = string.IsNullOrWhiteSpace(countryCode) ? "UNK" : countryCode,
                 IsActive = franchiseMatch?.Franchise.IsActive ?? true,
                 CreatedAtUtc = DateTime.UtcNow
@@ -680,6 +715,7 @@ public class BackfillJobProcessor(
             "Slovenia" => "SI",
             "Latvia" => "LV",
             "Estonia" => "EE",
+            "USA" => "USA",
             "United States" => "USA",
             "Europe" => null,
             _ => null
@@ -705,12 +741,14 @@ public class BackfillJobProcessor(
         public int RequestsUsed { get; set; }
         public bool HasMorePages { get; set; }
         public int GamesFetched { get; set; }
+        public int GamesFiltered { get; set; }
         public int GamesInserted { get; set; }
         public int GamesUpdated { get; set; }
         public List<string> ProviderLeagues { get; } = [];
         public List<string> SourceUrls { get; } = [];
         public List<string> SourceSeasonKeys { get; } = [];
         public List<string> ParserVersions { get; } = [];
+        public List<string> FilteredGameReasons { get; } = [];
         public DateTime? SourceFetchedAtUtc { get; set; }
         public List<string> Warnings { get; } = [];
         public string? IdentityHealthStatus { get; set; }

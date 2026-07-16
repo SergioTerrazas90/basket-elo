@@ -140,6 +140,13 @@
                         <option value="replace">Refresh existing</option>
                     </select>
                 </div>
+                <div class="filter-field">
+                    <label for="rangeOrder">Queue order</label>
+                    <select id="rangeOrder" class="form-select" @bind="rangeNewestFirst">
+                        <option value="true">Newest first</option>
+                        <option value="false">Oldest first</option>
+                    </select>
+                </div>
                 <button class="btn btn-primary range-submit"
                         type="button"
                         @onclick="TriggerRangeAsync"
@@ -348,6 +355,7 @@
     private string rangeStartSeason = string.Empty;
     private string rangeEndSeason = string.Empty;
     private string rangeDataMode = "missing";
+    private string rangeNewestFirst = "true";
 
     private IReadOnlyCollection<string> CountryOptions => rows.Select(x => x.Country).Distinct().OrderBy(x => x).ToList();
     private IReadOnlyCollection<string> LeagueOptions => rows.Select(x => x.DisplayName).Distinct().OrderBy(x => x).ToList();
@@ -530,6 +538,7 @@
                     EndSeason = rangeEndSeason,
                     OnlyMissing = rangeDataMode == "missing",
                     ReplaceExisting = rangeDataMode == "replace",
+                    NewestFirst = rangeNewestFirst == "true",
                     DryRun = dryRun,
                     MaxRequests = maxRequests
                 });

@@ -82,6 +82,33 @@
     font-size: 1.55rem;
 }
 
+.range-panel {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border-block: 1px solid var(--color-border);
+    background: var(--color-surface);
+}
+
+.range-controls {
+    display: grid;
+    grid-template-columns: minmax(210px, 1.5fr) repeat(3, minmax(145px, 1fr)) auto;
+    align-items: end;
+    gap: var(--space-3);
+}
+
+.range-submit {
+    min-height: 38px;
+    white-space: nowrap;
+}
+
+.range-validation {
+    margin: 0;
+    color: var(--status-danger-text);
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
 .inspection-card {
     border-color: rgba(181, 84, 49, 0.34);
     background: var(--color-rust-soft);
@@ -229,5 +256,23 @@
         align-items: start;
         flex-direction: column;
         padding: var(--space-4);
+    }
+
+    .range-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .range-submit {
+        width: 100%;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1100px) {
+    .range-controls {
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+    }
+
+    .range-submit {
+        justify-self: start;
     }
 }

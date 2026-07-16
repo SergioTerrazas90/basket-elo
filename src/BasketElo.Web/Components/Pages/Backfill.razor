@@ -111,6 +111,48 @@
             </div>
         </section>
 
+        <section class="range-panel" aria-labelledby="range-import-heading">
+            <div class="section-head">
+                <h2 id="range-import-heading">Range import</h2>
+            </div>
+            <div class="range-controls">
+                <div class="filter-field range-league-field">
+                    <label for="rangeLeague">League</label>
+                    <select id="rangeLeague" class="form-select" @bind="selectedRangeLeagueKey" @bind:after="RangeLeagueChanged">
+                        @foreach (var league in AllLeagueSummaries)
+                        {
+                            <option value="@LeagueKey(league)">@league.DisplayName</option>
+                        }
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="rangeStartSeason">Start season</label>
+                    <input id="rangeStartSeason" class="form-control" inputmode="numeric" placeholder="1946-1947" @bind="rangeStartSeason" @bind:event="oninput" />
+                </div>
+                <div class="filter-field">
+                    <label for="rangeEndSeason">End season</label>
+                    <input id="rangeEndSeason" class="form-control" inputmode="numeric" placeholder="1959-1960" @bind="rangeEndSeason" @bind:event="oninput" />
+                </div>
+                <div class="filter-field">
+                    <label for="rangeDataMode">Data mode</label>
+                    <select id="rangeDataMode" class="form-select" @bind="rangeDataMode">
+                        <option value="missing">Missing only</option>
+                        <option value="replace">Refresh existing</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary range-submit"
+                        type="button"
+                        @onclick="TriggerRangeAsync"
+                        disabled="@(isBusy || !CanSubmitRange)">
+                    Queue range
+                </button>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(RangeValidationError))
+            {
+                <p class="range-validation" role="alert">@RangeValidationError</p>
+            }
+        </section>
+
         @if (ReviewedRows.Count > 0)
         {
             <section class="reviewed-summary-panel" aria-label="Reviewed inspection summary">
@@ -302,6 +344,10 @@
     private string? selectedLeague;
     private string? selectedStatus;
     private string selectedInspection = string.Empty;
+    private string selectedRangeLeagueKey = string.Empty;
+    private string rangeStartSeason = string.Empty;
+    private string rangeEndSeason = string.Empty;
+    private string rangeDataMode = "missing";
 
     private IReadOnlyCollection<string> CountryOptions => rows.Select(x => x.Country).Distinct().OrderBy(x => x).ToList();
     private IReadOnlyCollection<string> LeagueOptions => rows.Select(x => x.DisplayName).Distinct().OrderBy(x => x).ToList();
@@ -336,7 +382,11 @@
         .ThenBy(x => FormatInspectionStatus(x.Status))
         .ToList();
 
-    private IReadOnlyCollection<LeagueSummary> LeagueSummaries => FilteredRows
+    private IReadOnlyCollection<LeagueSummary> AllLeagueSummaries => SummarizeLeagues(rows);
+
+    private IReadOnlyCollection<LeagueSummary> LeagueSummaries => SummarizeLeagues(FilteredRows);
+
+    private static IReadOnlyCollection<LeagueSummary> SummarizeLeagues(IEnumerable<BackfillCoverageRow> source) => source
         .GroupBy(x => new { x.Provider, x.Country, x.LeagueName, x.DisplayName })
         .Select(group => new LeagueSummary(
             group.Key.Provider,
@@ -347,20 +397,51 @@
             group.Count(x => x.CoverageStatus == "completed"),
             group.Count(x => x.CoverageStatus == "completed_with_warnings"),
             group.Count(x => x.NeedsInspection),
-            group.Max(x => x.LastRunUtc)))
+            group.Max(x => x.LastRunUtc),
+            group.OrderBy(x => x.Season).First().Season,
+            group.OrderByDescending(x => x.Season).First().Season))
         .OrderBy(x => x.Country)
         .ThenBy(x => x.DisplayName)
         .ToList();
+
+    private string? RangeValidationError
+    {
+        get
+        {
+            if (SelectedRangeLeague is null)
+            {
+                return "Select a configured league.";
+            }
+
+            if (!TryGetSeasonStartYear(rangeStartSeason, out var startYear) ||
+                !TryGetSeasonStartYear(rangeEndSeason, out var endYear))
+            {
+                return "Use full consecutive-year labels such as 1946-1947.";
+            }
+
+            return startYear > endYear ? "Start season must not be after end season." : null;
+        }
+    }
+
+    private LeagueSummary? SelectedRangeLeague =>
+        AllLeagueSummaries.FirstOrDefault(x => LeagueKey(x) == selectedRangeLeagueKey);
+
+    private bool CanSubmitRange => RangeValidationError is null;
 
     protected override async Task OnInitializedAsync()
     {
         await RefreshAsync();
     }
 
-    private async Task RefreshAsync()
+    private Task RefreshAsync() => RefreshAsync(preserveFeedback: false);
+
+    private async Task RefreshAsync(bool preserveFeedback)
     {
         isBusy = true;
-        feedbackMessage = null;
+        if (!preserveFeedback)
+        {
+            feedbackMessage = null;
+        }
 
         try
         {
@@ -369,6 +450,17 @@
             if (response is not null)
             {
                 rows.AddRange(response.Rows);
+            }
+
+            if (SelectedRangeLeague is null)
+            {
+                var defaultLeague = AllLeagueSummaries.FirstOrDefault(x => x.LeagueName == "NBA") ??
+                    AllLeagueSummaries.FirstOrDefault();
+                if (defaultLeague is not null)
+                {
+                    selectedRangeLeagueKey = LeagueKey(defaultLeague);
+                    RangeLeagueChanged();
+                }
             }
         }
         catch (Exception ex)
@@ -413,6 +505,59 @@
             $"Queued configured seasons for {league.DisplayName}.");
     }
 
+    private async Task TriggerRangeAsync()
+    {
+        var league = SelectedRangeLeague;
+        if (league is null || RangeValidationError is not null)
+        {
+            feedbackIsError = true;
+            feedbackMessage = RangeValidationError ?? "Select a configured league.";
+            return;
+        }
+
+        isBusy = true;
+        feedbackMessage = null;
+        try
+        {
+            var response = await Http.PostAsJsonAsync(
+                "api/backfill/leagues/range/jobs",
+                new TriggerLeagueRangeBackfillRequest
+                {
+                    Provider = league.Provider,
+                    Country = league.Country,
+                    LeagueName = league.LeagueName,
+                    StartSeason = rangeStartSeason,
+                    EndSeason = rangeEndSeason,
+                    OnlyMissing = rangeDataMode == "missing",
+                    ReplaceExisting = rangeDataMode == "replace",
+                    DryRun = dryRun,
+                    MaxRequests = maxRequests
+                });
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body);
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<QueueBackfillJobsResponse>();
+            feedbackIsError = false;
+            feedbackMessage = result is null
+                ? $"Queued {league.DisplayName} range."
+                : $"Queued {result.QueuedJobs} of {result.RequestedSeasons} seasons for {league.DisplayName}; " +
+                  $"skipped {result.SkippedActiveJobs} active and {result.SkippedExistingSeasons} existing.";
+            await RefreshAsync(preserveFeedback: true);
+        }
+        catch (Exception ex)
+        {
+            feedbackIsError = true;
+            feedbackMessage = $"Action failed: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
     private async Task SaveInspectionDecisionAsync(BackfillCoverageRow row, string status)
     {
         var note = status switch
@@ -455,7 +600,7 @@
 
             feedbackIsError = false;
             feedbackMessage = successMessage;
-            await RefreshAsync();
+            await RefreshAsync(preserveFeedback: true);
         }
         catch (Exception ex)
         {
@@ -500,6 +645,32 @@
         return !string.IsNullOrWhiteSpace(row.InspectionStatus) ? "reviewed-row" : string.Empty;
     }
 
+    private void RangeLeagueChanged()
+    {
+        var league = SelectedRangeLeague;
+        if (league is null)
+        {
+            return;
+        }
+
+        rangeStartSeason = league.FirstSeason;
+        rangeEndSeason = league.LastSeason;
+    }
+
+    private static string LeagueKey(LeagueSummary league) =>
+        $"{league.Provider}|{league.Country}|{league.LeagueName}";
+
+    private static bool TryGetSeasonStartYear(string season, out int startYear)
+    {
+        startYear = default;
+        var pieces = season.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return pieces.Length == 2 &&
+            int.TryParse(pieces[0], out startYear) &&
+            int.TryParse(pieces[1], out var endYear) &&
+            startYear >= 1900 &&
+            endYear == startYear + 1;
+    }
+
     private bool MatchesInspectionFilter(BackfillCoverageRow row)
     {
         return selectedInspection switch
@@ -538,7 +709,9 @@
         int CompletedSeasons,
         int WarningSeasons,
         int InspectionSeasons,
-        DateTime? LastRunUtc);
+        DateTime? LastRunUtc,
+        string FirstSeason,
+        string LastSeason);
 
     private sealed record InspectionFilterOption(string Value, string Label);
 

@@ -139,7 +139,9 @@ curl.exe -X POST "http://localhost:5001/api/backfill/jobs" `
 Notes:
 - `dryRun=true` fetches provider data and stores summary without writing competition/team/game rows.
 - `maxRequests` hard-limits provider calls for budget control.
-- Provider support includes `api-sports` and `basketball-reference`.
+- Provider support includes `api-sports`, `basketball-reference`, and
+  `fivethirtyeight`; the latter reads a checksum-pinned, locally retained CC BY
+  4.0 NBA archive.
 
 Queue an inclusive configured season range:
 
@@ -175,6 +177,20 @@ source paths under the configured root, for example
 $env:BasketballReference__ArchiveRoot="C:\authorized-data\basketball-reference"
 $env:BasketballReference__NetworkAccessEnabled="false"
 ```
+
+FiveThirtyEight historical NBA imports use the pinned CC BY 4.0 archive and do
+not make runtime network requests. Download the recorded revision, verify its
+SHA-256, and configure the absolute archive path before queueing `1946-1947`
+through `2007-2008` newest-first:
+
+```powershell
+$env:FiveThirtyEight__ArchivePath="C:\authorized-data\fivethirtyeight\nbaallelo.csv"
+$env:FiveThirtyEight__SourceRevision="4c1ff5e3aef1816ae04af63218015066e186c147"
+$env:FiveThirtyEight__ExpectedSha256="d46ed3540ee8d9eca31b3e94cc8c777e0be5156173d814ebf65b8195e8d616bc"
+```
+
+The provider imports only the primary NBA row for each source game. It excludes
+paired copies and all ABA records, and the checksum gate blocks a changed file.
 
 Network fetching stays disabled unless the operator both enables it and records
 the permission basis in `BasketballReference__PermissionReference`. See

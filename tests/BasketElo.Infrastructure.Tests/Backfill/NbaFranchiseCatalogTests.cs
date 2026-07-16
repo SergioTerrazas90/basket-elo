@@ -51,4 +51,18 @@ public class NbaFranchiseCatalogTests
 
         Assert.Empty(collisions);
     }
+
+    [Theory]
+    [InlineData("BAL", "Baltimore Bullets", 1963, "wizards")]
+    [InlineData("NYN", "New York Nets", 1976, "nets")]
+    public void ResolvesFiveThirtyEightSpecificTeamIds(
+        string sourceTeamId,
+        string observedName,
+        int seasonStartYear,
+        string expectedFranchise)
+    {
+        Assert.Equal(
+            expectedFranchise,
+            NbaFranchiseCatalog.Resolve(sourceTeamId, observedName, seasonStartYear)?.Franchise.Key);
+    }
 }

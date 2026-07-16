@@ -847,8 +847,13 @@ public class EloController(
     {
         var requestedRuleset = request?.RulesetVersion;
         var competitionName = request?.CompetitionName?.Trim() ?? string.Empty;
-        if (!string.IsNullOrEmpty(competitionName) &&
-            !await dbContext.Competitions.AnyAsync(x => x.Name == competitionName, cancellationToken))
+        var competitionIds = string.IsNullOrEmpty(competitionName)
+            ? null
+            : await dbContext.Competitions
+                .Where(x => x.Name == competitionName)
+                .Select(x => x.Id)
+                .ToListAsync(cancellationToken);
+        if (competitionIds is { Count: 0 })
         {
             return BadRequest($"Competition '{competitionName}' was not found.");
         }
@@ -884,7 +889,7 @@ public class EloController(
             return Conflict($"An ELO rebuild is already queued or running for: {string.Join(", ", activeRulesets)}.");
         }
 
-        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(cancellationToken);
+        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(competitionIds, cancellationToken);
         if (identityGate is not null)
         {
             return identityGate;
@@ -971,7 +976,13 @@ public class EloController(
             return Conflict($"An ELO rebuild is already queued or running for: {sourceRun.RulesetVersion}.");
         }
 
-        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(cancellationToken);
+        var competitionIds = string.IsNullOrEmpty(sourceRun.CompetitionName)
+            ? null
+            : await dbContext.Competitions
+                .Where(x => x.Name == sourceRun.CompetitionName)
+                .Select(x => x.Id)
+                .ToListAsync(cancellationToken);
+        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(competitionIds, cancellationToken);
         if (identityGate is not null)
         {
             return identityGate;
@@ -1005,21 +1016,32 @@ public class EloController(
     private static EloRulesetCatalogResponse BuildRulesetCatalog()
         => new(EloRulesetVersions.Default, EloRulesetVersions.All);
 
-    private async Task<ConflictObjectResult?> EnsureIdentityHealthAllowsRebuildAsync(CancellationToken cancellationToken)
+    private async Task<ConflictObjectResult?> EnsureIdentityHealthAllowsRebuildAsync(
+        IReadOnlyCollection<Guid>? competitionIds,
+        CancellationToken cancellationToken)
     {
-        var identityRun = await identityHealthCheckService.RunAsync(new IdentityHealthCheckRequest(), cancellationToken);
-        if (identityRun.UnresolvedBlockersCount == 0)
+        var requests = competitionIds is null
+            ? [new IdentityHealthCheckRequest()]
+            : competitionIds.Select(id => new IdentityHealthCheckRequest { CompetitionId = id });
+
+        foreach (var request in requests)
         {
-            return null;
+            var identityRun = await identityHealthCheckService.RunAsync(request, cancellationToken);
+            if (identityRun.UnresolvedBlockersCount == 0)
+            {
+                continue;
+            }
+
+            return Conflict(new
+            {
+                message = "ELO rebuild is blocked by unresolved identity health blockers.",
+                identityRunId = identityRun.Id,
+                identityRun.ScopeKey,
+                identityRun.UnresolvedBlockersCount
+            });
         }
 
-        return Conflict(new
-        {
-            message = "ELO rebuild is blocked by unresolved identity health blockers.",
-            identityRunId = identityRun.Id,
-            identityRun.ScopeKey,
-            identityRun.UnresolvedBlockersCount
-        });
+        return null;
     }
 
     private static string? ResolveRulesetOrDefault(string? rulesetVersion)

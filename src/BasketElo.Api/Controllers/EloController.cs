@@ -403,7 +403,7 @@ public class EloController(
         [FromQuery] string? season,
         [FromQuery] DateTime? fromUtc,
         [FromQuery] DateTime? toUtc,
-        [FromQuery] int pointsPerTeam = 0,
+        [FromQuery] int pointsPerTeam = EloEvolutionLimits.DefaultPointsPerTeam,
         CancellationToken cancellationToken = default)
     {
         var poolKey = ResolvePoolOrDefault(pool);
@@ -427,11 +427,7 @@ public class EloController(
             return Ok(new EloRankingsEvolutionResponse(poolKey, selectedRuleset, []));
         }
 
-        var includeFullHistory = pointsPerTeam <= 0;
-        if (!includeFullHistory)
-        {
-            pointsPerTeam = Math.Clamp(pointsPerTeam, 2, 120);
-        }
+        pointsPerTeam = EloEvolutionLimits.NormalizePointsPerTeam(pointsPerTeam);
         var cutoffUtc = toUtc.HasValue
             ? DateTime.SpecifyKind(toUtc.Value.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1)
             : DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc);
@@ -454,8 +450,7 @@ public class EloController(
         var rows = await dbContext.Database
             .SqlQueryRaw<EvolutionHistorySqlRow>(
                 """
-                SELECT "TeamId", "TeamName", "GameDateTimeUtc", "Elo"
-                FROM (
+                WITH ranked AS (
                     SELECT
                         rh."TeamId",
                         t."CanonicalName" AS "TeamName",
@@ -463,8 +458,9 @@ public class EloController(
                         rh."PostElo" AS "Elo",
                         row_number() OVER (
                             PARTITION BY rh."TeamId"
-                            ORDER BY rh."GameDateTimeUtc" DESC, rh."PostElo" DESC
-                        ) AS "RowNumber"
+                            ORDER BY rh."GameDateTimeUtc", rh."PostElo"
+                        ) AS "RowNumber",
+                        count(*) OVER (PARTITION BY rh."TeamId") AS "TotalRows"
                     FROM rating_history rh
                     INNER JOIN teams t ON t."Id" = rh."TeamId"
                     INNER JOIN games g ON g."Id" = rh."GameId"
@@ -488,8 +484,32 @@ public class EloController(
                               AND rh."GameDateTimeUtc" > @seasonEndUtc
                           )
                       )
-                ) ranked
-                WHERE @includeFullHistory OR "RowNumber" <= @pointsPerTeam
+                ), bucketed AS (
+                    SELECT
+                        *,
+                        CASE
+                            WHEN "TotalRows" <= @pointsPerTeam THEN "RowNumber"
+                            ELSE round(
+                                ("RowNumber" - 1) * (@pointsPerTeam - 1)::numeric /
+                                ("TotalRows" - 1)
+                            )::bigint
+                        END AS "SampleBucket"
+                    FROM ranked
+                ), sampled AS (
+                    SELECT DISTINCT ON ("TeamId", "SampleBucket")
+                        "TeamId", "TeamName", "GameDateTimeUtc", "Elo"
+                    FROM bucketed
+                    ORDER BY
+                        "TeamId",
+                        "SampleBucket",
+                        abs(
+                            ("RowNumber" - 1)::numeric -
+                            "SampleBucket" * ("TotalRows" - 1)::numeric /
+                            greatest(@pointsPerTeam - 1, 1)
+                        )
+                )
+                SELECT "TeamId", "TeamName", "GameDateTimeUtc", "Elo"
+                FROM sampled
                 ORDER BY "TeamId", "GameDateTimeUtc", "Elo"
                 """,
                 new NpgsqlParameter("poolKey", poolKey),
@@ -504,7 +524,6 @@ public class EloController(
                 new NpgsqlParameter("seasonEndUtc", seasonEndUtc),
                 new NpgsqlParameter("previousSingleYearSeasonLabel", previousSingleYearSeasonLabel),
                 new NpgsqlParameter("currentSingleYearSeasonLabel", currentSingleYearSeasonLabel),
-                new NpgsqlParameter("includeFullHistory", includeFullHistory),
                 new NpgsqlParameter("pointsPerTeam", pointsPerTeam))
             .ToListAsync(cancellationToken);
 
@@ -905,6 +924,7 @@ public class EloController(
                 x.EloDelta,
                 x.RatingPositionAfter))
             .ToListAsync(cancellationToken);
+        var sampledHistoryRows = EloEvolutionLimits.EvenlySample(historyRows);
 
         var formRows = await GetTeamFormRowsAsync(teamId, poolKey, selectedRuleset, cancellationToken);
 
@@ -927,7 +947,7 @@ public class EloController(
             gamesTotalCount,
             gamesTotalPages,
             BuildTeamFormSummaries(formRows),
-            historyRows));
+            sampledHistoryRows));
     }
 
     [HttpPost("rebuilds")]

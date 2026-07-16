@@ -6,7 +6,7 @@
         <div class="elo-chart-toolbar" aria-label="Chart range controls">
             <div class="elo-chart-controls">
                 <div class="elo-chart-segment" aria-label="Chart sampling mode">
-                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.GameByGame)" @onclick="() => SetSamplingMode(EloChartSamplingMode.GameByGame)">Game by game</button>
+                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.GameByGame)" @onclick="() => SetSamplingMode(EloChartSamplingMode.GameByGame)">Game snapshots</button>
                     <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.Weekly)" @onclick="() => SetSamplingMode(EloChartSamplingMode.Weekly)">Weekly</button>
                     <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.Monthly)" @onclick="() => SetSamplingMode(EloChartSamplingMode.Monthly)">Monthly</button>
                 </div>
@@ -97,6 +97,9 @@
     private double viewEnd = 1;
 
     private EloChartSamplingMode samplingMode = EloChartSamplingMode.GameByGame;
+    private IReadOnlyList<EloChartSeries> sourceSeries = [];
+    private IReadOnlyList<EloChartSeries> displaySeries = [];
+    private IReadOnlyList<EloChartPoint> allPoints = [];
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
 
@@ -105,27 +108,13 @@
         : ChartTooltipTrigger.Point;
 
     private IReadOnlyList<EloChartSeries> SourceSeries
-        => Series
-            .Select(series => series with
-            {
-                Points = series.Points
-                    .OrderBy(point => point.GameDateTimeUtc)
-                    .ToList()
-            })
-            .Where(x => x.Points.Count >= 2)
-            .ToList();
+        => sourceSeries;
 
     private IReadOnlyList<EloChartSeries> DisplaySeries
-        => SourceSeries
-            .Select(series => series with
-            {
-                Points = SamplePoints(series.Points, samplingMode)
-            })
-            .Where(x => x.Points.Count >= 2)
-            .ToList();
+        => displaySeries;
 
     private IReadOnlyList<EloChartPoint> AllPoints
-        => DisplaySeries.SelectMany(x => x.Points).OrderBy(x => x.GameDateTimeUtc).ToList();
+        => allPoints;
 
     private string ChartContextLabel
     {
@@ -149,6 +138,17 @@
 
     protected override void OnParametersSet()
     {
+        sourceSeries = Series
+            .Select(series => series with
+            {
+                Points = series.Points
+                    .OrderBy(point => point.GameDateTimeUtc)
+                    .ToList()
+            })
+            .Where(x => x.Points.Count >= 2)
+            .ToList();
+        RebuildDisplaySeries();
+
         if (!EnableRangeNavigation)
         {
             chartZoom = 100;
@@ -185,7 +185,23 @@
         }
 
         samplingMode = mode;
+        RebuildDisplaySeries();
         ShowFullRange();
+    }
+
+    private void RebuildDisplaySeries()
+    {
+        displaySeries = sourceSeries
+            .Select(series => series with
+            {
+                Points = SamplePoints(series.Points, samplingMode)
+            })
+            .Where(x => x.Points.Count >= 2)
+            .ToList();
+        allPoints = displaySeries
+            .SelectMany(x => x.Points)
+            .OrderBy(x => x.GameDateTimeUtc)
+            .ToList();
     }
 
     private string SamplingButtonClass(EloChartSamplingMode mode)
@@ -258,7 +274,7 @@
         {
             EloChartSamplingMode.Weekly => "Weekly snapshots",
             EloChartSamplingMode.Monthly => "Monthly snapshots",
-            _ => "Game by game"
+            _ => "Game snapshots"
         };
 
     private static string FormatDate(DateTime value)

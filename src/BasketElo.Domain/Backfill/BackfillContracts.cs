@@ -17,7 +17,15 @@ public record BasketballProviderGame(
     string SourceAwayTeamId,
     string AwayTeamName,
     short? HomeScore,
-    short? AwayScore);
+    short? AwayScore,
+    BasketballProviderGameProvenance? Provenance = null);
+
+public sealed record BasketballProviderGameProvenance(
+    string? SourceUrl,
+    string? SourceSeasonKey,
+    DateTime? FetchedAtUtc,
+    string ParserVersion,
+    string? SourceRevision = null);
 
 public class BackfillExecutionContext(int maxRequests, int requestsUsed)
 {

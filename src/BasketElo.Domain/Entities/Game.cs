@@ -5,6 +5,11 @@ public class Game
     public Guid Id { get; set; }
     public string Source { get; set; } = string.Empty;
     public string SourceGameId { get; set; } = string.Empty;
+    public string? SourceUrl { get; set; }
+    public string? SourceSeasonKey { get; set; }
+    public DateTime? SourceFetchedAtUtc { get; set; }
+    public string? SourceRevision { get; set; }
+    public string? ParserVersion { get; set; }
     public Guid CompetitionId { get; set; }
     public Guid SeasonId { get; set; }
     public DateTime GameDateTimeUtc { get; set; }

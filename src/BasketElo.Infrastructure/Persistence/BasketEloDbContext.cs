@@ -409,6 +409,10 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Source).HasMaxLength(50).IsRequired();
             entity.Property(x => x.SourceGameId).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.SourceUrl).HasMaxLength(1000);
+            entity.Property(x => x.SourceSeasonKey).HasMaxLength(100);
+            entity.Property(x => x.SourceRevision).HasMaxLength(100);
+            entity.Property(x => x.ParserVersion).HasMaxLength(100);
             entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
             entity.Property(x => x.GameDateTimeUtc).IsRequired();
             entity.Property(x => x.IngestedAtUtc).IsRequired();

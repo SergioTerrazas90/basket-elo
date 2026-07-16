@@ -248,7 +248,12 @@ public class BackfillCoverageService(
                     medianCompletedCount is > 0 &&
                     ShouldFlagLowCount(row, medianCompletedCount.Value))
                 {
-                    reasons.Add($"Game count is unusually low for this league ({row.GameCount} vs median {medianCompletedCount.Value:0}).");
+                    var nbaExpectation = NbaCoverageExpectations.IsNba(row.Provider, row.Country, row.LeagueName)
+                        ? NbaCoverageExpectations.ForSeason(row.Season)
+                        : null;
+                    reasons.Add(nbaExpectation is null
+                        ? $"Game count is unusually low for this league ({row.GameCount} vs median {medianCompletedCount.Value:0})."
+                        : $"NBA {nbaExpectation.EraDescription} expects at least {nbaExpectation.MinimumCompleteGames} games including playoffs; found {row.GameCount}.");
                 }
 
                 flaggedRows.Add(row.ToCoverageRow(reasons, InspectionSeverity(row, reasons), null));
@@ -295,6 +300,12 @@ public class BackfillCoverageService(
 
     private static bool ShouldFlagLowCount(BackfillCoverageCandidate row, decimal medianCompletedCount)
     {
+        if (NbaCoverageExpectations.IsNba(row.Provider, row.Country, row.LeagueName))
+        {
+            var expectation = NbaCoverageExpectations.ForSeason(row.Season);
+            return expectation is not null && row.GameCount < expectation.MinimumCompleteGames;
+        }
+
         if (medianCompletedCount <= 0)
         {
             return false;

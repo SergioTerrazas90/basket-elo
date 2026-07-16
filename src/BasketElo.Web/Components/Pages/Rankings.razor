@@ -1,6 +1,6 @@
 @page "/"
 @page "/rankings"
-@rendermode InteractiveServer
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
 @implements IAsyncDisposable
 @using System.Globalization
 @using BasketElo.Domain.Elo

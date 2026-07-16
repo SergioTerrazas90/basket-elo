@@ -33,12 +33,14 @@ public sealed record EloRebuildRunNotification(
 public sealed class EloRebuildRequest
 {
     public string? RulesetVersion { get; set; }
+    public string? CompetitionName { get; set; }
 }
 
 public sealed class EloRebuildResult
 {
     public Guid RunId { get; set; }
     public string RulesetVersion { get; set; } = string.Empty;
+    public string CompetitionName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public int GamesProcessed { get; set; }
     public int TeamsRated { get; set; }
@@ -55,6 +57,7 @@ public sealed record EloRulesetCatalogResponse(
 public sealed record EloRebuildRunDto(
     Guid Id,
     string RulesetVersion,
+    string CompetitionName,
     string Status,
     int GamesProcessed,
     int TeamsRated,

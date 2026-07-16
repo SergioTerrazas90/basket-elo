@@ -76,6 +76,7 @@ public class EloController(
             .Select(x => new EloRebuildRunDto(
                 x.Id,
                 x.RulesetVersion,
+                x.CompetitionName,
                 x.Status,
                 x.GamesProcessed,
                 x.TeamsRated,
@@ -845,6 +846,12 @@ public class EloController(
         CancellationToken cancellationToken)
     {
         var requestedRuleset = request?.RulesetVersion;
+        var competitionName = request?.CompetitionName?.Trim() ?? string.Empty;
+        if (!string.IsNullOrEmpty(competitionName) &&
+            !await dbContext.Competitions.AnyAsync(x => x.Name == competitionName, cancellationToken))
+        {
+            return BadRequest($"Competition '{competitionName}' was not found.");
+        }
         IReadOnlyList<string> rulesets;
         if (string.IsNullOrWhiteSpace(requestedRuleset) ||
             string.Equals(requestedRuleset, "all", StringComparison.OrdinalIgnoreCase))
@@ -864,6 +871,9 @@ public class EloController(
 
         var activeRulesets = await dbContext.EloRebuildRuns
             .Where(x => rulesets.Contains(x.RulesetVersion) &&
+                (competitionName == string.Empty ||
+                 x.CompetitionName == string.Empty ||
+                 x.CompetitionName == competitionName) &&
                 (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running))
             .Select(x => x.RulesetVersion)
             .Distinct()
@@ -885,6 +895,7 @@ public class EloController(
         {
             Id = Guid.NewGuid(),
             RulesetVersion = ruleset,
+            CompetitionName = competitionName,
             Status = EloRebuildRunStatus.Pending,
             QueuedAtUtc = queuedAtUtc,
             CreatedAtUtc = queuedAtUtc
@@ -950,6 +961,9 @@ public class EloController(
 
         var activeExists = await dbContext.EloRebuildRuns.AnyAsync(x =>
             x.RulesetVersion == sourceRun.RulesetVersion &&
+            (sourceRun.CompetitionName == string.Empty ||
+             x.CompetitionName == string.Empty ||
+             x.CompetitionName == sourceRun.CompetitionName) &&
             (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running),
             cancellationToken);
         if (activeExists)
@@ -968,6 +982,7 @@ public class EloController(
         {
             Id = Guid.NewGuid(),
             RulesetVersion = sourceRun.RulesetVersion,
+            CompetitionName = sourceRun.CompetitionName,
             Status = EloRebuildRunStatus.Pending,
             QueuedAtUtc = queuedAtUtc,
             CreatedAtUtc = queuedAtUtc,
@@ -1044,6 +1059,7 @@ public class EloController(
         => new(
             run.Id,
             run.RulesetVersion,
+            run.CompetitionName,
             run.Status,
             run.GamesProcessed,
             run.TeamsRated,

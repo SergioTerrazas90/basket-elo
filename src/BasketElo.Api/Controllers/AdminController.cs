@@ -54,6 +54,7 @@ public class AdminController(BasketEloDbContext dbContext) : ControllerBase
             .Select(x => new EloRebuildRunDto(
                 x.Id,
                 x.RulesetVersion,
+                x.CompetitionName,
                 x.Status,
                 x.GamesProcessed,
                 x.TeamsRated,

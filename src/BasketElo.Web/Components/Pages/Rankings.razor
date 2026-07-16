@@ -1,6 +1,7 @@
 @page "/"
 @page "/rankings"
 @rendermode InteractiveServer
+@implements IAsyncDisposable
 @using System.Globalization
 @using BasketElo.Domain.Elo
 @inject HttpClient Http
@@ -265,7 +266,14 @@
                     }
                     else
                     {
-                        <EloEvolutionChart Series="@BuildEvolutionChartSeries()" EnableRangeNavigation="true" ShowLegend="false" SharedTooltip="false" HeightPixels="@ChartHeightPixels" />
+                        <EloEvolutionChart Series="@evolutionChartSeries"
+                                           EnableRangeNavigation="true"
+                                           ShowLegend="false"
+                                           SharedTooltip="false"
+                                           HeightPixels="@ChartHeightPixels"
+                                           DataRevision="@evolutionDataRevision"
+                                           ViewportRefinementRequested="@QueueEvolutionRefinementAsync"
+                                           FullRangeRequested="@RestoreFullEvolutionAsync" />
 
                         <div class="evolution-legend legacy-links" aria-label="ELO evolution chart team links">
                             @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
@@ -407,7 +415,9 @@
     private EloRankingsResponse? response;
     private EloMoversResponse? movers;
     private EloRankingsEvolutionResponse? evolution;
+    private EloRankingsEvolutionResponse? fullEvolution;
     private EloRankingsResponse? evolutionRankings;
+    private IReadOnlyList<EloChartSeries> evolutionChartSeries = [];
     private bool isBusy;
     private bool isChartExpanded;
     private string? errorMessage;
@@ -428,6 +438,13 @@
     private string? lastMoversApiUri;
     private string? lastEvolutionRankingsApiUri;
     private string? lastEvolutionApiUri;
+    private long evolutionDataRevision;
+    private CancellationTokenSource? evolutionRefinementCancellation;
+    private readonly Dictionary<string, EloRankingsEvolutionResponse> evolutionRangeCache = new(StringComparer.Ordinal);
+    private readonly Queue<string> evolutionRangeCacheOrder = new();
+
+    private const int EvolutionRefinementDebounceMilliseconds = 600;
+    private const int EvolutionRangeCacheLimit = 8;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -461,6 +478,10 @@
         page = Math.Max(1, Page ?? 1);
         requestedPage = page;
         lastLoadedUri = currentUri;
+        CancelEvolutionRefinement();
+        fullEvolution = null;
+        evolutionRangeCache.Clear();
+        evolutionRangeCacheOrder.Clear();
 
         await RefreshAsync();
     }
@@ -603,6 +624,8 @@
             {
                 evolutionRankings = await FetchEvolutionRankingsAsync();
                 evolution = await FetchEvolutionAsync();
+                fullEvolution = evolution;
+                RebuildEvolutionChartSeries();
             }
         }
         catch (Exception ex)
@@ -802,9 +825,9 @@
         }
 
         var evolutionUri = BuildEvolutionApiUri();
-        if (evolution is not null && string.Equals(evolutionUri, lastEvolutionApiUri, StringComparison.Ordinal))
+        if (fullEvolution is not null && string.Equals(evolutionUri, lastEvolutionApiUri, StringComparison.Ordinal))
         {
-            return evolution;
+            return fullEvolution;
         }
 
         var result = await Http.GetFromJsonAsync<EloRankingsEvolutionResponse>(evolutionUri);
@@ -812,7 +835,7 @@
         return result;
     }
 
-    private string BuildEvolutionApiUri()
+    private string BuildEvolutionApiUri(DateTime? viewportFromUtc = null, DateTime? viewportToUtc = null)
     {
         var seasonRange = GetSelectedSeasonDateRange();
         var teamIds = string.Join(",", evolutionRankings?.Rankings.Take(20).Select(x => x.TeamId) ?? []);
@@ -824,11 +847,107 @@
             $"pointsPerTeam={EloEvolutionLimits.DefaultPointsPerTeam}"
         };
 
-        Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
-        Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
+        Append(query, "fromUtc", (viewportFromUtc ?? seasonRange.FromUtc)?.ToString("O"));
+        Append(query, "toUtc", (viewportToUtc ?? seasonRange.ToUtc)?.ToString("O"));
         Append(query, "competition", selectedCompetition);
 
         return $"api/elo/rankings/evolution?{string.Join("&", query)}";
+    }
+
+    private Task QueueEvolutionRefinementAsync(EloChartViewportRange range)
+    {
+        CancelEvolutionRefinement();
+        var cancellation = new CancellationTokenSource();
+        evolutionRefinementCancellation = cancellation;
+        _ = RefineEvolutionAsync(range, cancellation);
+        return Task.CompletedTask;
+    }
+
+    private async Task RefineEvolutionAsync(EloChartViewportRange range, CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await Task.Delay(EvolutionRefinementDebounceMilliseconds, cancellation.Token);
+            var fromUtc = DateTime.SpecifyKind(range.FromUtc.Date, DateTimeKind.Utc);
+            var toUtc = DateTime.SpecifyKind(range.ToUtc.Date, DateTimeKind.Utc);
+            var evolutionUri = BuildEvolutionApiUri(fromUtc, toUtc);
+
+            if (!evolutionRangeCache.TryGetValue(evolutionUri, out var refinedEvolution))
+            {
+                refinedEvolution = await Http.GetFromJsonAsync<EloRankingsEvolutionResponse>(evolutionUri, cancellation.Token);
+                if (refinedEvolution is null)
+                {
+                    return;
+                }
+
+                AddEvolutionRangeToCache(evolutionUri, refinedEvolution);
+            }
+
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(evolutionRefinementCancellation, cancellation))
+            {
+                return;
+            }
+
+            evolution = refinedEvolution;
+            RebuildEvolutionChartSeries();
+            errorMessage = null;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(evolutionRefinementCancellation, cancellation))
+            {
+                errorMessage = $"Could not refine chart detail: {ex.Message}";
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(evolutionRefinementCancellation, cancellation))
+            {
+                evolutionRefinementCancellation = null;
+            }
+
+            cancellation.Dispose();
+        }
+    }
+
+    private Task RestoreFullEvolutionAsync()
+    {
+        CancelEvolutionRefinement();
+        if (fullEvolution is not null && !ReferenceEquals(evolution, fullEvolution))
+        {
+            evolution = fullEvolution;
+            RebuildEvolutionChartSeries();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void AddEvolutionRangeToCache(string uri, EloRankingsEvolutionResponse response)
+    {
+        if (evolutionRangeCache.ContainsKey(uri))
+        {
+            return;
+        }
+
+        evolutionRangeCache[uri] = response;
+        evolutionRangeCacheOrder.Enqueue(uri);
+        while (evolutionRangeCacheOrder.Count > EvolutionRangeCacheLimit)
+        {
+            evolutionRangeCache.Remove(evolutionRangeCacheOrder.Dequeue());
+        }
+    }
+
+    private void CancelEvolutionRefinement()
+    {
+        var cancellation = evolutionRefinementCancellation;
+        evolutionRefinementCancellation = null;
+        cancellation?.Cancel();
     }
 
     private async Task<EloRankingsResponse?> FetchEvolutionRankingsAsync()
@@ -972,8 +1091,9 @@
         return $"Showing {rangeStart}-{rangeEnd} of {movers.TotalCount} teams from {FormatDate(movers.WindowStartUtc)} to {FormatDate(movers.WindowEndUtc)}.";
     }
 
-    private IReadOnlyList<EloChartSeries> BuildEvolutionChartSeries()
-        => EvolutionSeries
+    private void RebuildEvolutionChartSeries()
+    {
+        evolutionChartSeries = EvolutionSeries
             .Select((series, index) => new EloChartSeries(
                 series.TeamId,
                 series.TeamName,
@@ -987,6 +1107,14 @@
                         ChartColor(index)))
                     .ToList()))
             .ToList();
+        evolutionDataRevision++;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        CancelEvolutionRefinement();
+        return ValueTask.CompletedTask;
+    }
 
     private static string ChartColor(int index)
     {

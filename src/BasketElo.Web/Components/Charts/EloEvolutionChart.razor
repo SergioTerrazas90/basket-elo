@@ -28,7 +28,8 @@
                  AllowPan="@EnableRangeNavigation"
                  @bind-Zoom="chartZoom"
                  @bind-ViewStart="viewStart"
-                 @bind-ViewEnd="viewEnd">
+                 @bind-ViewEnd="viewEnd"
+                 ViewChange="@HandleViewChangeAsync">
         <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="@TooltipTrigger" />
         <RadzenLegend Visible="@ShowLegend" Position="LegendPosition.Bottom" />
 
@@ -92,6 +93,15 @@
     [Parameter]
     public int HeightPixels { get; set; } = 340;
 
+    [Parameter]
+    public long DataRevision { get; set; }
+
+    [Parameter]
+    public EventCallback<EloChartViewportRange> ViewportRefinementRequested { get; set; }
+
+    [Parameter]
+    public EventCallback FullRangeRequested { get; set; }
+
     private double chartZoom = 100;
     private double viewStart;
     private double viewEnd = 1;
@@ -100,6 +110,7 @@
     private IReadOnlyList<EloChartSeries> sourceSeries = [];
     private IReadOnlyList<EloChartSeries> displaySeries = [];
     private IReadOnlyList<EloChartPoint> allPoints = [];
+    private long renderedDataRevision = -1;
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
 
@@ -126,18 +137,19 @@
                 return "No range";
             }
 
-            var first = points.First().GameDateTimeUtc;
-            var last = points.Last().GameDateTimeUtc;
-            var span = last - first;
-            var visibleStart = first + TimeSpan.FromTicks((long)(span.Ticks * Math.Clamp(viewStart, 0, 1)));
-            var visibleEnd = first + TimeSpan.FromTicks((long)(span.Ticks * Math.Clamp(viewEnd, 0, 1)));
+            var visibleRange = GetVisibleDateRange(viewStart, viewEnd);
+            if (!visibleRange.HasValue)
+            {
+                return "No range";
+            }
 
-            return $"{SamplingLabel(samplingMode)}: {FormatDate(visibleStart)} - {FormatDate(visibleEnd)}";
+            return $"{SamplingLabel(samplingMode)}: {FormatDate(visibleRange.Value.FromUtc)} - {FormatDate(visibleRange.Value.ToUtc)}";
         }
     }
 
     protected override void OnParametersSet()
     {
+        var dataChanged = renderedDataRevision != DataRevision;
         sourceSeries = Series
             .Select(series => series with
             {
@@ -149,32 +161,35 @@
             .ToList();
         RebuildDisplaySeries();
 
-        if (!EnableRangeNavigation)
+        if (!EnableRangeNavigation || dataChanged)
         {
-            chartZoom = 100;
-            viewStart = 0;
-            viewEnd = 1;
+            ResetView();
+        }
+
+        renderedDataRevision = DataRevision;
+    }
+
+    private async Task ShowFullRange()
+    {
+        ResetView();
+        if (FullRangeRequested.HasDelegate)
+        {
+            await FullRangeRequested.InvokeAsync();
         }
     }
 
-    private void ShowFullRange()
-    {
-        chartZoom = 100;
-        viewStart = 0;
-        viewEnd = 1;
-    }
-
-    private void ShowRecentHalf()
+    private Task ShowRecentHalf()
         => SetRecentRange(0.5, 200);
 
-    private void ShowRecentQuarter()
+    private Task ShowRecentQuarter()
         => SetRecentRange(0.25, 400);
 
-    private void SetRecentRange(double fraction, double zoom)
+    private async Task SetRecentRange(double fraction, double zoom)
     {
         chartZoom = zoom;
         viewStart = 1 - fraction;
         viewEnd = 1;
+        await RequestViewportRefinementAsync(viewStart, viewEnd);
     }
 
     private void SetSamplingMode(EloChartSamplingMode mode)
@@ -186,7 +201,7 @@
 
         samplingMode = mode;
         RebuildDisplaySeries();
-        ShowFullRange();
+        ResetView();
     }
 
     private void RebuildDisplaySeries()
@@ -202,6 +217,65 @@
             .SelectMany(x => x.Points)
             .OrderBy(x => x.GameDateTimeUtc)
             .ToList();
+    }
+
+    private async Task HandleViewChangeAsync(ChartViewChangeEventArgs args)
+    {
+        chartZoom = args.Zoom;
+        viewStart = args.ViewStart;
+        viewEnd = args.ViewEnd;
+        await RequestViewportRefinementAsync(args.ViewStart, args.ViewEnd);
+    }
+
+    private async Task RequestViewportRefinementAsync(double requestedStart, double requestedEnd)
+    {
+        if (!ViewportRefinementRequested.HasDelegate || sourceSeries.Count == 0)
+        {
+            return;
+        }
+
+        var fullRange = GetVisibleDateRange(0, 1);
+        var requestedRange = GetVisibleDateRange(requestedStart, requestedEnd);
+        if (!fullRange.HasValue || !requestedRange.HasValue)
+        {
+            return;
+        }
+
+        if (requestedRange.Value.FromUtc.Date <= fullRange.Value.FromUtc.Date &&
+            requestedRange.Value.ToUtc.Date >= fullRange.Value.ToUtc.Date)
+        {
+            return;
+        }
+
+        await ViewportRefinementRequested.InvokeAsync(new EloChartViewportRange(
+            DateTime.SpecifyKind(requestedRange.Value.FromUtc, DateTimeKind.Utc),
+            DateTime.SpecifyKind(requestedRange.Value.ToUtc, DateTimeKind.Utc)));
+    }
+
+    private (DateTime FromUtc, DateTime ToUtc)? GetVisibleDateRange(double requestedStart, double requestedEnd)
+    {
+        var dates = allPoints
+            .Select(x => x.GameDateTimeUtc)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToList();
+        if (dates.Count == 0)
+        {
+            return null;
+        }
+
+        var startFraction = Math.Clamp(Math.Min(requestedStart, requestedEnd), 0, 1);
+        var endFraction = Math.Clamp(Math.Max(requestedStart, requestedEnd), 0, 1);
+        var startIndex = (int)Math.Floor(startFraction * (dates.Count - 1));
+        var endIndex = (int)Math.Ceiling(endFraction * (dates.Count - 1));
+        return (dates[startIndex], dates[endIndex]);
+    }
+
+    private void ResetView()
+    {
+        chartZoom = 100;
+        viewStart = 0;
+        viewEnd = 1;
     }
 
     private string SamplingButtonClass(EloChartSamplingMode mode)

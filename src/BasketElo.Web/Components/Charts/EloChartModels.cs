@@ -14,6 +14,10 @@ public sealed record EloChartPoint(
     decimal? EloDelta = null,
     int? Rank = null);
 
+public sealed record EloChartViewportRange(
+    DateTime FromUtc,
+    DateTime ToUtc);
+
 public enum EloChartSamplingMode
 {
     GameByGame,

@@ -76,6 +76,20 @@ Basket ELO stores ratings by ruleset version from day one:
 - `point-margin-elo-v1`: legacy ruleset, adjusted by point margin.
 - `adjusted-v1`: default public ruleset, adjusted by point margin with the issue #8 constants.
 
+After an NBA import, queue a competition-scoped rebuild so ratings and history for
+other competitions remain untouched:
+
+```powershell
+curl.exe -X POST "http://localhost:5001/api/elo/rebuilds" `
+  -H "Content-Type: application/json" `
+  -d '{"rulesetVersion":"adjusted-v1","competitionName":"NBA"}'
+```
+
+The run output includes `competitionName`, `gamesProcessed`, and `teamsRated`.
+Omit `competitionName` to retain the existing global rebuild behavior. NBA playoff
+and regular-season games currently use the same competition weight from the
+selected ruleset.
+
 See `docs/elo-rulesets.md` for the naming, constants, and point-margin conversion rationale.
 
 ## Run with Docker Compose

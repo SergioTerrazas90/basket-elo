@@ -21,20 +21,28 @@ public class EloRebuildService(
         }
 
         var rulesetVersion = run.RulesetVersion;
+        var competitionName = run.CompetitionName;
         var ruleset = EloCalculator.GetRulesetParameters(rulesetVersion);
 
         try
         {
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await using var transaction = dbContext.Database.IsRelational()
+                ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+                : null;
 
-            await dbContext.RatingHistories
-                .Where(x => x.RulesetVersion == rulesetVersion)
-                .ExecuteDeleteAsync(cancellationToken);
-            await dbContext.TeamRatings
-                .Where(x => x.RulesetVersion == rulesetVersion)
-                .ExecuteDeleteAsync(cancellationToken);
+            var scopedGames = dbContext.Games.AsQueryable();
+            if (!string.IsNullOrEmpty(competitionName))
+            {
+                scopedGames = scopedGames.Where(x => x.Competition.Name == competitionName);
+            }
 
-            var games = await dbContext.Games
+            await DeleteExistingRatingsAsync(
+                rulesetVersion,
+                competitionName,
+                scopedGames,
+                cancellationToken);
+
+            var games = await scopedGames
                 .AsNoTracking()
                 .Where(x => x.HomeScore.HasValue && x.AwayScore.HasValue && x.HomeScore != x.AwayScore)
                 .OrderBy(x => x.GameDateTimeUtc)
@@ -143,11 +151,16 @@ public class EloRebuildService(
                 kFactor = ruleset.KFactor,
                 homeAdvantageElo = ruleset.HomeAdvantageElo,
                 pointsPerEloMargin = ruleset.PointsPerEloMargin,
-                competitionWeight = ruleset.CompetitionWeight
+                competitionWeight = ruleset.CompetitionWeight,
+                competitionName = string.IsNullOrEmpty(competitionName) ? "all" : competitionName,
+                playoffPolicy = "Playoff and regular-season games use the current ruleset competition weight."
             });
 
             await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
             await PublishNotificationAsync(run, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -178,6 +191,7 @@ public class EloRebuildService(
         {
             RunId = run.Id,
             RulesetVersion = run.RulesetVersion,
+            CompetitionName = run.CompetitionName,
             Status = run.Status,
             GamesProcessed = run.GamesProcessed,
             TeamsRated = run.TeamsRated,
@@ -186,6 +200,55 @@ public class EloRebuildService(
             FinishedAtUtc = run.FinishedAtUtc,
             Notes = run.Notes
         };
+    }
+
+    private async Task DeleteExistingRatingsAsync(
+        string rulesetVersion,
+        string competitionName,
+        IQueryable<Game> scopedGames,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(competitionName))
+        {
+            if (dbContext.Database.IsRelational())
+            {
+                await dbContext.RatingHistories
+                    .Where(x => x.RulesetVersion == rulesetVersion)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.TeamRatings
+                    .Where(x => x.RulesetVersion == rulesetVersion)
+                    .ExecuteDeleteAsync(cancellationToken);
+                return;
+            }
+
+            dbContext.RatingHistories.RemoveRange(
+                await dbContext.RatingHistories.Where(x => x.RulesetVersion == rulesetVersion).ToListAsync(cancellationToken));
+            dbContext.TeamRatings.RemoveRange(
+                await dbContext.TeamRatings.Where(x => x.RulesetVersion == rulesetVersion).ToListAsync(cancellationToken));
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        var targetTeamIds = await scopedGames
+            .Select(x => x.HomeTeamId)
+            .Union(scopedGames.Select(x => x.AwayTeamId))
+            .ToListAsync(cancellationToken);
+        var histories = dbContext.RatingHistories.Where(x =>
+            x.RulesetVersion == rulesetVersion &&
+            x.Game.Competition.Name == competitionName);
+        var ratings = dbContext.TeamRatings.Where(x =>
+            x.RulesetVersion == rulesetVersion && targetTeamIds.Contains(x.TeamId));
+
+        if (dbContext.Database.IsRelational())
+        {
+            await histories.ExecuteDeleteAsync(cancellationToken);
+            await ratings.ExecuteDeleteAsync(cancellationToken);
+            return;
+        }
+
+        dbContext.RatingHistories.RemoveRange(await histories.ToListAsync(cancellationToken));
+        dbContext.TeamRatings.RemoveRange(await ratings.ToListAsync(cancellationToken));
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static RatingState GetRatingState(Dictionary<Guid, RatingState> ratings, Guid teamId)

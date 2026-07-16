@@ -16,7 +16,16 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowRecentQuarter">Recent quarter</button>
                 </div>
             </div>
-            <span>@ChartContextLabel</span>
+            <span class="elo-chart-context">
+                <span>@ChartContextLabel</span>
+                <span class="elo-chart-refinement-slot" aria-live="polite">
+                    @if (IsRefining)
+                    {
+                        <span class="spinner-border spinner-border-sm elo-chart-refinement-spinner" aria-hidden="true"></span>
+                        <span class="visually-hidden">Refreshing chart detail</span>
+                    }
+                </span>
+            </span>
         </div>
     }
 
@@ -95,6 +104,9 @@
 
     [Parameter]
     public long DataRevision { get; set; }
+
+    [Parameter]
+    public bool IsRefining { get; set; }
 
     [Parameter]
     public EventCallback<EloChartViewportRange> ViewportRefinementRequested { get; set; }

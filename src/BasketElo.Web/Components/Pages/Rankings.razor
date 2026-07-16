@@ -821,7 +821,7 @@
             $"rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}",
             $"pool={Uri.EscapeDataString(selectedPool)}",
             $"teamIds={Uri.EscapeDataString(teamIds)}",
-            "pointsPerTeam=0"
+            $"pointsPerTeam={EloEvolutionLimits.DefaultPointsPerTeam}"
         };
 
         Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));

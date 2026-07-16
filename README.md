@@ -148,8 +148,12 @@ Queue an inclusive configured season range:
 ```powershell
 curl.exe -X POST "http://localhost:5001/api/backfill/leagues/range/jobs" `
   -H "Content-Type: application/json" `
-  -d '{"provider":"basketball-reference","country":"United States","leagueName":"NBA","startSeason":"1946-1947","endSeason":"1959-1960","onlyMissing":true,"replaceExisting":false,"newestFirst":true,"dryRun":true,"maxRequests":8}'
+  -d '{"displayName":"United States: NBA","startSeason":"1946-1947","endSeason":"2025-2026","onlyMissing":true,"replaceExisting":false,"newestFirst":true,"dryRun":true,"maxRequests":8}'
 ```
+
+Logical league ranges can span provider boundaries. NBA seasons through
+`2007-2008` route to the pinned FiveThirtyEight archive; seasons from
+`2008-2009` route to API-Sports.
 
 Pending/running seasons are deduplicated. Transient HTTP 408, 429, 5xx, transport,
 and timeout failures retry with exponential backoff. Every attempt observes the

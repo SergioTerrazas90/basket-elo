@@ -38,11 +38,13 @@ public class BackfillJobProcessorTests
         var firstImport = await dbContext.Games.SingleAsync();
         var ingestedAtUtc = firstImport.IngestedAtUtc;
         Assert.Equal((short)90, firstImport.HomeScore);
+        Assert.Equal("scheduled", firstImport.Status);
         Assert.Equal("https://data.example.test/seasons/2024", firstImport.SourceUrl);
         Assert.Equal("2024", firstImport.SourceSeasonKey);
         Assert.Equal("fixture-parser-v1", firstImport.ParserVersion);
 
         provider.HomeScore = 94;
+        provider.Status = "finished";
         provider.Provenance = new BasketballProviderGameProvenance(
             "https://data.example.test/seasons/2024-revised",
             "2024",
@@ -59,6 +61,7 @@ public class BackfillJobProcessorTests
         var updated = await dbContext.Games.SingleAsync();
         Assert.Equal(ingestedAtUtc, updated.IngestedAtUtc);
         Assert.Equal((short)94, updated.HomeScore);
+        Assert.Equal("finished", updated.Status);
         Assert.Equal("https://data.example.test/seasons/2024-revised", updated.SourceUrl);
         Assert.Equal("revision-2", updated.SourceRevision);
         Assert.Equal("fixture-parser-v2", updated.ParserVersion);
@@ -127,6 +130,7 @@ public class BackfillJobProcessorTests
 
         public string SourceKey => Source;
         public short HomeScore { get; set; } = 90;
+        public string Status { get; set; } = "scheduled";
         public string? FailSeason { get; set; }
         public BasketballProviderGameProvenance Provenance { get; set; } = new(
             "https://data.example.test/seasons/2024",
@@ -163,7 +167,7 @@ public class BackfillJobProcessorTests
                     Source,
                     "game-1",
                     new DateTime(2025, 1, 1, 20, 0, 0, DateTimeKind.Utc),
-                    "finished",
+                    Status,
                     "home-1",
                     "Home Club",
                     "away-1",

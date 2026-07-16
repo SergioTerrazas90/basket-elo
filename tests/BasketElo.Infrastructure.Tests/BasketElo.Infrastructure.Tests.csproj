@@ -18,4 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BasketElo.Infrastructure\BasketElo.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

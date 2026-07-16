@@ -18,6 +18,7 @@ be silently joined to the NBA rating history.
 | Source | Role | Decision and limitations |
 | --- | --- | --- |
 | Operator-supplied licensed or otherwise authorized archive | Primary historical source | Required for the complete `1946-1947`-present load. The operator must record the supplier, permitted use, attribution, revision, and whether raw files may be retained before enabling an import. |
+| FiveThirtyEight `nbaallelo.csv` | Licensed historical archive | Approved for `1946-1947` through `2007-2008`. The official repository licenses its datasets under CC BY 4.0. Production uses repository revision `4c1ff5e3aef1816ae04af63218015066e186c147` and verifies SHA-256 `d46ed3540ee8d9eca31b3e94cc8c777e0be5156173d814ebf65b8195e8d616bc`. Only `lg_id=NBA`, `_iscopy=0` records are imported; ABA rows are excluded. Raw retention and public display are permitted with attribution. |
 | API-Sports Basketball | Current-season and historical fallback | The league coverage endpoint reported game coverage from `2008-2009` through `2025-2026` when verified on 2026-07-16. Coverage is not assumed before 2008 or after the verified range. Respect account quotas and response rate-limit headers. Its terms state that data is provided as-is and that publication rights remain the user's responsibility. |
 | Basketball-Reference | Manual validation and authorized offline input only | Its schedule pages visibly cover the inaugural `BAA_1947` season, but Sports Reference's data-use policy says not to create tools from scraped site data without permission and documents bot limiting. Production HTTP fetching is disabled unless the operator records express permission. An offline parser may process files the operator is authorized to use. |
 | NBA.com / NBA Stats | Manual validation only | NBA Stats says its data is for viewing on NBA.com and is not available for download. NBA.com's terms also restrict comprehensive, regularly updated statistical databases without consent. It is not a production ingestion source. |
@@ -67,6 +68,8 @@ replace a completed game from a higher-precedence source.
   regular-season opener; filtered counts remain in the job summary.
 - Licensed archives: follow the supplier's delivery and refresh contract. Local
   files do not bypass retention or redistribution limits.
+- The pinned FiveThirtyEight archive is local-only at runtime. A checksum
+  mismatch blocks import, and its public attribution must remain visible.
 
 ## Production gate
 
@@ -85,6 +88,9 @@ Before an NBA historical import can write to production, the operator must:
 - [Sports Reference data-use policy](https://www.sports-reference.com/data_use.html)
 - [Sports Reference bot-traffic guidance](https://www.sports-reference.com/bot-traffic.html)
 - [1946-47 BAA schedule page](https://www.basketball-reference.com/leagues/BAA_1947_games.html)
+- [FiveThirtyEight data repository](https://github.com/fivethirtyeight/data)
+- [FiveThirtyEight CC BY 4.0 license](https://github.com/fivethirtyeight/data/blob/master/LICENSE)
+- [Pinned FiveThirtyEight NBA archive](https://github.com/fivethirtyeight/data/blob/4c1ff5e3aef1816ae04af63218015066e186c147/nba-elo/nbaallelo.csv)
 - [NBA Stats FAQ](https://www.nba.com/stats/help/faq)
 - [NBA.com terms of use](https://www.nba.com/termsofuse)
 - [API-Sports Basketball documentation](https://api-sports.io/documentation/basketball/v1)

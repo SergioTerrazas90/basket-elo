@@ -40,4 +40,19 @@ public class BackfillCatalogTests
         Assert.Equal("2025-2026", nba.EndSeason);
         Assert.Equal(18, catalog.GetSeasonsForLeague(nba).Count);
     }
+
+    [Fact]
+    public void FiveThirtyEightNbaCoverageFillsPreApiSportsRange()
+    {
+        var catalog = new BackfillCatalog();
+        var nba = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FiveThirtyEightBasketballDataProvider.Source &&
+            league.Country == "United States" &&
+            league.LeagueName == "NBA");
+
+        var seasons = catalog.GetSeasonsForLeague(nba).ToList();
+        Assert.Equal("1946-1947", seasons[0]);
+        Assert.Equal("2007-2008", seasons[^1]);
+        Assert.Equal(62, seasons.Count);
+    }
 }

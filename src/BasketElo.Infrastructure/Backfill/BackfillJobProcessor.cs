@@ -477,10 +477,15 @@ public class BackfillJobProcessor(
         CancellationToken cancellationToken)
     {
         sourceTeamId = NormalizeSourceTeamId(sourceTeamId, teamName);
-        var franchiseMatch = string.Equals(
+        var usesNbaFranchiseCatalog = string.Equals(
                 source,
                 BasketballReferenceBasketballDataProvider.Source,
-                StringComparison.OrdinalIgnoreCase)
+                StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(
+                source,
+                FiveThirtyEightBasketballDataProvider.Source,
+                StringComparison.OrdinalIgnoreCase);
+        var franchiseMatch = usesNbaFranchiseCatalog
             ? NbaFranchiseCatalog.Resolve(sourceTeamId, teamName, SeasonLabelNormalizer.ParseStartYear(season))
             : null;
         var apiSportsCanonicalName = string.Equals(

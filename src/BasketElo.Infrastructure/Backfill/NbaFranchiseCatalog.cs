@@ -6,7 +6,7 @@ public static class NbaFranchiseCatalog
     [
         Active("hawks", "Atlanta Hawks", A("TRI", "Tri-Cities Blackhawks", 1949, 1950), A("MLH", "Milwaukee Hawks", 1951, 1954), A("STL", "St. Louis Hawks", 1955, 1967), A("ATL", "Atlanta Hawks", 1968)),
         Active("celtics", "Boston Celtics", A("BOS", "Boston Celtics", 1946)),
-        Active("nets", "Brooklyn Nets", A("NJA", "New Jersey Americans", 1967, 1967), A("NYA", "New York Nets", 1968, 1976), A("NJN", "New Jersey Nets", 1977, 2011), A("BRK", "Brooklyn Nets", 2012)),
+        Active("nets", "Brooklyn Nets", A("NJA", "New Jersey Americans", 1967, 1967), A("NYA", "New York Nets", 1968, 1976), A("NYN", "New York Nets", 1976, 1976), A("NJN", "New Jersey Nets", 1977, 2011), A("BRK", "Brooklyn Nets", 2012)),
         Active("hornets", "Charlotte Hornets", A("CHH", "Charlotte Hornets", 1988, 2001), A("CHA", "Charlotte Bobcats", 2004, 2013), A("CHO", "Charlotte Hornets", 2014)),
         Active("bulls", "Chicago Bulls", A("CHI", "Chicago Bulls", 1966)),
         Active("cavaliers", "Cleveland Cavaliers", A("CLE", "Cleveland Cavaliers", 1970)),
@@ -33,7 +33,7 @@ public static class NbaFranchiseCatalog
         Active("spurs", "San Antonio Spurs", A("DTX", "Dallas Chaparrals", 1967, 1969), A("TEX", "Texas Chaparrals", 1970, 1972), A("SAS", "San Antonio Spurs", 1973)),
         Active("raptors", "Toronto Raptors", A("TOR", "Toronto Raptors", 1995)),
         Active("jazz", "Utah Jazz", A("NOJ", "New Orleans Jazz", 1974, 1978), A("UTA", "Utah Jazz", 1979)),
-        Active("wizards", "Washington Wizards", A("CHP", "Chicago Packers", 1961, 1961), A("CHZ", "Chicago Zephyrs", 1962, 1962), A("BLT", "Baltimore Bullets", 1963, 1972), A("CAP", "Capital Bullets", 1973, 1973), A("WSB", "Washington Bullets", 1974, 1996), A("WAS", "Washington Wizards", 1997)),
+        Active("wizards", "Washington Wizards", A("CHP", "Chicago Packers", 1961, 1961), A("CHZ", "Chicago Zephyrs", 1962, 1962), A("BLT", "Baltimore Bullets", 1963, 1972), A("BAL", "Baltimore Bullets", 1963, 1972), A("CAP", "Capital Bullets", 1973, 1973), A("WSB", "Washington Bullets", 1974, 1996), A("WAS", "Washington Wizards", 1997)),
         Defunct("anderson-packers", "Anderson Packers", A("AND", "Anderson Packers", 1949, 1949)),
         Defunct("baltimore-bullets", "Baltimore Bullets (1947-1954)", A("BLB", "Baltimore Bullets", 1947, 1953)),
         Defunct("chicago-stags", "Chicago Stags", A("CHS", "Chicago Stags", 1946, 1949)),

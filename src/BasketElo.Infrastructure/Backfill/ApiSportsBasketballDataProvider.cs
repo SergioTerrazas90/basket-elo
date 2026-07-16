@@ -11,6 +11,7 @@ public class ApiSportsBasketballDataProvider(
     IApiSportsLeagueCache leagueCache) : IBasketballDataProvider
 {
     public const string Source = "api-sports";
+    public const string ParserVersion = "api-sports-v1";
     public string SourceKey => Source;
 
     public async Task<BasketballProviderLeague?> ResolveLeagueAsync(
@@ -113,6 +114,7 @@ public class ApiSportsBasketballDataProvider(
         response.EnsureSuccessStatusCode();
 
         var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        var fetchedAtUtc = DateTime.UtcNow;
         using var document = JsonDocument.Parse(payload);
         var games = new List<BasketballProviderGame>();
         var warnings = ExtractApiWarnings(document.RootElement);
@@ -166,10 +168,22 @@ public class ApiSportsBasketballDataProvider(
                 away.GetProperty("id").ToString(),
                 away.GetProperty("name").GetString() ?? "Unknown Away",
                 homeScore,
-                awayScore));
+                awayScore,
+                new BasketballProviderGameProvenance(
+                    BuildSourceUrl(uri),
+                    seasonParameter,
+                    fetchedAtUtc,
+                    ParserVersion)));
         }
 
         return (games, hasMorePages, warnings);
+    }
+
+    private string BuildSourceUrl(string relativePath)
+    {
+        return httpClient.BaseAddress is null
+            ? relativePath
+            : new Uri(httpClient.BaseAddress, relativePath).ToString();
     }
 
     private static IReadOnlyCollection<string> ExtractApiWarnings(JsonElement root)

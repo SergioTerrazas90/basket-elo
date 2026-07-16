@@ -146,6 +146,22 @@ public class BackfillJobProcessor(
 
         summary.ProviderLeagues.AddRange(resolvedLeagues.Select(x => $"{x.Name} ({x.SourceLeagueId})"));
         summary.Warnings.AddRange(warnings);
+        summary.SourceUrls.AddRange(allGames
+            .Select(x => x.Provenance?.SourceUrl)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal));
+        summary.SourceSeasonKeys.AddRange(allGames
+            .Select(x => x.Provenance?.SourceSeasonKey)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal));
+        summary.ParserVersions.AddRange(allGames
+            .Select(x => x.Provenance?.ParserVersion)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal));
+        summary.SourceFetchedAtUtc = allGames
+            .Select(x => x.Provenance?.FetchedAtUtc)
+            .Where(x => x.HasValue)
+            .Max();
 
         if (!job.DryRun)
         {
@@ -176,6 +192,11 @@ public class BackfillJobProcessor(
                         Id = Guid.NewGuid(),
                         Source = providerGame.Source,
                         SourceGameId = providerGame.SourceGameId,
+                        SourceUrl = providerGame.Provenance?.SourceUrl,
+                        SourceSeasonKey = providerGame.Provenance?.SourceSeasonKey,
+                        SourceFetchedAtUtc = providerGame.Provenance?.FetchedAtUtc,
+                        SourceRevision = providerGame.Provenance?.SourceRevision,
+                        ParserVersion = providerGame.Provenance?.ParserVersion,
                         CompetitionId = competition.Id,
                         SeasonId = season.Id,
                         GameDateTimeUtc = providerGame.GameDateTimeUtc,
@@ -198,6 +219,11 @@ public class BackfillJobProcessor(
                     existingGame.HomeScore = providerGame.HomeScore;
                     existingGame.AwayScore = providerGame.AwayScore;
                     existingGame.Status = providerGame.Status;
+                    existingGame.SourceUrl = providerGame.Provenance?.SourceUrl;
+                    existingGame.SourceSeasonKey = providerGame.Provenance?.SourceSeasonKey;
+                    existingGame.SourceFetchedAtUtc = providerGame.Provenance?.FetchedAtUtc;
+                    existingGame.SourceRevision = providerGame.Provenance?.SourceRevision;
+                    existingGame.ParserVersion = providerGame.Provenance?.ParserVersion;
                     existingGame.UpdatedAtUtc = DateTime.UtcNow;
                     summary.GamesUpdated += 1;
                 }
@@ -561,6 +587,10 @@ public class BackfillJobProcessor(
         public int GamesInserted { get; set; }
         public int GamesUpdated { get; set; }
         public List<string> ProviderLeagues { get; } = [];
+        public List<string> SourceUrls { get; } = [];
+        public List<string> SourceSeasonKeys { get; } = [];
+        public List<string> ParserVersions { get; } = [];
+        public DateTime? SourceFetchedAtUtc { get; set; }
         public List<string> Warnings { get; } = [];
         public string? IdentityHealthStatus { get; set; }
         public int IdentityFindingsCount { get; set; }

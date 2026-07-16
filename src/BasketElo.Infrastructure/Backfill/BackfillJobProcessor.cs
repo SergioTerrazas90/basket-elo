@@ -176,8 +176,8 @@ public class BackfillJobProcessor(
 
             foreach (var providerGame in allGames)
             {
-                var homeTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceHomeTeamId, providerGame.HomeTeamName, competition.CountryCode, cancellationToken);
-                var awayTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceAwayTeamId, providerGame.AwayTeamName, competition.CountryCode, cancellationToken);
+                var homeTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceHomeTeamId, providerGame.HomeTeamName, competition.CountryCode, canonicalSeason, cancellationToken);
+                var awayTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceAwayTeamId, providerGame.AwayTeamName, competition.CountryCode, canonicalSeason, cancellationToken);
 
                 var existingGame = await dbContext.Games
                     .FirstOrDefaultAsync(x =>
@@ -411,9 +411,16 @@ public class BackfillJobProcessor(
         string sourceTeamId,
         string teamName,
         string? countryCode,
+        string season,
         CancellationToken cancellationToken)
     {
         sourceTeamId = NormalizeSourceTeamId(sourceTeamId, teamName);
+        var franchiseMatch = string.Equals(
+                source,
+                BasketballReferenceBasketballDataProvider.Source,
+                StringComparison.OrdinalIgnoreCase)
+            ? NbaFranchiseCatalog.Resolve(sourceTeamId, teamName, SeasonLabelNormalizer.ParseStartYear(season))
+            : null;
 
         var alias = await dbContext.TeamAliases
             .Include(x => x.Team)
@@ -424,6 +431,29 @@ public class BackfillJobProcessor(
         if (alias is not null)
         {
             var aliasChanged = false;
+
+            if (franchiseMatch is not null)
+            {
+                if (alias.Team.CanonicalName != franchiseMatch.Franchise.CanonicalName)
+                {
+                    alias.Team.CanonicalName = franchiseMatch.Franchise.CanonicalName;
+                    aliasChanged = true;
+                }
+
+                if (alias.Team.IsActive != franchiseMatch.Franchise.IsActive)
+                {
+                    alias.Team.IsActive = franchiseMatch.Franchise.IsActive;
+                    aliasChanged = true;
+                }
+
+                var (validFromUtc, validToUtc) = NbaFranchiseCatalog.GetValidity(franchiseMatch.Alias);
+                if (alias.ValidFromUtc != validFromUtc || alias.ValidToUtc != validToUtc)
+                {
+                    alias.ValidFromUtc = validFromUtc;
+                    alias.ValidToUtc = validToUtc;
+                    aliasChanged = true;
+                }
+            }
 
             if (alias.Team.CountryCode == "UNK" && !string.IsNullOrWhiteSpace(countryCode))
             {
@@ -441,6 +471,9 @@ public class BackfillJobProcessor(
 
             if (!hasObservedName)
             {
+                var (validFromUtc, validToUtc) = franchiseMatch is null
+                    ? (null, null)
+                    : NbaFranchiseCatalog.GetValidity(franchiseMatch.Alias);
                 dbContext.TeamAliases.Add(new TeamAlias
                 {
                     Id = Guid.NewGuid(),
@@ -448,6 +481,8 @@ public class BackfillJobProcessor(
                     Source = source,
                     SourceTeamId = sourceTeamId,
                     AliasName = teamName,
+                    ValidFromUtc = validFromUtc,
+                    ValidToUtc = validToUtc,
                     CreatedAtUtc = DateTime.UtcNow
                 });
 
@@ -462,15 +497,48 @@ public class BackfillJobProcessor(
             return alias.Team;
         }
 
-        var team = new Team
+        Team? team = null;
+        if (franchiseMatch is not null)
         {
-            Id = Guid.NewGuid(),
-            CanonicalName = teamName,
-            CountryCode = string.IsNullOrWhiteSpace(countryCode) ? "UNK" : countryCode,
-            IsActive = true,
-            CreatedAtUtc = DateTime.UtcNow
-        };
-        dbContext.Teams.Add(team);
+            var franchiseSourceIds = NbaFranchiseCatalog.GetSourceTeamIds(franchiseMatch.Franchise.Key);
+            team = await dbContext.TeamAliases
+                .Where(existingAlias =>
+                    existingAlias.Source == source &&
+                    franchiseSourceIds.Contains(existingAlias.SourceTeamId))
+                .Select(existingAlias => existingAlias.Team)
+                .FirstOrDefaultAsync(cancellationToken);
+            team ??= await dbContext.Teams.FirstOrDefaultAsync(
+                existingTeam =>
+                    existingTeam.CanonicalName == franchiseMatch.Franchise.CanonicalName &&
+                    existingTeam.CountryCode == countryCode,
+                cancellationToken);
+        }
+
+        if (team is null)
+        {
+            team = new Team
+            {
+                Id = Guid.NewGuid(),
+                CanonicalName = franchiseMatch?.Franchise.CanonicalName ?? teamName,
+                CountryCode = string.IsNullOrWhiteSpace(countryCode) ? "UNK" : countryCode,
+                IsActive = franchiseMatch?.Franchise.IsActive ?? true,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            dbContext.Teams.Add(team);
+        }
+        else if (franchiseMatch is not null)
+        {
+            team.CanonicalName = franchiseMatch.Franchise.CanonicalName;
+            team.IsActive = franchiseMatch.Franchise.IsActive;
+            if (team.CountryCode == "UNK" && !string.IsNullOrWhiteSpace(countryCode))
+            {
+                team.CountryCode = countryCode;
+            }
+        }
+
+        var (newAliasValidFromUtc, newAliasValidToUtc) = franchiseMatch is null
+            ? (null, null)
+            : NbaFranchiseCatalog.GetValidity(franchiseMatch.Alias);
 
         dbContext.TeamAliases.Add(new TeamAlias
         {
@@ -479,6 +547,8 @@ public class BackfillJobProcessor(
             Source = source,
             SourceTeamId = sourceTeamId,
             AliasName = teamName,
+            ValidFromUtc = newAliasValidFromUtc,
+            ValidToUtc = newAliasValidToUtc,
             CreatedAtUtc = DateTime.UtcNow
         });
 

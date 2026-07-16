@@ -6,6 +6,7 @@ public class BackfillCatalog : IBackfillCatalog
 {
     private static readonly IReadOnlyCollection<ConfiguredBackfillLeague> Leagues =
     [
+        new("basketball-reference", "United States", "NBA", "United States: NBA", "1946-1947"),
         new("api-sports", "Spain", "ACB", "Spain: ACB", "2008-2009", EndSeason: "2025-2026"),
         new("api-sports", "Spain", "Spanish Cup", "Spain: Copa del Rey", "2008", CompetitionType: "domestic_cup"),
         new("api-sports", "Spain", "Supercopa ACB", "Spain: Supercopa ACB", "2010", CompetitionType: "domestic_cup", EndSeason: "2025"),

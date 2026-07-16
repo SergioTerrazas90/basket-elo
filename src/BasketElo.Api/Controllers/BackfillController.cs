@@ -39,9 +39,10 @@ public class BackfillController(
         }
 
         if (string.IsNullOrWhiteSpace(request.Provider) ||
-            !string.Equals(request.Provider, "api-sports", StringComparison.OrdinalIgnoreCase))
+            (!string.Equals(request.Provider, ApiSportsBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, BasketballReferenceBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase)))
         {
-            return BadRequest("Only provider 'api-sports' is supported in MVP.");
+            return BadRequest("Supported providers are 'api-sports' and 'basketball-reference'.");
         }
 
         var job = BuildJob(request);

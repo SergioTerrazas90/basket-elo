@@ -27,10 +27,35 @@ public class EloController(
         return Ok(BuildRulesetCatalog());
     }
 
+    [HttpGet("pools")]
+    public async Task<ActionResult<EloPoolCatalogResponse>> GetPools(CancellationToken cancellationToken)
+    {
+        var options = new List<EloPoolOption>();
+        foreach (var descriptor in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
+        {
+            var ratings = dbContext.TeamRatings.AsNoTracking()
+                .Where(x => x.EloPoolKey == descriptor.Key && x.RulesetVersion == EloRulesetVersions.Default);
+            options.Add(new EloPoolOption(
+                descriptor.Key,
+                descriptor.DisplayName,
+                await ratings.AnyAsync(cancellationToken),
+                await ratings.CountAsync(cancellationToken),
+                await ratings.Select(x => x.LastGame!.GameDateTimeUtc).MaxAsync(x => (DateTime?)x, cancellationToken),
+                await dbContext.EloRebuildRuns.AsNoTracking()
+                    .Where(x => x.EloPoolKey == descriptor.Key &&
+                        x.RulesetVersion == EloRulesetVersions.Default &&
+                        x.Status == EloRebuildRunStatus.Completed)
+                    .MaxAsync(x => x.FinishedAtUtc, cancellationToken)));
+        }
+
+        return Ok(new EloPoolCatalogResponse(EloPoolKeys.Default, options));
+    }
+
     [HttpGet("dashboard")]
     [RequireInternalAdmin]
     public async Task<ActionResult<EloDashboardResponse>> GetDashboard(
         [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
         [FromQuery] int limit = 10,
         CancellationToken cancellationToken = default)
     {
@@ -39,42 +64,53 @@ public class EloController(
         {
             return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
         }
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
 
         limit = Math.Clamp(limit, 1, 50);
 
         var completedGamesQuery = dbContext.Games
             .AsNoTracking()
-            .Where(x => x.HomeScore.HasValue && x.AwayScore.HasValue && x.HomeScore != x.AwayScore);
+            .Where(x => x.Competition.EloPoolKey == poolKey &&
+                x.HomeScore.HasValue && x.AwayScore.HasValue && x.HomeScore != x.AwayScore);
 
         var summary = new EloDashboardSummary(
+            poolKey,
             selectedRuleset,
             await completedGamesQuery.CountAsync(cancellationToken),
             await completedGamesQuery.CountAsync(
                 x => !dbContext.RatingHistories.Any(history =>
                     history.GameId == x.Id &&
+                    history.EloPoolKey == poolKey &&
                     history.RulesetVersion == selectedRuleset),
                 cancellationToken),
             await dbContext.TeamRatings
                 .AsNoTracking()
-                .CountAsync(x => x.RulesetVersion == selectedRuleset, cancellationToken),
+                .CountAsync(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset, cancellationToken),
             await completedGamesQuery.MaxAsync(x => (DateTime?)x.GameDateTimeUtc, cancellationToken),
             await dbContext.EloRebuildRuns
                 .AsNoTracking()
                 .Where(x =>
                     x.RulesetVersion == selectedRuleset &&
+                    x.EloPoolKey == poolKey &&
                     x.Status == EloRebuildRunStatus.Completed)
                 .MaxAsync(x => x.FinishedAtUtc, cancellationToken),
             await dbContext.EloRebuildRuns
                 .AsNoTracking()
-                .Where(x => x.RulesetVersion == selectedRuleset)
+                .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
                 .MaxAsync(x => (DateTime?)x.QueuedAtUtc, cancellationToken));
 
         var runs = await dbContext.EloRebuildRuns
             .AsNoTracking()
+            .Where(x => x.EloPoolKey == poolKey)
             .OrderByDescending(x => x.QueuedAtUtc)
             .Take(limit)
             .Select(x => new EloRebuildRunDto(
                 x.Id,
+                x.EloPoolKey,
                 x.RulesetVersion,
                 x.CompetitionName,
                 x.Status,
@@ -96,6 +132,7 @@ public class EloController(
     [HttpGet("rankings")]
     public async Task<ActionResult<EloRankingsResponse>> GetRankings(
         [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
         [FromQuery] string? country,
         [FromQuery] string? competition,
         [FromQuery] string? season,
@@ -108,7 +145,16 @@ public class EloController(
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
     {
-        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, cancellationToken);
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
+        if (!await CompetitionBelongsToPoolAsync(competition, poolKey, cancellationToken))
+        {
+            return BadRequest($"Competition '{competition}' does not belong to ELO pool '{poolKey}'.");
+        }
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
         if (selectedRuleset is null)
         {
             return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
@@ -125,7 +171,7 @@ public class EloController(
 
             var archiveHistoryRows = await dbContext.RatingHistories
                 .AsNoTracking()
-                .Where(x => x.RulesetVersion == selectedRuleset && x.GameDateTimeUtc <= cutoffUtc)
+                .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset && x.GameDateTimeUtc <= cutoffUtc)
                 .Select(x => new HistoricalRankingRow(
                     x.TeamId,
                     x.Team.CanonicalName,
@@ -175,7 +221,7 @@ public class EloController(
 
             if (HasHistoryFilter(competition, season, fromUtc, toUtc))
             {
-                var historyTeamIds = await BuildHistoryFilterQuery(selectedRuleset, competition, season, fromUtc, toUtc)
+                var historyTeamIds = await BuildHistoryFilterQuery(poolKey, selectedRuleset, competition, season, fromUtc, toUtc)
                     .Where(x => x.GameDateTimeUtc <= cutoffUtc)
                     .Select(x => x.TeamId)
                     .Distinct()
@@ -191,6 +237,7 @@ public class EloController(
                 .ToList();
 
             var archiveRecentMovement = await GetRecentMovementAsync(
+                poolKey,
                 selectedRuleset,
                 archiveFilteredRatings.Select(x => x.TeamId).ToList(),
                 cutoffUtc,
@@ -223,9 +270,11 @@ public class EloController(
                 : globalArchiveRatings.Max(x => (DateTime?)x.GameDateTimeUtc);
 
             return Ok(new EloRankingsResponse(
+                poolKey,
+                EloPoolKeys.DisplayName(poolKey),
                 selectedRuleset,
                 archiveRows,
-                await BuildRankingFilterOptionsAsync(selectedRuleset, cancellationToken),
+                await BuildRankingFilterOptionsAsync(poolKey, selectedRuleset, cancellationToken),
                 new EloRankingSummary(
                     globalArchiveRatings.Count,
                     archiveFilteredCount,
@@ -248,7 +297,7 @@ public class EloController(
             .AsNoTracking()
             .Include(x => x.Team)
             .Include(x => x.LastGame)
-            .Where(x => x.RulesetVersion == selectedRuleset)
+            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
             .OrderByDescending(x => x.Elo)
             .ThenBy(x => x.Team.CanonicalName)
             .ToListAsync(cancellationToken);
@@ -282,7 +331,7 @@ public class EloController(
 
         if (HasHistoryFilter(competition, season, fromUtc, toUtc))
         {
-            var historyTeamIds = await BuildHistoryFilterQuery(selectedRuleset, competition, season, fromUtc, toUtc)
+            var historyTeamIds = await BuildHistoryFilterQuery(poolKey, selectedRuleset, competition, season, fromUtc, toUtc)
                 .Select(x => x.TeamId)
                 .Distinct()
                 .ToListAsync(cancellationToken);
@@ -297,6 +346,7 @@ public class EloController(
             .ToList();
 
         var recentMovement = await GetRecentMovementAsync(
+            poolKey,
             selectedRuleset,
             filteredRatings.Select(x => x.TeamId).ToList(),
             null,
@@ -325,9 +375,11 @@ public class EloController(
             .ToList();
 
         return Ok(new EloRankingsResponse(
+            poolKey,
+            EloPoolKeys.DisplayName(poolKey),
             selectedRuleset,
             rows,
-            await BuildRankingFilterOptionsAsync(selectedRuleset, cancellationToken),
+            await BuildRankingFilterOptionsAsync(poolKey, selectedRuleset, cancellationToken),
             new EloRankingSummary(
                 globalRatings.Count,
                 filteredCount,
@@ -345,6 +397,7 @@ public class EloController(
     [HttpGet("rankings/evolution")]
     public async Task<ActionResult<EloRankingsEvolutionResponse>> GetRankingEvolution(
         [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
         [FromQuery] string? teamIds,
         [FromQuery] string? competition,
         [FromQuery] string? season,
@@ -353,7 +406,16 @@ public class EloController(
         [FromQuery] int pointsPerTeam = 0,
         CancellationToken cancellationToken = default)
     {
-        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, cancellationToken);
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
+        if (!await CompetitionBelongsToPoolAsync(competition, poolKey, cancellationToken))
+        {
+            return BadRequest($"Competition '{competition}' does not belong to ELO pool '{poolKey}'.");
+        }
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
         if (selectedRuleset is null)
         {
             return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
@@ -362,7 +424,7 @@ public class EloController(
         var selectedTeamIds = ParseTeamIds(teamIds).Take(20).ToList();
         if (selectedTeamIds.Count == 0)
         {
-            return Ok(new EloRankingsEvolutionResponse(selectedRuleset, []));
+            return Ok(new EloRankingsEvolutionResponse(poolKey, selectedRuleset, []));
         }
 
         var includeFullHistory = pointsPerTeam <= 0;
@@ -408,7 +470,8 @@ public class EloController(
                     INNER JOIN games g ON g."Id" = rh."GameId"
                     INNER JOIN seasons s ON s."Id" = g."SeasonId"
                     INNER JOIN competitions c ON c."Id" = g."CompetitionId"
-                    WHERE rh."RulesetVersion" = @rulesetVersion
+                    WHERE rh."EloPoolKey" = @poolKey
+                      AND rh."RulesetVersion" = @rulesetVersion
                       AND rh."TeamId" = ANY(@teamIds)
                       AND rh."GameDateTimeUtc" >= @startUtc
                       AND rh."GameDateTimeUtc" <= @cutoffUtc
@@ -429,6 +492,7 @@ public class EloController(
                 WHERE @includeFullHistory OR "RowNumber" <= @pointsPerTeam
                 ORDER BY "TeamId", "GameDateTimeUtc", "Elo"
                 """,
+                new NpgsqlParameter("poolKey", poolKey),
                 new NpgsqlParameter("rulesetVersion", selectedRuleset),
                 new NpgsqlParameter("teamIds", selectedTeamIds.ToArray()) { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid },
                 new NpgsqlParameter("startUtc", startUtc),
@@ -457,12 +521,13 @@ public class EloController(
             .OrderBy(x => selectedTeamIds.IndexOf(x.TeamId))
             .ToList();
 
-        return Ok(new EloRankingsEvolutionResponse(selectedRuleset, series));
+        return Ok(new EloRankingsEvolutionResponse(poolKey, selectedRuleset, series));
     }
 
     [HttpGet("rankings/movers")]
     public async Task<ActionResult<EloMoversResponse>> GetMovers(
         [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
         [FromQuery] string? direction,
         [FromQuery] int windowDays = 30,
         [FromQuery] string? country = null,
@@ -476,7 +541,16 @@ public class EloController(
         [FromQuery] int pageSize = 25,
         CancellationToken cancellationToken = default)
     {
-        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, cancellationToken);
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
+        if (!await CompetitionBelongsToPoolAsync(competition, poolKey, cancellationToken))
+        {
+            return BadRequest($"Competition '{competition}' does not belong to ELO pool '{poolKey}'.");
+        }
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
         if (selectedRuleset is null)
         {
             return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
@@ -492,13 +566,14 @@ public class EloController(
 
         var latestGameUtc = await dbContext.RatingHistories
             .AsNoTracking()
-            .Where(x => x.RulesetVersion == selectedRuleset)
+            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
             .MaxAsync(x => (DateTime?)x.GameDateTimeUtc, cancellationToken);
 
         if (latestGameUtc is null)
         {
             var now = DateTime.UtcNow;
             return Ok(new EloMoversResponse(
+                poolKey,
                 selectedRuleset,
                 normalizedDirection,
                 now.AddDays(-windowDays),
@@ -526,7 +601,7 @@ public class EloController(
         var currentRatings = await dbContext.TeamRatings
             .AsNoTracking()
             .Include(x => x.Team)
-            .Where(x => x.RulesetVersion == selectedRuleset)
+            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
             .ToListAsync(cancellationToken);
 
         var filteredTeamIds = currentRatings.Select(x => x.TeamId).ToHashSet();
@@ -556,6 +631,7 @@ public class EloController(
         var movementQuery = dbContext.RatingHistories
             .AsNoTracking()
             .Where(x =>
+                x.EloPoolKey == poolKey &&
                 x.RulesetVersion == selectedRuleset &&
                 filteredTeamIds.Contains(x.TeamId) &&
                 x.GameDateTimeUtc >= windowStart &&
@@ -635,6 +711,7 @@ public class EloController(
             .ToList();
 
         return Ok(new EloMoversResponse(
+            poolKey,
             selectedRuleset,
             normalizedDirection,
             windowStart,
@@ -658,12 +735,6 @@ public class EloController(
         [FromQuery] string? rulesetVersion,
         CancellationToken cancellationToken = default)
     {
-        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, cancellationToken);
-        if (selectedRuleset is null)
-        {
-            return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
-        }
-
         var game = await dbContext.Games
             .AsNoTracking()
             .Include(x => x.Competition)
@@ -677,10 +748,21 @@ public class EloController(
             return NotFound();
         }
 
+        var poolKey = game.Competition.EloPoolKey;
+        if (string.IsNullOrWhiteSpace(poolKey))
+        {
+            return Conflict("The game's competition is not assigned to an ELO pool.");
+        }
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
+        if (selectedRuleset is null)
+        {
+            return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
+        }
+
         var ruleset = EloCalculator.GetRulesetParameters(selectedRuleset);
         var histories = await dbContext.RatingHistories
             .AsNoTracking()
-            .Where(x => x.GameId == gameId && x.RulesetVersion == selectedRuleset)
+            .Where(x => x.GameId == gameId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
             .Select(x => new GameExplanationHistoryRow(
                 x.TeamId,
                 x.Team.CanonicalName,
@@ -702,6 +784,7 @@ public class EloController(
 
         return Ok(new EloGameExplanationResponse(
             game.Id,
+            poolKey,
             selectedRuleset,
             game.GameDateTimeUtc,
             game.Competition.Name,
@@ -729,11 +812,17 @@ public class EloController(
     public async Task<ActionResult<EloTeamDetailResponse>> GetTeam(
         Guid teamId,
         [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
         [FromQuery] int gamesPage = 1,
         [FromQuery] int gamesPageSize = 25,
         CancellationToken cancellationToken = default)
     {
-        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, cancellationToken);
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
         if (selectedRuleset is null)
         {
             return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
@@ -746,7 +835,7 @@ public class EloController(
             .AsNoTracking()
             .Include(x => x.Team)
             .Include(x => x.LastGame)
-            .SingleOrDefaultAsync(x => x.TeamId == teamId && x.RulesetVersion == selectedRuleset, cancellationToken);
+            .SingleOrDefaultAsync(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset, cancellationToken);
 
         if (rating is null)
         {
@@ -755,14 +844,14 @@ public class EloController(
 
         var globalRank = await dbContext.TeamRatings
             .AsNoTracking()
-            .CountAsync(x => x.RulesetVersion == selectedRuleset && x.Elo > rating.Elo, cancellationToken) + 1;
+            .CountAsync(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset && x.Elo > rating.Elo, cancellationToken) + 1;
 
-        var recentMovement = (await GetRecentMovementAsync(selectedRuleset, [teamId], null, cancellationToken))
+        var recentMovement = (await GetRecentMovementAsync(poolKey, selectedRuleset, [teamId], null, cancellationToken))
             .GetValueOrDefault(teamId);
 
         var competitionRows = await dbContext.RatingHistories
             .AsNoTracking()
-            .Where(x => x.TeamId == teamId && x.RulesetVersion == selectedRuleset)
+            .Where(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
             .Include(x => x.Game)
             .ThenInclude(x => x.Competition)
             .Select(x => x.Game.Competition.Name)
@@ -772,7 +861,7 @@ public class EloController(
 
         var teamGamesQuery = dbContext.RatingHistories
             .AsNoTracking()
-            .Where(x => x.TeamId == teamId && x.RulesetVersion == selectedRuleset);
+            .Where(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset);
 
         var gamesTotalCount = await teamGamesQuery.CountAsync(cancellationToken);
         var gamesTotalPages = Math.Max(1, (int)Math.Ceiling(gamesTotalCount / (double)gamesPageSize));
@@ -807,7 +896,7 @@ public class EloController(
 
         var historyRows = await dbContext.RatingHistories
             .AsNoTracking()
-            .Where(x => x.TeamId == teamId && x.RulesetVersion == selectedRuleset)
+            .Where(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
             .OrderBy(x => x.GameDateTimeUtc)
             .ThenBy(x => x.Id)
             .Select(x => new EloRatingHistoryPoint(
@@ -817,12 +906,14 @@ public class EloController(
                 x.RatingPositionAfter))
             .ToListAsync(cancellationToken);
 
-        var formRows = await GetTeamFormRowsAsync(teamId, selectedRuleset, cancellationToken);
+        var formRows = await GetTeamFormRowsAsync(teamId, poolKey, selectedRuleset, cancellationToken);
 
         return Ok(new EloTeamDetailResponse(
             rating.TeamId,
             rating.Team.CanonicalName,
             DisplayCountryFromCode(rating.Team.CountryCode),
+            poolKey,
+            EloPoolKeys.DisplayName(poolKey),
             selectedRuleset,
             rating.Elo,
             globalRank,
@@ -846,17 +937,19 @@ public class EloController(
         CancellationToken cancellationToken)
     {
         var requestedRuleset = request?.RulesetVersion;
-        var competitionName = request?.CompetitionName?.Trim() ?? string.Empty;
-        var competitionIds = string.IsNullOrEmpty(competitionName)
-            ? null
-            : await dbContext.Competitions
-                .Where(x => x.Name == competitionName)
-                .Select(x => x.Id)
-                .ToListAsync(cancellationToken);
-        if (competitionIds is { Count: 0 })
+        var poolKey = ResolvePoolOrDefault(request?.PoolKey);
+        if (poolKey is null)
         {
-            return BadRequest($"Competition '{competitionName}' was not found.");
+            return BadRequest($"Unsupported ELO pool '{request?.PoolKey}'.");
         }
+
+        var poolHasCompetitions = await dbContext.Competitions
+            .AnyAsync(x => x.EloPoolKey == poolKey, cancellationToken);
+        if (!poolHasCompetitions && poolKey != EloPoolKeys.NationalTeams)
+        {
+            return BadRequest($"ELO pool '{poolKey}' has no assigned competitions.");
+        }
+
         IReadOnlyList<string> rulesets;
         if (string.IsNullOrWhiteSpace(requestedRuleset) ||
             string.Equals(requestedRuleset, "all", StringComparison.OrdinalIgnoreCase))
@@ -876,9 +969,7 @@ public class EloController(
 
         var activeRulesets = await dbContext.EloRebuildRuns
             .Where(x => rulesets.Contains(x.RulesetVersion) &&
-                (competitionName == string.Empty ||
-                 x.CompetitionName == string.Empty ||
-                 x.CompetitionName == competitionName) &&
+                x.EloPoolKey == poolKey &&
                 (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running))
             .Select(x => x.RulesetVersion)
             .Distinct()
@@ -889,7 +980,7 @@ public class EloController(
             return Conflict($"An ELO rebuild is already queued or running for: {string.Join(", ", activeRulesets)}.");
         }
 
-        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(competitionIds, cancellationToken);
+        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(poolKey, cancellationToken);
         if (identityGate is not null)
         {
             return identityGate;
@@ -899,8 +990,9 @@ public class EloController(
         var runs = rulesets.Select(ruleset => new EloRebuildRun
         {
             Id = Guid.NewGuid(),
+            EloPoolKey = poolKey,
             RulesetVersion = ruleset,
-            CompetitionName = competitionName,
+            CompetitionName = string.Empty,
             Status = EloRebuildRunStatus.Pending,
             QueuedAtUtc = queuedAtUtc,
             CreatedAtUtc = queuedAtUtc
@@ -913,7 +1005,7 @@ public class EloController(
         }
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
-            return Conflict($"An ELO rebuild is already queued or running for: {string.Join(", ", rulesets)}.");
+            return Conflict($"An ELO rebuild is already queued or running in '{poolKey}' for: {string.Join(", ", rulesets)}.");
         }
 
         return Accepted(runs.Select(ToDto).ToList());
@@ -965,10 +1057,8 @@ public class EloController(
         }
 
         var activeExists = await dbContext.EloRebuildRuns.AnyAsync(x =>
+            x.EloPoolKey == sourceRun.EloPoolKey &&
             x.RulesetVersion == sourceRun.RulesetVersion &&
-            (sourceRun.CompetitionName == string.Empty ||
-             x.CompetitionName == string.Empty ||
-             x.CompetitionName == sourceRun.CompetitionName) &&
             (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running),
             cancellationToken);
         if (activeExists)
@@ -976,13 +1066,12 @@ public class EloController(
             return Conflict($"An ELO rebuild is already queued or running for: {sourceRun.RulesetVersion}.");
         }
 
-        var competitionIds = string.IsNullOrEmpty(sourceRun.CompetitionName)
-            ? null
-            : await dbContext.Competitions
-                .Where(x => x.Name == sourceRun.CompetitionName)
-                .Select(x => x.Id)
-                .ToListAsync(cancellationToken);
-        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(competitionIds, cancellationToken);
+        if (string.IsNullOrWhiteSpace(sourceRun.EloPoolKey))
+        {
+            return Conflict("Legacy rebuild runs without an ELO pool cannot be retried. Queue a new pool rebuild instead.");
+        }
+
+        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(sourceRun.EloPoolKey, cancellationToken);
         if (identityGate is not null)
         {
             return identityGate;
@@ -992,8 +1081,9 @@ public class EloController(
         var retryRun = new EloRebuildRun
         {
             Id = Guid.NewGuid(),
+            EloPoolKey = sourceRun.EloPoolKey,
             RulesetVersion = sourceRun.RulesetVersion,
-            CompetitionName = sourceRun.CompetitionName,
+            CompetitionName = string.Empty,
             Status = EloRebuildRunStatus.Pending,
             QueuedAtUtc = queuedAtUtc,
             CreatedAtUtc = queuedAtUtc,
@@ -1017,21 +1107,14 @@ public class EloController(
         => new(EloRulesetVersions.Default, EloRulesetVersions.All);
 
     private async Task<ConflictObjectResult?> EnsureIdentityHealthAllowsRebuildAsync(
-        IReadOnlyCollection<Guid>? competitionIds,
+        string poolKey,
         CancellationToken cancellationToken)
     {
-        var requests = competitionIds is null
-            ? [new IdentityHealthCheckRequest()]
-            : competitionIds.Select(id => new IdentityHealthCheckRequest { CompetitionId = id });
-
-        foreach (var request in requests)
+        var identityRun = await identityHealthCheckService.RunAsync(
+            new IdentityHealthCheckRequest { EloPoolKey = poolKey },
+            cancellationToken);
+        if (identityRun.UnresolvedBlockersCount > 0)
         {
-            var identityRun = await identityHealthCheckService.RunAsync(request, cancellationToken);
-            if (identityRun.UnresolvedBlockersCount == 0)
-            {
-                continue;
-            }
-
             return Conflict(new
             {
                 message = "ELO rebuild is blocked by unresolved identity health blockers.",
@@ -1055,7 +1138,29 @@ public class EloController(
         return EloRulesetVersions.All.Contains(normalized) ? normalized : null;
     }
 
-    private async Task<string?> ResolveReadableRulesetAsync(string? rulesetVersion, CancellationToken cancellationToken)
+    private static string? ResolvePoolOrDefault(string? poolKey)
+    {
+        var resolved = string.IsNullOrWhiteSpace(poolKey)
+            ? EloPoolKeys.Default
+            : poolKey.Trim().ToLowerInvariant();
+        return EloPoolKeys.IsSupported(resolved) ? resolved : null;
+    }
+
+    private async Task<bool> CompetitionBelongsToPoolAsync(
+        string? competition,
+        string poolKey,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(competition) ||
+            await dbContext.Competitions.AsNoTracking().AnyAsync(
+                x => x.Name == competition && x.EloPoolKey == poolKey,
+                cancellationToken);
+    }
+
+    private async Task<string?> ResolveReadableRulesetAsync(
+        string? rulesetVersion,
+        string poolKey,
+        CancellationToken cancellationToken)
     {
         var resolved = ResolveRulesetOrDefault(rulesetVersion);
         if (resolved is null)
@@ -1063,13 +1168,17 @@ public class EloController(
             return null;
         }
 
-        if (await dbContext.TeamRatings.AsNoTracking().AnyAsync(x => x.RulesetVersion == resolved, cancellationToken))
+        if (await dbContext.TeamRatings.AsNoTracking().AnyAsync(
+            x => x.EloPoolKey == poolKey && x.RulesetVersion == resolved,
+            cancellationToken))
         {
             return resolved;
         }
 
         if (string.IsNullOrWhiteSpace(rulesetVersion) &&
-            await dbContext.TeamRatings.AsNoTracking().AnyAsync(x => x.RulesetVersion == EloRulesetVersions.PointMarginEloV1, cancellationToken))
+            await dbContext.TeamRatings.AsNoTracking().AnyAsync(
+                x => x.EloPoolKey == poolKey && x.RulesetVersion == EloRulesetVersions.PointMarginEloV1,
+                cancellationToken))
         {
             return EloRulesetVersions.PointMarginEloV1;
         }
@@ -1080,6 +1189,7 @@ public class EloController(
     private static EloRebuildRunDto ToDto(EloRebuildRun run)
         => new(
             run.Id,
+            run.EloPoolKey,
             run.RulesetVersion,
             run.CompetitionName,
             run.Status,
@@ -1095,6 +1205,7 @@ public class EloController(
         => notificationPublisher.PublishAsync(
             new EloRebuildRunNotification(
                 run.Id,
+                run.EloPoolKey,
                 run.RulesetVersion,
                 run.Status,
                 DateTime.UtcNow),
@@ -1121,12 +1232,13 @@ public class EloController(
 
     private async Task<IReadOnlyList<TeamFormHistoryRow>> GetTeamFormRowsAsync(
         Guid teamId,
+        string poolKey,
         string rulesetVersion,
         CancellationToken cancellationToken)
     {
         var rows = await dbContext.RatingHistories
             .AsNoTracking()
-            .Where(x => x.TeamId == teamId && x.RulesetVersion == rulesetVersion)
+            .Where(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion)
             .OrderByDescending(x => x.GameDateTimeUtc)
             .ThenByDescending(x => x.Id)
             .Take(10)
@@ -1147,6 +1259,7 @@ public class EloController(
         var opponentPreElo = await dbContext.RatingHistories
             .AsNoTracking()
             .Where(x =>
+                x.EloPoolKey == poolKey &&
                 x.RulesetVersion == rulesetVersion &&
                 gameIds.Contains(x.GameId) &&
                 opponentIds.Contains(x.TeamId))
@@ -1265,6 +1378,7 @@ public class EloController(
         int GamesPlayed);
 
     private IQueryable<RatingHistory> BuildHistoryFilterQuery(
+        string poolKey,
         string rulesetVersion,
         string? competition,
         string? season,
@@ -1273,7 +1387,7 @@ public class EloController(
     {
         var query = dbContext.RatingHistories
             .AsNoTracking()
-            .Where(x => x.RulesetVersion == rulesetVersion);
+            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion);
 
         if (!string.IsNullOrWhiteSpace(competition))
         {
@@ -1298,10 +1412,13 @@ public class EloController(
         return query;
     }
 
-    private async Task<EloRankingFilterOptions> BuildRankingFilterOptionsAsync(string rulesetVersion, CancellationToken cancellationToken)
+    private async Task<EloRankingFilterOptions> BuildRankingFilterOptionsAsync(
+        string poolKey,
+        string rulesetVersion,
+        CancellationToken cancellationToken)
     {
         return await cache.GetOrCreateAsync(
-            $"elo:ranking-filter-options:{rulesetVersion}",
+            $"elo:ranking-filter-options:{poolKey}:{rulesetVersion}",
             async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15);
@@ -1309,14 +1426,14 @@ public class EloController(
 
                 var countries = await dbContext.TeamRatings
                     .AsNoTracking()
-                    .Where(x => x.RulesetVersion == rulesetVersion)
+                    .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion)
                     .Select(x => x.Team.CountryCode)
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
                 var competitions = await dbContext.RatingHistories
                     .AsNoTracking()
-                    .Where(x => x.RulesetVersion == rulesetVersion)
+                    .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion)
                     .Select(x => x.Game.Competition.Name)
                     .Distinct()
                     .OrderBy(x => x)
@@ -1324,7 +1441,7 @@ public class EloController(
 
                 var seasons = await dbContext.RatingHistories
                     .AsNoTracking()
-                    .Where(x => x.RulesetVersion == rulesetVersion)
+                    .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion)
                     .Select(x => new
                     {
                         x.Game.Season.Label,
@@ -1340,6 +1457,7 @@ public class EloController(
     }
 
     private async Task<Dictionary<Guid, decimal>> GetRecentMovementAsync(
+        string poolKey,
         string rulesetVersion,
         IReadOnlyCollection<Guid> teamIds,
         DateTime? toUtc,
@@ -1352,7 +1470,7 @@ public class EloController(
 
         var query = dbContext.RatingHistories
             .AsNoTracking()
-            .Where(x => x.RulesetVersion == rulesetVersion && teamIds.Contains(x.TeamId));
+            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion && teamIds.Contains(x.TeamId));
 
         if (toUtc.HasValue)
         {

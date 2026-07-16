@@ -26,6 +26,7 @@ public static class EloRebuildNotifications
 
 public sealed record EloRebuildRunNotification(
     Guid RunId,
+    string? EloPoolKey,
     string RulesetVersion,
     string Status,
     DateTime OccurredAtUtc);
@@ -33,12 +34,15 @@ public sealed record EloRebuildRunNotification(
 public sealed class EloRebuildRequest
 {
     public string? RulesetVersion { get; set; }
+    public string? PoolKey { get; set; }
+    [Obsolete("Competition-scoped production rebuilds are replaced by PoolKey.")]
     public string? CompetitionName { get; set; }
 }
 
 public sealed class EloRebuildResult
 {
     public Guid RunId { get; set; }
+    public string EloPoolKey { get; set; } = string.Empty;
     public string RulesetVersion { get; set; } = string.Empty;
     public string CompetitionName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
@@ -56,6 +60,7 @@ public sealed record EloRulesetCatalogResponse(
 
 public sealed record EloRebuildRunDto(
     Guid Id,
+    string? EloPoolKey,
     string RulesetVersion,
     string CompetitionName,
     string Status,
@@ -68,6 +73,7 @@ public sealed record EloRebuildRunDto(
     string? Notes);
 
 public sealed record EloDashboardSummary(
+    string EloPoolKey,
     string SelectedRuleset,
     int CompletedGames,
     int UnratedCompletedGames,
@@ -82,6 +88,8 @@ public sealed record EloDashboardResponse(
     IReadOnlyList<EloRebuildRunDto> RecentRuns);
 
 public sealed record EloRankingsResponse(
+    string EloPoolKey,
+    string EloPoolName,
     string RulesetVersion,
     IReadOnlyCollection<EloRankingRow> Rankings,
     EloRankingFilterOptions Filters,
@@ -123,10 +131,12 @@ public sealed record EloRankingArchiveMetadata(
     string? EmptyReason);
 
 public sealed record EloRankingsEvolutionResponse(
+    string EloPoolKey,
     string RulesetVersion,
     IReadOnlyCollection<EloTeamEvolutionSeries> Series);
 
 public sealed record EloMoversResponse(
+    string EloPoolKey,
     string RulesetVersion,
     string Direction,
     DateTime WindowStartUtc,
@@ -170,6 +180,8 @@ public sealed record EloTeamDetailResponse(
     Guid TeamId,
     string TeamName,
     string Country,
+    string EloPoolKey,
+    string EloPoolName,
     string RulesetVersion,
     decimal Elo,
     int GlobalRank,
@@ -220,6 +232,7 @@ public sealed record EloTeamFormGame(
 
 public sealed record EloGameExplanationResponse(
     Guid GameId,
+    string? EloPoolKey,
     string RulesetVersion,
     DateTime GameDateTimeUtc,
     string Competition,
@@ -263,6 +276,18 @@ public sealed record EloRatingHistoryPoint(
     decimal Elo,
     decimal EloDelta,
     int? Rank);
+
+public sealed record EloPoolOption(
+    string Key,
+    string DisplayName,
+    bool IsAvailable,
+    int RatedTeams,
+    DateTime? LatestRatedGameUtc,
+    DateTime? LatestSuccessfulRebuildUtc);
+
+public sealed record EloPoolCatalogResponse(
+    string DefaultPool,
+    IReadOnlyCollection<EloPoolOption> Pools);
 
 public interface IEloRebuildService
 {

@@ -367,9 +367,11 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
             entity.Property(x => x.Type).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.EloPoolKey).HasMaxLength(30);
             entity.Property(x => x.CountryCode).HasMaxLength(3);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.HasIndex(x => new { x.Name, x.CountryCode }).IsUnique();
+            entity.HasIndex(x => x.EloPoolKey);
         });
 
         modelBuilder.Entity<CompetitionAlias>(entity =>
@@ -441,7 +443,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
         modelBuilder.Entity<TeamRating>(entity =>
         {
             entity.ToTable("team_ratings");
-            entity.HasKey(x => new { x.TeamId, x.RulesetVersion });
+            entity.HasKey(x => new { x.EloPoolKey, x.TeamId, x.RulesetVersion });
+            entity.Property(x => x.EloPoolKey).HasMaxLength(30).IsRequired();
             entity.Property(x => x.RulesetVersion).HasMaxLength(50).IsRequired();
             entity.Property(x => x.Elo).HasPrecision(8, 2).IsRequired();
             entity.Property(x => x.UpdatedAtUtc).IsRequired();
@@ -459,6 +462,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
         {
             entity.ToTable("rating_history");
             entity.HasKey(x => x.Id);
+            entity.Property(x => x.EloPoolKey).HasMaxLength(30).IsRequired();
             entity.Property(x => x.RulesetVersion).HasMaxLength(50).IsRequired();
             entity.Property(x => x.GameDateTimeUtc).IsRequired();
             entity.Property(x => x.PreElo).HasPrecision(8, 2).IsRequired();
@@ -481,8 +485,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .WithMany()
                 .HasForeignKey(x => x.OpponentTeamId)
                 .OnDelete(DeleteBehavior.Restrict);
-            entity.HasIndex(x => new { x.TeamId, x.RulesetVersion, x.GameDateTimeUtc });
-            entity.HasIndex(x => new { x.GameId, x.TeamId, x.RulesetVersion }).IsUnique();
+            entity.HasIndex(x => new { x.EloPoolKey, x.TeamId, x.RulesetVersion, x.GameDateTimeUtc });
+            entity.HasIndex(x => new { x.EloPoolKey, x.GameId, x.TeamId, x.RulesetVersion }).IsUnique();
         });
 
         modelBuilder.Entity<EloRebuildRun>(entity =>
@@ -490,6 +494,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.ToTable("elo_rebuild_runs");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.QueuedAtUtc).IsRequired();
+            entity.Property(x => x.EloPoolKey).HasMaxLength(30);
             entity.Property(x => x.RulesetVersion).HasMaxLength(30).IsRequired();
             entity.Property(x => x.CompetitionName).HasMaxLength(200).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
@@ -498,9 +503,9 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.Notes).HasMaxLength(4000);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.HasIndex(x => x.QueuedAtUtc);
-            entity.HasIndex(x => new { x.RulesetVersion, x.CompetitionName })
+            entity.HasIndex(x => new { x.EloPoolKey, x.RulesetVersion })
                 .IsUnique()
-                .HasFilter("\"Status\" IN ('pending', 'running')");
+                .HasFilter("\"Status\" IN ('pending', 'running') AND \"EloPoolKey\" IS NOT NULL");
         });
 
         modelBuilder.Entity<BackfillJob>(entity =>

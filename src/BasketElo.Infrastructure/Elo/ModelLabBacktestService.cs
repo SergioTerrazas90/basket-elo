@@ -127,7 +127,11 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
     {
         var competitions = await dbContext.Games
             .AsNoTracking()
-            .Select(x => new CompetitionOption(x.CompetitionId, x.Competition.Name, x.Competition.CountryCode))
+            .Select(x => new CompetitionOption(
+                x.CompetitionId,
+                x.Competition.Name,
+                x.Competition.CountryCode,
+                x.Competition.EloPoolKey))
             .Distinct()
             .ToListAsync(cancellationToken);
 
@@ -142,7 +146,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 x.Id,
                 x.Name,
                 duplicateNames.Contains(x.Name) ? $"{x.Name} ({FormatCountryCode(x.CountryCode)})" : x.Name,
-                x.CountryCode))
+                x.CountryCode,
+                x.EloPoolKey))
             .ToList();
     }
 
@@ -152,6 +157,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         var scopeType = NormalizeScopeType(request.ScopeType);
         if (scopeType == ModelLabScopeTypes.AllCompetitions)
         {
+            EnsureSinglePool(leagueOptions);
             return new ResolvedScope(
                 "All competitions",
                 leagueOptions
@@ -178,12 +184,14 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 throw new ArgumentException("One or more selected competitions are not available for Model Lab.");
             }
 
+            var selectedOptions = leagueOptions.Where(x => requestedIds.Contains(x.Id)).ToList();
+            EnsureSinglePool(selectedOptions);
+
             return new ResolvedScope(
                 requestedIds.Count == 1
                     ? leagueOptions.First(x => x.Id == requestedIds[0]).DisplayName
                     : $"{requestedIds.Count} competitions",
-                leagueOptions
-                    .Where(x => requestedIds.Contains(x.Id))
+                selectedOptions
                     .Select(x => new ModelLabCompetitionOption(x.Id, x.Name, x.DisplayName, x.CountryCode))
                     .ToList());
         }
@@ -229,6 +237,20 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             ModelLabScopeTypes.AllCompetitions => ModelLabScopeTypes.AllCompetitions,
             _ => ModelLabScopeTypes.SingleCompetition
         };
+    }
+
+    private static void EnsureSinglePool(IReadOnlyCollection<LeagueOption> competitions)
+    {
+        var pools = competitions
+            .Select(x => x.EloPoolKey)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (pools.Count > 1)
+        {
+            throw new ArgumentException(
+                "Model Lab cannot mix NBA, Europe club, and national-team rating pools. Choose competitions from one ELO pool.");
+        }
     }
 
     private static SimulationResult RunSimulation(
@@ -485,9 +507,9 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         public Queue<decimal> RecentDeltas { get; } = new();
     }
 
-    private sealed record CompetitionOption(Guid Id, string Name, string? CountryCode);
+    private sealed record CompetitionOption(Guid Id, string Name, string? CountryCode, string? EloPoolKey);
 
-    private sealed record LeagueOption(Guid Id, string Name, string DisplayName, string? CountryCode);
+    private sealed record LeagueOption(Guid Id, string Name, string DisplayName, string? CountryCode, string? EloPoolKey);
 
     private sealed record ResolvedScope(string DisplayName, IReadOnlyCollection<ModelLabCompetitionOption> Competitions);
 }

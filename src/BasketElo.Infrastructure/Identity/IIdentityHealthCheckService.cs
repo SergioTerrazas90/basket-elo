@@ -15,6 +15,7 @@ public interface IIdentityHealthCheckService
 
 public class IdentityHealthCheckRequest
 {
+    public string? EloPoolKey { get; set; }
     public string? Source { get; set; }
     public string? Season { get; set; }
     public string? CountryCode { get; set; }
@@ -58,6 +59,7 @@ public class ResolveIdentityFindingRequest
 
 public class IdentityChangedScope
 {
+    public string? EloPoolKey { get; set; }
     public string? Source { get; set; }
     public string? Season { get; set; }
     public string? CountryCode { get; set; }

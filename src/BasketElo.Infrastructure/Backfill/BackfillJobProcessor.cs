@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BasketElo.Domain.Backfill;
+using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
@@ -84,6 +85,8 @@ public class BackfillJobProcessor(
 
     private async Task ProcessJobAsync(BackfillJob job, CancellationToken cancellationToken)
     {
+        string? changedPoolKey = null;
+        var canQueuePoolRebuild = false;
         var provider = providers.FirstOrDefault(x =>
             string.Equals(x.SourceKey, job.Provider, StringComparison.OrdinalIgnoreCase));
 
@@ -295,8 +298,10 @@ public class BackfillJobProcessor(
 
             if (summary.GamesInserted > 0 || summary.GamesUpdated > 0)
             {
+                changedPoolKey = competition.EloPoolKey;
                 var changedScope = new IdentityChangedScope
                 {
+                    EloPoolKey = competition.EloPoolKey,
                     Source = provider.SourceKey,
                     Season = season.Label,
                     CountryCode = competition.CountryCode,
@@ -310,6 +315,7 @@ public class BackfillJobProcessor(
                 var identityRun = await identityHealthCheckService.RunAsync(
                     new IdentityHealthCheckRequest
                     {
+                        EloPoolKey = changedScope.EloPoolKey,
                         Source = changedScope.Source,
                         Season = changedScope.Season,
                         CountryCode = changedScope.CountryCode,
@@ -321,6 +327,7 @@ public class BackfillJobProcessor(
                 summary.IdentityHealthStatus = identityRun.Status;
                 summary.IdentityFindingsCount = identityRun.FindingsCount;
                 summary.IdentityBlockersCount = identityRun.UnresolvedBlockersCount;
+                canQueuePoolRebuild = identityRun.UnresolvedBlockersCount == 0;
             }
         }
 
@@ -328,6 +335,59 @@ public class BackfillJobProcessor(
             job,
             job.WarningCount > 0 ? BackfillJobStatus.CompletedWithWarnings : BackfillJobStatus.Completed,
             summary);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (canQueuePoolRebuild && !string.IsNullOrWhiteSpace(changedPoolKey))
+        {
+            await QueuePoolRebuildsIfReadyAsync(changedPoolKey, cancellationToken);
+        }
+    }
+
+    private async Task QueuePoolRebuildsIfReadyAsync(string poolKey, CancellationToken cancellationToken)
+    {
+        var unfinishedJobs = await dbContext.BackfillJobs
+            .AsNoTracking()
+            .Where(x => x.Status == BackfillJobStatus.Pending || x.Status == BackfillJobStatus.Running)
+            .Select(x => new { x.Provider, x.Country, x.LeagueName })
+            .ToListAsync(cancellationToken);
+        var configuredLeagues = backfillCatalog.GetLeagues();
+        var poolStillHasJobs = unfinishedJobs.Any(job => configuredLeagues.Any(league =>
+            string.Equals(league.Provider, job.Provider, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(league.Country, job.Country, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(league.LeagueName, job.LeagueName, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(league.EloPoolKey, poolKey, StringComparison.Ordinal)));
+        if (poolStillHasJobs)
+        {
+            return;
+        }
+
+        var activeRulesets = await dbContext.EloRebuildRuns
+            .AsNoTracking()
+            .Where(x => x.EloPoolKey == poolKey &&
+                (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running))
+            .Select(x => x.RulesetVersion)
+            .ToListAsync(cancellationToken);
+        var now = DateTime.UtcNow;
+        var runs = EloRulesetVersions.All
+            .Where(ruleset => !activeRulesets.Contains(ruleset))
+            .Select(ruleset => new EloRebuildRun
+            {
+                Id = Guid.NewGuid(),
+                EloPoolKey = poolKey,
+                RulesetVersion = ruleset,
+                CompetitionName = string.Empty,
+                Status = EloRebuildRunStatus.Pending,
+                QueuedAtUtc = now,
+                CreatedAtUtc = now,
+                Notes = "Automatically queued after the pool's final changed backfill job completed."
+            })
+            .ToList();
+        if (runs.Count == 0)
+        {
+            return;
+        }
+
+        dbContext.EloRebuildRuns.AddRange(runs);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -361,6 +421,7 @@ public class BackfillJobProcessor(
 
         if (alias is not null)
         {
+            await EnsureCompetitionPoolAsync(alias.Competition, configuredLeague, cancellationToken);
             return alias.Competition;
         }
 
@@ -382,6 +443,7 @@ public class BackfillJobProcessor(
                 Name = competitionName,
                 Type = configuredLeague?.CompetitionType ??
                     (string.IsNullOrWhiteSpace(countryCode) ? "international" : "domestic_first_division"),
+                EloPoolKey = configuredLeague?.EloPoolKey,
                 CountryCode = countryCode,
                 Tier = 1,
                 IsActive = true,
@@ -390,9 +452,36 @@ public class BackfillJobProcessor(
             dbContext.Competitions.Add(competition);
         }
 
+        await EnsureCompetitionPoolAsync(competition, configuredLeague, cancellationToken);
+
         await EnsureCompetitionAliasAsync(competition, providerLeague, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         return competition;
+    }
+
+    private async Task EnsureCompetitionPoolAsync(
+        Competition competition,
+        ConfiguredBackfillLeague? configuredLeague,
+        CancellationToken cancellationToken)
+    {
+        if (configuredLeague is null)
+        {
+            return;
+        }
+
+        var poolKey = EloPoolKeys.Normalize(configuredLeague.EloPoolKey);
+        if (string.IsNullOrWhiteSpace(competition.EloPoolKey))
+        {
+            competition.EloPoolKey = poolKey;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        if (!string.Equals(competition.EloPoolKey, poolKey, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Competition '{competition.Name}' is assigned to ELO pool '{competition.EloPoolKey}', not '{poolKey}'.");
+        }
     }
 
     private async Task EnsureCompetitionAliasAsync(

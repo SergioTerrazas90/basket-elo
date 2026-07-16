@@ -1,3 +1,5 @@
+using BasketElo.Domain.Elo;
+
 namespace BasketElo.Domain.Backfill;
 
 public record ConfiguredBackfillLeague(
@@ -8,7 +10,8 @@ public record ConfiguredBackfillLeague(
     string StartSeason,
     IReadOnlyCollection<ConfiguredProviderLeague>? ProviderLeagues = null,
     string? CompetitionType = null,
-    string? EndSeason = null);
+    string? EndSeason = null,
+    string EloPoolKey = EloPoolKeys.EuropeClubs);
 
 public record ConfiguredProviderLeague(
     string Country,

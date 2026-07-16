@@ -66,8 +66,8 @@ public sealed class NbaCurrentSeasonRefreshService(
         var activeJob = await dbContext.BackfillJobs
             .AsNoTracking()
             .Where(x =>
-                x.Provider == BasketballReferenceBasketballDataProvider.Source &&
-                x.Country == "United States" &&
+                x.Provider == ApiSportsBasketballDataProvider.Source &&
+                x.Country == "USA" &&
                 x.LeagueName == "NBA" &&
                 x.Season == season &&
                 (x.Status == BackfillJobStatus.Pending || x.Status == BackfillJobStatus.Running))
@@ -84,8 +84,8 @@ public sealed class NbaCurrentSeasonRefreshService(
             var latestQueuedAtUtc = await dbContext.BackfillJobs
                 .AsNoTracking()
                 .Where(x =>
-                    x.Provider == BasketballReferenceBasketballDataProvider.Source &&
-                    x.Country == "United States" &&
+                    x.Provider == ApiSportsBasketballDataProvider.Source &&
+                    x.Country == "USA" &&
                     x.LeagueName == "NBA" &&
                     x.Season == season)
                 .MaxAsync(x => (DateTime?)x.CreatedAtUtc, cancellationToken);
@@ -102,8 +102,8 @@ public sealed class NbaCurrentSeasonRefreshService(
         var job = new BackfillJob
         {
             Id = Guid.NewGuid(),
-            Provider = BasketballReferenceBasketballDataProvider.Source,
-            Country = "United States",
+            Provider = ApiSportsBasketballDataProvider.Source,
+            Country = "USA",
             LeagueName = "NBA",
             Season = season,
             DryRun = dryRun,

@@ -9,11 +9,20 @@
 <PageTitle>Basket ELO Rankings</PageTitle>
 
 <div class="rankings-page">
+    <nav class="rating-pool-tabs" aria-label="Rating pools">
+        @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
+        {
+            <button type="button" class="@PoolTabClass(option.Key)" @onclick="() => SelectPoolAsync(option.Key)" disabled="@isBusy">
+                @option.DisplayName
+            </button>
+        }
+    </nav>
+
     <section class="rankings-hero">
         <div>
             <p class="eyebrow">Basket ELO</p>
-            <h1>Basketball power rankings</h1>
-            <p class="intro">Current strength ratings across the imported basketball world, tuned for the public adjusted ELO ruleset.</p>
+            <h1>@PoolHeading()</h1>
+            <p class="intro">@PoolIntroduction()</p>
         </div>
 
         @if (response?.Summary is not null)
@@ -37,23 +46,40 @@
         <div class="filter-field wide">
             <label for="teamSearch">Team</label>
             <div class="clearable-field">
-                <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" placeholder="Search Real Madrid, Fenerbahce..." />
+                <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" placeholder="Search teams" />
                 <button type="button" class="clear-filter" aria-label="Clear team search" title="Clear team search" @onclick="ClearTeamSearch" disabled="@(!HasTeamSearch)">
                     &times;
                 </button>
             </div>
         </div>
 
-        <div class="filter-field">
-            <label for="countryFilter">Country</label>
-            <select id="countryFilter" class="form-select" @bind="selectedCountry">
-                <option value="">All countries</option>
-                @foreach (var option in response?.Filters.Countries ?? [])
-                {
-                    <option value="@option">@option</option>
-                }
-            </select>
-        </div>
+        @if (selectedPool != EloPoolKeys.Nba)
+        {
+            <div class="filter-field">
+                <label for="countryFilter">Country</label>
+                <select id="countryFilter" class="form-select" @bind="selectedCountry">
+                    <option value="">All countries</option>
+                    @foreach (var option in response?.Filters.Countries ?? [])
+                    {
+                        <option value="@option">@option</option>
+                    }
+                </select>
+            </div>
+        }
+
+        @if (selectedPool == EloPoolKeys.EuropeClubs)
+        {
+            <div class="filter-field">
+                <label for="competitionFilter">Competition</label>
+                <select id="competitionFilter" class="form-select" @bind="selectedCompetition">
+                    <option value="">All competitions</option>
+                    @foreach (var option in response?.Filters.Competitions ?? [])
+                    {
+                        <option value="@option">@option</option>
+                    }
+                </select>
+            </div>
+        }
 
         <div class="filter-field">
             <label for="fromSeasonFilter">From season</label>
@@ -173,7 +199,10 @@
                             <tr>
                                 <th>Rank</th>
                                 <th>Team</th>
-                                <th>Country</th>
+                                @if (selectedPool != EloPoolKeys.Nba)
+                                {
+                                    <th>Country</th>
+                                }
                                 <th class="numeric">Change</th>
                                 <th class="numeric">Start</th>
                                 <th class="numeric">End</th>
@@ -198,7 +227,10 @@
                                         <td>
                                             <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
                                         </td>
-                                        <td>@row.Country</td>
+                                        @if (selectedPool != EloPoolKeys.Nba)
+                                        {
+                                            <td>@row.Country</td>
+                                        }
                                         <td class="numeric"><span class="@MovementClass(row.EloChange)">@FormatMovement(row.EloChange)</span></td>
                                         <td class="numeric">@row.StartElo.ToString("0")</td>
                                         <td class="numeric">@row.EndElo.ToString("0")</td>
@@ -275,10 +307,13 @@
                                 <th>Rank</th>
                                 @if (response.Summary.IsFiltered)
                                 {
-                                    <th>Global</th>
+                                    <th>Pool</th>
                                 }
                                 <th>Team</th>
-                                <th>Country</th>
+                                @if (selectedPool != EloPoolKeys.Nba)
+                                {
+                                    <th>Country</th>
+                                }
                                 <th class="numeric">ELO</th>
                                 <th class="numeric">Games</th>
                                 <th class="numeric">Last</th>
@@ -289,7 +324,7 @@
                             @if (response.Rankings.Count == 0)
                             {
                                 <tr>
-                                    <td colspan="8" class="empty-state">No teams match the current filters.</td>
+                                    <td colspan="8" class="empty-state">@(selectedPool == EloPoolKeys.NationalTeams ? "National team ratings are not available yet." : "No teams match the current filters.")</td>
                                 </tr>
                             }
                             else
@@ -305,7 +340,10 @@
                                         <td>
                                             <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
                                         </td>
-                                        <td>@row.Country</td>
+                                        @if (selectedPool != EloPoolKeys.Nba)
+                                        {
+                                            <td>@row.Country</td>
+                                        }
                                         <td class="numeric rating">@row.Elo.ToString("0")</td>
                                         <td class="numeric">@row.GamesPlayed</td>
                                         <td class="numeric">
@@ -324,8 +362,14 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "pool")]
+    public string? Pool { get; set; }
+
     [SupplyParameterFromQuery(Name = "country")]
     public string? Country { get; set; }
+
+    [SupplyParameterFromQuery(Name = "competition")]
+    public string? Competition { get; set; }
 
     [SupplyParameterFromQuery(Name = "season")]
     public string? Season { get; set; }
@@ -368,6 +412,8 @@
     private bool isChartExpanded;
     private string? errorMessage;
     private string? selectedCountry;
+    private string? selectedCompetition;
+    private string selectedPool = EloPoolKeys.Default;
     private string? selectedFromSeason;
     private string? selectedToSeason;
     private string? teamSearch;
@@ -391,7 +437,11 @@
             return;
         }
 
+        selectedPool = EloPoolKeys.IsSupported(Pool?.Trim().ToLowerInvariant() ?? string.Empty)
+            ? Pool!.Trim().ToLowerInvariant()
+            : EloPoolKeys.Default;
         selectedCountry = Country;
+        selectedCompetition = Competition;
         selectedFromSeason = FromSeason;
         selectedToSeason = ToSeason;
         if (!string.IsNullOrWhiteSpace(Season) && string.IsNullOrWhiteSpace(selectedFromSeason) && string.IsNullOrWhiteSpace(selectedToSeason))
@@ -424,6 +474,7 @@
     private Task ResetFiltersAsync()
     {
         selectedCountry = null;
+        selectedCompetition = null;
         selectedFromSeason = null;
         selectedToSeason = null;
         minimumGames = 0;
@@ -435,6 +486,24 @@
     private Task SelectViewAsync(string view)
     {
         selectedView = string.Equals(view, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private Task SelectPoolAsync(string poolKey)
+    {
+        selectedPool = EloPoolKeys.Normalize(poolKey);
+        selectedCountry = null;
+        selectedCompetition = null;
+        selectedFromSeason = null;
+        selectedToSeason = null;
+        minimumGames = 0;
+        teamSearch = null;
+        page = 1;
+        lastRankingsApiUri = null;
+        lastMoversApiUri = null;
+        lastEvolutionRankingsApiUri = null;
+        lastEvolutionApiUri = null;
         NavigateToRankings(1);
         return Task.CompletedTask;
     }
@@ -555,10 +624,12 @@
 
         var query = new Dictionary<string, object?>
         {
+            ["pool"] = selectedPool == EloPoolKeys.Default ? null : selectedPool,
             ["view"] = selectedView == "movers" ? selectedView : null,
             ["movement"] = selectedView == "movers" ? selectedMoverDirection : null,
             ["windowDays"] = selectedView == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
             ["country"] = selectedCountry,
+            ["competition"] = selectedCompetition,
             ["fromSeason"] = selectedFromSeason,
             ["toSeason"] = selectedToSeason,
             ["minGames"] = minimumGames > 0 ? minimumGames : null,
@@ -671,6 +742,9 @@
     private string ViewTabClass(string view)
         => selectedView == view ? "view-tab active" : "view-tab";
 
+    private string PoolTabClass(string poolKey)
+        => selectedPool == poolKey ? "pool-tab active" : "pool-tab";
+
     private string EvolutionChartClass
         => isChartExpanded ? "evolution-chart expanded" : "evolution-chart";
 
@@ -682,10 +756,12 @@
         var query = new List<string>
         {
             "pageSize=50",
-            $"page={page}"
+            $"page={page}",
+            $"pool={Uri.EscapeDataString(selectedPool)}"
         };
 
         Append(query, "country", selectedCountry);
+        Append(query, "competition", selectedCompetition);
         Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
         Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
         Append(query, "asOfDate", seasonRange.AsOfUtc?.ToString("O"));
@@ -702,12 +778,14 @@
         {
             "pageSize=25",
             $"page={page}",
+            $"pool={Uri.EscapeDataString(selectedPool)}",
             $"direction={Uri.EscapeDataString(selectedMoverDirection)}",
             $"windowDays={selectedWindowDays}"
         };
 
         Append(query, "rulesetVersion", response?.RulesetVersion);
         Append(query, "country", selectedCountry);
+        Append(query, "competition", selectedCompetition);
         Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
         Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
         Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
@@ -741,12 +819,14 @@
         var query = new List<string>
         {
             $"rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}",
+            $"pool={Uri.EscapeDataString(selectedPool)}",
             $"teamIds={Uri.EscapeDataString(teamIds)}",
             "pointsPerTeam=0"
         };
 
         Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
         Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
+        Append(query, "competition", selectedCompetition);
 
         return $"api/elo/rankings/evolution?{string.Join("&", query)}";
     }
@@ -780,10 +860,12 @@
         var query = new List<string>
         {
             "pageSize=20",
-            "page=1"
+            "page=1",
+            $"pool={Uri.EscapeDataString(selectedPool)}"
         };
 
         Append(query, "country", selectedCountry);
+        Append(query, "competition", selectedCompetition);
         Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
         Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
         Append(query, "asOfDate", seasonRange.AsOfUtc?.ToString("O"));
@@ -796,7 +878,7 @@
     private string BuildTeamHref(Guid teamId)
     {
         var returnUrl = Navigation.ToBaseRelativePath(Navigation.Uri);
-        return $"/teams/{teamId}?returnUrl={Uri.EscapeDataString(returnUrl)}";
+        return $"/teams/{teamId}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
     }
 
     private IReadOnlyList<EloTeamEvolutionSeries> EvolutionSeries
@@ -827,6 +909,20 @@
 
     private bool IsArchiveMode
         => string.Equals(response?.Archive.Mode, "archive", StringComparison.OrdinalIgnoreCase);
+
+    private string PoolHeading() => selectedPool switch
+    {
+        EloPoolKeys.EuropeClubs => "Europe club power rankings",
+        EloPoolKeys.NationalTeams => "National team power rankings",
+        _ => "NBA power rankings"
+    };
+
+    private string PoolIntroduction() => selectedPool switch
+    {
+        EloPoolKeys.EuropeClubs => "Domestic and continental club results share one chronological Europe rating pool.",
+        EloPoolKeys.NationalTeams => "International tournaments and national-team games use an independent rating pool.",
+        _ => "NBA franchise strength across the complete imported league history."
+    };
 
     private string LeaderLabel()
         => IsArchiveMode ? "Strongest as of" : "Strongest right now";

@@ -1,4 +1,5 @@
 using BasketElo.Domain.Entities;
+using BasketElo.Domain.Elo;
 using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -347,12 +348,14 @@ public class IdentityHealthCheckService(
             ? null
             : changedScope.Season.Trim();
         var countryCode = NormalizeCountryCode(changedScope.CountryCode);
+        var poolKey = NormalizePoolKey(changedScope.EloPoolKey);
         var now = DateTime.UtcNow;
 
         var runs = await dbContext.IdentityHealthCheckRuns
             .Where(x =>
                 x.InvalidatedAtUtc == null &&
                 x.RulesVersion == IdentityHealthCheckRules.CurrentVersion &&
+                (poolKey == null || x.ScopeKey.Contains($"pool={poolKey}")) &&
                 (x.Source == null || source == null || x.Source == source) &&
                 (x.Season == null || season == null || x.Season == season) &&
                 (x.CountryCode == null || countryCode == null || x.CountryCode == countryCode) &&
@@ -380,6 +383,11 @@ public class IdentityHealthCheckService(
         if (!string.IsNullOrWhiteSpace(request.Source))
         {
             games = games.Where(x => x.Source == request.Source);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.EloPoolKey))
+        {
+            games = games.Where(x => x.Competition.EloPoolKey == request.EloPoolKey);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Season))
@@ -738,8 +746,10 @@ public class IdentityHealthCheckService(
             .Where(sourceHistory =>
                 sourceHistory.TeamId == sourceTeam.Id &&
                 dbContext.RatingHistories.Any(targetHistory =>
+                    targetHistory.EloPoolKey == sourceHistory.EloPoolKey &&
                     targetHistory.GameId == sourceHistory.GameId &&
-                    targetHistory.TeamId == targetTeam.Id))
+                    targetHistory.TeamId == targetTeam.Id &&
+                    targetHistory.RulesetVersion == sourceHistory.RulesetVersion))
             .Select(x => x.Id)
             .ToListAsync(cancellationToken);
         await dbContext.RatingHistories
@@ -757,13 +767,16 @@ public class IdentityHealthCheckService(
             .ToListAsync(cancellationToken);
         foreach (var sourceRating in sourceRatings)
         {
-            var targetRating = await dbContext.TeamRatings.FindAsync([targetTeam.Id, sourceRating.RulesetVersion], cancellationToken);
+            var targetRating = await dbContext.TeamRatings.FindAsync(
+                [sourceRating.EloPoolKey, targetTeam.Id, sourceRating.RulesetVersion],
+                cancellationToken);
             if (targetRating is null)
             {
                 dbContext.TeamRatings.Remove(sourceRating);
                 dbContext.TeamRatings.Add(new TeamRating
                 {
                     TeamId = targetTeam.Id,
+                    EloPoolKey = sourceRating.EloPoolKey,
                     RulesetVersion = sourceRating.RulesetVersion,
                     Elo = sourceRating.Elo,
                     GamesPlayed = sourceRating.GamesPlayed,
@@ -970,6 +983,7 @@ public class IdentityHealthCheckService(
     {
         return new IdentityHealthCheckRequest
         {
+            EloPoolKey = NormalizePoolKey(request.EloPoolKey),
             Source = string.IsNullOrWhiteSpace(request.Source) ? null : request.Source.Trim().ToLowerInvariant(),
             Season = string.IsNullOrWhiteSpace(request.Season) ? null : SeasonLabelNormalizer.ToFullSeasonLabel(request.Season),
             CountryCode = NormalizeCountryCode(request.CountryCode),
@@ -985,8 +999,25 @@ public class IdentityHealthCheckService(
             $"source={request.Source ?? "*"}",
             $"season={request.Season ?? "*"}",
             $"country={request.CountryCode ?? "*"}",
-            $"competition={request.CompetitionId?.ToString() ?? "*"}"
+            $"competition={request.CompetitionId?.ToString() ?? "*"}",
+            $"pool={request.EloPoolKey ?? "*"}"
         });
+    }
+
+    private static string? NormalizePoolKey(string? poolKey)
+    {
+        if (string.IsNullOrWhiteSpace(poolKey))
+        {
+            return null;
+        }
+
+        var normalized = poolKey.Trim().ToLowerInvariant();
+        if (!EloPoolKeys.IsSupported(normalized))
+        {
+            throw new ArgumentException($"Unsupported ELO pool '{poolKey}'.", nameof(poolKey));
+        }
+
+        return normalized;
     }
 
     private static string? NormalizeCountryCode(string? countryCode)

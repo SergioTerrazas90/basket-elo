@@ -5,6 +5,7 @@ public class Competition
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty;
+    public string? EloPoolKey { get; set; }
     public string? CountryCode { get; set; }
     public int Tier { get; set; }
     public bool IsActive { get; set; } = true;

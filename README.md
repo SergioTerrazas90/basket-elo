@@ -141,6 +141,19 @@ Network fetching stays disabled unless the operator both enables it and records
 the permission basis in `BasketballReference__PermissionReference`. See
 `docs/nba-source-policy.md` before enabling NBA ingestion.
 
+Run a read-only historical audit before queueing database writes:
+
+```powershell
+dotnet run --project src/BasketElo.Tools -- nba-audit `
+  --start 1946-1947 --end 1959-1960 `
+  --output artifacts/nba-audit-1946-1960.json `
+  --resume
+```
+
+The report includes per-season game, missing-score, duplicate-ID, warning,
+request, failure, and elapsed-time totals. Audit execution does not register a
+database context and records `DatabaseWrites: 0` in JSON output.
+
 ## Troubleshooting (Windows + Docker)
 
 If `postgres:16-alpine` fails with "no matching manifest for windows/amd64", Docker is in Windows container mode.

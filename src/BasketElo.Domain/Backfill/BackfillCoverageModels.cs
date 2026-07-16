@@ -67,6 +67,7 @@ public record TriggerLeagueRangeBackfillRequest
     public string EndSeason { get; init; } = string.Empty;
     public bool OnlyMissing { get; init; } = true;
     public bool ReplaceExisting { get; init; }
+    public bool NewestFirst { get; init; }
     public bool DryRun { get; init; } = true;
     public int MaxRequests { get; init; } = 2;
 }
@@ -79,6 +80,7 @@ public record QueueBackfillJobsResponse(
     string EndSeason,
     bool OnlyMissing,
     bool ReplaceExisting,
+    bool NewestFirst,
     int RequestedSeasons,
     int QueuedJobs,
     int SkippedActiveJobs,

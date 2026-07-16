@@ -18,7 +18,7 @@ be silently joined to the NBA rating history.
 | Source | Role | Decision and limitations |
 | --- | --- | --- |
 | Operator-supplied licensed or otherwise authorized archive | Primary historical source | Required for the complete `1946-1947`-present load. The operator must record the supplier, permitted use, attribution, revision, and whether raw files may be retained before enabling an import. |
-| API-Sports Basketball | Current-season and historical fallback | Use only for NBA seasons reported by its league coverage endpoint. Coverage is not assumed to reach 1946. Respect account quotas and response rate-limit headers. Its terms state that data is provided as-is and that publication rights remain the user's responsibility. |
+| API-Sports Basketball | Current-season and historical fallback | The league coverage endpoint reported game coverage from `2008-2009` through `2025-2026` when verified on 2026-07-16. Coverage is not assumed before 2008 or after the verified range. Respect account quotas and response rate-limit headers. Its terms state that data is provided as-is and that publication rights remain the user's responsibility. |
 | Basketball-Reference | Manual validation and authorized offline input only | Its schedule pages visibly cover the inaugural `BAA_1947` season, but Sports Reference's data-use policy says not to create tools from scraped site data without permission and documents bot limiting. Production HTTP fetching is disabled unless the operator records express permission. An offline parser may process files the operator is authorized to use. |
 | NBA.com / NBA Stats | Manual validation only | NBA Stats says its data is for viewing on NBA.com and is not available for download. NBA.com's terms also restrict comprehensive, regularly updated statistical databases without consent. It is not a production ingestion source. |
 | Manual correction | Last-resort override | A correction must retain who supplied it, when, why, and which imported record it supersedes. It must never erase source provenance. |
@@ -62,6 +62,9 @@ replace a completed game from a higher-precedence source.
 - API-Sports: use the lower of the account quota, response rate-limit headers,
   and the application's configured provider limit. Retry only transient failures
   with bounded backoff.
+- API-Sports league 12 includes preseason and non-franchise exhibition records.
+  NBA imports admit only the 30 reviewed franchise IDs on or after each season's
+  regular-season opener; filtered counts remain in the job summary.
 - Licensed archives: follow the supplier's delivery and refresh contract. Local
   files do not bypass retention or redistribution limits.
 

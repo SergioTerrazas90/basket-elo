@@ -25,4 +25,19 @@ public class BackfillCatalogTests
         Assert.Equal(currentStartYear - 1946 + 1, seasons.Count);
         Assert.DoesNotContain(seasons, season => season.StartsWith("BAA", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void ApiSportsNbaCoverageMatchesReviewedProviderRange()
+    {
+        var catalog = new BackfillCatalog();
+        var nba = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == ApiSportsBasketballDataProvider.Source &&
+            league.Country == "USA" &&
+            league.LeagueName == "NBA");
+
+        Assert.Equal("USA: NBA", nba.DisplayName);
+        Assert.Equal("2008-2009", nba.StartSeason);
+        Assert.Equal("2025-2026", nba.EndSeason);
+        Assert.Equal(18, catalog.GetSeasonsForLeague(nba).Count);
+    }
 }

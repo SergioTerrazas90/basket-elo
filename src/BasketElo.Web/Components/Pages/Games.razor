@@ -1,5 +1,5 @@
 @page "/games"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "admin")]
 @rendermode InteractiveServer
 @using System.Text.Json
 @using BasketElo.Domain.Elo

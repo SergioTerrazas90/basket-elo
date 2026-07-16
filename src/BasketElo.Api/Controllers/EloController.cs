@@ -345,6 +345,9 @@ public class EloController(
     public async Task<ActionResult<EloRankingsEvolutionResponse>> GetRankingEvolution(
         [FromQuery] string? rulesetVersion,
         [FromQuery] string? teamIds,
+        [FromQuery] string? competition,
+        [FromQuery] string? season,
+        [FromQuery] DateTime? fromUtc,
         [FromQuery] DateTime? toUtc,
         [FromQuery] int pointsPerTeam = 0,
         CancellationToken cancellationToken = default)
@@ -369,6 +372,21 @@ public class EloController(
         var cutoffUtc = toUtc.HasValue
             ? DateTime.SpecifyKind(toUtc.Value.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1)
             : DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc);
+        var startUtc = fromUtc.HasValue
+            ? DateTime.SpecifyKind(fromUtc.Value.Date, DateTimeKind.Utc)
+            : new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var hasCompetitionFilter = !string.IsNullOrWhiteSpace(competition);
+        var hasSeasonFilter = !string.IsNullOrWhiteSpace(season);
+        var normalizedSeason = hasSeasonFilter ? NormalizeSeasonLabel(season!) : string.Empty;
+        var seasonStartUtc = DateTime.SpecifyKind(DateTime.MinValue.Date, DateTimeKind.Utc);
+        var seasonEndUtc = DateTime.SpecifyKind(DateTime.MaxValue.Date, DateTimeKind.Utc);
+        var previousSingleYearSeasonLabel = string.Empty;
+        var currentSingleYearSeasonLabel = string.Empty;
+        if (hasSeasonFilter)
+        {
+            TryGetSeasonWindow(normalizedSeason, out seasonStartUtc, out seasonEndUtc);
+            SetSingleYearSeasonLabels(normalizedSeason, out previousSingleYearSeasonLabel, out currentSingleYearSeasonLabel);
+        }
 
         var rows = await dbContext.Database
             .SqlQueryRaw<EvolutionHistorySqlRow>(
@@ -386,16 +404,41 @@ public class EloController(
                         ) AS "RowNumber"
                     FROM rating_history rh
                     INNER JOIN teams t ON t."Id" = rh."TeamId"
+                    INNER JOIN games g ON g."Id" = rh."GameId"
+                    INNER JOIN seasons s ON s."Id" = g."SeasonId"
+                    INNER JOIN competitions c ON c."Id" = g."CompetitionId"
                     WHERE rh."RulesetVersion" = @rulesetVersion
                       AND rh."TeamId" = ANY(@teamIds)
+                      AND rh."GameDateTimeUtc" >= @startUtc
                       AND rh."GameDateTimeUtc" <= @cutoffUtc
+                      AND (@hasCompetitionFilter = false OR c."Name" = @competition)
+                      AND (
+                          @hasSeasonFilter = false
+                          OR (
+                              rh."GameDateTimeUtc" >= @seasonStartUtc
+                              AND rh."GameDateTimeUtc" <= @seasonEndUtc
+                              AND s."Label" <> @previousSingleYearSeasonLabel
+                          )
+                          OR (
+                              s."Label" = @currentSingleYearSeasonLabel
+                              AND rh."GameDateTimeUtc" > @seasonEndUtc
+                          )
+                      )
                 ) ranked
                 WHERE @includeFullHistory OR "RowNumber" <= @pointsPerTeam
                 ORDER BY "TeamId", "GameDateTimeUtc", "Elo"
                 """,
                 new NpgsqlParameter("rulesetVersion", selectedRuleset),
                 new NpgsqlParameter("teamIds", selectedTeamIds.ToArray()) { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid },
+                new NpgsqlParameter("startUtc", startUtc),
                 new NpgsqlParameter("cutoffUtc", cutoffUtc),
+                new NpgsqlParameter("hasCompetitionFilter", hasCompetitionFilter),
+                new NpgsqlParameter("competition", competition ?? string.Empty),
+                new NpgsqlParameter("hasSeasonFilter", hasSeasonFilter),
+                new NpgsqlParameter("seasonStartUtc", seasonStartUtc),
+                new NpgsqlParameter("seasonEndUtc", seasonEndUtc),
+                new NpgsqlParameter("previousSingleYearSeasonLabel", previousSingleYearSeasonLabel),
+                new NpgsqlParameter("currentSingleYearSeasonLabel", currentSingleYearSeasonLabel),
                 new NpgsqlParameter("includeFullHistory", includeFullHistory),
                 new NpgsqlParameter("pointsPerTeam", pointsPerTeam))
             .ToListAsync(cancellationToken);
@@ -524,7 +567,7 @@ public class EloController(
 
         if (!string.IsNullOrWhiteSpace(season))
         {
-            movementQuery = movementQuery.Where(x => x.Game.Season.Label == season);
+            movementQuery = ApplySeasonFilter(movementQuery, season);
         }
 
         var movementRows = await movementQuery
@@ -1201,7 +1244,7 @@ public class EloController(
 
         if (!string.IsNullOrWhiteSpace(season))
         {
-            query = query.Where(x => x.Game.Season.Label == season);
+            query = ApplySeasonFilter(query, season);
         }
 
         if (fromUtc.HasValue)
@@ -1244,15 +1287,17 @@ public class EloController(
                 var seasons = await dbContext.RatingHistories
                     .AsNoTracking()
                     .Where(x => x.RulesetVersion == rulesetVersion)
-                    .Select(x => x.Game.Season.Label)
-                    .Distinct()
-                    .OrderByDescending(x => x)
+                    .Select(x => new
+                    {
+                        x.Game.Season.Label,
+                        x.GameDateTimeUtc
+                    })
                     .ToListAsync(cancellationToken);
 
                 return new EloRankingFilterOptions(
                     countries.Select(DisplayCountryFromCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x).ToList(),
                     competitions,
-                    seasons);
+                    seasons.Select(x => NormalizeSeasonLabel(x.Label, x.GameDateTimeUtc)).Distinct().OrderByDescending(x => x).ToList());
             }) ?? new EloRankingFilterOptions([], [], []);
     }
 
@@ -1286,7 +1331,7 @@ public class EloController(
             .GroupBy(x => x.TeamId)
             .ToDictionary(
                 x => x.Key,
-                x => x.Take(5).Sum(y => y.EloDelta));
+                x => x.First().EloDelta);
     }
 
     private static bool HasHistoryFilter(string? competition, string? season, DateTime? fromUtc, DateTime? toUtc)
@@ -1314,6 +1359,99 @@ public class EloController(
     private static bool IsCountryMatch(string? countryCode, string country)
         => string.Equals(DisplayCountryFromCode(countryCode), country, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(countryCode, country, StringComparison.OrdinalIgnoreCase);
+
+    private static IQueryable<RatingHistory> ApplySeasonFilter(IQueryable<RatingHistory> query, string season)
+    {
+        var normalized = NormalizeSeasonLabel(season);
+        if (!TryGetSeasonWindow(normalized, out var seasonStartUtc, out var seasonEndUtc))
+        {
+            return query.Where(x => x.Game.Season.Label == normalized);
+        }
+
+        SetSingleYearSeasonLabels(normalized, out var previousSingleYearSeasonLabel, out var currentSingleYearSeasonLabel);
+        return query.Where(x =>
+            (x.GameDateTimeUtc >= seasonStartUtc &&
+             x.GameDateTimeUtc <= seasonEndUtc &&
+             x.Game.Season.Label != previousSingleYearSeasonLabel) ||
+            (x.Game.Season.Label == currentSingleYearSeasonLabel &&
+             x.GameDateTimeUtc > seasonEndUtc));
+    }
+
+    private static string NormalizeSeasonLabel(string season, DateTime? gameDateTimeUtc = null)
+    {
+        var trimmed = season.Trim();
+        if (trimmed.Contains('-', StringComparison.Ordinal))
+        {
+            if (!gameDateTimeUtc.HasValue ||
+                (TryGetSeasonWindow(trimmed, out var seasonStartUtc, out var seasonEndUtc) &&
+                 gameDateTimeUtc.Value >= seasonStartUtc &&
+                 gameDateTimeUtc.Value <= seasonEndUtc))
+            {
+                return trimmed;
+            }
+
+            return GetSeasonLabelForDate(gameDateTimeUtc.Value);
+        }
+
+        if (!int.TryParse(trimmed, out var year))
+        {
+            return trimmed;
+        }
+
+        if (gameDateTimeUtc.HasValue)
+        {
+            var dateSeason = GetSeasonLabelForDate(gameDateTimeUtc.Value);
+            var previousSeason = $"{year - 1}-{year}";
+            var currentSeason = $"{year}-{year + 1}";
+            return dateSeason == previousSeason || dateSeason == currentSeason
+                ? dateSeason
+                : currentSeason;
+        }
+
+        return $"{year}-{year + 1}";
+    }
+
+    private static bool TryGetSeasonWindow(string season, out DateTime seasonStartUtc, out DateTime seasonEndUtc)
+    {
+        seasonStartUtc = default;
+        seasonEndUtc = default;
+
+        var parts = season.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2 ||
+            !int.TryParse(parts[0], out var startYear) ||
+            !int.TryParse(parts[1], out var endYear) ||
+            endYear != startYear + 1)
+        {
+            return false;
+        }
+
+        seasonStartUtc = new DateTime(startYear, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        seasonEndUtc = new DateTime(endYear, 7, 31, 23, 59, 59, 999, DateTimeKind.Utc).AddTicks(9999);
+        return true;
+    }
+
+    private static string GetSeasonLabelForDate(DateTime gameDateTimeUtc)
+        => gameDateTimeUtc.Month >= 8
+            ? $"{gameDateTimeUtc.Year}-{gameDateTimeUtc.Year + 1}"
+            : $"{gameDateTimeUtc.Year - 1}-{gameDateTimeUtc.Year}";
+
+    private static void SetSingleYearSeasonLabels(
+        string normalizedSeason,
+        out string previousSingleYearSeasonLabel,
+        out string currentSingleYearSeasonLabel)
+    {
+        previousSingleYearSeasonLabel = string.Empty;
+        currentSingleYearSeasonLabel = string.Empty;
+
+        var parts = normalizedSeason.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2 || !int.TryParse(parts[0], out var startYear))
+        {
+            return;
+        }
+
+        previousSingleYearSeasonLabel = (startYear - 1).ToString(CultureInfo.InvariantCulture);
+        currentSingleYearSeasonLabel = startYear.ToString(CultureInfo.InvariantCulture);
+    }
 
     private static IReadOnlyList<Guid> ParseTeamIds(string? teamIds)
     {

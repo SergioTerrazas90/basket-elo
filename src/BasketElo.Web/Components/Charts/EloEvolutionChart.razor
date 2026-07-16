@@ -21,6 +21,7 @@
     }
 
     <RadzenChart class="elo-radzen-chart"
+                 Style="@ChartStyle"
                  TooltipTolerance="40"
                  MouseMoveThrottle="25"
                  AllowZoom="@EnableRangeNavigation"
@@ -28,7 +29,7 @@
                  @bind-Zoom="chartZoom"
                  @bind-ViewStart="viewStart"
                  @bind-ViewEnd="viewEnd">
-        <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="ChartTooltipTrigger.Axis" />
+        <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="@TooltipTrigger" />
         <RadzenLegend Visible="@ShowLegend" Position="LegendPosition.Bottom" />
 
         @foreach (var series in DisplaySeries)
@@ -88,11 +89,20 @@
     [Parameter]
     public bool Smooth { get; set; }
 
+    [Parameter]
+    public int HeightPixels { get; set; } = 340;
+
     private double chartZoom = 100;
     private double viewStart;
     private double viewEnd = 1;
 
     private EloChartSamplingMode samplingMode = EloChartSamplingMode.GameByGame;
+
+    private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
+
+    private ChartTooltipTrigger TooltipTrigger => SharedTooltip
+        ? ChartTooltipTrigger.Axis
+        : ChartTooltipTrigger.Point;
 
     private IReadOnlyList<EloChartSeries> SourceSeries
         => Series

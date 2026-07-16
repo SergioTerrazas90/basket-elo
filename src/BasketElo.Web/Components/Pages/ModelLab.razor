@@ -341,6 +341,52 @@
                             </div>
                         }
                     </div>
+
+                    <div class="filter-field">
+                        <div class="label-with-info">
+                            <label for="marginDampenerFactor">Dampener factor</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("marginDampenerFactor")'
+                                    aria-controls="marginDampenerFactorInfo"
+                                    title="Dampener factor context"
+                                    @onclick='() => ToggleInfoPanel("marginDampenerFactor")'>
+                                i
+                            </button>
+                        </div>
+                        <input id="marginDampenerFactor" class="form-control" type="number" min="1" max="20" step="0.25" @bind="marginDampenerFactor" disabled="@(!usesMarginAdjustment)" />
+                        @if (IsInfoPanelVisible("marginDampenerFactor"))
+                        {
+                            <div id="marginDampenerFactorInfo" class="info-panel">
+                                <p>This scales the logarithmic boost or dampener from margin overperformance. The default is 5.</p>
+                                <p>Higher values make margin adjustment gentler because the same shortfall or blowout is divided into a smaller effect. Lower values make margin matter faster.</p>
+                                <p>For underperformance, the model uses ln(shortfall + 1) divided by this factor before reducing the multiplier.</p>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="filter-field">
+                        <div class="label-with-info">
+                            <label for="maxMarginMultiplier">Margin cap</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("maxMarginMultiplier")'
+                                    aria-controls="maxMarginMultiplierInfo"
+                                    title="Margin cap context"
+                                    @onclick='() => ToggleInfoPanel("maxMarginMultiplier")'>
+                                i
+                            </button>
+                        </div>
+                        <input id="maxMarginMultiplier" class="form-control" type="number" min="1" max="3" step="0.05" @bind="maxMarginMultiplier" disabled="@(!usesMarginAdjustment)" />
+                        @if (IsInfoPanelVisible("maxMarginMultiplier"))
+                        {
+                            <div id="maxMarginMultiplierInfo" class="info-panel">
+                                <p>This caps how far point margin can move the normal win/loss ELO delta. The default is 1.5x.</p>
+                                <p>The lower bound is derived from the same cap. A 1.5x cap means the weakest multiplier is 1 / 1.5, or about 0.667x.</p>
+                                <p>Raising the cap lets blowouts and underwhelming wins have more influence. Lowering it keeps updates closer to plain ELO.</p>
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
 
@@ -434,86 +480,93 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="initFrom">Init from</label>
+                            <label for="initFromSeason">Init from season</label>
                             <button type="button"
                                     class="info-button"
-                                    aria-expanded='@IsInfoPanelVisible("initFrom")'
-                                    aria-controls="initFromInfo"
+                                    aria-expanded='@IsInfoPanelVisible("initSeason")'
+                                    aria-controls="initSeasonInfo"
                                     title="Initialization start context"
-                                    @onclick='() => ToggleInfoPanel("initFrom")'>
+                                    @onclick='() => ToggleInfoPanel("initSeason")'>
                                 i
                             </button>
                         </div>
-                        <input id="initFrom" class="form-control" type="date" @bind-value="initializationFrom" @bind-value:format="yyyy-MM-dd" />
-                        @if (IsInfoPanelVisible("initFrom"))
+                        <select id="initFromSeason" class="form-select" @bind="initializationFromSeason" @bind:after="ApplySelectedSeasonsToDates">
+                            @foreach (var season in AvailableSeasons)
+                            {
+                                <option value="@season.Label">@season.Label</option>
+                            }
+                        </select>
+                        @if (IsInfoPanelVisible("initSeason"))
                         {
-                            <div id="initFromInfo" class="info-panel">
-                                <p>The initialization window builds ratings before scoring begins. Earlier starts give teams more history, but may include older team strength.</p>
+                            <div id="initSeasonInfo" class="info-panel">
+                                <p>The initialization seasons build ratings before scoring begins. Earlier starts give teams more history, but may include older team strength.</p>
+                                <p>The app resolves the selected seasons to the first and last game dates available in the database.</p>
                             </div>
                         }
                     </div>
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="initTo">Init to</label>
-                            <button type="button"
-                                    class="info-button"
-                                    aria-expanded='@IsInfoPanelVisible("initTo")'
-                                    aria-controls="initToInfo"
-                                    title="Initialization end context"
-                                    @onclick='() => ToggleInfoPanel("initTo")'>
-                                i
-                            </button>
+                            <label for="initToSeason">Init to season</label>
                         </div>
-                        <input id="initTo" class="form-control" type="date" @bind-value="initializationTo" @bind-value:format="yyyy-MM-dd" />
-                        @if (IsInfoPanelVisible("initTo"))
-                        {
-                            <div id="initToInfo" class="info-panel">
-                                <p>Games up to this date update ratings but do not count in the reported backtest metrics.</p>
-                            </div>
-                        }
+                        <select id="initToSeason" class="form-select" @bind="initializationToSeason" @bind:after="ApplySelectedSeasonsToDates">
+                            @foreach (var season in AvailableSeasons)
+                            {
+                                <option value="@season.Label">@season.Label</option>
+                            }
+                        </select>
                     </div>
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="scoredFrom">Score from</label>
+                            <label for="scoredFromSeason">Score from season</label>
                             <button type="button"
                                     class="info-button"
-                                    aria-expanded='@IsInfoPanelVisible("scoredFrom")'
-                                    aria-controls="scoredFromInfo"
+                                    aria-expanded='@IsInfoPanelVisible("scoredSeason")'
+                                    aria-controls="scoredSeasonInfo"
                                     title="Scored start context"
-                                    @onclick='() => ToggleInfoPanel("scoredFrom")'>
+                                    @onclick='() => ToggleInfoPanel("scoredSeason")'>
                                 i
                             </button>
                         </div>
-                        <input id="scoredFrom" class="form-control" type="date" @bind-value="scoredFrom" @bind-value:format="yyyy-MM-dd" />
-                        @if (IsInfoPanelVisible("scoredFrom"))
+                        <select id="scoredFromSeason" class="form-select" @bind="scoredFromSeason" @bind:after="ApplySelectedSeasonsToDates">
+                            @foreach (var season in AvailableSeasons)
+                            {
+                                <option value="@season.Label">@season.Label</option>
+                            }
+                        </select>
+                        @if (IsInfoPanelVisible("scoredSeason"))
                         {
-                            <div id="scoredFromInfo" class="info-panel">
-                                <p>From this date onward, predictions are recorded before each game updates ratings. These games drive winner accuracy, Brier score, log loss, and margin error.</p>
+                            <div id="scoredSeasonInfo" class="info-panel">
+                                <p>Scored seasons record predictions before each game updates ratings. These games drive winner accuracy, Brier score, log loss, and margin error.</p>
+                                <p>Use the same scored seasons when comparing models so metric changes come from parameters, not a different sample.</p>
                             </div>
                         }
                     </div>
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="scoredTo">Score to</label>
-                            <button type="button"
-                                    class="info-button"
-                                    aria-expanded='@IsInfoPanelVisible("scoredTo")'
-                                    aria-controls="scoredToInfo"
-                                    title="Scored end context"
-                                    @onclick='() => ToggleInfoPanel("scoredTo")'>
-                                i
-                            </button>
+                            <label for="scoredToSeason">Score to season</label>
                         </div>
-                        <input id="scoredTo" class="form-control" type="date" @bind-value="scoredTo" @bind-value:format="yyyy-MM-dd" />
-                        @if (IsInfoPanelVisible("scoredTo"))
-                        {
-                            <div id="scoredToInfo" class="info-panel">
-                                <p>This closes the scoring window. Use the same scored window when comparing models so metric changes come from parameters, not a different sample.</p>
-                            </div>
-                        }
+                        <select id="scoredToSeason" class="form-select" @bind="scoredToSeason" @bind:after="ApplySelectedSeasonsToDates">
+                            @foreach (var season in AvailableSeasons)
+                            {
+                                <option value="@season.Label">@season.Label</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="season-window-summary">
+                        <div>
+                            <span>Initialization window</span>
+                            <strong>@InitializationSeasonSummary</strong>
+                            <small>@FormatWindow(initializationFrom, initializationTo)</small>
+                        </div>
+                        <div>
+                            <span>Scored window</span>
+                            <strong>@ScoredSeasonSummary</strong>
+                            <small>@FormatWindow(scoredFrom, scoredTo)</small>
+                        </div>
                     </div>
 
                     <div class="run-actions">
@@ -695,7 +748,13 @@
     private bool usesMarginAdjustment;
     private decimal pointsPerEloMargin;
     private decimal competitionWeight;
+    private decimal marginDampenerFactor;
+    private decimal maxMarginMultiplier;
     private string? activeInfoPanel;
+    private string? initializationFromSeason;
+    private string? initializationToSeason;
+    private string? scoredFromSeason;
+    private string? scoredToSeason;
     private DateTime initializationFrom;
     private DateTime initializationTo;
     private DateTime scoredFrom;
@@ -875,7 +934,7 @@
 
             if (string.Equals(lastSavedRunSignature, BuildCurrentRunSignature(), StringComparison.Ordinal))
             {
-                return "Change model parameters, dates, or scope before saving another run.";
+                return "Change model parameters, seasons, or scope before saving another run.";
             }
 
             return null;
@@ -920,6 +979,18 @@
         }
     }
 
+    private IReadOnlyList<ModelLabSeasonOption> AvailableSeasons
+        => options?.Seasons
+            .OrderBy(x => x.FirstGameUtc)
+            .ThenBy(x => x.Label)
+            .ToList() ?? [];
+
+    private string InitializationSeasonSummary
+        => FormatSeasonRange(initializationFromSeason, initializationToSeason);
+
+    private string ScoredSeasonSummary
+        => FormatSeasonRange(scoredFromSeason, scoredToSeason);
+
     private string LeagueAccessNote
         => entitlement?.PlanKey switch
         {
@@ -961,6 +1032,33 @@
 
     private static string FormatRunDate(DateTime value)
         => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    private static string FormatWindow(DateTime fromUtc, DateTime toUtc)
+        => fromUtc == default || toUtc == default
+            ? "No games resolved"
+            : $"{fromUtc:yyyy-MM-dd} to {toUtc:yyyy-MM-dd}";
+
+    private string FormatSeasonRange(string? fromSeason, string? toSeason)
+    {
+        var seasons = AvailableSeasons;
+        if (seasons.Count == 0)
+        {
+            return "No seasons available";
+        }
+
+        var fromIndex = FindSeasonIndex(fromSeason);
+        var toIndex = FindSeasonIndex(toSeason);
+        if (fromIndex < 0 || toIndex < 0)
+        {
+            return "Choose seasons";
+        }
+
+        var start = seasons[Math.Min(fromIndex, toIndex)].Label;
+        var end = seasons[Math.Max(fromIndex, toIndex)].Label;
+        return string.Equals(start, end, StringComparison.OrdinalIgnoreCase)
+            ? start
+            : $"{start} to {end}";
+    }
 
     private void OnScopeTypeChanged(ChangeEventArgs args)
     {
@@ -1319,6 +1417,7 @@
     private async Task RunBacktestAsync()
     {
         NormalizeScopeForEntitlement();
+        ApplySelectedSeasonsToDates();
 
         if (scopeType == ModelLabScopeTypes.SelectedCompetitions && selectedCompetitionIds.Count == 0)
         {
@@ -1369,6 +1468,7 @@
     private async Task CreateStoredRunAsync()
     {
         NormalizeScopeForEntitlement();
+        ApplySelectedSeasonsToDates();
 
         if (scopeType == ModelLabScopeTypes.SelectedCompetitions && selectedCompetitionIds.Count == 0)
         {
@@ -1495,7 +1595,9 @@
             probabilityScale,
             usesMarginAdjustment,
             usesMarginAdjustment ? pointsPerEloMargin : null,
-            competitionWeight);
+            competitionWeight,
+            marginDampenerFactor,
+            maxMarginMultiplier);
 
     private string BuildRequestLeagueName()
         => scopeType switch
@@ -1520,6 +1622,12 @@
         var pointsPerMargin = usesMarginAdjustment
             ? pointsPerEloMargin.ToString("0.####")
             : string.Empty;
+        var marginDampener = usesMarginAdjustment
+            ? marginDampenerFactor.ToString("0.####")
+            : string.Empty;
+        var marginCap = usesMarginAdjustment
+            ? maxMarginMultiplier.ToString("0.####")
+            : string.Empty;
 
         return string.Join("|", [
             selectedModelIdText.Trim(),
@@ -1528,6 +1636,10 @@
             (leagueName ?? string.Empty).Trim(),
             scopeType,
             competitionIds,
+            initializationFromSeason ?? string.Empty,
+            initializationToSeason ?? string.Empty,
+            scoredFromSeason ?? string.Empty,
+            scoredToSeason ?? string.Empty,
             initializationFrom.Date.ToString("O"),
             initializationTo.Date.ToString("O"),
             scoredFrom.Date.ToString("O"),
@@ -1538,7 +1650,9 @@
             probabilityScale.ToString("0.####"),
             usesMarginAdjustment.ToString(),
             pointsPerMargin,
-            competitionWeight.ToString("0.####")
+            competitionWeight.ToString("0.####"),
+            marginDampener,
+            marginCap
         ]);
     }
 
@@ -1555,6 +1669,12 @@
         var pointsPerMargin = usesMarginAdjustment
             ? pointsPerEloMargin.ToString("0.####")
             : string.Empty;
+        var marginDampener = usesMarginAdjustment
+            ? marginDampenerFactor.ToString("0.####")
+            : string.Empty;
+        var marginCap = usesMarginAdjustment
+            ? maxMarginMultiplier.ToString("0.####")
+            : string.Empty;
 
         return string.Join("|", [
             baseRating.ToString("0.####"),
@@ -1563,7 +1683,9 @@
             probabilityScale.ToString("0.####"),
             usesMarginAdjustment.ToString(),
             pointsPerMargin,
-            competitionWeight.ToString("0.####")
+            competitionWeight.ToString("0.####"),
+            marginDampener,
+            marginCap
         ]);
     }
 
@@ -1593,15 +1715,34 @@
             .ToHashSet();
         ApplyParameters(response.Defaults);
 
-        var last = response.LastGameUtc?.Date ?? DateTime.UtcNow.Date;
-        scoredTo = last;
-        scoredFrom = last.AddYears(-1).AddDays(1);
-        initializationTo = scoredFrom.AddDays(-1);
-        initializationFrom = initializationTo.AddYears(-2).AddDays(1);
-
-        if (response.FirstGameUtc.HasValue && initializationFrom < response.FirstGameUtc.Value.Date)
+        var seasons = response.Seasons
+            .OrderBy(x => x.FirstGameUtc)
+            .ThenBy(x => x.Label)
+            .ToList();
+        if (seasons.Count > 0)
         {
-            initializationFrom = response.FirstGameUtc.Value.Date;
+            var scoredStartIndex = seasons.Count - 1;
+            var initializationStartIndex = Math.Max(0, scoredStartIndex - 2);
+            var initializationEndIndex = Math.Max(initializationStartIndex, scoredStartIndex - 1);
+
+            initializationFromSeason = seasons[initializationStartIndex].Label;
+            initializationToSeason = seasons[initializationEndIndex].Label;
+            scoredFromSeason = seasons[scoredStartIndex].Label;
+            scoredToSeason = seasons[scoredStartIndex].Label;
+            ApplySelectedSeasonsToDates();
+        }
+        else
+        {
+            var last = response.LastGameUtc?.Date ?? DateTime.UtcNow.Date;
+            scoredTo = last;
+            scoredFrom = last.AddYears(-1).AddDays(1);
+            initializationTo = scoredFrom.AddDays(-1);
+            initializationFrom = initializationTo.AddYears(-2).AddDays(1);
+
+            if (response.FirstGameUtc.HasValue && initializationFrom < response.FirstGameUtc.Value.Date)
+            {
+                initializationFrom = response.FirstGameUtc.Value.Date;
+            }
         }
     }
 
@@ -1612,8 +1753,69 @@
         homeAdvantageElo = parameters.HomeAdvantageElo;
         probabilityScale = parameters.ProbabilityScale;
         usesMarginAdjustment = parameters.UsesMarginAdjustment;
-        pointsPerEloMargin = parameters.PointsPerEloMargin ?? 28m;
+        pointsPerEloMargin = parameters.PointsPerEloMargin ?? EloCalculator.PointsPerEloMargin;
         competitionWeight = parameters.CompetitionWeight;
+        marginDampenerFactor = parameters.MarginDampenerFactor;
+        maxMarginMultiplier = parameters.MaxMarginMultiplier;
+    }
+
+    private void ApplySelectedSeasonsToDates()
+    {
+        if (TryResolveSeasonRange(initializationFromSeason, initializationToSeason, out var initFrom, out var initTo))
+        {
+            initializationFrom = initFrom;
+            initializationTo = initTo;
+        }
+
+        if (TryResolveSeasonRange(scoredFromSeason, scoredToSeason, out var scoreFrom, out var scoreTo))
+        {
+            scoredFrom = scoreFrom;
+            scoredTo = scoreTo;
+        }
+    }
+
+    private bool TryResolveSeasonRange(string? fromSeason, string? toSeason, out DateTime fromUtc, out DateTime toUtc)
+    {
+        fromUtc = default;
+        toUtc = default;
+
+        var seasons = AvailableSeasons;
+        if (seasons.Count == 0)
+        {
+            return false;
+        }
+
+        var fromIndex = FindSeasonIndex(fromSeason);
+        var toIndex = FindSeasonIndex(toSeason);
+        if (fromIndex < 0 || toIndex < 0)
+        {
+            return false;
+        }
+
+        var startIndex = Math.Min(fromIndex, toIndex);
+        var endIndex = Math.Max(fromIndex, toIndex);
+        fromUtc = seasons[startIndex].FirstGameUtc.Date;
+        toUtc = seasons[endIndex].LastGameUtc.Date;
+        return true;
+    }
+
+    private int FindSeasonIndex(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return -1;
+        }
+
+        var seasons = AvailableSeasons;
+        for (var index = 0; index < seasons.Count; index++)
+        {
+            if (string.Equals(seasons[index].Label, label, StringComparison.OrdinalIgnoreCase))
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     private string? NormalizeLeagueForEntitlement(string? requestedLeague)

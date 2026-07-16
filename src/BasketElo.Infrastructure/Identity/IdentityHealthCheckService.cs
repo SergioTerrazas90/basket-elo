@@ -970,7 +970,7 @@ public class IdentityHealthCheckService(
         return new IdentityHealthCheckRequest
         {
             Source = string.IsNullOrWhiteSpace(request.Source) ? null : request.Source.Trim().ToLowerInvariant(),
-            Season = string.IsNullOrWhiteSpace(request.Season) ? null : request.Season.Trim(),
+            Season = string.IsNullOrWhiteSpace(request.Season) ? null : SeasonLabelNormalizer.ToFullSeasonLabel(request.Season),
             CountryCode = NormalizeCountryCode(request.CountryCode),
             CompetitionId = request.CompetitionId,
             Force = request.Force

@@ -31,6 +31,16 @@ public static class ModelLabParameterValidator
             throw new ArgumentException("Competition weight must be greater than 0 and at most 3.");
         }
 
+        if (parameters.MarginDampenerFactor is < 1m or > 20m)
+        {
+            throw new ArgumentException("Margin dampener factor must be between 1 and 20.");
+        }
+
+        if (parameters.MaxMarginMultiplier is < 1m or > 3m)
+        {
+            throw new ArgumentException("Max margin multiplier must be between 1 and 3.");
+        }
+
         if (parameters.UsesMarginAdjustment &&
             (!parameters.PointsPerEloMargin.HasValue || parameters.PointsPerEloMargin.Value is < 5m or > 100m))
         {

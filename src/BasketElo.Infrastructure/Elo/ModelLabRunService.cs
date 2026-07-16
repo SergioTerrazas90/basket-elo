@@ -556,7 +556,9 @@ public sealed class ModelLabRunService(
             version.ProbabilityScale,
             version.UsesMarginAdjustment,
             version.PointsPerEloMargin,
-            version.CompetitionWeight);
+            version.CompetitionWeight,
+            version.MarginDampenerFactor,
+            version.MaxMarginMultiplier);
 
     private static ModelLabRunSummaryResponse ToSummaryResponse(ModelLabRun run)
         => new(

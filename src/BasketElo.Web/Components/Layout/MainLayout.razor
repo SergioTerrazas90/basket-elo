@@ -14,8 +14,12 @@
             </div>
             <nav class="quick-links" aria-label="Quick links">
                 <a href="rankings">Rankings</a>
-                <a href="games">Games</a>
                 <a href="model-lab">Model Lab</a>
+                <AuthorizeView Roles="admin">
+                    <Authorized>
+                        <a href="games">Games</a>
+                    </Authorized>
+                </AuthorizeView>
             </nav>
             <AuthStatus />
         </header>

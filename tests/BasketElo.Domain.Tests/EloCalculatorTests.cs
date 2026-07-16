@@ -84,6 +84,47 @@ public class EloCalculatorTests
     }
 
     [Fact]
+    public void Calculate_LargerMarginDampenerFactorMakesUnderperformancePenaltyGentler()
+    {
+        var defaultFactor = EloCalculator.Calculate(
+            80,
+            79,
+            1780m,
+            1500m,
+            new EloRulesetParameters(1500m, 20, 0m, 28m, 1m, true));
+        var largerFactor = EloCalculator.Calculate(
+            80,
+            79,
+            1780m,
+            1500m,
+            new EloRulesetParameters(1500m, 20, 0m, 28m, 1m, true, 400m, 10m));
+
+        Assert.True(largerFactor.MarginMultiplier > defaultFactor.MarginMultiplier);
+        Assert.True(largerFactor.HomeDelta > defaultFactor.HomeDelta);
+    }
+
+    [Fact]
+    public void Calculate_HigherMarginCapAllowsStrongerUnderperformancePenalty()
+    {
+        var defaultCap = EloCalculator.Calculate(
+            80,
+            79,
+            1780m,
+            1500m,
+            new EloRulesetParameters(1500m, 20, 0m, 28m, 1m, true, 400m, 1m, 1.5m));
+        var higherCap = EloCalculator.Calculate(
+            80,
+            79,
+            1780m,
+            1500m,
+            new EloRulesetParameters(1500m, 20, 0m, 28m, 1m, true, 400m, 1m, 3m));
+
+        Assert.InRange(defaultCap.MarginMultiplier, 0.6666m, 0.6667m);
+        Assert.InRange(higherCap.MarginMultiplier, 0.3333m, 0.3334m);
+        Assert.True(higherCap.HomeDelta < defaultCap.HomeDelta);
+    }
+
+    [Fact]
     public void LegacyRulesets_KeepExistingHomeAdvantage()
     {
         var basic = EloCalculator.GetRulesetParameters(EloRulesetVersions.BasicEloV1);

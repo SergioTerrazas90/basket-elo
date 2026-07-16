@@ -21,6 +21,7 @@ Ruleset names follow short model-style slugs:
 - Home advantage: `70` ELO points
 - Points per ELO margin: `28`
 - Competition weight: `1.0`
+- Margin dampener factor: `5`
 - Max margin multiplier: `1.5`
 - Min margin multiplier: `0.6667`
 
@@ -65,3 +66,13 @@ The margin-adjusted ruleset still preserves normal ELO direction:
 - Point margin only boosts or dampens the normal win/loss delta.
 
 The adjustment compares the winner's actual margin with the winner's expected margin. Overperforming the expected margin increases the multiplier, while underperforming it dampens the multiplier. The multiplier is bounded between `0.6667` and `1.5`.
+
+The dampener/boost size is:
+
+```text
+ln(marginDifference + 1) / marginDampenerFactor
+```
+
+`marginDampenerFactor` defaults to `5`. Higher values make the margin adjustment gentler; lower values make it reach the cap faster.
+
+`maxMarginMultiplier` defaults to `1.5`. It caps the strongest boost at `1.5x` and derives the strongest dampener as `1 / 1.5`, or about `0.6667x`.

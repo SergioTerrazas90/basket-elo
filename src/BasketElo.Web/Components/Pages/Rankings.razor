@@ -36,7 +36,12 @@
     <section class="ranking-filters" aria-label="Ranking filters">
         <div class="filter-field wide">
             <label for="teamSearch">Team</label>
-            <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" placeholder="Search Real Madrid, Fenerbahce..." />
+            <div class="clearable-field">
+                <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" placeholder="Search Real Madrid, Fenerbahce..." />
+                <button type="button" class="clear-filter" aria-label="Clear team search" title="Clear team search" @onclick="ClearTeamSearch" disabled="@(!HasTeamSearch)">
+                    &times;
+                </button>
+            </div>
         </div>
 
         <div class="filter-field">
@@ -51,9 +56,9 @@
         </div>
 
         <div class="filter-field">
-            <label for="seasonFilter">Season</label>
-            <select id="seasonFilter" class="form-select" @bind="selectedSeason">
-                <option value="">Any season</option>
+            <label for="fromSeasonFilter">From season</label>
+            <select id="fromSeasonFilter" class="form-select" @bind="selectedFromSeason">
+                <option value="">All history</option>
                 @foreach (var option in response?.Filters.Seasons ?? [])
                 {
                     <option value="@option">@option</option>
@@ -62,18 +67,14 @@
         </div>
 
         <div class="filter-field">
-            <label for="asOfDate">As of</label>
-            <input id="asOfDate" class="form-control" type="date" @bind-value="archiveDate" @bind-value:format="yyyy-MM-dd" disabled="@IsMoversView" />
-        </div>
-
-        <div class="filter-field">
-            <label for="fromDate">From</label>
-            <input id="fromDate" class="form-control" type="date" @bind-value="fromDate" @bind-value:format="yyyy-MM-dd" />
-        </div>
-
-        <div class="filter-field">
-            <label for="toDate">To</label>
-            <input id="toDate" class="form-control" type="date" @bind-value="toDate" @bind-value:format="yyyy-MM-dd" />
+            <label for="toSeasonFilter">To season</label>
+            <select id="toSeasonFilter" class="form-select" @bind="selectedToSeason">
+                <option value="">Current</option>
+                @foreach (var option in response?.Filters.Seasons ?? [])
+                {
+                    <option value="@option">@option</option>
+                }
+            </select>
         </div>
 
         <div class="filter-field compact">
@@ -138,13 +139,13 @@
                         <p>@MoversContextLabel()</p>
                     </div>
                     <div class="pager">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || (movers?.Page ?? page) <= 1">Previous</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
                         <label class="page-jump" for="moversPageInput">
                             <span>Page</span>
-                            <input id="moversPageInput" class="form-control form-control-sm" type="number" min="1" max="@(movers?.TotalPages ?? 1)" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                            <input id="moversPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
                         </label>
                         <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || (movers?.Page ?? page) >= (movers?.TotalPages ?? 1)">Next</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
                     </div>
                 </div>
 
@@ -232,7 +233,7 @@
                     }
                     else
                     {
-                        <EloEvolutionChart Series="@BuildEvolutionChartSeries()" EnableRangeNavigation="true" />
+                        <EloEvolutionChart Series="@BuildEvolutionChartSeries()" EnableRangeNavigation="true" ShowLegend="false" SharedTooltip="false" HeightPixels="@ChartHeightPixels" />
 
                         <div class="evolution-legend legacy-links" aria-label="ELO evolution chart team links">
                             @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
@@ -257,13 +258,13 @@
                         <p>@TableContextLabel()</p>
                     </div>
                     <div class="pager">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || CurrentPage <= 1">Previous</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
                         <label class="page-jump" for="rankingsPageInput">
                             <span>Page</span>
                             <input id="rankingsPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
                         </label>
                         <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || CurrentPage >= CurrentTotalPages">Next</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
                     </div>
                 </div>
 
@@ -280,7 +281,7 @@
                                 <th>Country</th>
                                 <th class="numeric">ELO</th>
                                 <th class="numeric">Games</th>
-                                <th class="numeric">Recent</th>
+                                <th class="numeric">Last</th>
                                 <th>Last game</th>
                             </tr>
                         </thead>
@@ -329,14 +330,17 @@
     [SupplyParameterFromQuery(Name = "season")]
     public string? Season { get; set; }
 
+    [SupplyParameterFromQuery(Name = "fromSeason")]
+    public string? FromSeason { get; set; }
+
+    [SupplyParameterFromQuery(Name = "toSeason")]
+    public string? ToSeason { get; set; }
+
     [SupplyParameterFromQuery(Name = "from")]
     public DateTime? From { get; set; }
 
     [SupplyParameterFromQuery(Name = "to")]
     public DateTime? To { get; set; }
-
-    [SupplyParameterFromQuery(Name = "asOfDate")]
-    public DateTime? AsOfDate { get; set; }
 
     [SupplyParameterFromQuery(Name = "minGames")]
     public int? MinGames { get; set; }
@@ -364,11 +368,9 @@
     private bool isChartExpanded;
     private string? errorMessage;
     private string? selectedCountry;
-    private string? selectedSeason;
+    private string? selectedFromSeason;
+    private string? selectedToSeason;
     private string? teamSearch;
-    private DateTime? fromDate;
-    private DateTime? toDate;
-    private DateTime? archiveDate;
     private int minimumGames;
     private int page = 1;
     private int requestedPage = 1;
@@ -390,10 +392,17 @@
         }
 
         selectedCountry = Country;
-        selectedSeason = Season;
-        fromDate = From;
-        toDate = To;
-        archiveDate = AsOfDate;
+        selectedFromSeason = FromSeason;
+        selectedToSeason = ToSeason;
+        if (!string.IsNullOrWhiteSpace(Season) && string.IsNullOrWhiteSpace(selectedFromSeason) && string.IsNullOrWhiteSpace(selectedToSeason))
+        {
+            selectedFromSeason = Season;
+            selectedToSeason = Season;
+        }
+        else
+        {
+            ApplyLegacyDateRange();
+        }
         minimumGames = Math.Max(0, MinGames ?? 0);
         teamSearch = Team;
         selectedView = string.Equals(View, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
@@ -415,10 +424,8 @@
     private Task ResetFiltersAsync()
     {
         selectedCountry = null;
-        selectedSeason = null;
-        fromDate = null;
-        toDate = null;
-        archiveDate = null;
+        selectedFromSeason = null;
+        selectedToSeason = null;
         minimumGames = 0;
         teamSearch = null;
         NavigateToRankings(1);
@@ -428,10 +435,13 @@
     private Task SelectViewAsync(string view)
     {
         selectedView = string.Equals(view, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
-        if (selectedView == "movers")
-        {
-            archiveDate = null;
-        }
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private Task ClearTeamSearch()
+    {
+        teamSearch = null;
         NavigateToRankings(1);
         return Task.CompletedTask;
     }
@@ -538,6 +548,7 @@
 
     private void NavigateToRankings(int targetPage)
     {
+        NormalizeSelectedSeasonRange();
         targetPage = ClampRequestedPage(targetPage, CurrentTotalPages);
         page = targetPage;
         lastLoadedUri = null;
@@ -548,10 +559,8 @@
             ["movement"] = selectedView == "movers" ? selectedMoverDirection : null,
             ["windowDays"] = selectedView == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
             ["country"] = selectedCountry,
-            ["season"] = selectedSeason,
-            ["from"] = fromDate?.ToString("yyyy-MM-dd"),
-            ["to"] = toDate?.ToString("yyyy-MM-dd"),
-            ["asOfDate"] = selectedView == "rankings" ? archiveDate?.ToString("yyyy-MM-dd") : null,
+            ["fromSeason"] = selectedFromSeason,
+            ["toSeason"] = selectedToSeason,
             ["minGames"] = minimumGames > 0 ? minimumGames : null,
             ["team"] = teamSearch,
             ["page"] = targetPage > 1 ? targetPage : null
@@ -563,13 +572,101 @@
     private static int ClampRequestedPage(int value, int totalPages)
         => Math.Clamp(value, 1, Math.Max(1, totalPages));
 
+    private void ApplyLegacyDateRange()
+    {
+        if (string.IsNullOrWhiteSpace(selectedFromSeason) && From.HasValue)
+        {
+            selectedFromSeason = GetSeasonLabelForDate(From.Value);
+        }
+
+        if (string.IsNullOrWhiteSpace(selectedToSeason) && To.HasValue)
+        {
+            selectedToSeason = GetSeasonLabelForDate(To.Value);
+        }
+    }
+
+    private void NormalizeSelectedSeasonRange()
+    {
+        if (TryParseSeasonStartYear(selectedFromSeason, out var fromYear) &&
+            TryParseSeasonStartYear(selectedToSeason, out var toYear) &&
+            fromYear > toYear)
+        {
+            (selectedFromSeason, selectedToSeason) = (selectedToSeason, selectedFromSeason);
+        }
+    }
+
+    private (DateTime? FromUtc, DateTime? ToUtc, DateTime? AsOfUtc) GetSelectedSeasonDateRange()
+    {
+        NormalizeSelectedSeasonRange();
+
+        var fromUtc = TryGetSeasonStart(selectedFromSeason, out var seasonStart)
+            ? seasonStart
+            : (DateTime?)null;
+        var toDate = TryGetSeasonEndDate(selectedToSeason, out var seasonEndDate)
+            ? seasonEndDate
+            : (DateTime?)null;
+        var toUtc = NormalizeInclusiveDateEnd(toDate);
+
+        return (fromUtc, toUtc, toDate);
+    }
+
+    private static bool TryGetSeasonStart(string? season, out DateTime startUtc)
+    {
+        startUtc = default;
+        if (!TryParseSeasonStartYear(season, out var startYear))
+        {
+            return false;
+        }
+
+        startUtc = new DateTime(startYear, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        return true;
+    }
+
+    private static bool TryGetSeasonEndDate(string? season, out DateTime endDateUtc)
+    {
+        endDateUtc = default;
+        if (!TryParseSeasonStartYear(season, out var startYear))
+        {
+            return false;
+        }
+
+        endDateUtc = new DateTime(startYear + 1, 7, 31, 0, 0, 0, DateTimeKind.Utc);
+        return true;
+    }
+
+    private static bool TryParseSeasonStartYear(string? season, out int startYear)
+    {
+        startYear = default;
+        if (string.IsNullOrWhiteSpace(season))
+        {
+            return false;
+        }
+
+        var parts = season.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 2 &&
+               int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out startYear) &&
+               int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var endYear) &&
+               endYear == startYear + 1;
+    }
+
+    private static string GetSeasonLabelForDate(DateTime value)
+    {
+        var date = value.Date;
+        return date.Month >= 8
+            ? $"{date.Year}-{date.Year + 1}"
+            : $"{date.Year - 1}-{date.Year}";
+    }
+
     private int CurrentPage => selectedView == "movers"
         ? movers?.Page ?? page
         : response?.Page ?? page;
 
     private int CurrentTotalPages => selectedView == "movers"
-        ? movers?.TotalPages ?? page
-        : response?.TotalPages ?? page;
+        ? Math.Max(1, movers?.TotalPages ?? 1)
+        : Math.Max(1, response?.TotalPages ?? 1);
+
+    private bool HasTeamSearch
+        => !string.IsNullOrWhiteSpace(teamSearch);
 
     private string ViewTabClass(string view)
         => selectedView == view ? "view-tab active" : "view-tab";
@@ -577,8 +674,11 @@
     private string EvolutionChartClass
         => isChartExpanded ? "evolution-chart expanded" : "evolution-chart";
 
+    private int ChartHeightPixels => isChartExpanded ? 560 : 340;
+
     private string BuildApiUri()
     {
+        var seasonRange = GetSelectedSeasonDateRange();
         var query = new List<string>
         {
             "pageSize=50",
@@ -586,10 +686,9 @@
         };
 
         Append(query, "country", selectedCountry);
-        Append(query, "season", selectedSeason);
-        Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
-        Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
-        Append(query, "asOfDate", NormalizeDate(archiveDate)?.ToString("O"));
+        Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
+        Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
+        Append(query, "asOfDate", seasonRange.AsOfUtc?.ToString("O"));
         Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
         Append(query, "team", teamSearch);
 
@@ -598,6 +697,7 @@
 
     private string BuildMoversApiUri()
     {
+        var seasonRange = GetSelectedSeasonDateRange();
         var query = new List<string>
         {
             "pageSize=25",
@@ -608,9 +708,8 @@
 
         Append(query, "rulesetVersion", response?.RulesetVersion);
         Append(query, "country", selectedCountry);
-        Append(query, "season", selectedSeason);
-        Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
-        Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
+        Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
+        Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
         Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
         Append(query, "team", teamSearch);
 
@@ -637,6 +736,7 @@
 
     private string BuildEvolutionApiUri()
     {
+        var seasonRange = GetSelectedSeasonDateRange();
         var teamIds = string.Join(",", evolutionRankings?.Rankings.Take(20).Select(x => x.TeamId) ?? []);
         var query = new List<string>
         {
@@ -645,7 +745,8 @@
             "pointsPerTeam=0"
         };
 
-        Append(query, "toUtc", NormalizeInclusiveDateEnd(archiveDate)?.ToString("O"));
+        Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
+        Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
 
         return $"api/elo/rankings/evolution?{string.Join("&", query)}";
     }
@@ -675,6 +776,7 @@
 
     private string BuildEvolutionRankingsApiUri()
     {
+        var seasonRange = GetSelectedSeasonDateRange();
         var query = new List<string>
         {
             "pageSize=20",
@@ -682,10 +784,9 @@
         };
 
         Append(query, "country", selectedCountry);
-        Append(query, "season", selectedSeason);
-        Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
-        Append(query, "toUtc", NormalizeInclusiveDateEnd(toDate)?.ToString("O"));
-        Append(query, "asOfDate", NormalizeDate(archiveDate)?.ToString("O"));
+        Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
+        Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
+        Append(query, "asOfDate", seasonRange.AsOfUtc?.ToString("O"));
         Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
         Append(query, "team", teamSearch);
 
@@ -726,9 +827,6 @@
 
     private bool IsArchiveMode
         => string.Equals(response?.Archive.Mode, "archive", StringComparison.OrdinalIgnoreCase);
-
-    private bool IsMoversView
-        => string.Equals(selectedView, "movers", StringComparison.OrdinalIgnoreCase);
 
     private string LeaderLabel()
         => IsArchiveMode ? "Strongest as of" : "Strongest right now";

@@ -4,7 +4,7 @@ public sealed record ModelLabOptionsResponse(
     ModelLabParameterSet Defaults,
     IReadOnlyCollection<string> Leagues,
     IReadOnlyCollection<ModelLabCompetitionOption> Competitions,
-    IReadOnlyCollection<string> Seasons,
+    IReadOnlyCollection<ModelLabSeasonOption> Seasons,
     DateTime? FirstGameUtc,
     DateTime? LastGameUtc);
 
@@ -29,6 +29,11 @@ public sealed record ModelLabCompetitionOption(
     string DisplayName,
     string? CountryCode);
 
+public sealed record ModelLabSeasonOption(
+    string Label,
+    DateTime FirstGameUtc,
+    DateTime LastGameUtc);
+
 public sealed record ModelLabBacktestRequest(
     string? ModelName,
     ModelLabParameterSet Parameters,
@@ -47,7 +52,9 @@ public sealed record ModelLabParameterSet(
     decimal ProbabilityScale,
     bool UsesMarginAdjustment,
     decimal? PointsPerEloMargin,
-    decimal CompetitionWeight);
+    decimal CompetitionWeight,
+    decimal MarginDampenerFactor = EloCalculator.MarginDampenerFactor,
+    decimal MaxMarginMultiplier = EloCalculator.MaxMarginMultiplier);
 
 public sealed record ModelLabModelSummaryResponse(
     Guid Id,

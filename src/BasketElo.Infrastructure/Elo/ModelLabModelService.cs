@@ -8,7 +8,7 @@ namespace BasketElo.Infrastructure.Elo;
 
 public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelLabModelService
 {
-    private const string ParameterSchemaVersion = "model-lab-v1";
+    private const string ParameterSchemaVersion = "model-lab-v2";
     private const int MaxNameLength = 120;
     private const int MaxDescriptionLength = 1000;
     private const int MaxExtensionDataLength = 8000;
@@ -295,6 +295,8 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
             UsesMarginAdjustment = parameters.UsesMarginAdjustment,
             PointsPerEloMargin = parameters.UsesMarginAdjustment ? parameters.PointsPerEloMargin : null,
             CompetitionWeight = parameters.CompetitionWeight,
+            MarginDampenerFactor = parameters.MarginDampenerFactor,
+            MaxMarginMultiplier = parameters.MaxMarginMultiplier,
             ExtensionDataJson = extensionDataJson,
             CreatedAtUtc = createdAtUtc
         };
@@ -310,6 +312,8 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
             version.UsesMarginAdjustment == parameters.UsesMarginAdjustment &&
             version.PointsPerEloMargin == (parameters.UsesMarginAdjustment ? parameters.PointsPerEloMargin : null) &&
             version.CompetitionWeight == parameters.CompetitionWeight &&
+            version.MarginDampenerFactor == parameters.MarginDampenerFactor &&
+            version.MaxMarginMultiplier == parameters.MaxMarginMultiplier &&
             string.Equals(version.ExtensionDataJson, extensionDataJson, StringComparison.Ordinal);
 
     private static ModelLabModelSummaryResponse ToSummaryResponse(ModelLabModel model)
@@ -353,7 +357,9 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
                 version.ProbabilityScale,
                 version.UsesMarginAdjustment,
                 version.PointsPerEloMargin,
-                version.CompetitionWeight),
+                version.CompetitionWeight,
+                version.MarginDampenerFactor,
+                version.MaxMarginMultiplier),
             version.ExtensionDataJson,
             version.CreatedAtUtc);
 

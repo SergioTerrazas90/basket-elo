@@ -70,6 +70,12 @@ public class BackfillJobProcessor(
         var allGames = new List<BasketballProviderGame>();
         var warnings = new List<string>();
         var hasMorePages = false;
+        var canonicalSeason = SeasonLabelNormalizer.ToFullSeasonLabel(job.Season);
+        if (!string.Equals(job.Season, canonicalSeason, StringComparison.Ordinal))
+        {
+            job.Season = canonicalSeason;
+            job.UpdatedAtUtc = DateTime.UtcNow;
+        }
 
         foreach (var mapping in providerLeagueMappings)
         {
@@ -95,7 +101,7 @@ public class BackfillJobProcessor(
 
             var gamesResult = await provider.GetGamesAsync(
                 league,
-                job.Season,
+                canonicalSeason,
                 executionContext,
                 cancellationToken);
             job.RequestsUsed = executionContext.RequestsUsed;
@@ -126,7 +132,7 @@ public class BackfillJobProcessor(
         var summary = new BackfillSummary
         {
             LeagueName = configuredLeague?.LeagueName ?? resolvedLeagues[0].Name,
-            Season = job.Season,
+            Season = canonicalSeason,
             Source = provider.SourceKey,
             RequestsUsed = job.RequestsUsed,
             HasMorePages = hasMorePages,
@@ -150,7 +156,7 @@ public class BackfillJobProcessor(
                 await EnsureCompetitionAliasAsync(competition, additionalLeague, cancellationToken);
             }
 
-            var season = await GetOrCreateSeasonAsync(competition, job.Season, cancellationToken);
+            var season = await GetOrCreateSeasonAsync(competition, canonicalSeason, cancellationToken);
 
             foreach (var providerGame in allGames)
             {
@@ -246,7 +252,12 @@ public class BackfillJobProcessor(
             return configuredLeague.ProviderLeagues;
         }
 
-        return [new ConfiguredProviderLeague(job.Country, job.LeagueName)];
+        var seasonParameterFormat = configuredLeague is not null &&
+            SeasonLabelNormalizer.IsSingleYearSeason(configuredLeague.StartSeason)
+            ? "start_year"
+            : "default";
+
+        return [new ConfiguredProviderLeague(job.Country, job.LeagueName, seasonParameterFormat)];
     }
 
     private async Task<Competition> GetOrCreateCompetitionAsync(
@@ -323,9 +334,10 @@ public class BackfillJobProcessor(
 
     private async Task<Season> GetOrCreateSeasonAsync(Competition competition, string seasonLabel, CancellationToken cancellationToken)
     {
+        var canonicalSeasonLabel = SeasonLabelNormalizer.ToFullSeasonLabel(seasonLabel);
         var existing = await dbContext.Seasons
             .FirstOrDefaultAsync(
-                x => x.CompetitionId == competition.Id && x.Label == seasonLabel,
+                x => x.CompetitionId == competition.Id && x.Label == canonicalSeasonLabel,
                 cancellationToken);
 
         if (existing is not null)
@@ -333,12 +345,31 @@ public class BackfillJobProcessor(
             return existing;
         }
 
-        var (startDate, endDate) = ParseSeasonDates(seasonLabel);
+        var legacyLabel = LegacySingleYearLabel(canonicalSeasonLabel);
+        if (legacyLabel is not null)
+        {
+            existing = await dbContext.Seasons
+                .FirstOrDefaultAsync(
+                    x => x.CompetitionId == competition.Id && x.Label == legacyLabel,
+                    cancellationToken);
+
+            if (existing is not null)
+            {
+                var (updatedStartDate, updatedEndDate) = ParseSeasonDates(canonicalSeasonLabel);
+                existing.Label = canonicalSeasonLabel;
+                existing.StartDateUtc = updatedStartDate;
+                existing.EndDateUtc = updatedEndDate;
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return existing;
+            }
+        }
+
+        var (startDate, endDate) = ParseSeasonDates(canonicalSeasonLabel);
         var season = new Season
         {
             Id = Guid.NewGuid(),
             CompetitionId = competition.Id,
-            Label = seasonLabel,
+            Label = canonicalSeasonLabel,
             StartDateUtc = startDate,
             EndDateUtc = endDate,
             CreatedAtUtc = DateTime.UtcNow
@@ -450,7 +481,8 @@ public class BackfillJobProcessor(
 
     private static (DateTime StartDateUtc, DateTime EndDateUtc) ParseSeasonDates(string seasonLabel)
     {
-        var pieces = seasonLabel.Split('-', StringSplitOptions.TrimEntries);
+        var pieces = SeasonLabelNormalizer.ToFullSeasonLabel(seasonLabel)
+            .Split('-', StringSplitOptions.TrimEntries);
         if (pieces.Length == 2 &&
             int.TryParse(pieces[0], out var startYear) &&
             int.TryParse(pieces[1], out var endYear))
@@ -463,6 +495,14 @@ public class BackfillJobProcessor(
         var fallbackStart = new DateTime(DateTime.UtcNow.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var fallbackEnd = fallbackStart.AddYears(1).AddSeconds(-1);
         return (fallbackStart, fallbackEnd);
+    }
+
+    private static string? LegacySingleYearLabel(string canonicalSeasonLabel)
+    {
+        var pieces = canonicalSeasonLabel.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return pieces.Length == 2 && int.TryParse(pieces[0], out var _)
+            ? pieces[0]
+            : null;
     }
 
     private static string? NormalizeCountryCode(string? providerCountryCode)

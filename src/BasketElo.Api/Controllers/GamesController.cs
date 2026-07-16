@@ -1,6 +1,7 @@
 using BasketElo.Api.Auth;
 using BasketElo.Domain.Games;
 using BasketElo.Infrastructure.Persistence;
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +9,7 @@ namespace BasketElo.Api.Controllers;
 
 [ApiController]
 [Route("api/games")]
-[RequireInternalUser]
+[RequireInternalAdmin]
 public class GamesController(BasketEloDbContext dbContext) : ControllerBase
 {
     [HttpGet]
@@ -53,7 +54,7 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(season))
         {
-            query = query.Where(x => x.Season.Label == season);
+            query = ApplySeasonFilter(query, season);
         }
 
         if (!string.IsNullOrWhiteSpace(status))
@@ -164,9 +165,11 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             .ToListAsync(cancellationToken);
 
         var seasons = await baseQuery
-            .Select(x => x.Season.Label)
-            .Distinct()
-            .OrderByDescending(x => x)
+            .Select(x => new
+            {
+                x.Season.Label,
+                x.GameDateTimeUtc
+            })
             .ToListAsync(cancellationToken);
 
         var statuses = await baseQuery
@@ -178,7 +181,7 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         return new GameFilterOptions(
             countries.Select(DisplayCountryFromCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x).ToList(),
             leagues,
-            seasons,
+            seasons.Select(x => NormalizeSeasonLabel(x.Label, x.GameDateTimeUtc)).Distinct().OrderByDescending(x => x).ToList(),
             statuses);
     }
 
@@ -239,5 +242,98 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             "Russia" => ["RU", "RUS"],
             _ => [displayCountry]
         };
+    }
+
+    private static IQueryable<Domain.Entities.Game> ApplySeasonFilter(IQueryable<Domain.Entities.Game> query, string season)
+    {
+        var normalized = NormalizeSeasonLabel(season);
+        if (!TryGetSeasonWindow(normalized, out var seasonStartUtc, out var seasonEndUtc))
+        {
+            return query.Where(x => x.Season.Label == normalized);
+        }
+
+        SetSingleYearSeasonLabels(normalized, out var previousSingleYearSeasonLabel, out var currentSingleYearSeasonLabel);
+        return query.Where(x =>
+            (x.GameDateTimeUtc >= seasonStartUtc &&
+             x.GameDateTimeUtc <= seasonEndUtc &&
+             x.Season.Label != previousSingleYearSeasonLabel) ||
+            (x.Season.Label == currentSingleYearSeasonLabel &&
+             x.GameDateTimeUtc > seasonEndUtc));
+    }
+
+    private static string NormalizeSeasonLabel(string season, DateTime? gameDateTimeUtc = null)
+    {
+        var trimmed = season.Trim();
+        if (trimmed.Contains('-', StringComparison.Ordinal))
+        {
+            if (!gameDateTimeUtc.HasValue ||
+                (TryGetSeasonWindow(trimmed, out var seasonStartUtc, out var seasonEndUtc) &&
+                 gameDateTimeUtc.Value >= seasonStartUtc &&
+                 gameDateTimeUtc.Value <= seasonEndUtc))
+            {
+                return trimmed;
+            }
+
+            return GetSeasonLabelForDate(gameDateTimeUtc.Value);
+        }
+
+        if (!int.TryParse(trimmed, out var year))
+        {
+            return trimmed;
+        }
+
+        if (gameDateTimeUtc.HasValue)
+        {
+            var dateSeason = GetSeasonLabelForDate(gameDateTimeUtc.Value);
+            var previousSeason = $"{year - 1}-{year}";
+            var currentSeason = $"{year}-{year + 1}";
+            return dateSeason == previousSeason || dateSeason == currentSeason
+                ? dateSeason
+                : currentSeason;
+        }
+
+        return $"{year}-{year + 1}";
+    }
+
+    private static bool TryGetSeasonWindow(string season, out DateTime seasonStartUtc, out DateTime seasonEndUtc)
+    {
+        seasonStartUtc = default;
+        seasonEndUtc = default;
+
+        var parts = season.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2 ||
+            !int.TryParse(parts[0], out var startYear) ||
+            !int.TryParse(parts[1], out var endYear) ||
+            endYear != startYear + 1)
+        {
+            return false;
+        }
+
+        seasonStartUtc = new DateTime(startYear, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        seasonEndUtc = new DateTime(endYear, 7, 31, 23, 59, 59, 999, DateTimeKind.Utc).AddTicks(9999);
+        return true;
+    }
+
+    private static string GetSeasonLabelForDate(DateTime gameDateTimeUtc)
+        => gameDateTimeUtc.Month >= 8
+            ? $"{gameDateTimeUtc.Year}-{gameDateTimeUtc.Year + 1}"
+            : $"{gameDateTimeUtc.Year - 1}-{gameDateTimeUtc.Year}";
+
+    private static void SetSingleYearSeasonLabels(
+        string normalizedSeason,
+        out string previousSingleYearSeasonLabel,
+        out string currentSingleYearSeasonLabel)
+    {
+        previousSingleYearSeasonLabel = string.Empty;
+        currentSingleYearSeasonLabel = string.Empty;
+
+        var parts = normalizedSeason.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2 || !int.TryParse(parts[0], out var startYear))
+        {
+            return;
+        }
+
+        previousSingleYearSeasonLabel = (startYear - 1).ToString(CultureInfo.InvariantCulture);
+        currentSingleYearSeasonLabel = startYear.ToString(CultureInfo.InvariantCulture);
     }
 }

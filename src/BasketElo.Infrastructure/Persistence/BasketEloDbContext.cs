@@ -129,6 +129,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.UsesMarginAdjustment).IsRequired();
             entity.Property(x => x.PointsPerEloMargin).HasPrecision(8, 2);
             entity.Property(x => x.CompetitionWeight).HasPrecision(6, 4).IsRequired();
+            entity.Property(x => x.MarginDampenerFactor).HasPrecision(6, 2).IsRequired();
+            entity.Property(x => x.MaxMarginMultiplier).HasPrecision(6, 4).IsRequired();
             entity.Property(x => x.ExtensionDataJson).HasColumnType("jsonb");
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.HasOne(x => x.Model)

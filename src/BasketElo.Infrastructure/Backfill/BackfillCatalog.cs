@@ -146,30 +146,19 @@ public class BackfillCatalog : IBackfillCatalog
 
     public IReadOnlyCollection<string> GetSeasonsForLeague(ConfiguredBackfillLeague league)
     {
-        var startYear = ParseStartYear(league.StartSeason);
+        var startYear = SeasonLabelNormalizer.ParseStartYear(league.StartSeason);
         var currentSeasonStart = !string.IsNullOrWhiteSpace(league.EndSeason)
-            ? ParseStartYear(league.EndSeason)
-            : IsYearSeason(league.StartSeason)
-            ? DateTime.UtcNow.Year
+            ? SeasonLabelNormalizer.ParseStartYear(league.EndSeason)
             : GetCurrentSeasonStartYear();
         var seasons = new List<string>();
 
         for (var year = startYear; year <= currentSeasonStart; year++)
         {
-            seasons.Add(IsYearSeason(league.StartSeason) ? year.ToString() : $"{year}-{year + 1}");
+            seasons.Add($"{year}-{year + 1}");
         }
 
         return seasons;
     }
-
-    private static int ParseStartYear(string season)
-    {
-        var parsed = season.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        return parsed.Length > 0 && int.TryParse(parsed[0], out var startYear) ? startYear : 2000;
-    }
-
-    private static bool IsYearSeason(string season)
-        => !season.Contains('-', StringComparison.Ordinal);
 
     private static int GetCurrentSeasonStartYear()
     {

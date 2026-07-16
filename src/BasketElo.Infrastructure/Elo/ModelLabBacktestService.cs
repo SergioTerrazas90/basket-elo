@@ -14,6 +14,17 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         var games = dbContext.Games.AsNoTracking();
         var defaults = EloCalculator.GetRulesetParameters(EloRulesetVersions.AdjustedV1);
         var leagueOptions = await GetLeagueOptionsAsync(cancellationToken);
+        var seasons = await games
+            .GroupBy(x => x.Season.Label)
+            .Select(x => new
+            {
+                Label = x.Key,
+                FirstGameUtc = x.Min(game => game.GameDateTimeUtc),
+                LastGameUtc = x.Max(game => game.GameDateTimeUtc)
+            })
+            .OrderBy(x => x.FirstGameUtc)
+            .ThenBy(x => x.Label)
+            .ToListAsync(cancellationToken);
 
         return new ModelLabOptionsResponse(
             ToParameterSet(defaults),
@@ -25,11 +36,9 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 .OrderBy(x => x.DisplayName)
                 .Select(x => new ModelLabCompetitionOption(x.Id, x.Name, x.DisplayName, x.CountryCode))
                 .ToList(),
-            await games
-                .Select(x => x.Season.Label)
-                .Distinct()
-                .OrderByDescending(x => x)
-                .ToListAsync(cancellationToken),
+            seasons
+                .Select(x => new ModelLabSeasonOption(x.Label, x.FirstGameUtc, x.LastGameUtc))
+                .ToList(),
             await games.MinAsync(x => (DateTime?)x.GameDateTimeUtc, cancellationToken),
             await games.MaxAsync(x => (DateTime?)x.GameDateTimeUtc, cancellationToken));
     }
@@ -416,7 +425,9 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             parameters.PointsPerEloMargin,
             parameters.CompetitionWeight,
             parameters.UsesMarginAdjustment,
-            parameters.ProbabilityScale);
+            parameters.ProbabilityScale,
+            parameters.MarginDampenerFactor,
+            parameters.MaxMarginMultiplier);
 
     private static ModelLabParameterSet ToParameterSet(EloRulesetParameters parameters)
         => new(
@@ -426,7 +437,9 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             parameters.ProbabilityScale,
             parameters.UsesMarginAdjustment,
             parameters.PointsPerEloMargin,
-            parameters.CompetitionWeight);
+            parameters.CompetitionWeight,
+            parameters.MarginDampenerFactor,
+            parameters.MaxMarginMultiplier);
 
     private static DateTime Min(DateTime left, DateTime right) => left <= right ? left : right;
 

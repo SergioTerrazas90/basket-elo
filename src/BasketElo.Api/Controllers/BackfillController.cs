@@ -85,7 +85,7 @@ public class BackfillController(
         var provider = request.Provider.Trim().ToLowerInvariant();
         var country = request.Country.Trim();
         var leagueName = request.LeagueName.Trim();
-        var season = request.Season.Trim();
+        var season = SeasonLabelNormalizer.ToFullSeasonLabel(request.Season);
 
         var decision = await dbContext.BackfillInspectionDecisions
             .FirstOrDefaultAsync(
@@ -202,7 +202,7 @@ public class BackfillController(
             Provider = request.Provider.Trim().ToLowerInvariant(),
             Country = request.Country.Trim(),
             LeagueName = request.LeagueName.Trim(),
-            Season = request.Season.Trim(),
+            Season = SeasonLabelNormalizer.ToFullSeasonLabel(request.Season),
             DryRun = request.DryRun,
             MaxRequests = request.MaxRequests <= 0 ? 2 : request.MaxRequests,
             Status = BackfillJobStatus.Pending,

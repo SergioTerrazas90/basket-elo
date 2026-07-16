@@ -1,0 +1,54 @@
+namespace BasketElo.Infrastructure.Backfill;
+
+public static class SeasonLabelNormalizer
+{
+    public static string ToFullSeasonLabel(string season)
+    {
+        var trimmed = season.Trim();
+        var pieces = trimmed.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+        if (pieces.Length == 1 && int.TryParse(pieces[0], out var singleYear))
+        {
+            return $"{singleYear}-{singleYear + 1}";
+        }
+
+        if (pieces.Length == 2 &&
+            int.TryParse(pieces[0], out var startYear) &&
+            TryParseEndYear(startYear, pieces[1], out var endYear))
+        {
+            return $"{startYear}-{endYear}";
+        }
+
+        return trimmed;
+    }
+
+    public static int ParseStartYear(string season)
+    {
+        var normalized = ToFullSeasonLabel(season);
+        var pieces = normalized.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return pieces.Length > 0 && int.TryParse(pieces[0], out var startYear) ? startYear : 2000;
+    }
+
+    public static bool IsSingleYearSeason(string season)
+        => !season.Trim().Contains('-', StringComparison.Ordinal);
+
+    private static bool TryParseEndYear(int startYear, string value, out int endYear)
+    {
+        if (!int.TryParse(value, out var parsed))
+        {
+            endYear = default;
+            return false;
+        }
+
+        endYear = value.Length <= 2
+            ? (startYear / 100 * 100) + parsed
+            : parsed;
+
+        if (endYear < startYear)
+        {
+            endYear += 100;
+        }
+
+        return true;
+    }
+}

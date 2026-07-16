@@ -70,6 +70,15 @@
 
                 <div class="control-row">
                     <div class="filter-field">
+                        <label for="poolSelect">Rating pool</label>
+                        <select id="poolSelect" class="form-select" @bind="selectedPool">
+                            @foreach (var pool in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
+                            {
+                                <option value="@pool.Key">@pool.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="filter-field">
                         <label for="rulesetSelect">Ruleset</label>
                         <select id="rulesetSelect" class="form-select" @bind="selectedRuleset">
                             @foreach (var ruleset in adminDashboard.Elo.Rulesets.Rulesets)
@@ -268,6 +277,7 @@
                         <tr>
                             <th>Queued</th>
                             <th>Started</th>
+                            <th>Pool</th>
                             <th>Ruleset</th>
                             <th>Status</th>
                             <th>Finished</th>
@@ -282,7 +292,7 @@
                         @if (adminDashboard.Elo.RecentRuns.Count == 0)
                         {
                             <tr>
-                                <td colspan="10" class="empty-state">No rebuild runs recorded yet.</td>
+                                <td colspan="11" class="empty-state">No rebuild runs recorded yet.</td>
                             </tr>
                         }
                         else
@@ -292,6 +302,7 @@
                                 <tr>
                                     <td>@FormatDate(run.QueuedAtUtc)</td>
                                     <td>@FormatDate(run.StartedAtUtc)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(run.EloPoolKey) ? "Legacy" : EloPoolKeys.DisplayName(run.EloPoolKey))</td>
                                     <td>@run.RulesetVersion</td>
                                     <td><span class="status-pill @StatusClass(run.Status)">@FormatStatus(run.Status)</span></td>
                                     <td>@FormatDate(run.FinishedAtUtc)</td>
@@ -328,6 +339,7 @@
 @code {
     private AdminDashboardResponse? adminDashboard;
     private string? selectedRuleset;
+    private string selectedPool = EloPoolKeys.Default;
     private bool isBusy;
     private string? message;
     private string messageCss = "alert-info";
@@ -382,7 +394,7 @@
         {
             var response = await Http.PostAsJsonAsync(
                 "api/elo/rebuilds",
-                new EloRebuildRequest { RulesetVersion = selectedRuleset });
+                new EloRebuildRequest { RulesetVersion = selectedRuleset, PoolKey = selectedPool });
 
             if (!response.IsSuccessStatusCode)
             {
@@ -392,8 +404,8 @@
             var results = await response.Content.ReadFromJsonAsync<IReadOnlyList<EloRebuildRunDto>>() ?? [];
             var triggered = results.FirstOrDefault();
             message = triggered is null
-                ? $"Rebuild requested for {selectedRuleset}. This page will update when the worker finishes."
-                : $"Rebuild queued for {triggered.RulesetVersion}. This page will update when the worker finishes.";
+                ? $"Rebuild requested for {EloPoolKeys.DisplayName(selectedPool)} {selectedRuleset}. This page will update when the worker finishes."
+                : $"Rebuild queued for {EloPoolKeys.DisplayName(selectedPool)} {triggered.RulesetVersion}. This page will update when the worker finishes.";
             messageCss = "alert-success";
             await RefreshAsync(clearMessage: false);
         }
@@ -505,6 +517,7 @@
     };
 
     private bool HasActiveRebuild => adminDashboard?.Elo.RecentRuns.Any(x =>
+        x.EloPoolKey == selectedPool &&
         x.RulesetVersion == selectedRuleset &&
         (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running)) == true;
 

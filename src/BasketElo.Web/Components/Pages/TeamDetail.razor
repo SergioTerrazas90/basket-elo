@@ -26,12 +26,12 @@
         <section class="team-hero">
             <div>
                 <a class="back-link" href="@BackHref">Back to rankings</a>
-                <p class="eyebrow">@team.Country</p>
+                <p class="eyebrow">@team.EloPoolName</p>
                 <h1>@team.TeamName</h1>
                 <p class="intro">Current adjusted ELO profile, recent rated games, and rating path.</p>
             </div>
             <div class="team-rank-card">
-                <span>Global rank</span>
+                <span>Pool rank</span>
                 <strong>#@team.GlobalRank</strong>
                 <small>@team.RulesetVersion</small>
             </div>
@@ -225,6 +225,9 @@
     [SupplyParameterFromQuery(Name = "returnUrl")]
     public string? ReturnUrl { get; set; }
 
+    [SupplyParameterFromQuery(Name = "pool")]
+    public string? Pool { get; set; }
+
     [SupplyParameterFromQuery(Name = "gamesPage")]
     public int? GamesPage { get; set; }
 
@@ -249,7 +252,8 @@
 
         try
         {
-            team = await Http.GetFromJsonAsync<EloTeamDetailResponse>($"api/elo/teams/{TeamId}?gamesPage={gamesPage}&gamesPageSize=25");
+            var poolKey = string.IsNullOrWhiteSpace(Pool) ? EloPoolKeys.Default : Pool;
+            team = await Http.GetFromJsonAsync<EloTeamDetailResponse>($"api/elo/teams/{TeamId}?pool={Uri.EscapeDataString(poolKey)}&gamesPage={gamesPage}&gamesPageSize=25");
             if (team is not null)
             {
                 gamesPage = team.RecentGamesPage;
@@ -303,6 +307,7 @@
 
         var query = new Dictionary<string, object?>
         {
+            ["pool"] = Pool,
             ["returnUrl"] = ReturnUrl,
             ["gamesPage"] = targetPage > 1 ? targetPage : null
         };

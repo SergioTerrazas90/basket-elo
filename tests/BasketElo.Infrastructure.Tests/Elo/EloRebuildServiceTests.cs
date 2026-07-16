@@ -12,7 +12,7 @@ namespace BasketElo.Infrastructure.Tests.Elo;
 public class EloRebuildServiceTests
 {
     [Fact]
-    public async Task NbaScopeRebuildsHistoricalAndCurrentTeamsWithoutChangingOtherCompetition()
+    public async Task NbaPoolRebuildsAllNbaHistoryWithoutChangingEuropePool()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -36,8 +36,9 @@ public class EloRebuildServiceTests
         var run = new EloRebuildRun
         {
             Id = Guid.NewGuid(),
+            EloPoolKey = EloPoolKeys.Nba,
             RulesetVersion = EloRulesetVersions.AdjustedV1,
-            CompetitionName = "NBA",
+            CompetitionName = string.Empty,
             Status = EloRebuildRunStatus.Running,
             QueuedAtUtc = DateTime.UtcNow,
             StartedAtUtc = DateTime.UtcNow
@@ -51,6 +52,7 @@ public class EloRebuildServiceTests
             {
                 TeamId = knicks.Id,
                 Team = knicks,
+                EloPoolKey = EloPoolKeys.Nba,
                 RulesetVersion = run.RulesetVersion,
                 Elo = 999m,
                 GamesPlayed = 99
@@ -59,6 +61,7 @@ public class EloRebuildServiceTests
             {
                 TeamId = madrid.Id,
                 Team = madrid,
+                EloPoolKey = EloPoolKeys.EuropeClubs,
                 RulesetVersion = run.RulesetVersion,
                 Elo = 1666m,
                 GamesPlayed = 12,
@@ -66,8 +69,8 @@ public class EloRebuildServiceTests
                 LastGame = acbGame
             });
         dbContext.RatingHistories.AddRange(
-            History(historicalGame, knicks, huskies, run.RulesetVersion, 999m),
-            History(acbGame, madrid, barcelona, run.RulesetVersion, 1666m));
+            History(historicalGame, knicks, huskies, EloPoolKeys.Nba, run.RulesetVersion, 999m),
+            History(acbGame, madrid, barcelona, EloPoolKeys.EuropeClubs, run.RulesetVersion, 1666m));
         await dbContext.SaveChangesAsync();
         var service = new EloRebuildService(
             dbContext,
@@ -77,7 +80,7 @@ public class EloRebuildServiceTests
         var result = await service.RebuildAsync(run.Id, CancellationToken.None);
 
         Assert.Equal(EloRebuildRunStatus.Completed, result.Status);
-        Assert.Equal("NBA", result.CompetitionName);
+        Assert.Equal(EloPoolKeys.Nba, result.EloPoolKey);
         Assert.Equal(2, result.GamesProcessed);
         Assert.Equal(4, result.TeamsRated);
         var ratings = await dbContext.TeamRatings.Where(x => x.RulesetVersion == run.RulesetVersion).ToListAsync();
@@ -91,7 +94,7 @@ public class EloRebuildServiceTests
         Assert.Single(histories, x => x.GameId == acbGame.Id);
         Assert.All(histories.Where(x => x.GameId == playoffGame.Id), x => Assert.Equal(1m, x.CompetitionWeight));
         using var notes = JsonDocument.Parse(run.Notes!);
-        Assert.Equal("NBA", notes.RootElement.GetProperty("competitionName").GetString());
+        Assert.Equal(EloPoolKeys.Nba, notes.RootElement.GetProperty("poolKey").GetString());
         Assert.Contains("Playoff", notes.RootElement.GetProperty("playoffPolicy").GetString(), StringComparison.Ordinal);
     }
 
@@ -100,6 +103,7 @@ public class EloRebuildServiceTests
         Id = Guid.NewGuid(),
         Name = name,
         Type = "domestic_first_division",
+        EloPoolKey = name == "NBA" ? EloPoolKeys.Nba : EloPoolKeys.EuropeClubs,
         CountryCode = countryCode,
         Tier = 1
     };
@@ -152,6 +156,7 @@ public class EloRebuildServiceTests
         Game game,
         Team team,
         Team opponent,
+        string poolKey,
         string ruleset,
         decimal elo) => new()
     {
@@ -162,6 +167,7 @@ public class EloRebuildServiceTests
         Team = team,
         OpponentTeamId = opponent.Id,
         OpponentTeam = opponent,
+        EloPoolKey = poolKey,
         RulesetVersion = ruleset,
         GameDateTimeUtc = game.GameDateTimeUtc,
         PreElo = elo,

@@ -6,6 +6,7 @@ public class RatingHistory
     public Guid GameId { get; set; }
     public Guid TeamId { get; set; }
     public Guid OpponentTeamId { get; set; }
+    public string EloPoolKey { get; set; } = string.Empty;
     public string RulesetVersion { get; set; } = string.Empty;
     public DateTime GameDateTimeUtc { get; set; }
     public decimal PreElo { get; set; }

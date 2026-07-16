@@ -46,7 +46,8 @@ public class NbaCurrentSeasonRefreshServiceTests
         Assert.Equal("active_job_exists", duplicate.Reason);
         var job = Assert.Single(await dbContext.BackfillJobs.ToListAsync());
         Assert.Equal("2025-2026", job.Season);
-        Assert.Equal(BasketballReferenceBasketballDataProvider.Source, job.Provider);
+        Assert.Equal(ApiSportsBasketballDataProvider.Source, job.Provider);
+        Assert.Equal("USA", job.Country);
         Assert.False(job.DryRun);
         Assert.Equal(8, job.MaxRequests);
     }
@@ -59,8 +60,8 @@ public class NbaCurrentSeasonRefreshServiceTests
         dbContext.BackfillJobs.Add(new BackfillJob
         {
             Id = Guid.NewGuid(),
-            Provider = BasketballReferenceBasketballDataProvider.Source,
-            Country = "United States",
+            Provider = ApiSportsBasketballDataProvider.Source,
+            Country = "USA",
             LeagueName = "NBA",
             Season = "2025-2026",
             Status = BackfillJobStatus.Completed,

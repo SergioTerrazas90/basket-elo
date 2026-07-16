@@ -21,7 +21,7 @@ public class EloRebuildService(
         }
 
         var rulesetVersion = run.RulesetVersion;
-        var competitionName = run.CompetitionName;
+        var poolKey = EloPoolKeys.Normalize(run.EloPoolKey);
         var ruleset = EloCalculator.GetRulesetParameters(rulesetVersion);
 
         try
@@ -30,16 +30,12 @@ public class EloRebuildService(
                 ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
                 : null;
 
-            var scopedGames = dbContext.Games.AsQueryable();
-            if (!string.IsNullOrEmpty(competitionName))
-            {
-                scopedGames = scopedGames.Where(x => x.Competition.Name == competitionName);
-            }
+            var scopedGames = dbContext.Games
+                .Where(x => x.Competition.EloPoolKey == poolKey);
 
             await DeleteExistingRatingsAsync(
+                poolKey,
                 rulesetVersion,
-                competitionName,
-                scopedGames,
                 cancellationToken);
 
             var games = await scopedGames
@@ -92,6 +88,7 @@ public class EloRebuildService(
                     GameId = game.Id,
                     TeamId = game.HomeTeamId,
                     OpponentTeamId = game.AwayTeamId,
+                    EloPoolKey = poolKey,
                     RulesetVersion = rulesetVersion,
                     GameDateTimeUtc = game.GameDateTimeUtc,
                     PreElo = RoundRating(homePreElo),
@@ -113,6 +110,7 @@ public class EloRebuildService(
                     GameId = game.Id,
                     TeamId = game.AwayTeamId,
                     OpponentTeamId = game.HomeTeamId,
+                    EloPoolKey = poolKey,
                     RulesetVersion = rulesetVersion,
                     GameDateTimeUtc = game.GameDateTimeUtc,
                     PreElo = RoundRating(awayPreElo),
@@ -133,6 +131,7 @@ public class EloRebuildService(
             dbContext.TeamRatings.AddRange(ratings.Select(x => new TeamRating
             {
                 TeamId = x.Key,
+                EloPoolKey = poolKey,
                 RulesetVersion = rulesetVersion,
                 Elo = RoundRating(x.Value.Elo),
                 GamesPlayed = x.Value.GamesPlayed,
@@ -152,7 +151,8 @@ public class EloRebuildService(
                 homeAdvantageElo = ruleset.HomeAdvantageElo,
                 pointsPerEloMargin = ruleset.PointsPerEloMargin,
                 competitionWeight = ruleset.CompetitionWeight,
-                competitionName = string.IsNullOrEmpty(competitionName) ? "all" : competitionName,
+                poolKey,
+                poolName = EloPoolKeys.DisplayName(poolKey),
                 playoffPolicy = "Playoff and regular-season games use the current ruleset competition weight."
             });
 
@@ -190,6 +190,7 @@ public class EloRebuildService(
         return new EloRebuildResult
         {
             RunId = run.Id,
+            EloPoolKey = poolKey,
             RulesetVersion = run.RulesetVersion,
             CompetitionName = run.CompetitionName,
             Status = run.Status,
@@ -203,51 +204,27 @@ public class EloRebuildService(
     }
 
     private async Task DeleteExistingRatingsAsync(
+        string poolKey,
         string rulesetVersion,
-        string competitionName,
-        IQueryable<Game> scopedGames,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(competitionName))
-        {
-            if (dbContext.Database.IsRelational())
-            {
-                await dbContext.RatingHistories
-                    .Where(x => x.RulesetVersion == rulesetVersion)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.TeamRatings
-                    .Where(x => x.RulesetVersion == rulesetVersion)
-                    .ExecuteDeleteAsync(cancellationToken);
-                return;
-            }
-
-            dbContext.RatingHistories.RemoveRange(
-                await dbContext.RatingHistories.Where(x => x.RulesetVersion == rulesetVersion).ToListAsync(cancellationToken));
-            dbContext.TeamRatings.RemoveRange(
-                await dbContext.TeamRatings.Where(x => x.RulesetVersion == rulesetVersion).ToListAsync(cancellationToken));
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return;
-        }
-
-        var targetTeamIds = await scopedGames
-            .Select(x => x.HomeTeamId)
-            .Union(scopedGames.Select(x => x.AwayTeamId))
-            .ToListAsync(cancellationToken);
-        var histories = dbContext.RatingHistories.Where(x =>
-            x.RulesetVersion == rulesetVersion &&
-            x.Game.Competition.Name == competitionName);
-        var ratings = dbContext.TeamRatings.Where(x =>
-            x.RulesetVersion == rulesetVersion && targetTeamIds.Contains(x.TeamId));
-
         if (dbContext.Database.IsRelational())
         {
-            await histories.ExecuteDeleteAsync(cancellationToken);
-            await ratings.ExecuteDeleteAsync(cancellationToken);
+            await dbContext.RatingHistories
+                .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion)
+                .ExecuteDeleteAsync(cancellationToken);
+            await dbContext.TeamRatings
+                .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion)
+                .ExecuteDeleteAsync(cancellationToken);
             return;
         }
 
-        dbContext.RatingHistories.RemoveRange(await histories.ToListAsync(cancellationToken));
-        dbContext.TeamRatings.RemoveRange(await ratings.ToListAsync(cancellationToken));
+        dbContext.RatingHistories.RemoveRange(await dbContext.RatingHistories
+            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion)
+            .ToListAsync(cancellationToken));
+        dbContext.TeamRatings.RemoveRange(await dbContext.TeamRatings
+            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion)
+            .ToListAsync(cancellationToken));
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -300,6 +277,7 @@ public class EloRebuildService(
     {
         var notification = new EloRebuildRunNotification(
             run.Id,
+            run.EloPoolKey,
             run.RulesetVersion,
             run.Status,
             DateTime.UtcNow);

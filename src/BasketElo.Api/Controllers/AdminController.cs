@@ -23,6 +23,7 @@ public class AdminController(BasketEloDbContext dbContext) : ControllerBase
         {
             return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
         }
+        var poolKey = EloPoolKeys.Default;
 
         var databaseCanConnect = await dbContext.Database.CanConnectAsync(cancellationToken);
         var pendingMigrations = databaseCanConnect
@@ -31,12 +32,14 @@ public class AdminController(BasketEloDbContext dbContext) : ControllerBase
 
         var completedGamesQuery = dbContext.Games
             .AsNoTracking()
-            .Where(x => x.HomeScore.HasValue && x.AwayScore.HasValue && x.HomeScore != x.AwayScore);
+            .Where(x => x.Competition.EloPoolKey == poolKey &&
+                x.HomeScore.HasValue && x.AwayScore.HasValue && x.HomeScore != x.AwayScore);
 
         var completedGames = await completedGamesQuery.CountAsync(cancellationToken);
         var unratedCompletedGames = await completedGamesQuery.CountAsync(
             x => !dbContext.RatingHistories.Any(history =>
                 history.GameId == x.Id &&
+                history.EloPoolKey == poolKey &&
                 history.RulesetVersion == selectedRuleset),
             cancellationToken);
 
@@ -44,6 +47,7 @@ public class AdminController(BasketEloDbContext dbContext) : ControllerBase
             .AsNoTracking()
             .Where(x =>
                 x.RulesetVersion == selectedRuleset &&
+                x.EloPoolKey == poolKey &&
                 x.Status == EloRebuildRunStatus.Completed)
             .MaxAsync(x => x.FinishedAtUtc, cancellationToken);
 
@@ -53,6 +57,7 @@ public class AdminController(BasketEloDbContext dbContext) : ControllerBase
             .Take(10)
             .Select(x => new EloRebuildRunDto(
                 x.Id,
+                x.EloPoolKey,
                 x.RulesetVersion,
                 x.CompetitionName,
                 x.Status,
@@ -68,17 +73,18 @@ public class AdminController(BasketEloDbContext dbContext) : ControllerBase
         var elo = new EloDashboardResponse(
             new EloRulesetCatalogResponse(EloRulesetVersions.Default, EloRulesetVersions.All),
             new EloDashboardSummary(
+                poolKey,
                 selectedRuleset,
                 completedGames,
                 unratedCompletedGames,
                 await dbContext.TeamRatings
                     .AsNoTracking()
-                    .CountAsync(x => x.RulesetVersion == selectedRuleset, cancellationToken),
+                    .CountAsync(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset, cancellationToken),
                 await completedGamesQuery.MaxAsync(x => (DateTime?)x.GameDateTimeUtc, cancellationToken),
                 latestSuccessfulRebuildUtc,
                 await dbContext.EloRebuildRuns
                     .AsNoTracking()
-                    .Where(x => x.RulesetVersion == selectedRuleset)
+                    .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
                     .MaxAsync(x => (DateTime?)x.QueuedAtUtc, cancellationToken)),
             recentRuns);
 

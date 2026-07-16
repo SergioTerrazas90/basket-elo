@@ -14,7 +14,8 @@ namespace BasketElo.Api.Controllers;
 public class BackfillController(
     BasketEloDbContext dbContext,
     IBackfillCoverageService coverageService,
-    IBackfillCatalog backfillCatalog) : ControllerBase
+    IBackfillCatalog backfillCatalog,
+    INbaCurrentSeasonRefreshService nbaRefreshService) : ControllerBase
 {
     [HttpGet("coverage")]
     public async Task<ActionResult<BackfillCoverageResponse>> GetCoverage(
@@ -220,6 +221,18 @@ public class BackfillController(
             request.MaxRequests,
             cancellationToken);
         return Accepted(response);
+    }
+
+    [HttpPost("nba/current/jobs")]
+    public async Task<IActionResult> TriggerCurrentNbaRefresh(
+        [FromBody] NbaCurrentSeasonRefreshRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var response = await nbaRefreshService.QueueManualAsync(
+            request?.DryRun ?? false,
+            request?.MaxRequests,
+            cancellationToken);
+        return response.Queued ? Accepted(response) : Ok(response);
     }
 
     private ConfiguredBackfillLeague? FindConfiguredLeague(string provider, string country, string leagueName) =>

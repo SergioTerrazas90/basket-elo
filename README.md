@@ -193,6 +193,9 @@ The report includes per-season game, missing-score, duplicate-ID, warning,
 request, failure, and elapsed-time totals. Audit execution does not register a
 database context and records `DatabaseWrites: 0` in JSON output.
 
+Current-season NBA refresh scheduling, manual queueing, correction handling, and
+the post-refresh Elo workflow are documented in `docs/nba-refresh-operations.md`.
+
 ## Troubleshooting (Windows + Docker)
 
 If `postgres:16-alpine` fails with "no matching manifest for windows/amd64", Docker is in Windows container mode.

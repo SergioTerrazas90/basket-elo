@@ -132,7 +132,7 @@ public class NbaBackfillControllerTests
             Status = BackfillJobStatus.Pending
         });
         await dbContext.SaveChangesAsync();
-        var controller = new BackfillController(dbContext, null!, catalog);
+        var controller = new BackfillController(dbContext, null!, catalog, null!);
 
         var result = await controller.TriggerLeagueBackfill(
             new TriggerLeagueBackfillRequest
@@ -168,7 +168,7 @@ public class NbaBackfillControllerTests
     }
 
     private static BackfillController CreateController(BasketEloDbContext dbContext) =>
-        new(dbContext, null!, new BackfillCatalog());
+        new(dbContext, null!, new BackfillCatalog(), null!);
 
     private static TriggerLeagueRangeBackfillRequest CreateRangeRequest(
         string startSeason,

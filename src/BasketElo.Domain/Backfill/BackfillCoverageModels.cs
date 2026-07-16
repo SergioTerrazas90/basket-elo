@@ -84,6 +84,12 @@ public record QueueBackfillJobsResponse(
     int SkippedActiveJobs,
     int SkippedExistingSeasons);
 
+public record NbaCurrentSeasonRefreshRequest
+{
+    public bool DryRun { get; init; }
+    public int? MaxRequests { get; init; }
+}
+
 public record SaveBackfillInspectionDecisionRequest
 {
     public string Provider { get; init; } = "api-sports";

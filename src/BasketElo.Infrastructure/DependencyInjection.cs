@@ -22,6 +22,7 @@ public static class DependencyInjection
 
         services.Configure<ApiSportsOptions>(configuration.GetSection(ApiSportsOptions.SectionName));
         services.Configure<BasketballReferenceOptions>(configuration.GetSection(BasketballReferenceOptions.SectionName));
+        services.Configure<NbaRefreshOptions>(configuration.GetSection(NbaRefreshOptions.SectionName));
         services.Configure<ModelLabPlanOptions>(configuration.GetSection(ModelLabPlanOptions.SectionName));
         services.AddSingleton<IApiSportsRateLimiter, ApiSportsRateLimiter>();
         services.AddSingleton<IApiSportsLeagueCache, ApiSportsLeagueCache>();
@@ -46,6 +47,8 @@ public static class DependencyInjection
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<BasketballReferenceBasketballDataProvider>());
         services.AddScoped<IBackfillJobProcessor, BackfillJobProcessor>();
+        services.AddScoped<INbaCurrentSeasonRefreshService, NbaCurrentSeasonRefreshService>();
+        services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBackfillCoverageService, BackfillCoverageService>();
         services.AddSingleton<IBackfillCatalog, BackfillCatalog>();
         services.AddScoped<IEloRebuildService, EloRebuildService>();

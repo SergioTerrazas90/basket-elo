@@ -219,6 +219,8 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             "CZE" => "Czech Republic",
             "RU" => "Russia",
             "RUS" => "Russia",
+            "US" => "United States",
+            "USA" => "United States",
             _ => countryCode ?? string.Empty
         };
     }
@@ -240,6 +242,7 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             "Poland" => ["PL", "POL"],
             "Czech Republic" => ["CZ", "CZE"],
             "Russia" => ["RU", "RUS"],
+            "United States" => ["US", "USA"],
             _ => [displayCountry]
         };
     }

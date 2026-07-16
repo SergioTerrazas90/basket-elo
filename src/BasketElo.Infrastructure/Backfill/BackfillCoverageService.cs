@@ -412,6 +412,8 @@ public class BackfillCoverageService(
             "LVA" => "Latvia",
             "EE" => "Estonia",
             "EST" => "Estonia",
+            "US" => "United States",
+            "USA" => "United States",
             _ => countryCode ?? string.Empty
         };
     }

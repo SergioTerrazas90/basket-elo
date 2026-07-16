@@ -47,7 +47,8 @@ public class IdentityHealthCheckService(
         new("SE", "Sweden"),
         new("CH", "Switzerland"),
         new("TR", "Turkey"),
-        new("UA", "Ukraine")
+        new("UA", "Ukraine"),
+        new("USA", "United States")
     ];
 
     public async Task<IdentityHealthCheckRunDto> RunAsync(IdentityHealthCheckRequest request, CancellationToken cancellationToken)
@@ -1065,6 +1066,7 @@ public class IdentityHealthCheckService(
             "CH" or "CHE" => "Switzerland",
             "TR" or "TUR" => "Turkey",
             "UA" or "UKR" => "Ukraine",
+            "US" or "USA" => "United States",
             _ => countryCode
         };
     }

@@ -99,7 +99,7 @@ public class BasketballReferenceBasketballDataProviderTests
             .Options;
         await using var dbContext = new BasketEloDbContext(options);
         var provider = CreateProvider();
-        var catalog = new NbaTestCatalog();
+        var catalog = new BackfillCatalog();
         var processor = new BackfillJobProcessor(
             dbContext,
             [provider],
@@ -154,18 +154,4 @@ public class BasketballReferenceBasketballDataProviderTests
             throw new InvalidOperationException("Tests must use authorized local fixtures only.");
     }
 
-    private sealed class NbaTestCatalog : IBackfillCatalog
-    {
-        private static readonly ConfiguredBackfillLeague League = new(
-            BasketballReferenceBasketballDataProvider.Source,
-            "United States",
-            "NBA",
-            "United States: NBA",
-            "1946-1947");
-
-        public IReadOnlyCollection<ConfiguredBackfillLeague> GetLeagues() => [League];
-
-        public IReadOnlyCollection<string> GetSeasonsForLeague(ConfiguredBackfillLeague league) =>
-            ["1946-1947"];
-    }
 }

@@ -563,6 +563,7 @@ public class BackfillJobProcessor(
             "Slovenia" => "SI",
             "Latvia" => "LV",
             "Estonia" => "EE",
+            "United States" => "USA",
             "Europe" => null,
             _ => null
         };

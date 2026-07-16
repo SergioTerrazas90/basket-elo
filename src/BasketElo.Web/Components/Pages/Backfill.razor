@@ -11,7 +11,7 @@
         <div>
             <p class="eyebrow">Coverage Dashboard</p>
             <h1>League and season backfill coverage</h1>
-            <p class="intro">See what is already loaded, spot gaps from 2000-2001 onward, and queue one season or a full league from the same screen.</p>
+            <p class="intro">See what is already loaded, spot gaps across configured history, and queue one season or a full league from the same screen.</p>
         </div>
         <button class="btn btn-outline-primary" @onclick="RefreshAsync" disabled="@isBusy">Refresh</button>
     </section>
@@ -247,7 +247,7 @@
                         @foreach (var row in FilteredRows)
                         {
                             <tr class="@RowClass(row)">
-                                <td>@row.Country</td>
+                                <td>@NormalizeCountry(row.Country)</td>
                                 <td>@row.DisplayName</td>
                                 <td>@row.Season</td>
                                 <td><span class="status-pill @StatusClass(row.CoverageStatus)">@FormatStatus(row.CoverageStatus)</span></td>
@@ -357,7 +357,7 @@
     private string rangeDataMode = "missing";
     private string rangeNewestFirst = "true";
 
-    private IReadOnlyCollection<string> CountryOptions => rows.Select(x => x.Country).Distinct().OrderBy(x => x).ToList();
+    private IReadOnlyCollection<string> CountryOptions => rows.Select(x => NormalizeCountry(x.Country)).Distinct().OrderBy(x => x).ToList();
     private IReadOnlyCollection<string> LeagueOptions => rows.Select(x => x.DisplayName).Distinct().OrderBy(x => x).ToList();
     private static IReadOnlyCollection<string> StatusOptions => ["not_started", "in_progress", "completed", "completed_with_warnings", "dry_run", "no_data", "failed", "partial"];
     private static IReadOnlyCollection<InspectionFilterOption> InspectionOptions =>
@@ -373,7 +373,7 @@
     ];
 
     private IReadOnlyCollection<BackfillCoverageRow> FilteredRows => rows
-        .Where(x => string.IsNullOrWhiteSpace(selectedCountry) || x.Country == selectedCountry)
+        .Where(x => string.IsNullOrWhiteSpace(selectedCountry) || NormalizeCountry(x.Country) == selectedCountry)
         .Where(x => string.IsNullOrWhiteSpace(selectedLeague) || x.DisplayName == selectedLeague)
         .Where(x => string.IsNullOrWhiteSpace(selectedStatus) || x.CoverageStatus == selectedStatus)
         .Where(MatchesInspectionFilter)
@@ -395,19 +395,17 @@
     private IReadOnlyCollection<LeagueSummary> LeagueSummaries => SummarizeLeagues(FilteredRows);
 
     private static IReadOnlyCollection<LeagueSummary> SummarizeLeagues(IEnumerable<BackfillCoverageRow> source) => source
-        .GroupBy(x => new { x.Provider, x.Country, x.LeagueName, x.DisplayName })
+        .GroupBy(x => x.DisplayName)
         .Select(group => new LeagueSummary(
-            group.Key.Provider,
-            group.Key.Country,
-            group.Key.LeagueName,
-            group.Key.DisplayName,
-            group.Count(),
-            group.Count(x => x.CoverageStatus == "completed"),
-            group.Count(x => x.CoverageStatus == "completed_with_warnings"),
-            group.Count(x => x.NeedsInspection),
+            DisplayCountry(group.Key, group.Select(x => x.Country)),
+            group.Key,
+            group.Select(x => x.Season).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            group.GroupBy(x => x.Season).Count(season => season.Any(x => x.CoverageStatus == "completed")),
+            group.GroupBy(x => x.Season).Count(season => season.Any(x => x.CoverageStatus == "completed_with_warnings")),
+            group.GroupBy(x => x.Season).Count(season => season.Any(x => x.NeedsInspection)),
             group.Max(x => x.LastRunUtc),
-            group.OrderBy(x => x.Season).First().Season,
-            group.OrderByDescending(x => x.Season).First().Season))
+            group.MinBy(x => SeasonStartYear(x.Season))!.Season,
+            group.MaxBy(x => SeasonStartYear(x.Season))!.Season))
         .OrderBy(x => x.Country)
         .ThenBy(x => x.DisplayName)
         .ToList();
@@ -462,7 +460,7 @@
 
             if (SelectedRangeLeague is null)
             {
-                var defaultLeague = AllLeagueSummaries.FirstOrDefault(x => x.LeagueName == "NBA") ??
+                var defaultLeague = AllLeagueSummaries.FirstOrDefault(x => x.DisplayName == "United States: NBA") ??
                     AllLeagueSummaries.FirstOrDefault();
                 if (defaultLeague is not null)
                 {
@@ -504,9 +502,7 @@
             "api/backfill/leagues/jobs",
             new TriggerLeagueBackfillRequest
             {
-                Provider = league.Provider,
-                Country = league.Country,
-                LeagueName = league.LeagueName,
+                DisplayName = league.DisplayName,
                 DryRun = dryRun,
                 MaxRequests = maxRequests
             },
@@ -531,9 +527,7 @@
                 "api/backfill/leagues/range/jobs",
                 new TriggerLeagueRangeBackfillRequest
                 {
-                    Provider = league.Provider,
-                    Country = league.Country,
-                    LeagueName = league.LeagueName,
+                    DisplayName = league.DisplayName,
                     StartSeason = rangeStartSeason,
                     EndSeason = rangeEndSeason,
                     OnlyMissing = rangeDataMode == "missing",
@@ -666,8 +660,21 @@
         rangeEndSeason = league.LastSeason;
     }
 
-    private static string LeagueKey(LeagueSummary league) =>
-        $"{league.Provider}|{league.Country}|{league.LeagueName}";
+    private static string LeagueKey(LeagueSummary league) => league.DisplayName;
+
+    private static int SeasonStartYear(string season) =>
+        TryGetSeasonStartYear(season, out var year) ? year : int.MaxValue;
+
+    private static string NormalizeCountry(string country) =>
+        string.Equals(country, "USA", StringComparison.OrdinalIgnoreCase) ? "United States" : country;
+
+    private static string DisplayCountry(string displayName, IEnumerable<string> countries)
+    {
+        var separator = displayName.IndexOf(':');
+        return separator > 0
+            ? displayName[..separator].Trim()
+            : NormalizeCountry(countries.First());
+    }
 
     private static bool TryGetSeasonStartYear(string season, out int startYear)
     {
@@ -710,9 +717,7 @@
     };
 
     private sealed record LeagueSummary(
-        string Provider,
         string Country,
-        string LeagueName,
         string DisplayName,
         int TotalSeasons,
         int CompletedSeasons,

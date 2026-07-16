@@ -51,6 +51,7 @@ public record CreateBackfillJobRequest
 
 public record TriggerLeagueBackfillRequest
 {
+    public string DisplayName { get; init; } = string.Empty;
     public string Provider { get; init; } = "api-sports";
     public string Country { get; init; } = string.Empty;
     public string LeagueName { get; init; } = string.Empty;
@@ -60,6 +61,7 @@ public record TriggerLeagueBackfillRequest
 
 public record TriggerLeagueRangeBackfillRequest
 {
+    public string DisplayName { get; init; } = string.Empty;
     public string Provider { get; init; } = "api-sports";
     public string Country { get; init; } = string.Empty;
     public string LeagueName { get; init; } = string.Empty;

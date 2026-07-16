@@ -86,7 +86,7 @@ public class NbaBackfillControllerTests
             new Game
             {
                 Id = Guid.NewGuid(),
-                Source = BasketballReferenceBasketballDataProvider.Source,
+                Source = FiveThirtyEightBasketballDataProvider.Source,
                 SourceGameId = "existing-game",
                 CompetitionId = competition.Id,
                 Competition = competition,
@@ -139,16 +139,21 @@ public class NbaBackfillControllerTests
             .Options;
         await using var dbContext = new BasketEloDbContext(options);
         var catalog = new BackfillCatalog();
-        var nba = Assert.Single(catalog.GetLeagues(), league =>
-            league.Provider == BasketballReferenceBasketballDataProvider.Source &&
-            league.LeagueName == "NBA");
-        var seasons = catalog.GetSeasonsForLeague(nba).ToList();
+        var nbaSegments = catalog.GetLeagues()
+            .Where(league => league.DisplayName == "United States: NBA")
+            .ToList();
+        var historical = Assert.Single(nbaSegments, league =>
+            league.Provider == FiveThirtyEightBasketballDataProvider.Source);
+        var seasons = nbaSegments
+            .SelectMany(catalog.GetSeasonsForLeague)
+            .OrderBy(SeasonLabelNormalizer.ParseStartYear)
+            .ToList();
         dbContext.BackfillJobs.Add(new BackfillJob
         {
             Id = Guid.NewGuid(),
-            Provider = nba.Provider,
-            Country = nba.Country,
-            LeagueName = nba.LeagueName,
+            Provider = historical.Provider,
+            Country = historical.Country,
+            LeagueName = historical.LeagueName,
             Season = seasons[0],
             Status = BackfillJobStatus.Pending
         });
@@ -158,9 +163,7 @@ public class NbaBackfillControllerTests
         var result = await controller.TriggerLeagueBackfill(
             new TriggerLeagueBackfillRequest
             {
-                Provider = nba.Provider,
-                Country = nba.Country,
-                LeagueName = nba.LeagueName,
+                DisplayName = "United States: NBA",
                 DryRun = true,
                 MaxRequests = 0
             },
@@ -172,12 +175,46 @@ public class NbaBackfillControllerTests
             .ToListAsync();
         Assert.Equal(seasons.Count, jobs.Count);
         Assert.Equal(seasons, jobs.Select(job => job.Season));
-        Assert.All(jobs, job =>
-        {
-            Assert.Equal("NBA", job.LeagueName);
-            Assert.Equal("United States", job.Country);
-            Assert.Equal(BasketballReferenceBasketballDataProvider.Source, job.Provider);
-        });
+        Assert.All(jobs, job => Assert.Equal("NBA", job.LeagueName));
+        Assert.Equal(62, jobs.Count(job => job.Provider == FiveThirtyEightBasketballDataProvider.Source));
+        Assert.Equal(18, jobs.Count(job => job.Provider == ApiSportsBasketballDataProvider.Source));
+    }
+
+    [Fact]
+    public async Task LogicalNbaRangeRoutesAcrossHistoricalAndRecentProviders()
+    {
+        await using var dbContext = CreateDbContext();
+        var controller = CreateController(dbContext);
+
+        var result = await controller.TriggerLeagueRangeBackfill(
+            new TriggerLeagueRangeBackfillRequest
+            {
+                DisplayName = "United States: NBA",
+                StartSeason = "2007-2008",
+                EndSeason = "2008-2009",
+                OnlyMissing = false,
+                NewestFirst = true,
+                DryRun = true,
+                MaxRequests = 2
+            },
+            CancellationToken.None);
+
+        var response = Assert.IsType<QueueBackfillJobsResponse>(Assert.IsType<AcceptedResult>(result).Value);
+        Assert.Equal("multiple", response.Provider);
+        Assert.Equal(2, response.QueuedJobs);
+        var jobs = await dbContext.BackfillJobs.OrderBy(x => x.CreatedAtUtc).ToListAsync();
+        Assert.Collection(
+            jobs,
+            recent =>
+            {
+                Assert.Equal(ApiSportsBasketballDataProvider.Source, recent.Provider);
+                Assert.Equal("2008-2009", recent.Season);
+            },
+            historical =>
+            {
+                Assert.Equal(FiveThirtyEightBasketballDataProvider.Source, historical.Provider);
+                Assert.Equal("2007-2008", historical.Season);
+            });
     }
 
     private static BasketEloDbContext CreateDbContext()
@@ -197,7 +234,7 @@ public class NbaBackfillControllerTests
         bool onlyMissing) =>
         new()
         {
-            Provider = BasketballReferenceBasketballDataProvider.Source,
+            Provider = FiveThirtyEightBasketballDataProvider.Source,
             Country = "United States",
             LeagueName = "NBA",
             StartSeason = startSeason,

@@ -152,31 +152,135 @@ public class BackfillController(
             return NotFound("Configured league was not found in the backfill catalog.");
         }
 
-        var existingPendingSeasons = await dbContext.BackfillJobs
+        var seasons = backfillCatalog.GetSeasonsForLeague(league).ToList();
+        var response = await QueueLeagueJobsAsync(
+            league,
+            seasons,
+            onlyMissing: false,
+            replaceExisting: false,
+            request.DryRun,
+            request.MaxRequests,
+            cancellationToken);
+        return Accepted(response);
+    }
+
+    [HttpPost("leagues/range/jobs")]
+    public async Task<IActionResult> TriggerLeagueRangeBackfill(
+        [FromBody] TriggerLeagueRangeBackfillRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null ||
+            string.IsNullOrWhiteSpace(request.Provider) ||
+            string.IsNullOrWhiteSpace(request.Country) ||
+            string.IsNullOrWhiteSpace(request.LeagueName))
+        {
+            return BadRequest("provider, country and leagueName are required.");
+        }
+
+        if (request.OnlyMissing && request.ReplaceExisting)
+        {
+            return BadRequest("onlyMissing and replaceExisting cannot both be true.");
+        }
+
+        if (!SeasonLabelNormalizer.TryParseSeason(request.StartSeason, out _, out var startYear) ||
+            !SeasonLabelNormalizer.TryParseSeason(request.EndSeason, out _, out var endYear) ||
+            startYear > endYear)
+        {
+            return BadRequest("startSeason and endSeason must be valid consecutive-year seasons, and startSeason must not be after endSeason.");
+        }
+
+        var league = FindConfiguredLeague(request.Provider, request.Country, request.LeagueName);
+        if (league is null)
+        {
+            return NotFound("Configured league was not found in the backfill catalog.");
+        }
+
+        var configuredSeasons = backfillCatalog.GetSeasonsForLeague(league).ToList();
+        var firstConfiguredYear = SeasonLabelNormalizer.ParseStartYear(configuredSeasons[0]);
+        var lastConfiguredYear = SeasonLabelNormalizer.ParseStartYear(configuredSeasons[^1]);
+        if (startYear < firstConfiguredYear || endYear > lastConfiguredYear)
+        {
+            return BadRequest($"Season range must be within {configuredSeasons[0]} and {configuredSeasons[^1]} for this league.");
+        }
+
+        var seasons = configuredSeasons
+            .Where(season =>
+            {
+                var year = SeasonLabelNormalizer.ParseStartYear(season);
+                return year >= startYear && year <= endYear;
+            })
+            .ToList();
+
+        var response = await QueueLeagueJobsAsync(
+            league,
+            seasons,
+            request.OnlyMissing,
+            request.ReplaceExisting,
+            request.DryRun,
+            request.MaxRequests,
+            cancellationToken);
+        return Accepted(response);
+    }
+
+    private ConfiguredBackfillLeague? FindConfiguredLeague(string provider, string country, string leagueName) =>
+        backfillCatalog.GetLeagues().FirstOrDefault(x =>
+            string.Equals(x.Provider, provider, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(x.Country, country, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(x.LeagueName, leagueName, StringComparison.OrdinalIgnoreCase));
+
+    private async Task<QueueBackfillJobsResponse> QueueLeagueJobsAsync(
+        ConfiguredBackfillLeague league,
+        IReadOnlyCollection<string> seasons,
+        bool onlyMissing,
+        bool replaceExisting,
+        bool dryRun,
+        int maxRequests,
+        CancellationToken cancellationToken)
+    {
+        var activeSeasons = await dbContext.BackfillJobs
             .Where(x =>
-                x.Provider == request.Provider &&
-                x.Country == request.Country &&
-                x.LeagueName == request.LeagueName &&
+                x.Provider == league.Provider &&
+                x.Country == league.Country &&
+                x.LeagueName == league.LeagueName &&
                 (x.Status == BackfillJobStatus.Pending || x.Status == BackfillJobStatus.Running))
             .Select(x => x.Season)
             .ToListAsync(cancellationToken);
+        var active = activeSeasons.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var existing = onlyMissing
+            ? (await dbContext.Games
+                .Where(x => x.Source == league.Provider && x.Competition.Name == league.LeagueName)
+                .Select(x => x.Season.Label)
+                .Distinct()
+                .ToListAsync(cancellationToken))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : [];
 
         var jobs = new List<BackfillJob>();
-        foreach (var season in backfillCatalog.GetSeasonsForLeague(league))
+        var skippedActive = 0;
+        var skippedExisting = 0;
+        foreach (var season in seasons)
         {
-            if (existingPendingSeasons.Contains(season, StringComparer.OrdinalIgnoreCase))
+            if (active.Contains(season))
             {
+                skippedActive++;
+                continue;
+            }
+
+            if (existing.Contains(season))
+            {
+                skippedExisting++;
                 continue;
             }
 
             jobs.Add(BuildJob(new CreateBackfillJobRequest
             {
-                Provider = request.Provider,
-                Country = request.Country,
-                LeagueName = request.LeagueName,
+                Provider = league.Provider,
+                Country = league.Country,
+                LeagueName = league.LeagueName,
                 Season = season,
-                DryRun = request.DryRun,
-                MaxRequests = request.MaxRequests
+                DryRun = dryRun,
+                MaxRequests = maxRequests
             }));
         }
 
@@ -186,13 +290,18 @@ public class BackfillController(
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        return Accepted(new
-        {
-            provider = request.Provider,
-            country = request.Country,
-            leagueName = request.LeagueName,
-            queuedJobs = jobs.Count
-        });
+        return new QueueBackfillJobsResponse(
+            league.Provider,
+            league.Country,
+            league.LeagueName,
+            seasons.First(),
+            seasons.Last(),
+            onlyMissing,
+            replaceExisting,
+            seasons.Count,
+            jobs.Count,
+            skippedActive,
+            skippedExisting);
     }
 
     private static BackfillJob BuildJob(CreateBackfillJobRequest request)

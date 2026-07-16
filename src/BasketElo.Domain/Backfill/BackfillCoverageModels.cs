@@ -58,6 +58,32 @@ public record TriggerLeagueBackfillRequest
     public int MaxRequests { get; init; } = 2;
 }
 
+public record TriggerLeagueRangeBackfillRequest
+{
+    public string Provider { get; init; } = "api-sports";
+    public string Country { get; init; } = string.Empty;
+    public string LeagueName { get; init; } = string.Empty;
+    public string StartSeason { get; init; } = string.Empty;
+    public string EndSeason { get; init; } = string.Empty;
+    public bool OnlyMissing { get; init; } = true;
+    public bool ReplaceExisting { get; init; }
+    public bool DryRun { get; init; } = true;
+    public int MaxRequests { get; init; } = 2;
+}
+
+public record QueueBackfillJobsResponse(
+    string Provider,
+    string Country,
+    string LeagueName,
+    string StartSeason,
+    string EndSeason,
+    bool OnlyMissing,
+    bool ReplaceExisting,
+    int RequestedSeasons,
+    int QueuedJobs,
+    int SkippedActiveJobs,
+    int SkippedExistingSeasons);
+
 public record SaveBackfillInspectionDecisionRequest
 {
     public string Provider { get; init; } = "api-sports";

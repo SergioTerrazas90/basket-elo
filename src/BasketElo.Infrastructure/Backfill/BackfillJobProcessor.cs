@@ -36,13 +36,46 @@ public class BackfillJobProcessor(
         {
             await ProcessJobAsync(job, cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            job.Status = BackfillJobStatus.Pending;
+            job.StartedAtUtc = null;
+            job.UpdatedAtUtc = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Backfill job {jobId} failed.", job.Id);
+            var httpException = ex as HttpRequestException;
+            var retryException = ex as BackfillHttpRequestException;
+            var failedAtUtc = DateTime.UtcNow;
             job.Status = BackfillJobStatus.Failed;
-            job.ErrorMessage = ex.Message;
-            job.FinishedAtUtc = DateTime.UtcNow;
-            job.UpdatedAtUtc = DateTime.UtcNow;
+            job.ErrorMessage = Truncate(
+                $"{job.Provider} backfill failed for {job.Country}: {job.LeagueName} {job.Season}. " +
+                $"{ex.GetType().Name}: {ex.Message}",
+                4000);
+            job.SummaryJson = JsonSerializer.Serialize(new
+            {
+                failure = new
+                {
+                    jobId = job.Id,
+                    provider = job.Provider,
+                    country = job.Country,
+                    leagueName = job.LeagueName,
+                    season = job.Season,
+                    exceptionType = ex.GetType().FullName,
+                    message = ex.Message,
+                    isTransientHttpFailure = retryException is not null,
+                    httpStatusCode = httpException?.StatusCode is null ? null : (int?)httpException.StatusCode,
+                    attempts = retryException?.Attempts ?? 1,
+                    requestsUsed = job.RequestsUsed,
+                    failedAtUtc,
+                    retryEndpoint = "/api/backfill/jobs"
+                }
+            });
+            job.FinishedAtUtc = failedAtUtc;
+            job.UpdatedAtUtc = failedAtUtc;
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -79,12 +112,19 @@ public class BackfillJobProcessor(
 
         foreach (var mapping in providerLeagueMappings)
         {
-            var resolvedLeague = await provider.ResolveLeagueAsync(
-                mapping.Country,
-                mapping.LeagueName,
-                executionContext,
-                cancellationToken);
-            job.RequestsUsed = executionContext.RequestsUsed;
+            BasketballProviderLeague? resolvedLeague;
+            try
+            {
+                resolvedLeague = await provider.ResolveLeagueAsync(
+                    mapping.Country,
+                    mapping.LeagueName,
+                    executionContext,
+                    cancellationToken);
+            }
+            finally
+            {
+                job.RequestsUsed = executionContext.RequestsUsed;
+            }
 
             if (resolvedLeague is null)
             {
@@ -99,12 +139,19 @@ public class BackfillJobProcessor(
             };
             resolvedLeagues.Add(league);
 
-            var gamesResult = await provider.GetGamesAsync(
-                league,
-                canonicalSeason,
-                executionContext,
-                cancellationToken);
-            job.RequestsUsed = executionContext.RequestsUsed;
+            (IReadOnlyCollection<BasketballProviderGame> Games, bool HasMorePages, IReadOnlyCollection<string> Warnings) gamesResult;
+            try
+            {
+                gamesResult = await provider.GetGamesAsync(
+                    league,
+                    canonicalSeason,
+                    executionContext,
+                    cancellationToken);
+            }
+            finally
+            {
+                job.RequestsUsed = executionContext.RequestsUsed;
+            }
 
             if (gamesResult.HasMorePages)
             {
@@ -646,6 +693,9 @@ public class BackfillJobProcessor(
         job.UpdatedAtUtc = DateTime.UtcNow;
         job.SummaryJson = JsonSerializer.Serialize(summary);
     }
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
 
     private sealed class BackfillSummary
     {

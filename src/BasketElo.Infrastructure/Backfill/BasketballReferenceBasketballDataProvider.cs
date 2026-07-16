@@ -106,11 +106,24 @@ public sealed class BasketballReferenceBasketballDataProvider(
             return null;
         }
 
-        context.ConsumeRequest();
-        await rateLimiter.WaitAsync(cancellationToken);
-        using var request = new HttpRequestMessage(HttpMethod.Get, page.RelativePath);
-        request.Headers.UserAgent.ParseAdd(options.Value.UserAgent);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await BackfillHttpRetryPolicy.SendAsync(
+            async retryCancellationToken =>
+            {
+                if (!context.CanUseRequest())
+                {
+                    throw new InvalidOperationException(
+                        $"Request budget was exhausted while retrying the {page.Label} page.");
+                }
+
+                context.ConsumeRequest();
+                await rateLimiter.WaitAsync(retryCancellationToken);
+                using var request = new HttpRequestMessage(HttpMethod.Get, page.RelativePath);
+                request.Headers.UserAgent.ParseAdd(options.Value.UserAgent);
+                return await httpClient.SendAsync(request, retryCancellationToken);
+            },
+            options.Value.MaxTransientRetries,
+            options.Value.RetryBaseDelayMilliseconds,
+            cancellationToken);
         if (!page.Required && response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             warnings.Add($"No {page.Label} page exists for this season.");

@@ -10,4 +10,6 @@ public class BasketballReferenceOptions
     public string? PermissionReference { get; set; }
     public string UserAgent { get; set; } = "BasketElo/1.0 (authorized historical import)";
     public int MinRequestIntervalSeconds { get; set; } = 10;
+    public int MaxTransientRetries { get; set; } = 3;
+    public int RetryBaseDelayMilliseconds { get; set; } = 500;
 }

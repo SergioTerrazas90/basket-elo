@@ -71,14 +71,53 @@ public class BackfillJobProcessorTests
             summary.RootElement.GetProperty("ParserVersions")[0].GetString());
     }
 
-    private static BackfillJob CreateJob() => new()
+    [Fact]
+    public async Task PermanentSeasonFailureIsPersistedAndDoesNotBlockNextJob()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var provider = new TestProvider { FailSeason = "2023-2024" };
+        var catalog = new TestCatalog();
+        var processor = new BackfillJobProcessor(
+            dbContext,
+            [provider],
+            new IdentityHealthCheckService(dbContext, catalog),
+            catalog,
+            NullLogger<BackfillJobProcessor>.Instance);
+        var poisonJob = CreateJob("2023-2024", dryRun: true);
+        poisonJob.CreatedAtUtc = DateTime.UtcNow.AddMinutes(-1);
+        var laterJob = CreateJob("2024-2025", dryRun: true);
+        dbContext.BackfillJobs.AddRange(poisonJob, laterJob);
+        await dbContext.SaveChangesAsync();
+
+        Assert.True(await processor.TryProcessNextPendingJobAsync(CancellationToken.None));
+
+        Assert.Equal(BackfillJobStatus.Failed, poisonJob.Status);
+        Assert.Equal(BackfillJobStatus.Pending, laterJob.Status);
+        Assert.Contains("test-source backfill failed", poisonJob.ErrorMessage, StringComparison.Ordinal);
+        using (var failure = JsonDocument.Parse(poisonJob.SummaryJson!))
+        {
+            var context = failure.RootElement.GetProperty("failure");
+            Assert.Equal("2023-2024", context.GetProperty("season").GetString());
+            Assert.Equal(typeof(FormatException).FullName, context.GetProperty("exceptionType").GetString());
+            Assert.False(context.GetProperty("isTransientHttpFailure").GetBoolean());
+            Assert.Equal("/api/backfill/jobs", context.GetProperty("retryEndpoint").GetString());
+        }
+
+        Assert.True(await processor.TryProcessNextPendingJobAsync(CancellationToken.None));
+        Assert.Equal(BackfillJobStatus.Completed, laterJob.Status);
+    }
+
+    private static BackfillJob CreateJob(string season = "2024-2025", bool dryRun = false) => new()
     {
         Id = Guid.NewGuid(),
         Provider = TestProvider.Source,
         Country = "Spain",
         LeagueName = "ACB",
-        Season = "2024-2025",
-        DryRun = false,
+        Season = season,
+        DryRun = dryRun,
         MaxRequests = 2
     };
 
@@ -88,6 +127,7 @@ public class BackfillJobProcessorTests
 
         public string SourceKey => Source;
         public short HomeScore { get; set; } = 90;
+        public string? FailSeason { get; set; }
         public BasketballProviderGameProvenance Provenance { get; set; } = new(
             "https://data.example.test/seasons/2024",
             "2024",
@@ -112,6 +152,11 @@ public class BackfillJobProcessorTests
             CancellationToken cancellationToken)
         {
             context.ConsumeRequest();
+            if (season == FailSeason)
+            {
+                throw new FormatException($"Permanent fixture parse failure for {season}.");
+            }
+
             IReadOnlyCollection<BasketballProviderGame> games =
             [
                 new(

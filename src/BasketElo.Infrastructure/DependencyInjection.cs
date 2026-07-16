@@ -21,18 +21,30 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString));
 
         services.Configure<ApiSportsOptions>(configuration.GetSection(ApiSportsOptions.SectionName));
+        services.Configure<BasketballReferenceOptions>(configuration.GetSection(BasketballReferenceOptions.SectionName));
         services.Configure<ModelLabPlanOptions>(configuration.GetSection(ModelLabPlanOptions.SectionName));
         services.AddSingleton<IApiSportsRateLimiter, ApiSportsRateLimiter>();
         services.AddSingleton<IApiSportsLeagueCache, ApiSportsLeagueCache>();
+        services.AddSingleton<IBasketballReferenceRateLimiter, BasketballReferenceRateLimiter>();
         services.AddHttpClient<ApiSportsBasketballDataProvider>((serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ApiSportsOptions>>().Value;
             client.BaseAddress = new Uri(options.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(30);
         });
+        services.AddHttpClient<BasketballReferenceBasketballDataProvider>((serviceProvider, client) =>
+        {
+            var providerOptions = serviceProvider
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<BasketballReferenceOptions>>()
+                .Value;
+            client.BaseAddress = new Uri(providerOptions.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
 
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<ApiSportsBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<BasketballReferenceBasketballDataProvider>());
         services.AddScoped<IBackfillJobProcessor, BackfillJobProcessor>();
         services.AddScoped<IBackfillCoverageService, BackfillCoverageService>();
         services.AddSingleton<IBackfillCatalog, BackfillCatalog>();

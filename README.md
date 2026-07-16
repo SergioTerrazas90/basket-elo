@@ -125,7 +125,21 @@ curl.exe -X POST "http://localhost:5001/api/backfill/jobs" `
 Notes:
 - `dryRun=true` fetches provider data and stores summary without writing competition/team/game rows.
 - `maxRequests` hard-limits provider calls for budget control.
-- Current provider support is `api-sports` only.
+- Provider support includes `api-sports` and `basketball-reference`.
+
+Basketball-Reference imports use authorized local archives by default. Mirror the
+source paths under the configured root, for example
+`data/basketball-reference/leagues/BAA_1947_games.html` and
+`data/basketball-reference/playoffs/BAA_1947_games.html`.
+
+```powershell
+$env:BasketballReference__ArchiveRoot="C:\authorized-data\basketball-reference"
+$env:BasketballReference__NetworkAccessEnabled="false"
+```
+
+Network fetching stays disabled unless the operator both enables it and records
+the permission basis in `BasketballReference__PermissionReference`. See
+`docs/nba-source-policy.md` before enabling NBA ingestion.
 
 ## Troubleshooting (Windows + Docker)
 

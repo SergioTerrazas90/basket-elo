@@ -127,6 +127,31 @@ Notes:
 - `maxRequests` hard-limits provider calls for budget control.
 - Provider support includes `api-sports` and `basketball-reference`.
 
+Queue an inclusive configured season range:
+
+```powershell
+curl.exe -X POST "http://localhost:5001/api/backfill/leagues/range/jobs" `
+  -H "Content-Type: application/json" `
+  -d '{"provider":"basketball-reference","country":"United States","leagueName":"NBA","startSeason":"1946-1947","endSeason":"1959-1960","onlyMissing":true,"replaceExisting":false,"dryRun":true,"maxRequests":8}'
+```
+
+Pending/running seasons are deduplicated. Transient HTTP 408, 429, 5xx, transport,
+and timeout failures retry with exponential backoff. Every attempt observes the
+provider rate limiter and consumes the job request budget. Configure behavior with:
+
+```powershell
+$env:BasketballReference__MinRequestIntervalSeconds="10"
+$env:BasketballReference__MaxTransientRetries="3"
+$env:BasketballReference__RetryBaseDelayMilliseconds="500"
+$env:ApiSports__MinSecondsBetweenRequests="7"
+$env:ApiSports__MaxTransientRetries="3"
+$env:ApiSports__RetryBaseDelayMilliseconds="500"
+```
+
+Permanent failures affect only their season. The failed job's `SummaryJson`
+contains provider, league, season, exception type, status code, attempts, request
+usage, failure time, and the single-job retry endpoint.
+
 Basketball-Reference imports use authorized local archives by default. Mirror the
 source paths under the configured root, for example
 `data/basketball-reference/leagues/BAA_1947_games.html` and

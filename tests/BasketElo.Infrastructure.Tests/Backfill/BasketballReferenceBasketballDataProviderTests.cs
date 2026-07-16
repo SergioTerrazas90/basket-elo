@@ -6,6 +6,7 @@ using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using System.Net;
 using Xunit;
 
 namespace BasketElo.Infrastructure.Tests.Backfill;
@@ -129,6 +130,37 @@ public class BasketballReferenceBasketballDataProviderTests
         });
     }
 
+    [Fact]
+    public async Task NetworkArchiveFetchRetriesTransientFailuresWithBackoffPolicy()
+    {
+        var archiveRoot = Path.Combine(Path.GetTempPath(), $"basket-elo-retry-{Guid.NewGuid():N}");
+        var handler = new TransientThenSuccessHandler();
+        var providerOptions = Options.Create(new BasketballReferenceOptions
+        {
+            ArchiveRoot = archiveRoot,
+            NetworkAccessEnabled = true,
+            PermissionReference = "test-permission",
+            MaxTransientRetries = 2,
+            RetryBaseDelayMilliseconds = 0
+        });
+        var provider = new BasketballReferenceBasketballDataProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("https://www.basketball-reference.com/") },
+            providerOptions,
+            new ImmediateRateLimiter());
+        var league = await provider.ResolveLeagueAsync(
+            "United States",
+            "NBA",
+            new BackfillExecutionContext(10, 0),
+            CancellationToken.None);
+        var context = new BackfillExecutionContext(10, 0);
+
+        var result = await provider.GetGamesAsync(league!, "2023-2024", context, CancellationToken.None);
+
+        Assert.Single(result.Games);
+        Assert.Equal(4, handler.RequestCount);
+        Assert.Equal(4, context.RequestsUsed);
+    }
+
     private static BasketballReferenceBasketballDataProvider CreateProvider()
     {
         var providerOptions = Options.Create(new BasketballReferenceOptions
@@ -152,6 +184,48 @@ public class BasketballReferenceBasketballDataProviderTests
             HttpRequestMessage request,
             CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Tests must use authorized local fixtures only.");
+    }
+
+    private sealed class ImmediateRateLimiter : IBasketballReferenceRateLimiter
+    {
+        public Task WaitAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class TransientThenSuccessHandler : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            if (RequestCount <= 2)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            }
+
+            if (request.RequestUri?.AbsolutePath.Contains("/playoffs/", StringComparison.Ordinal) == true)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            }
+
+            const string html = """
+                <table id="schedule"><tbody><tr>
+                  <th data-stat="date_game">Oct 24, 2023</th>
+                  <td data-stat="visitor_team_name"><a href="/teams/LAL/2024.html">Los Angeles Lakers</a></td>
+                  <td data-stat="visitor_pts">107</td>
+                  <td data-stat="home_team_name"><a href="/teams/DEN/2024.html">Denver Nuggets</a></td>
+                  <td data-stat="home_pts">119</td>
+                  <td data-stat="box_score_text"><a href="/boxscores/202310240DEN.html">Box Score</a></td>
+                  <td data-stat="game_remarks"></td>
+                </tr></tbody></table>
+                """;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(html)
+            });
+        }
     }
 
 }

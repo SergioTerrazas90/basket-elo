@@ -32,9 +32,7 @@ public class ApiSportsBasketballDataProvider(
         }
 
         var uri = $"/leagues?country={Uri.EscapeDataString(country)}&name={Uri.EscapeDataString(leagueName)}";
-        using var request = CreateRequest(uri);
-        await PrepareRequestAsync(context, cancellationToken);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendWithRetryAsync(uri, context, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var payload = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -108,9 +106,7 @@ public class ApiSportsBasketballDataProvider(
     {
         var seasonParameter = ToProviderSeason(season, league);
         var uri = $"/games?league={Uri.EscapeDataString(league.SourceLeagueId)}&season={Uri.EscapeDataString(seasonParameter)}";
-        using var request = CreateRequest(uri);
-        await PrepareRequestAsync(context, cancellationToken);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendWithRetryAsync(uri, context, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var payload = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -231,6 +227,21 @@ public class ApiSportsBasketballDataProvider(
         request.Headers.Add("x-apisports-key", apiKey);
         return request;
     }
+
+    private Task<HttpResponseMessage> SendWithRetryAsync(
+        string path,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken) =>
+        BackfillHttpRetryPolicy.SendAsync(
+            async retryCancellationToken =>
+            {
+                await PrepareRequestAsync(context, retryCancellationToken);
+                using var request = CreateRequest(path);
+                return await httpClient.SendAsync(request, retryCancellationToken);
+            },
+            options.Value.MaxTransientRetries,
+            options.Value.RetryBaseDelayMilliseconds,
+            cancellationToken);
 
     private static string ToProviderSeason(string season, BasketballProviderLeague league)
     {

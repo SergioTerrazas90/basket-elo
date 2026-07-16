@@ -29,6 +29,24 @@ public static class SeasonLabelNormalizer
         return pieces.Length > 0 && int.TryParse(pieces[0], out var startYear) ? startYear : 2000;
     }
 
+    public static bool TryParseSeason(string? season, out string normalized, out int startYear)
+    {
+        normalized = string.Empty;
+        startYear = default;
+        if (string.IsNullOrWhiteSpace(season))
+        {
+            return false;
+        }
+
+        normalized = ToFullSeasonLabel(season);
+        var pieces = normalized.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return pieces.Length == 2 &&
+            int.TryParse(pieces[0], out startYear) &&
+            int.TryParse(pieces[1], out var endYear) &&
+            startYear >= 1900 &&
+            endYear == startYear + 1;
+    }
+
     public static bool IsSingleYearSeason(string season)
         => !season.Trim().Contains('-', StringComparison.Ordinal);
 

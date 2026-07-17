@@ -29,7 +29,7 @@
                 <a class="back-link" href="@BackHref">Back to rankings</a>
                 <p class="eyebrow">@team.EloPoolName</p>
                 <h1>@team.TeamName</h1>
-                <p class="intro">Current adjusted ELO profile, recent rated games, and rating path.</p>
+                <p class="intro">Adjusted ELO profile, recent rated games, and the team's continuous rating path.</p>
             </div>
             <div class="team-rank-card">
                 <span>Pool rank</span>
@@ -56,6 +56,37 @@
                 <strong>@FormatDate(team.LastGameUtc)</strong>
             </div>
         </section>
+
+        @if (team.Relocations.Count > 0 || !team.IsActive)
+        {
+            <section class="franchise-lineage" aria-labelledby="franchise-lineage-title">
+                <div>
+                    <p class="eyebrow">Franchise identity</p>
+                    <h2 id="franchise-lineage-title">@(team.Relocations.Count > 0 ? "One history across relocations" : "Historical franchise")</h2>
+                    <p>@(team.Relocations.Count > 0 ? "Relocations retain the same team identity and ELO history." : "This franchise no longer competes in the NBA.")</p>
+                </div>
+                @if (!team.IsActive)
+                {
+                    <span class="franchise-state">Defunct franchise</span>
+                }
+                @if (team.Relocations.Count > 0)
+                {
+                    <ol class="relocation-list">
+                        @foreach (var relocation in team.Relocations.OrderBy(x => x.Year))
+                        {
+                            <li>
+                                <time>@relocation.Year</time>
+                                <span>@relocation.FromName <strong aria-hidden="true">&rarr;</strong> @relocation.ToName</span>
+                                @if (relocation.IsTemporary)
+                                {
+                                    <small>Temporary move</small>
+                                }
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+        }
 
         @if (team.RecentForms.Count > 0)
         {

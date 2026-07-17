@@ -106,6 +106,76 @@
     font-size: 1.38rem;
 }
 
+.franchise-lineage {
+    display: grid;
+    grid-template-columns: minmax(13rem, 0.8fr) minmax(20rem, 1.8fr);
+    gap: var(--space-5);
+    align-items: start;
+    padding: var(--space-4) 0;
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.franchise-lineage h2 {
+    margin: 0 0 0.35rem;
+    font-size: 1.25rem;
+}
+
+.franchise-lineage p:not(.eyebrow) {
+    margin: 0;
+    color: var(--color-muted);
+}
+
+.franchise-state {
+    justify-self: start;
+    padding: 0.25rem 0.55rem;
+    border: 1px solid rgba(142, 59, 46, 0.28);
+    border-radius: var(--radius-pill);
+    background: var(--status-danger-bg);
+    color: var(--status-danger-text);
+    font-size: 0.75rem;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.relocation-list {
+    display: grid;
+    gap: var(--space-2);
+    grid-column: 2;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.relocation-list li {
+    display: grid;
+    grid-template-columns: 3.5rem minmax(0, 1fr) auto;
+    gap: var(--space-3);
+    align-items: baseline;
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid rgba(200, 183, 157, 0.58);
+}
+
+.relocation-list li:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.relocation-list time {
+    color: var(--color-brand-dark);
+    font-weight: 900;
+}
+
+.relocation-list span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.relocation-list small {
+    color: var(--color-subtle);
+    white-space: nowrap;
+}
+
 .team-context h2,
 .history-section h2,
 .form-section h2,
@@ -309,6 +379,22 @@
 
     .team-rank-card {
         width: 100%;
+    }
+
+    .franchise-lineage {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .relocation-list {
+        grid-column: 1;
+    }
+
+    .relocation-list li {
+        grid-template-columns: 3.5rem minmax(0, 1fr);
+    }
+
+    .relocation-list small {
+        grid-column: 2;
     }
 
     .pager {

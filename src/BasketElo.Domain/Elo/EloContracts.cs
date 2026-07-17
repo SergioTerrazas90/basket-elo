@@ -91,6 +91,7 @@ public sealed record EloRankingsResponse(
     string EloPoolKey,
     string EloPoolName,
     string RulesetVersion,
+    string TeamScope,
     IReadOnlyCollection<EloRankingRow> Rankings,
     EloRankingFilterOptions Filters,
     EloRankingSummary Summary,
@@ -109,7 +110,26 @@ public sealed record EloRankingRow(
     decimal Elo,
     int GamesPlayed,
     decimal RecentMovement,
-    DateTime? LastGameUtc);
+    DateTime? LastGameUtc,
+    bool IsActive,
+    IReadOnlyCollection<EloFranchiseRelocationDto> Relocations);
+
+public sealed record EloFranchiseRelocationDto(
+    int Year,
+    string FromName,
+    string ToName,
+    bool IsTemporary);
+
+public static class EloNbaTeamScopes
+{
+    public const string Current = "current";
+    public const string Historical = "historical";
+
+    public static string Normalize(string? value) =>
+        string.Equals(value, Historical, StringComparison.OrdinalIgnoreCase)
+            ? Historical
+            : Current;
+}
 
 public sealed record EloRankingFilterOptions(
     IReadOnlyCollection<string> Countries,
@@ -138,6 +158,7 @@ public sealed record EloRankingsEvolutionResponse(
 public sealed record EloMoversResponse(
     string EloPoolKey,
     string RulesetVersion,
+    string TeamScope,
     string Direction,
     DateTime WindowStartUtc,
     DateTime WindowEndUtc,
@@ -159,7 +180,9 @@ public sealed record EloMoverRow(
     decimal EloChange,
     int GamesInWindow,
     DateTime FirstGameUtc,
-    DateTime LastGameUtc);
+    DateTime LastGameUtc,
+    bool IsActive,
+    IReadOnlyCollection<EloFranchiseRelocationDto> Relocations);
 
 public sealed record EloMoversSummary(
     int TeamsWithMovement,
@@ -190,6 +213,8 @@ public sealed record EloTeamDetailResponse(
     int GamesPlayed,
     decimal RecentMovement,
     DateTime? LastGameUtc,
+    bool IsActive,
+    IReadOnlyCollection<EloFranchiseRelocationDto> Relocations,
     IReadOnlyCollection<string> Competitions,
     IReadOnlyCollection<EloTeamGameDto> RecentGames,
     int RecentGamesPage,

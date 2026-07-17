@@ -2,6 +2,57 @@ namespace BasketElo.Infrastructure.Backfill;
 
 public static class NbaFranchiseCatalog
 {
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<NbaFranchiseRelocation>> RelocationsByFranchise =
+        new Dictionary<string, IReadOnlyList<NbaFranchiseRelocation>>(StringComparer.Ordinal)
+        {
+            ["hawks"] =
+            [
+                R(1951, "Tri-Cities Blackhawks", "Milwaukee Hawks"),
+                R(1955, "Milwaukee Hawks", "St. Louis Hawks"),
+                R(1968, "St. Louis Hawks", "Atlanta Hawks")
+            ],
+            ["nets"] =
+            [
+                R(1968, "New Jersey Americans", "New York Nets"),
+                R(1977, "New York Nets", "New Jersey Nets"),
+                R(2012, "New Jersey Nets", "Brooklyn Nets")
+            ],
+            ["pistons"] = [R(1957, "Fort Wayne Pistons", "Detroit Pistons")],
+            ["warriors"] =
+            [
+                R(1962, "Philadelphia Warriors", "San Francisco Warriors"),
+                R(1971, "San Francisco Warriors", "Golden State Warriors")
+            ],
+            ["rockets"] = [R(1971, "San Diego Rockets", "Houston Rockets")],
+            ["clippers"] =
+            [
+                R(1978, "Buffalo Braves", "San Diego Clippers"),
+                R(1984, "San Diego Clippers", "Los Angeles Clippers")
+            ],
+            ["lakers"] = [R(1960, "Minneapolis Lakers", "Los Angeles Lakers")],
+            ["grizzlies"] = [R(2001, "Vancouver Grizzlies", "Memphis Grizzlies")],
+            ["pelicans"] =
+            [
+                R(2005, "New Orleans Hornets", "New Orleans/Oklahoma City Hornets", isTemporary: true),
+                R(2007, "New Orleans/Oklahoma City Hornets", "New Orleans Hornets", isTemporary: true)
+            ],
+            ["thunder"] = [R(2008, "Seattle SuperSonics", "Oklahoma City Thunder")],
+            ["sixers"] = [R(1963, "Syracuse Nationals", "Philadelphia 76ers")],
+            ["kings"] =
+            [
+                R(1957, "Rochester Royals", "Cincinnati Royals"),
+                R(1972, "Cincinnati Royals", "Kansas City-Omaha Kings"),
+                R(1985, "Kansas City Kings", "Sacramento Kings")
+            ],
+            ["spurs"] = [R(1973, "Dallas Chaparrals", "San Antonio Spurs")],
+            ["jazz"] = [R(1979, "New Orleans Jazz", "Utah Jazz")],
+            ["wizards"] =
+            [
+                R(1963, "Chicago Zephyrs", "Baltimore Bullets"),
+                R(1973, "Baltimore Bullets", "Capital Bullets")
+            ]
+        };
+
     private static readonly IReadOnlyList<NbaFranchise> Franchises =
     [
         Active("hawks", "Atlanta Hawks", A("TRI", "Tri-Cities Blackhawks", 1949, 1950), A("MLH", "Milwaukee Hawks", 1951, 1954), A("STL", "St. Louis Hawks", 1955, 1967), A("ATL", "Atlanta Hawks", 1968)),
@@ -53,6 +104,10 @@ public static class NbaFranchiseCatalog
 
     public static IReadOnlyList<NbaFranchise> All => Franchises;
 
+    public static NbaFranchise? FindByCanonicalName(string canonicalName) =>
+        Franchises.FirstOrDefault(franchise =>
+            franchise.CanonicalName.Equals(canonicalName.Trim(), StringComparison.OrdinalIgnoreCase));
+
     public static NbaFranchiseMatch? Resolve(string sourceTeamId, string observedName, int seasonStartYear)
     {
         var normalizedId = sourceTeamId.Trim().ToUpperInvariant();
@@ -90,20 +145,33 @@ public static class NbaFranchiseCatalog
     }
 
     private static NbaFranchise Active(string key, string name, params NbaFranchiseAlias[] aliases) =>
-        new(key, name, true, aliases);
+        new(key, name, true, aliases, GetRelocations(key));
 
     private static NbaFranchise Defunct(string key, string name, params NbaFranchiseAlias[] aliases) =>
-        new(key, name, false, aliases);
+        new(key, name, false, aliases, []);
 
     private static NbaFranchiseAlias A(string id, string name, int startSeasonYear, int? endSeasonYear = null) =>
         new(id, name, startSeasonYear, endSeasonYear);
+
+    private static NbaFranchiseRelocation R(int year, string fromName, string toName, bool isTemporary = false) =>
+        new(year, fromName, toName, isTemporary);
+
+    private static IReadOnlyList<NbaFranchiseRelocation> GetRelocations(string franchiseKey) =>
+        RelocationsByFranchise.GetValueOrDefault(franchiseKey) ?? [];
 }
 
 public sealed record NbaFranchise(
     string Key,
     string CanonicalName,
     bool IsActive,
-    IReadOnlyList<NbaFranchiseAlias> Aliases);
+    IReadOnlyList<NbaFranchiseAlias> Aliases,
+    IReadOnlyList<NbaFranchiseRelocation> Relocations);
+
+public sealed record NbaFranchiseRelocation(
+    int Year,
+    string FromName,
+    string ToName,
+    bool IsTemporary);
 
 public sealed record NbaFranchiseAlias(
     string SourceTeamId,

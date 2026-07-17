@@ -20,6 +20,23 @@ public class NbaFranchiseCatalogTests
     }
 
     [Fact]
+    public void CatalogExposesCuratedRelocationHistoryWithoutTreatingRenamesAsMoves()
+    {
+        var lakers = NbaFranchiseCatalog.FindByCanonicalName("Los Angeles Lakers");
+        var pelicans = NbaFranchiseCatalog.FindByCanonicalName("New Orleans Pelicans");
+        var hornets = NbaFranchiseCatalog.FindByCanonicalName("Charlotte Hornets");
+
+        var lakersMove = Assert.Single(lakers?.Relocations ?? []);
+        Assert.Equal(1960, lakersMove.Year);
+        Assert.Equal("Minneapolis Lakers", lakersMove.FromName);
+        Assert.Equal("Los Angeles Lakers", lakersMove.ToName);
+        Assert.False(lakersMove.IsTemporary);
+
+        Assert.All(pelicans?.Relocations ?? [], move => Assert.True(move.IsTemporary));
+        Assert.Empty(hornets?.Relocations ?? []);
+    }
+
+    [Fact]
     public void AmbiguousAndDefunctFranchisesRemainPredictable()
     {
         var originalCharlotte = NbaFranchiseCatalog.Resolve("CHH", "Charlotte Hornets", 2001);

@@ -73,7 +73,11 @@
             </RadzenLineSeries>
         }
 
-        <RadzenCategoryAxis Formatter="@FormatCategoryAxis" LabelAutoRotation="-35">
+        <RadzenCategoryAxis Formatter="@FormatCategoryAxis"
+                            LabelAutoRotation="-35"
+                            Min="@CategoryAxisMin"
+                            Max="@CategoryAxisMax"
+                            TickPlacement="@CategoryTickPlacement">
             <RadzenAxisCrosshair Visible="true" Label="true" Snap="true" Stroke="#6b7682" />
         </RadzenCategoryAxis>
         <RadzenValueAxis Formatter="@FormatEloAxis">
@@ -130,6 +134,21 @@
     private string CategoryProperty => samplingMode == EloChartSamplingMode.GameByGame
         ? nameof(EloChartPoint.ActiveDateIndex)
         : nameof(EloChartPoint.GameDateTimeUtc);
+
+    private object? CategoryAxisMin =>
+        samplingMode == EloChartSamplingMode.GameByGame && activeDates.Count > 1
+            ? 0d
+            : null;
+
+    private object? CategoryAxisMax =>
+        samplingMode == EloChartSamplingMode.GameByGame && activeDates.Count > 1
+            ? (double)(activeDates.Count - 1)
+            : null;
+
+    private TickPlacement CategoryTickPlacement =>
+        samplingMode == EloChartSamplingMode.GameByGame
+            ? TickPlacement.On
+            : TickPlacement.Between;
 
     private ChartTooltipTrigger TooltipTrigger => SharedTooltip
         ? ChartTooltipTrigger.Axis

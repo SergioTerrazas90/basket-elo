@@ -12,7 +12,10 @@ public sealed record EloChartPoint(
     string TeamName,
     string Color,
     decimal? EloDelta = null,
-    int? Rank = null);
+    int? Rank = null)
+{
+    public int ActiveDateIndex { get; init; }
+}
 
 public sealed record EloChartViewportRange(
     DateTime FromUtc,

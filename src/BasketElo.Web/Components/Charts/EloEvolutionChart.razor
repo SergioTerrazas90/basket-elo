@@ -1,6 +1,6 @@
 @using System.Globalization
 
-<div class="elo-chart">
+<div class="elo-chart" @onmouseleave="ClearActivePointAsync">
     @if (EnableRangeNavigation)
     {
         <div class="elo-chart-toolbar" aria-label="Chart range controls">
@@ -29,6 +29,21 @@
         </div>
     }
 
+    <div class="elo-chart-active-slot" aria-live="polite">
+        @if (activePoint is not null)
+        {
+            <div class="elo-chart-active-chip" style="--active-team-color: @activePoint.Color">
+                <span class="elo-chart-active-swatch"></span>
+                <strong>@activePoint.TeamName</strong>
+                <span>@activePoint.Elo.ToString("0") ELO</span>
+                @if (activePoint.Rank.HasValue)
+                {
+                    <span>#@activePoint.Rank</span>
+                }
+            </div>
+        }
+    </div>
+
     <RadzenChart class="elo-radzen-chart"
                  Style="@ChartStyle"
                  TooltipTolerance="40"
@@ -56,10 +71,14 @@
                     <RadzenMarkers MarkerType="MarkerType.Circle" Size="2" Fill="@series.Color" Stroke="@series.Color" />
                 </ChildContent>
                 <TooltipTemplate Context="point">
-                    <div class="elo-chart-tooltip">
-                        <strong>@point.TeamName</strong>
+                    <EloChartHoverProbe Point="@point" ActivePointChanged="@SetActivePointAsync" />
+                    <div class="elo-chart-tooltip" style="--active-team-color: @point.Color">
+                        <div class="elo-chart-tooltip-team">
+                            <span class="elo-chart-active-swatch"></span>
+                            <strong>@point.TeamName</strong>
+                        </div>
                         <span>@FormatDate(point.GameDateTimeUtc)</span>
-                        <span>ELO @point.Elo.ToString("0")</span>
+                        <span>@point.Elo.ToString("0") ELO</span>
                         @if (point.EloDelta.HasValue)
                         {
                             <span>Change @FormatMovement(point.EloDelta.Value)</span>
@@ -118,6 +137,9 @@
     [Parameter]
     public EventCallback FullRangeRequested { get; set; }
 
+    [Parameter]
+    public EventCallback<EloChartPoint?> ActivePointChanged { get; set; }
+
     private double chartZoom = 100;
     private double viewStart;
     private double viewEnd = 1;
@@ -128,6 +150,7 @@
     private IReadOnlyList<EloChartPoint> allPoints = [];
     private IReadOnlyList<DateTime> activeDates = [];
     private long renderedDataRevision = -1;
+    private EloChartPoint? activePoint;
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
 
@@ -345,6 +368,40 @@
         chartZoom = 100;
         viewStart = 0;
         viewEnd = 1;
+    }
+
+    private async Task SetActivePointAsync(EloChartPoint? point)
+    {
+        if (point is null ||
+            activePoint is not null &&
+            string.Equals(activePoint.TeamName, point.TeamName, StringComparison.Ordinal) &&
+            activePoint.GameDateTimeUtc == point.GameDateTimeUtc &&
+            activePoint.Elo == point.Elo)
+        {
+            return;
+        }
+
+        activePoint = point;
+        if (ActivePointChanged.HasDelegate)
+        {
+            await ActivePointChanged.InvokeAsync(point);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ClearActivePointAsync()
+    {
+        if (activePoint is null)
+        {
+            return;
+        }
+
+        activePoint = null;
+        if (ActivePointChanged.HasDelegate)
+        {
+            await ActivePointChanged.InvokeAsync(null);
+        }
     }
 
     private string SamplingButtonClass(EloChartSamplingMode mode)

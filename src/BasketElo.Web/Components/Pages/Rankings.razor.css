@@ -411,6 +411,23 @@
     text-decoration: underline;
 }
 
+.evolution-legend.has-active-team a {
+    opacity: 0.46;
+}
+
+.evolution-legend.has-active-team a.active {
+    color: var(--color-brand-dark);
+    font-weight: 900;
+    opacity: 1;
+    text-decoration: underline;
+    text-underline-offset: 0.16rem;
+}
+
+.evolution-legend.has-active-team a.active span {
+    box-shadow: 0 0 0 3px rgba(216, 135, 34, 0.18);
+    transform: scale(1.18);
+}
+
 .evolution-legend span {
     flex: 0 0 auto;
     width: 0.75rem;

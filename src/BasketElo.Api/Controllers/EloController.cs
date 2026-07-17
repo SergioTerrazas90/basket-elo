@@ -269,8 +269,7 @@ public class EloController(
                     rating.GamesPlayed,
                     archiveRecentMovement.GetValueOrDefault(rating.TeamId),
                     rating.GameDateTimeUtc,
-                    rating.IsActive,
-                    GetFranchiseRelocations(poolKey, rating.TeamName)))
+                    rating.IsActive))
                 .ToList();
 
             var latestRatedGameUtc = globalArchiveRatings.Count == 0
@@ -384,8 +383,7 @@ public class EloController(
                 rating.GamesPlayed,
                 recentMovement.GetValueOrDefault(rating.TeamId),
                 rating.LastGame?.GameDateTimeUtc,
-                rating.Team.IsActive,
-                GetFranchiseRelocations(poolKey, rating.Team.CanonicalName)))
+                rating.Team.IsActive))
             .ToList();
 
         return Ok(new EloRankingsResponse(
@@ -751,8 +749,7 @@ public class EloController(
                 row.GamesInWindow,
                 row.FirstGameUtc,
                 row.LastGameUtc,
-                ratingByTeam.GetValueOrDefault(row.TeamId)?.Team.IsActive ?? true,
-                GetFranchiseRelocations(poolKey, row.TeamName)))
+                ratingByTeam.GetValueOrDefault(row.TeamId)?.Team.IsActive ?? true))
             .ToList();
 
         return Ok(new EloMoversResponse(
@@ -973,7 +970,7 @@ public class EloController(
             recentMovement,
             rating.LastGame?.GameDateTimeUtc,
             rating.Team.IsActive,
-            GetFranchiseRelocations(poolKey, rating.Team.CanonicalName),
+            GetFranchiseIdentityEvents(poolKey, rating.Team.CanonicalName),
             competitionRows,
             recentGames,
             gamesPage,
@@ -1571,7 +1568,7 @@ public class EloController(
            minGames > 0 ||
            !string.IsNullOrWhiteSpace(team);
 
-    private static IReadOnlyCollection<EloFranchiseRelocationDto> GetFranchiseRelocations(
+    private static IReadOnlyCollection<EloFranchiseIdentityEventDto> GetFranchiseIdentityEvents(
         string poolKey,
         string canonicalTeamName)
     {
@@ -1580,12 +1577,17 @@ public class EloController(
             return [];
         }
 
-        return NbaFranchiseCatalog.FindByCanonicalName(canonicalTeamName)?.Relocations
-            .Select(relocation => new EloFranchiseRelocationDto(
-                relocation.Year,
-                relocation.FromName,
-                relocation.ToName,
-                relocation.IsTemporary))
+        return NbaFranchiseCatalog.FindByCanonicalName(canonicalTeamName)?.IdentityEvents
+            .Select(identityEvent => new EloFranchiseIdentityEventDto(
+                identityEvent.Year,
+                identityEvent.FromName,
+                identityEvent.ToName,
+                identityEvent.Type switch
+                {
+                    NbaFranchiseIdentityEventType.Rename => EloFranchiseIdentityEventTypes.Rename,
+                    NbaFranchiseIdentityEventType.TemporaryRelocation => EloFranchiseIdentityEventTypes.TemporaryRelocation,
+                    _ => EloFranchiseIdentityEventTypes.Relocation
+                }))
             .ToList() ?? [];
     }
 

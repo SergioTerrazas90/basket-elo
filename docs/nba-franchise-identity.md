@@ -48,14 +48,16 @@ defunct BAA/NBA teams in the historical range. On import:
 
 - NBA rankings default to the 30 active franchises. The historical scope adds
   defunct BAA/NBA franchises without changing any rating chains.
-- Relocation history is explicit catalog data. It is not inferred from aliases,
-  because aliases can also represent renames, league transitions, or temporary
-  identities.
-- Rankings show the latest relocation for context; team profiles show the full
-  chronological relocation history. Temporary moves are labeled separately.
-- Relocation years use the starting year of the destination season. For example,
+- Franchise identity events are explicit catalog data. They are not inferred
+  from aliases, because aliases can also represent source-code changes, league
+  transitions, or temporary identities.
+- Rankings stay focused on rating and active/defunct status. Team profiles show
+  the full curated chronology of relocations, temporary moves, and renames.
+- Event years use the starting year of the new identity's season. For example,
   the Lakers' 1960 event represents the 1960-1961 move from Minneapolis to Los
   Angeles.
+- The Washington timeline explicitly records the 1997 rename from the
+  Washington Bullets to the Washington Wizards.
 
 Changes to continuity require an update to this document, the catalog, and the
 identity regression tests in the same pull request.

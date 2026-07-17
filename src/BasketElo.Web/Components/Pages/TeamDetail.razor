@@ -540,8 +540,7 @@
                 return;
             }
 
-            teamHistoryChartSeries = refinedSeries;
-            teamHistoryDataRevision++;
+            teamHistoryChartSeries = MergeTeamHistorySeries(teamHistoryChartSeries, refinedSeries);
             errorMessage = null;
             await InvokeAsync(StateHasChanged);
         }
@@ -580,13 +579,21 @@
     private Task RestoreFullTeamHistoryAsync()
     {
         CancelTeamHistoryRefinement();
-        if (!ReferenceEquals(teamHistoryChartSeries, fullTeamHistoryChartSeries))
-        {
-            teamHistoryChartSeries = fullTeamHistoryChartSeries;
-            teamHistoryDataRevision++;
-        }
-
         return Task.CompletedTask;
+    }
+
+    private static IReadOnlyList<EloChartSeries> MergeTeamHistorySeries(
+        IReadOnlyList<EloChartSeries> baseSeries,
+        IReadOnlyList<EloChartSeries> refinedSeries)
+    {
+        var refinedByTeam = refinedSeries
+            .Where(series => series.TeamId.HasValue)
+            .ToDictionary(series => series.TeamId!.Value);
+        return baseSeries
+            .Select(series => series.TeamId is Guid teamId && refinedByTeam.TryGetValue(teamId, out var refined)
+                ? series with { Points = EloChartData.MergePoints(series.Points, refined.Points) }
+                : series)
+            .ToList();
     }
 
     private void AddTeamHistoryRangeToCache(string uri, EloRankingsEvolutionResponse response)

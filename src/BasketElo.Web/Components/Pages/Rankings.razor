@@ -950,8 +950,8 @@
                 return;
             }
 
-            evolution = refinedEvolution;
-            RebuildEvolutionChartSeries();
+            evolution = MergeEvolutionData(evolution ?? fullEvolution, refinedEvolution);
+            RebuildEvolutionChartSeries(resetViewport: false);
             errorMessage = null;
             await InvokeAsync(StateHasChanged);
         }
@@ -982,12 +982,6 @@
     private Task RestoreFullEvolutionAsync()
     {
         CancelEvolutionRefinement();
-        if (fullEvolution is not null && !ReferenceEquals(evolution, fullEvolution))
-        {
-            evolution = fullEvolution;
-            RebuildEvolutionChartSeries();
-        }
-
         return Task.CompletedTask;
     }
 
@@ -1169,23 +1163,84 @@
         return $"Showing {rangeStart}-{rangeEnd} of {movers.TotalCount} teams from {FormatDate(movers.WindowStartUtc)} to {FormatDate(movers.WindowEndUtc)}.";
     }
 
-    private void RebuildEvolutionChartSeries()
+    private void RebuildEvolutionChartSeries(bool resetViewport = true)
     {
-        evolutionChartSeries = EvolutionSeries
-            .Select((series, index) => new EloChartSeries(
-                series.TeamId,
-                series.TeamName,
-                ChartColor(index),
-                series.Points
-                    .OrderBy(point => point.GameDateTimeUtc)
-                    .Select(point => new EloChartPoint(
+        var visibleTeamIds = evolutionRankings?.Rankings
+            .Select(row => row.TeamId)
+            .ToHashSet() ?? [];
+        var refinedSeriesByTeam = EvolutionSeries
+            .ToDictionary(series => series.TeamId);
+        var baseSeries = (fullEvolution ?? evolution)?.Series
+            .Where(series => visibleTeamIds.Contains(series.TeamId))
+            .ToList() ?? [];
+
+        evolutionChartSeries = baseSeries
+            .Select((series, index) =>
+            {
+                var color = ChartColor(index);
+                var points = ToChartPoints(series.Points, series.TeamName, color);
+                if (refinedSeriesByTeam.TryGetValue(series.TeamId, out var refined))
+                {
+                    points = EloChartData.MergePoints(
+                        points,
+                        ToChartPoints(refined.Points, refined.TeamName, color));
+                }
+
+                return new EloChartSeries(series.TeamId, series.TeamName, color, points);
+            })
+            .ToList();
+        if (resetViewport)
+        {
+            evolutionDataRevision++;
+        }
+    }
+
+    private static IReadOnlyList<EloChartPoint> ToChartPoints(
+        IReadOnlyCollection<EloTeamEvolutionPoint> points,
+        string teamName,
+        string color)
+        => points
+            .OrderBy(point => point.GameDateTimeUtc)
+            .Select(point => new EloChartPoint(
                         point.GameDateTimeUtc,
                         point.Elo,
-                        series.TeamName,
-                        ChartColor(index)))
-                    .ToList()))
+                        teamName,
+                        color))
             .ToList();
-        evolutionDataRevision++;
+
+    private static EloRankingsEvolutionResponse MergeEvolutionData(
+        EloRankingsEvolutionResponse? baseEvolution,
+        EloRankingsEvolutionResponse refinedEvolution)
+    {
+        if (baseEvolution is null)
+        {
+            return refinedEvolution;
+        }
+
+        var refinedByTeam = refinedEvolution.Series
+            .ToDictionary(series => series.TeamId);
+        var mergedSeries = baseEvolution.Series
+            .Select(series => refinedByTeam.TryGetValue(series.TeamId, out var refined)
+                ? series with { Points = MergeEvolutionPoints(series.Points, refined.Points) }
+                : series)
+            .ToList();
+
+        return baseEvolution with { Series = mergedSeries };
+    }
+
+    private static IReadOnlyList<EloTeamEvolutionPoint> MergeEvolutionPoints(
+        IReadOnlyCollection<EloTeamEvolutionPoint> basePoints,
+        IReadOnlyCollection<EloTeamEvolutionPoint> refinedPoints)
+    {
+        var refinedDates = refinedPoints
+            .Select(point => point.GameDateTimeUtc)
+            .ToHashSet();
+
+        return basePoints
+            .Where(point => !refinedDates.Contains(point.GameDateTimeUtc))
+            .Concat(refinedPoints)
+            .OrderBy(point => point.GameDateTimeUtc)
+            .ToList();
     }
 
     public ValueTask DisposeAsync()

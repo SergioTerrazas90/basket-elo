@@ -57,35 +57,6 @@
     width: 100%;
 }
 
-.elo-chart-active-slot {
-    min-height: 2.35rem;
-    padding: var(--space-3) var(--space-3) 0;
-}
-
-.elo-chart-active-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    max-width: min(100%, 32rem);
-    padding: 0.38rem 0.62rem;
-    border: 1px solid color-mix(in srgb, var(--active-team-color) 45%, var(--color-border));
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--active-team-color) 10%, var(--color-surface));
-    color: var(--color-muted);
-    font-size: 0.82rem;
-    font-weight: 750;
-    box-shadow: var(--shadow-sm);
-}
-
-.elo-chart-active-chip strong {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--color-text);
-    font-size: 0.9rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .elo-chart-active-swatch {
     width: 0.72rem;
     height: 0.72rem;
@@ -123,7 +94,4 @@
         flex-direction: column;
     }
 
-    .elo-chart-active-chip {
-        flex-wrap: wrap;
-    }
 }

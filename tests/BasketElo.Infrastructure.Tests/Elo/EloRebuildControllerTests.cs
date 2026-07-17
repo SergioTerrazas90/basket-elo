@@ -88,6 +88,83 @@ public class EloRebuildControllerTests
     }
 
     [Fact]
+    public async Task NbaRankingsDefaultToCurrentFranchisesAndCanIncludeHistoricalFranchises()
+    {
+        await using var dbContext = CreateDbContext();
+        var lakers = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "Los Angeles Lakers",
+            CountryCode = "USA",
+            IsActive = true
+        };
+        var huskies = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "Toronto Huskies",
+            CountryCode = "CAN",
+            IsActive = false
+        };
+        dbContext.Teams.AddRange(lakers, huskies);
+        dbContext.TeamRatings.AddRange(
+            new TeamRating
+            {
+                TeamId = lakers.Id,
+                Team = lakers,
+                EloPoolKey = EloPoolKeys.Nba,
+                RulesetVersion = EloRulesetVersions.AdjustedV1,
+                Elo = 1600m
+            },
+            new TeamRating
+            {
+                TeamId = huskies.Id,
+                Team = huskies,
+                EloPoolKey = EloPoolKeys.Nba,
+                RulesetVersion = EloRulesetVersions.AdjustedV1,
+                Elo = 1700m
+            });
+        await dbContext.SaveChangesAsync();
+        var controller = CreateController(dbContext, new ScopedIdentityHealthService(EloPoolKeys.Nba));
+
+        var currentResult = await controller.GetRankings(
+            rulesetVersion: null,
+            pool: EloPoolKeys.Nba,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: null);
+
+        var current = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(currentResult.Result).Value);
+        Assert.Equal(EloNbaTeamScopes.Current, current.TeamScope);
+        var currentRow = Assert.Single(current.Rankings);
+        Assert.Equal(lakers.Id, currentRow.TeamId);
+        Assert.True(currentRow.IsActive);
+        Assert.Equal(1960, Assert.Single(currentRow.Relocations).Year);
+
+        var historicalResult = await controller.GetRankings(
+            rulesetVersion: null,
+            pool: EloPoolKeys.Nba,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: null,
+            teams: EloNbaTeamScopes.Historical);
+
+        var historical = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(historicalResult.Result).Value);
+        Assert.Equal(EloNbaTeamScopes.Historical, historical.TeamScope);
+        Assert.Equal(2, historical.Rankings.Count);
+        Assert.False(historical.Rankings.Single(row => row.TeamId == huskies.Id).IsActive);
+    }
+
+    [Fact]
     public async Task PoolRebuildUsesPoolScopedIdentityGate()
     {
         await using var dbContext = CreateDbContext();

@@ -81,6 +81,66 @@
     box-shadow: inset 0 1px 0 rgba(255, 253, 248, 0.7);
 }
 
+.franchise-scope-field {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: end;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid rgba(200, 183, 157, 0.72);
+}
+
+.franchise-scope-field > div {
+    flex: 0 0 auto;
+}
+
+.franchise-scope-field p {
+    max-width: 42rem;
+    margin: 0;
+    color: var(--color-muted);
+    font-size: 0.88rem;
+}
+
+.filter-label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: var(--color-text);
+    font-size: 0.88rem;
+    font-weight: 750;
+}
+
+.franchise-scope-control {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(7rem, 1fr));
+    padding: 0.2rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+}
+
+.franchise-scope-option {
+    min-height: 2.25rem;
+    padding: 0.4rem 0.7rem;
+    border: 0;
+    border-radius: calc(var(--radius-md) - 4px);
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 0.88rem;
+    font-weight: 800;
+}
+
+.franchise-scope-option:hover,
+.franchise-scope-option:focus-visible {
+    color: var(--color-brand-dark);
+    background: var(--color-surface-muted);
+}
+
+.franchise-scope-option.active {
+    color: #fff;
+    background: var(--color-brand-dark);
+}
+
 .filter-field {
     display: flex;
     flex-direction: column;
@@ -381,6 +441,41 @@
     outline-offset: -2px;
 }
 
+.team-identity-cell {
+    display: flex;
+    min-width: 13rem;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.team-identity-cell > div {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.team-identity-cell small {
+    max-width: 28rem;
+    overflow: hidden;
+    color: var(--color-subtle);
+    font-size: 0.76rem;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.franchise-status {
+    padding: 0.12rem 0.4rem;
+    border: 1px solid rgba(142, 59, 46, 0.28);
+    border-radius: var(--radius-pill);
+    background: var(--status-danger-bg);
+    color: var(--status-danger-text);
+    font-size: 0.68rem;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
 .rank-cell {
     color: var(--color-brand-dark);
     font-size: 1.05rem;
@@ -458,6 +553,15 @@
 
     .filter-field.wide {
         grid-column: span 1;
+    }
+
+    .franchise-scope-field {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .franchise-scope-control {
+        width: 100%;
     }
 
     .filter-actions {

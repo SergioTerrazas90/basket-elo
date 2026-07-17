@@ -2,6 +2,7 @@ using BasketElo.Api.Auth;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Elo;
+using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using System.Globalization;
@@ -141,6 +142,7 @@ public class EloController(
         [FromQuery] DateTime? asOfDate,
         [FromQuery] int? minGames,
         [FromQuery] string? team,
+        [FromQuery] string? teams = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
@@ -150,6 +152,8 @@ public class EloController(
         {
             return BadRequest($"Unsupported ELO pool '{pool}'.");
         }
+        var teamScope = EloNbaTeamScopes.Normalize(teams);
+        var activeNbaTeamsOnly = poolKey == EloPoolKeys.Nba && teamScope == EloNbaTeamScopes.Current;
         if (!await CompetitionBelongsToPoolAsync(competition, poolKey, cancellationToken))
         {
             return BadRequest($"Competition '{competition}' does not belong to ELO pool '{poolKey}'.");
@@ -176,6 +180,7 @@ public class EloController(
                     x.TeamId,
                     x.Team.CanonicalName,
                     x.Team.CountryCode,
+                    x.Team.IsActive,
                     x.GameId,
                     x.GameDateTimeUtc,
                     x.PostElo,
@@ -183,6 +188,7 @@ public class EloController(
                 .ToListAsync(cancellationToken);
 
             var globalArchiveRatings = archiveHistoryRows
+                .Where(x => !activeNbaTeamsOnly || x.IsActive)
                 .GroupBy(x => x.TeamId)
                 .Select(group => group
                     .OrderByDescending(x => x.GameDateTimeUtc)
@@ -262,7 +268,9 @@ public class EloController(
                     rating.Elo,
                     rating.GamesPlayed,
                     archiveRecentMovement.GetValueOrDefault(rating.TeamId),
-                    rating.GameDateTimeUtc))
+                    rating.GameDateTimeUtc,
+                    rating.IsActive,
+                    GetFranchiseRelocations(poolKey, rating.TeamName)))
                 .ToList();
 
             var latestRatedGameUtc = globalArchiveRatings.Count == 0
@@ -273,6 +281,7 @@ public class EloController(
                 poolKey,
                 EloPoolKeys.DisplayName(poolKey),
                 selectedRuleset,
+                teamScope,
                 archiveRows,
                 await BuildRankingFilterOptionsAsync(poolKey, selectedRuleset, cancellationToken),
                 new EloRankingSummary(
@@ -297,7 +306,10 @@ public class EloController(
             .AsNoTracking()
             .Include(x => x.Team)
             .Include(x => x.LastGame)
-            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
+            .Where(x =>
+                x.EloPoolKey == poolKey &&
+                x.RulesetVersion == selectedRuleset &&
+                (!activeNbaTeamsOnly || x.Team.IsActive))
             .OrderByDescending(x => x.Elo)
             .ThenBy(x => x.Team.CanonicalName)
             .ToListAsync(cancellationToken);
@@ -371,13 +383,16 @@ public class EloController(
                 rating.Elo,
                 rating.GamesPlayed,
                 recentMovement.GetValueOrDefault(rating.TeamId),
-                rating.LastGame?.GameDateTimeUtc))
+                rating.LastGame?.GameDateTimeUtc,
+                rating.Team.IsActive,
+                GetFranchiseRelocations(poolKey, rating.Team.CanonicalName)))
             .ToList();
 
         return Ok(new EloRankingsResponse(
             poolKey,
             EloPoolKeys.DisplayName(poolKey),
             selectedRuleset,
+            teamScope,
             rows,
             await BuildRankingFilterOptionsAsync(poolKey, selectedRuleset, cancellationToken),
             new EloRankingSummary(
@@ -558,6 +573,7 @@ public class EloController(
         [FromQuery] DateTime? toUtc = null,
         [FromQuery] int? minGames = null,
         [FromQuery] string? team = null,
+        [FromQuery] string? teams = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25,
         CancellationToken cancellationToken = default)
@@ -567,6 +583,8 @@ public class EloController(
         {
             return BadRequest($"Unsupported ELO pool '{pool}'.");
         }
+        var teamScope = EloNbaTeamScopes.Normalize(teams);
+        var activeNbaTeamsOnly = poolKey == EloPoolKeys.Nba && teamScope == EloNbaTeamScopes.Current;
         if (!await CompetitionBelongsToPoolAsync(competition, poolKey, cancellationToken))
         {
             return BadRequest($"Competition '{competition}' does not belong to ELO pool '{poolKey}'.");
@@ -596,6 +614,7 @@ public class EloController(
             return Ok(new EloMoversResponse(
                 poolKey,
                 selectedRuleset,
+                teamScope,
                 normalizedDirection,
                 now.AddDays(-windowDays),
                 now,
@@ -622,7 +641,10 @@ public class EloController(
         var currentRatings = await dbContext.TeamRatings
             .AsNoTracking()
             .Include(x => x.Team)
-            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
+            .Where(x =>
+                x.EloPoolKey == poolKey &&
+                x.RulesetVersion == selectedRuleset &&
+                (!activeNbaTeamsOnly || x.Team.IsActive))
             .ToListAsync(cancellationToken);
 
         var filteredTeamIds = currentRatings.Select(x => x.TeamId).ToHashSet();
@@ -728,12 +750,15 @@ public class EloController(
                 row.EloChange,
                 row.GamesInWindow,
                 row.FirstGameUtc,
-                row.LastGameUtc))
+                row.LastGameUtc,
+                ratingByTeam.GetValueOrDefault(row.TeamId)?.Team.IsActive ?? true,
+                GetFranchiseRelocations(poolKey, row.TeamName)))
             .ToList();
 
         return Ok(new EloMoversResponse(
             poolKey,
             selectedRuleset,
+            teamScope,
             normalizedDirection,
             windowStart,
             windowEnd,
@@ -865,7 +890,12 @@ public class EloController(
 
         var globalRank = await dbContext.TeamRatings
             .AsNoTracking()
-            .CountAsync(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset && x.Elo > rating.Elo, cancellationToken) + 1;
+            .CountAsync(x =>
+                x.EloPoolKey == poolKey &&
+                x.RulesetVersion == selectedRuleset &&
+                x.Elo > rating.Elo &&
+                (poolKey != EloPoolKeys.Nba || !rating.Team.IsActive || x.Team.IsActive),
+                cancellationToken) + 1;
 
         var recentMovement = (await GetRecentMovementAsync(poolKey, selectedRuleset, [teamId], null, cancellationToken))
             .GetValueOrDefault(teamId);
@@ -942,6 +972,8 @@ public class EloController(
             rating.GamesPlayed,
             recentMovement,
             rating.LastGame?.GameDateTimeUtc,
+            rating.Team.IsActive,
+            GetFranchiseRelocations(poolKey, rating.Team.CanonicalName),
             competitionRows,
             recentGames,
             gamesPage,
@@ -1398,6 +1430,7 @@ public class EloController(
         Guid TeamId,
         string TeamName,
         string? CountryCode,
+        bool IsActive,
         Guid GameId,
         DateTime GameDateTimeUtc,
         decimal Elo,
@@ -1537,6 +1570,24 @@ public class EloController(
            toUtc.HasValue ||
            minGames > 0 ||
            !string.IsNullOrWhiteSpace(team);
+
+    private static IReadOnlyCollection<EloFranchiseRelocationDto> GetFranchiseRelocations(
+        string poolKey,
+        string canonicalTeamName)
+    {
+        if (poolKey != EloPoolKeys.Nba)
+        {
+            return [];
+        }
+
+        return NbaFranchiseCatalog.FindByCanonicalName(canonicalTeamName)?.Relocations
+            .Select(relocation => new EloFranchiseRelocationDto(
+                relocation.Year,
+                relocation.FromName,
+                relocation.ToName,
+                relocation.IsTemporary))
+            .ToList() ?? [];
+    }
 
     private static bool IsCountryMatch(string? countryCode, string country)
         => string.Equals(DisplayCountryFromCode(countryCode), country, StringComparison.OrdinalIgnoreCase) ||

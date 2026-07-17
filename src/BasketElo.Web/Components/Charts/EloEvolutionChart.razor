@@ -314,6 +314,11 @@
         if (requestedRange.Value.FromUtc.Date <= fullRange.Value.FromUtc.Date &&
             requestedRange.Value.ToUtc.Date >= fullRange.Value.ToUtc.Date)
         {
+            if (FullRangeRequested.HasDelegate)
+            {
+                await FullRangeRequested.InvokeAsync();
+            }
+
             return;
         }
 

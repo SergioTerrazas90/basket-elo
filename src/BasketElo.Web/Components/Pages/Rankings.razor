@@ -951,7 +951,7 @@
             }
 
             evolution = refinedEvolution;
-            RebuildEvolutionChartSeries();
+            RebuildEvolutionChartSeries(resetViewport: false);
             errorMessage = null;
             await InvokeAsync(StateHasChanged);
         }
@@ -1169,7 +1169,7 @@
         return $"Showing {rangeStart}-{rangeEnd} of {movers.TotalCount} teams from {FormatDate(movers.WindowStartUtc)} to {FormatDate(movers.WindowEndUtc)}.";
     }
 
-    private void RebuildEvolutionChartSeries()
+    private void RebuildEvolutionChartSeries(bool resetViewport = true)
     {
         evolutionChartSeries = EvolutionSeries
             .Select((series, index) => new EloChartSeries(
@@ -1185,7 +1185,10 @@
                         ChartColor(index)))
                     .ToList()))
             .ToList();
-        evolutionDataRevision++;
+        if (resetViewport)
+        {
+            evolutionDataRevision++;
+        }
     }
 
     public ValueTask DisposeAsync()

@@ -299,13 +299,14 @@
                                            HeightPixels="@ChartHeightPixels"
                                            DataRevision="@evolutionDataRevision"
                                            IsRefining="@isEvolutionRefining"
+                                           ActivePointChanged="@SetActiveEvolutionPointAsync"
                                            ViewportRefinementRequested="@QueueEvolutionRefinementAsync"
                                            FullRangeRequested="@RestoreFullEvolutionAsync" />
 
-                        <div class="evolution-legend legacy-links" aria-label="ELO evolution chart team links">
+                        <div class="@EvolutionLegendClass" aria-label="ELO evolution chart team links">
                             @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
                             {
-                                <a href="@BuildTeamHref(item.series.TeamId)">
+                                <a class="@EvolutionLegendItemClass(item.series.TeamName)" href="@BuildTeamHref(item.series.TeamId)">
                                     <span style="background: @ChartColor(item.index)"></span>
                                     @item.series.TeamName
                                 </a>
@@ -479,6 +480,7 @@
     private string? lastEvolutionApiUri;
     private long evolutionDataRevision;
     private bool isEvolutionRefining;
+    private string? activeEvolutionTeamName;
     private CancellationTokenSource? evolutionRefinementCancellation;
     private readonly Dictionary<string, EloRankingsEvolutionResponse> evolutionRangeCache = new(StringComparer.Ordinal);
     private readonly Queue<string> evolutionRangeCacheOrder = new();
@@ -609,6 +611,12 @@
     private void ToggleChartSize()
     {
         isChartExpanded = !isChartExpanded;
+    }
+
+    private Task SetActiveEvolutionPointAsync(EloChartPoint? point)
+    {
+        activeEvolutionTeamName = point?.TeamName;
+        return Task.CompletedTask;
     }
 
     private Task PreviousPageAsync()
@@ -828,6 +836,17 @@
 
     private string EvolutionChartClass
         => isChartExpanded ? "evolution-chart expanded" : "evolution-chart";
+
+    private string EvolutionLegendClass
+        => string.IsNullOrWhiteSpace(activeEvolutionTeamName)
+            ? "evolution-legend legacy-links"
+            : "evolution-legend legacy-links has-active-team";
+
+    private string EvolutionLegendItemClass(string teamName)
+        => !string.IsNullOrWhiteSpace(activeEvolutionTeamName) &&
+           string.Equals(activeEvolutionTeamName, teamName, StringComparison.Ordinal)
+            ? "active"
+            : string.Empty;
 
     private int ChartHeightPixels => isChartExpanded ? 560 : 340;
 

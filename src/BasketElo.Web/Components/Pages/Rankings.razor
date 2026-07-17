@@ -58,7 +58,7 @@
                         </button>
                     </div>
                 </div>
-                <p>Relocations keep one continuous franchise rating history. Historical also includes franchises that no longer compete.</p>
+                <p>Current shows active NBA franchises. Historical also includes franchises that no longer compete.</p>
             </div>
         }
 
@@ -252,10 +252,6 @@
                                                         <span class="franchise-status">Defunct</span>
                                                     }
                                                 </div>
-                                                @if (LatestRelocation(row.Relocations) is { } relocation)
-                                                {
-                                                    <small title="@RelocationHistoryTitle(row.Relocations)">@RelocationSummary(relocation)</small>
-                                                }
                                             </div>
                                         </td>
                                         @if (selectedPool != EloPoolKeys.Nba)
@@ -385,10 +381,6 @@
                                                         <span class="franchise-status">Defunct</span>
                                                     }
                                                 </div>
-                                                @if (LatestRelocation(row.Relocations) is { } relocation)
-                                                {
-                                                    <small title="@RelocationHistoryTitle(row.Relocations)">@RelocationSummary(relocation)</small>
-                                                }
                                             </div>
                                         </td>
                                         @if (selectedPool != EloPoolKeys.Nba)
@@ -1072,15 +1064,6 @@
         var returnUrl = Navigation.ToBaseRelativePath(Navigation.Uri);
         return $"/teams/{teamId}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
     }
-
-    private static EloFranchiseRelocationDto? LatestRelocation(IReadOnlyCollection<EloFranchiseRelocationDto> relocations)
-        => relocations.OrderBy(x => x.Year).LastOrDefault();
-
-    private static string RelocationSummary(EloFranchiseRelocationDto relocation)
-        => $"{(relocation.IsTemporary ? "Temporary move" : "Relocated")} {relocation.Year}: {relocation.FromName} to {relocation.ToName}";
-
-    private static string RelocationHistoryTitle(IReadOnlyCollection<EloFranchiseRelocationDto> relocations)
-        => string.Join(" | ", relocations.OrderBy(x => x.Year).Select(RelocationSummary));
 
     private IReadOnlyList<EloTeamEvolutionSeries> EvolutionSeries
         => evolution?.Series

@@ -111,14 +111,20 @@ public sealed record EloRankingRow(
     int GamesPlayed,
     decimal RecentMovement,
     DateTime? LastGameUtc,
-    bool IsActive,
-    IReadOnlyCollection<EloFranchiseRelocationDto> Relocations);
+    bool IsActive);
 
-public sealed record EloFranchiseRelocationDto(
+public sealed record EloFranchiseIdentityEventDto(
     int Year,
     string FromName,
     string ToName,
-    bool IsTemporary);
+    string Type);
+
+public static class EloFranchiseIdentityEventTypes
+{
+    public const string Relocation = "relocation";
+    public const string Rename = "rename";
+    public const string TemporaryRelocation = "temporary-relocation";
+}
 
 public static class EloNbaTeamScopes
 {
@@ -181,8 +187,7 @@ public sealed record EloMoverRow(
     int GamesInWindow,
     DateTime FirstGameUtc,
     DateTime LastGameUtc,
-    bool IsActive,
-    IReadOnlyCollection<EloFranchiseRelocationDto> Relocations);
+    bool IsActive);
 
 public sealed record EloMoversSummary(
     int TeamsWithMovement,
@@ -214,7 +219,7 @@ public sealed record EloTeamDetailResponse(
     decimal RecentMovement,
     DateTime? LastGameUtc,
     bool IsActive,
-    IReadOnlyCollection<EloFranchiseRelocationDto> Relocations,
+    IReadOnlyCollection<EloFranchiseIdentityEventDto> IdentityEvents,
     IReadOnlyCollection<string> Competitions,
     IReadOnlyCollection<EloTeamGameDto> RecentGames,
     int RecentGamesPage,

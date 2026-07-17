@@ -455,16 +455,6 @@
     gap: 0.45rem;
 }
 
-.team-identity-cell small {
-    max-width: 28rem;
-    overflow: hidden;
-    color: var(--color-subtle);
-    font-size: 0.76rem;
-    line-height: 1.25;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .franchise-status {
     padding: 0.12rem 0.4rem;
     border: 1px solid rgba(142, 59, 46, 0.28);

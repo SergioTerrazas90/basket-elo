@@ -143,7 +143,6 @@ public class EloRebuildControllerTests
         var currentRow = Assert.Single(current.Rankings);
         Assert.Equal(lakers.Id, currentRow.TeamId);
         Assert.True(currentRow.IsActive);
-        Assert.Equal(1960, Assert.Single(currentRow.Relocations).Year);
 
         var historicalResult = await controller.GetRankings(
             rulesetVersion: null,

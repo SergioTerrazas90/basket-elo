@@ -57,30 +57,27 @@
             </div>
         </section>
 
-        @if (team.Relocations.Count > 0 || !team.IsActive)
+        @if (team.IdentityEvents.Count > 0 || !team.IsActive)
         {
             <section class="franchise-lineage" aria-labelledby="franchise-lineage-title">
                 <div>
                     <p class="eyebrow">Franchise identity</p>
-                    <h2 id="franchise-lineage-title">@(team.Relocations.Count > 0 ? "One history across relocations" : "Historical franchise")</h2>
-                    <p>@(team.Relocations.Count > 0 ? "Relocations retain the same team identity and ELO history." : "This franchise no longer competes in the NBA.")</p>
+                    <h2 id="franchise-lineage-title">@(team.IdentityEvents.Count > 0 ? "Franchise history" : "Historical franchise")</h2>
+                    <p>@(team.IdentityEvents.Count > 0 ? "Renames and relocations retain the same team identity and ELO history." : "This franchise no longer competes in the NBA.")</p>
                 </div>
                 @if (!team.IsActive)
                 {
                     <span class="franchise-state">Defunct franchise</span>
                 }
-                @if (team.Relocations.Count > 0)
+                @if (team.IdentityEvents.Count > 0)
                 {
-                    <ol class="relocation-list">
-                        @foreach (var relocation in team.Relocations.OrderBy(x => x.Year))
+                    <ol class="identity-event-list">
+                        @foreach (var identityEvent in team.IdentityEvents.OrderBy(x => x.Year))
                         {
                             <li>
-                                <time>@relocation.Year</time>
-                                <span>@relocation.FromName <strong aria-hidden="true">&rarr;</strong> @relocation.ToName</span>
-                                @if (relocation.IsTemporary)
-                                {
-                                    <small>Temporary move</small>
-                                }
+                                <time>@identityEvent.Year</time>
+                                <span>@identityEvent.FromName <strong aria-hidden="true">&rarr;</strong> @identityEvent.ToName</span>
+                                <small>@IdentityEventLabel(identityEvent.Type)</small>
                             </li>
                         }
                     </ol>
@@ -645,6 +642,13 @@
         => game.TeamScore.HasValue && game.OpponentScore.HasValue
             ? $"{game.TeamScore}-{game.OpponentScore}"
             : "-";
+
+    private static string IdentityEventLabel(string type) => type switch
+    {
+        EloFranchiseIdentityEventTypes.Rename => "Rename",
+        EloFranchiseIdentityEventTypes.TemporaryRelocation => "Temporary move",
+        _ => "Relocation"
+    };
 
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";

@@ -20,20 +20,23 @@ public class NbaFranchiseCatalogTests
     }
 
     [Fact]
-    public void CatalogExposesCuratedRelocationHistoryWithoutTreatingRenamesAsMoves()
+    public void CatalogExposesCuratedRelocationsAndRenamesAsTypedIdentityEvents()
     {
         var lakers = NbaFranchiseCatalog.FindByCanonicalName("Los Angeles Lakers");
         var pelicans = NbaFranchiseCatalog.FindByCanonicalName("New Orleans Pelicans");
-        var hornets = NbaFranchiseCatalog.FindByCanonicalName("Charlotte Hornets");
+        var wizards = NbaFranchiseCatalog.FindByCanonicalName("Washington Wizards");
 
-        var lakersMove = Assert.Single(lakers?.Relocations ?? []);
+        var lakersMove = Assert.Single(lakers?.IdentityEvents ?? []);
         Assert.Equal(1960, lakersMove.Year);
         Assert.Equal("Minneapolis Lakers", lakersMove.FromName);
         Assert.Equal("Los Angeles Lakers", lakersMove.ToName);
-        Assert.False(lakersMove.IsTemporary);
+        Assert.Equal(NbaFranchiseIdentityEventType.Relocation, lakersMove.Type);
 
-        Assert.All(pelicans?.Relocations ?? [], move => Assert.True(move.IsTemporary));
-        Assert.Empty(hornets?.Relocations ?? []);
+        Assert.Equal(2, pelicans?.IdentityEvents.Count(x => x.Type == NbaFranchiseIdentityEventType.TemporaryRelocation));
+        var bulletsRename = Assert.Single(wizards?.IdentityEvents ?? [], identityEvent => identityEvent.Year == 1997);
+        Assert.Equal("Washington Bullets", bulletsRename.FromName);
+        Assert.Equal("Washington Wizards", bulletsRename.ToName);
+        Assert.Equal(NbaFranchiseIdentityEventType.Rename, bulletsRename.Type);
     }
 
     [Fact]

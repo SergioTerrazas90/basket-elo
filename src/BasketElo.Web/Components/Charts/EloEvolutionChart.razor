@@ -46,7 +46,7 @@
         {
             <RadzenLineSeries Data="@series.Points"
                               TItem="EloChartPoint"
-                              CategoryProperty="@nameof(EloChartPoint.GameDateTimeUtc)"
+                              CategoryProperty="@CategoryProperty"
                               ValueProperty="@nameof(EloChartPoint.Elo)"
                               Title="@series.TeamName"
                               Stroke="@series.Color"
@@ -73,7 +73,7 @@
             </RadzenLineSeries>
         }
 
-        <RadzenCategoryAxis Formatter="@FormatDateAxis" LabelAutoRotation="-35">
+        <RadzenCategoryAxis Formatter="@FormatCategoryAxis" LabelAutoRotation="-35">
             <RadzenAxisCrosshair Visible="true" Label="true" Snap="true" Stroke="#6b7682" />
         </RadzenCategoryAxis>
         <RadzenValueAxis Formatter="@FormatEloAxis">
@@ -122,9 +122,14 @@
     private IReadOnlyList<EloChartSeries> sourceSeries = [];
     private IReadOnlyList<EloChartSeries> displaySeries = [];
     private IReadOnlyList<EloChartPoint> allPoints = [];
+    private IReadOnlyList<DateTime> activeDates = [];
     private long renderedDataRevision = -1;
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
+
+    private string CategoryProperty => samplingMode == EloChartSamplingMode.GameByGame
+        ? nameof(EloChartPoint.ActiveDateIndex)
+        : nameof(EloChartPoint.GameDateTimeUtc);
 
     private ChartTooltipTrigger TooltipTrigger => SharedTooltip
         ? ChartTooltipTrigger.Axis
@@ -218,13 +223,44 @@
 
     private void RebuildDisplaySeries()
     {
-        displaySeries = sourceSeries
+        var sampledSeries = sourceSeries
             .Select(series => series with
             {
                 Points = SamplePoints(series.Points, samplingMode)
             })
             .Where(x => x.Points.Count >= 2)
             .ToList();
+
+        if (samplingMode == EloChartSamplingMode.GameByGame)
+        {
+            activeDates = sampledSeries
+                .SelectMany(series => series.Points)
+                .Select(point => point.GameDateTimeUtc.Date)
+                .Distinct()
+                .OrderBy(date => date)
+                .ToList();
+            var activeDateIndexes = activeDates
+                .Select((date, index) => new { date, index })
+                .ToDictionary(item => item.date, item => item.index);
+
+            displaySeries = sampledSeries
+                .Select(series => series with
+                {
+                    Points = series.Points
+                        .Select(point => point with
+                        {
+                            ActiveDateIndex = activeDateIndexes[point.GameDateTimeUtc.Date]
+                        })
+                        .ToList()
+                })
+                .ToList();
+        }
+        else
+        {
+            activeDates = [];
+            displaySeries = sampledSeries;
+        }
+
         allPoints = displaySeries
             .SelectMany(x => x.Points)
             .OrderBy(x => x.GameDateTimeUtc)
@@ -266,11 +302,13 @@
 
     private (DateTime FromUtc, DateTime ToUtc)? GetVisibleDateRange(double requestedStart, double requestedEnd)
     {
-        var dates = allPoints
-            .Select(x => x.GameDateTimeUtc)
-            .Distinct()
-            .OrderBy(x => x)
-            .ToList();
+        var dates = samplingMode == EloChartSamplingMode.GameByGame
+            ? activeDates
+            : allPoints
+                .Select(x => x.GameDateTimeUtc)
+                .Distinct()
+                .OrderBy(x => x)
+                .ToList();
         if (dates.Count == 0)
         {
             return null;
@@ -366,10 +404,37 @@
     private static string FormatDate(DateTime value)
         => value.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.CurrentCulture);
 
-    private static string FormatDateAxis(object value)
-        => value is DateTime date
+    private string FormatCategoryAxis(object value)
+    {
+        if (samplingMode == EloChartSamplingMode.GameByGame &&
+            value is IConvertible convertible &&
+            activeDates.Count > 0)
+        {
+            try
+            {
+                var index = (int)Math.Round(convertible.ToDouble(CultureInfo.InvariantCulture));
+                if (index < 0 || index >= activeDates.Count)
+                {
+                    return string.Empty;
+                }
+
+                return activeDates[index].ToLocalTime().ToString("MMM yyyy", CultureInfo.CurrentCulture);
+            }
+            catch (FormatException)
+            {
+            }
+            catch (InvalidCastException)
+            {
+            }
+            catch (OverflowException)
+            {
+            }
+        }
+
+        return value is DateTime date
             ? date.ToLocalTime().ToString("MMM yyyy", CultureInfo.CurrentCulture)
             : value?.ToString() ?? string.Empty;
+    }
 
     private static string FormatMovement(decimal value)
         => value switch

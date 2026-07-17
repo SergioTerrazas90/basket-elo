@@ -305,7 +305,7 @@
         }
 
         var fullRange = GetVisibleDateRange(0, 1);
-        var requestedRange = GetVisibleDateRange(requestedStart, requestedEnd);
+        var requestedRange = GetVisibleDateRange(requestedStart, requestedEnd, includeAdjacentPoints: true);
         if (!fullRange.HasValue || !requestedRange.HasValue)
         {
             return;
@@ -322,7 +322,10 @@
             DateTime.SpecifyKind(requestedRange.Value.ToUtc, DateTimeKind.Utc)));
     }
 
-    private (DateTime FromUtc, DateTime ToUtc)? GetVisibleDateRange(double requestedStart, double requestedEnd)
+    private (DateTime FromUtc, DateTime ToUtc)? GetVisibleDateRange(
+        double requestedStart,
+        double requestedEnd,
+        bool includeAdjacentPoints = false)
     {
         var dates = samplingMode == EloChartSamplingMode.GameByGame
             ? activeDates
@@ -340,6 +343,12 @@
         var endFraction = Math.Clamp(Math.Max(requestedStart, requestedEnd), 0, 1);
         var startIndex = (int)Math.Floor(startFraction * (dates.Count - 1));
         var endIndex = (int)Math.Ceiling(endFraction * (dates.Count - 1));
+        if (includeAdjacentPoints)
+        {
+            startIndex = Math.Max(0, startIndex - 1);
+            endIndex = Math.Min(dates.Count - 1, endIndex + 1);
+        }
+
         return (dates[startIndex], dates[endIndex]);
     }
 

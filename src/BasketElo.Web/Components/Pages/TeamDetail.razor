@@ -158,7 +158,7 @@
             <div class="section-head">
                 <div>
                     <h2>Rating history</h2>
-                    <p>@HistoryContextLabel(team)</p>
+                    <p>@HistoryContextLabel()</p>
                 </div>
             </div>
             <div class="chart-shell">
@@ -612,17 +612,23 @@
         isTeamHistoryRefining = false;
     }
 
-    private static string HistoryContextLabel(EloTeamDetailResponse team)
+    private string HistoryContextLabel()
     {
-        if (team.History.Count == 0)
+        var points = teamHistoryChartSeries
+            .SelectMany(series => series.Points)
+            .OrderBy(point => point.GameDateTimeUtc)
+            .ToList();
+
+        if (points.Count == 0)
         {
             return "No rated history yet.";
         }
 
-        var first = team.History.Min(point => point.GameDateTimeUtc);
-        var last = team.History.Max(point => point.GameDateTimeUtc);
+        var first = points[0].GameDateTimeUtc;
+        var last = points[^1].GameDateTimeUtc;
+        var pointLabel = points.Count == 1 ? "rated point" : "rated points";
 
-        return $"{team.History.Count} rated points from {FormatDate(first)} to {FormatDate(last)}.";
+        return $"Showing {points.Count} {pointLabel} from {FormatDate(first)} to {FormatDate(last)}.";
     }
 
     private static string GamesContextLabel(EloTeamDetailResponse team)

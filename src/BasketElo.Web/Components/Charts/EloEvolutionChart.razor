@@ -29,16 +29,19 @@
         </div>
     }
 
-    <RadzenChart class="elo-radzen-chart"
-                 Style="@ChartStyle"
-                 TooltipTolerance="40"
-                 MouseMoveThrottle="25"
-                 AllowZoom="@EnableRangeNavigation"
-                 AllowPan="@EnableRangeNavigation"
-                 @bind-Zoom="chartZoom"
-                 @bind-ViewStart="viewStart"
-                 @bind-ViewEnd="viewEnd"
-                 ViewChange="@HandleViewChangeAsync">
+    <div class="elo-chart-plot">
+        <RadzenChart class="elo-radzen-chart"
+                     Style="@ChartStyle"
+                     TooltipTolerance="40"
+                     ClickTolerance="40"
+                     MouseMoveThrottle="25"
+                     AllowZoom="@EnableRangeNavigation"
+                     AllowPan="@EnableRangeNavigation"
+                     @bind-Zoom="chartZoom"
+                     @bind-ViewStart="viewStart"
+                     @bind-ViewEnd="viewEnd"
+                     ViewChange="@HandleViewChangeAsync"
+                     SeriesClick="@HandleSeriesClickAsync">
         <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="@TooltipTrigger" />
         <RadzenLegend Visible="@ShowLegend" Position="LegendPosition.Bottom" />
 
@@ -87,7 +90,28 @@
             <RadzenGridLines Visible="true" />
             <RadzenAxisCrosshair Visible="true" Label="true" Stroke="#9aa6b2" />
         </RadzenValueAxis>
-    </RadzenChart>
+        </RadzenChart>
+
+        @if (selectedPoint is not null)
+        {
+            <div class="elo-chart-selection-tooltip" style="--active-team-color: @selectedPoint.Color" role="status" aria-live="polite">
+                <div class="elo-chart-tooltip-team">
+                    <span class="elo-chart-active-swatch"></span>
+                    <strong>@selectedPoint.TeamName</strong>
+                </div>
+                <span>@FormatDate(selectedPoint.GameDateTimeUtc)</span>
+                <strong>@selectedPoint.Elo.ToString("0") ELO</strong>
+                @if (selectedPoint.EloDelta.HasValue)
+                {
+                    <span>Change @FormatMovement(selectedPoint.EloDelta.Value)</span>
+                }
+                @if (selectedPoint.Rank.HasValue)
+                {
+                    <span>Rank #@selectedPoint.Rank</span>
+                }
+            </div>
+        }
+    </div>
 </div>
 
 @code {
@@ -130,6 +154,7 @@
     private IReadOnlyList<EloChartSeries> displaySeries = [];
     private IReadOnlyList<EloChartPoint> allPoints = [];
     private IReadOnlyList<DateTime> activeDates = [];
+    private EloChartPoint? selectedPoint;
     private long renderedDataRevision = -1;
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
@@ -205,7 +230,22 @@
             ResetView();
         }
 
+        if (dataChanged)
+        {
+            selectedPoint = null;
+        }
+
         renderedDataRevision = DataRevision;
+    }
+
+    private Task HandleSeriesClickAsync(SeriesClickEventArgs args)
+    {
+        if (args.Data is EloChartPoint point)
+        {
+            selectedPoint = point;
+        }
+
+        return Task.CompletedTask;
     }
 
     private async Task ShowFullRange()

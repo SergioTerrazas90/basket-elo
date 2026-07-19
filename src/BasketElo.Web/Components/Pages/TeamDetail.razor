@@ -461,7 +461,9 @@
                         "#245c7a",
                         point.EloDelta,
                         point.Rank))
-                    .ToList())
+                    .ToList(),
+                team.GamesPlayed,
+                team.GamesPlayed)
         ];
 
     private static IReadOnlyList<EloChartSeries> BuildTeamChartSeries(
@@ -489,7 +491,9 @@
                         "#245c7a",
                         point.EloDelta,
                         point.Rank))
-                    .ToList())
+                    .ToList(),
+                history.RatedPointCount > 0 ? history.RatedPointCount : team.GamesPlayed,
+                history.RatedPointCount > 0 ? history.RatedPointCount : team.GamesPlayed)
         ];
     }
 
@@ -579,6 +583,9 @@
     private Task RestoreFullTeamHistoryAsync()
     {
         CancelTeamHistoryRefinement();
+        teamHistoryChartSeries = fullTeamHistoryChartSeries
+            .Select(series => series with { VisibleRatedPointCount = series.RatedPointCount })
+            .ToList();
         return Task.CompletedTask;
     }
 
@@ -591,7 +598,11 @@
             .ToDictionary(series => series.TeamId!.Value);
         return baseSeries
             .Select(series => series.TeamId is Guid teamId && refinedByTeam.TryGetValue(teamId, out var refined)
-                ? series with { Points = EloChartData.MergePoints(series.Points, refined.Points) }
+                ? series with
+                {
+                    Points = EloChartData.MergePoints(series.Points, refined.Points),
+                    VisibleRatedPointCount = refined.VisibleRatedPointCount ?? refined.RatedPointCount
+                }
                 : series)
             .ToList();
     }

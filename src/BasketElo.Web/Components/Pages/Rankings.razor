@@ -1,8 +1,8 @@
 @page "/"
 @page "/rankings"
-@rendermode @(new InteractiveServerRenderMode(prerender: false))
-@implements IAsyncDisposable
+@rendermode @(new InteractiveServerRenderMode(prerender: true))
 @using System.Globalization
+@using Microsoft.AspNetCore.Components
 @using BasketElo.Domain.Elo
 @inject HttpClient Http
 @inject NavigationManager Navigation
@@ -479,6 +479,7 @@
     private string? lastEvolutionApiUri;
     private long evolutionDataRevision;
     private bool isEvolutionRefining;
+    private readonly Dictionary<Guid, int> evolutionVisibleRatedPointCounts = new();
     private CancellationTokenSource? evolutionRefinementCancellation;
     private readonly Dictionary<string, EloRankingsEvolutionResponse> evolutionRangeCache = new(StringComparer.Ordinal);
     private readonly Queue<string> evolutionRangeCacheOrder = new();
@@ -522,9 +523,10 @@
         requestedPage = page;
         lastLoadedUri = currentUri;
         CancelEvolutionRefinement();
-        fullEvolution = null;
         evolutionRangeCache.Clear();
         evolutionRangeCacheOrder.Clear();
+
+        fullEvolution = null;
 
         await RefreshAsync();
     }
@@ -951,6 +953,10 @@
             }
 
             evolution = MergeEvolutionData(evolution ?? fullEvolution, refinedEvolution);
+            foreach (var series in refinedEvolution.Series)
+            {
+                evolutionVisibleRatedPointCounts[series.TeamId] = series.RatedPointCount;
+            }
             RebuildEvolutionChartSeries(resetViewport: false);
             errorMessage = null;
             await InvokeAsync(StateHasChanged);
@@ -982,6 +988,15 @@
     private Task RestoreFullEvolutionAsync()
     {
         CancelEvolutionRefinement();
+        evolutionVisibleRatedPointCounts.Clear();
+        foreach (var series in fullEvolution?.Series ?? [])
+        {
+            evolutionVisibleRatedPointCounts[series.TeamId] = series.RatedPointCount;
+        }
+
+        evolutionChartSeries = evolutionChartSeries
+            .Select(series => series with { VisibleRatedPointCount = series.RatedPointCount })
+            .ToList();
         return Task.CompletedTask;
     }
 
@@ -1173,6 +1188,14 @@
         var baseSeries = (fullEvolution ?? evolution)?.Series
             .Where(series => visibleTeamIds.Contains(series.TeamId))
             .ToList() ?? [];
+        if (resetViewport)
+        {
+            evolutionVisibleRatedPointCounts.Clear();
+            foreach (var series in baseSeries)
+            {
+                evolutionVisibleRatedPointCounts[series.TeamId] = series.RatedPointCount;
+            }
+        }
 
         evolutionChartSeries = baseSeries
             .Select((series, index) =>
@@ -1186,7 +1209,19 @@
                         ToChartPoints(refined.Points, refined.TeamName, color));
                 }
 
-                return new EloChartSeries(series.TeamId, series.TeamName, color, points);
+                var ratedPointCount = series.RatedPointCount > 0
+                    ? series.RatedPointCount
+                    : points.Count;
+                var visibleRatedPointCount = evolutionVisibleRatedPointCounts.TryGetValue(series.TeamId, out var visibleCount)
+                    ? visibleCount
+                    : ratedPointCount;
+                return new EloChartSeries(
+                    series.TeamId,
+                    series.TeamName,
+                    color,
+                    points,
+                    ratedPointCount,
+                    visibleRatedPointCount);
             })
             .ToList();
         if (resetViewport)
@@ -1243,10 +1278,9 @@
             .ToList();
     }
 
-    public ValueTask DisposeAsync()
+    public void Dispose()
     {
         CancelEvolutionRefinement();
-        return ValueTask.CompletedTask;
     }
 
     private static string ChartColor(int index)

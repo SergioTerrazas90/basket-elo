@@ -1,4 +1,5 @@
 using BasketElo.Api.Auth;
+using BasketElo.Api.Elo;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Elo;
@@ -20,7 +21,8 @@ public class EloController(
     BasketEloDbContext dbContext,
     IEloRebuildNotificationPublisher notificationPublisher,
     IIdentityHealthCheckService identityHealthCheckService,
-    IMemoryCache cache) : ControllerBase
+    IMemoryCache cache,
+    EloResponseCache responseCache) : ControllerBase
 {
     [HttpGet("rulesets")]
     public ActionResult<EloRulesetCatalogResponse> GetRulesets()
@@ -132,6 +134,122 @@ public class EloController(
 
     [HttpGet("rankings")]
     public async Task<ActionResult<EloRankingsResponse>> GetRankings(
+        [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
+        [FromQuery] string? country,
+        [FromQuery] string? competition,
+        [FromQuery] string? season,
+        [FromQuery] DateTime? fromUtc,
+        [FromQuery] DateTime? toUtc,
+        [FromQuery] DateTime? asOfDate,
+        [FromQuery] int? minGames,
+        [FromQuery] string? team,
+        [FromQuery] string? teams = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var poolKey = ResolvePoolOrDefault(pool);
+        var teamScope = EloNbaTeamScopes.Normalize(teams);
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 10, 100);
+        var minimumGames = Math.Max(0, minGames ?? 0);
+
+        if (poolKey is not null && IsDefaultResponseCachePool(poolKey) && IsDefaultRankingsRequest(
+                rulesetVersion,
+                pool,
+                country,
+                competition,
+                season,
+                fromUtc,
+                toUtc,
+                asOfDate,
+                minimumGames,
+                team,
+                teamScope,
+                page,
+                pageSize))
+        {
+            var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
+            if (selectedRuleset is null)
+            {
+                return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
+            }
+
+            var cacheKey = EloResponseCache.RankingsKey(
+                poolKey,
+                selectedRuleset,
+                teamScope,
+                country,
+                competition,
+                season,
+                fromUtc,
+                toUtc,
+                asOfDate,
+                minimumGames,
+                team,
+                page,
+                pageSize);
+            if (responseCache.TryGet<EloRankingsResponse>(cacheKey, out var cachedResponse) && cachedResponse is not null)
+            {
+                return Ok(cachedResponse);
+            }
+
+            var uncachedResult = await GetRankingsUncached(
+                rulesetVersion,
+                pool,
+                country,
+                competition,
+                season,
+                fromUtc,
+                toUtc,
+                asOfDate,
+                minGames,
+                team,
+                teams,
+                page,
+                pageSize,
+                cancellationToken);
+            if (uncachedResult.Result is OkObjectResult { Value: EloRankingsResponse response })
+            {
+                var responseKey = EloResponseCache.RankingsKey(
+                    response.EloPoolKey,
+                    response.RulesetVersion,
+                    response.TeamScope,
+                    country,
+                    competition,
+                    season,
+                    fromUtc,
+                    toUtc,
+                    asOfDate,
+                    minimumGames,
+                    team,
+                    response.Page,
+                    response.PageSize);
+                responseCache.Set(responseKey, response, response.EloPoolKey, response.RulesetVersion);
+            }
+
+            return uncachedResult;
+        }
+
+        return await GetRankingsUncached(
+            rulesetVersion,
+            pool,
+            country,
+            competition,
+            season,
+            fromUtc,
+            toUtc,
+            asOfDate,
+            minGames,
+            team,
+            teams,
+            page,
+            pageSize,
+            cancellationToken);
+    }
+
+    private async Task<ActionResult<EloRankingsResponse>> GetRankingsUncached(
         [FromQuery] string? rulesetVersion,
         [FromQuery] string? pool,
         [FromQuery] string? country,
@@ -441,6 +559,25 @@ public class EloController(
         }
 
         pointsPerTeam = EloEvolutionLimits.NormalizePointsPerTeam(pointsPerTeam);
+        var canCacheDefaultEvolution = IsDefaultResponseCachePool(poolKey) &&
+            selectedRuleset == EloRulesetVersions.Default &&
+            !string.IsNullOrWhiteSpace(teamIds) &&
+            string.IsNullOrWhiteSpace(competition) &&
+            string.IsNullOrWhiteSpace(season) &&
+            !fromUtc.HasValue &&
+            !toUtc.HasValue &&
+            pointsPerTeam == EloEvolutionLimits.DefaultPointsPerTeam &&
+            await IsDefaultEvolutionTeamSetAsync(poolKey, selectedRuleset, selectedTeamIds, cancellationToken);
+        var evolutionCacheKey = canCacheDefaultEvolution
+            ? EloResponseCache.EvolutionKey(poolKey, selectedRuleset, selectedTeamIds, competition, season, fromUtc, toUtc, pointsPerTeam)
+            : null;
+        if (evolutionCacheKey is not null &&
+            responseCache.TryGet<EloRankingsEvolutionResponse>(evolutionCacheKey, out var cachedEvolution) &&
+            cachedEvolution is not null)
+        {
+            return Ok(cachedEvolution);
+        }
+
         var cutoffUtc = toUtc.HasValue
             ? DateTime.SpecifyKind(toUtc.Value.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1)
             : DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc);
@@ -512,7 +649,7 @@ public class EloController(
                     FROM ranked
                 ), sampled AS (
                     SELECT DISTINCT ON ("TeamId", "SampleBucket")
-                        "TeamId", "TeamName", "GameDateTimeUtc", "Elo", "EloDelta", "Rank"
+                        "TeamId", "TeamName", "GameDateTimeUtc", "Elo", "EloDelta", "Rank", "TotalRows"
                     FROM bucketed
                     ORDER BY
                         "TeamId",
@@ -523,7 +660,7 @@ public class EloController(
                             greatest(@pointsPerTeam - 1, 1)
                         )
                 )
-                SELECT "TeamId", "TeamName", "GameDateTimeUtc", "Elo", "EloDelta", "Rank"
+                SELECT "TeamId", "TeamName", "GameDateTimeUtc", "Elo", "EloDelta", "Rank", "TotalRows"
                 FROM sampled
                 ORDER BY "TeamId", "GameDateTimeUtc", "Elo"
                 """,
@@ -551,11 +688,18 @@ public class EloController(
                     .OrderBy(x => x.GameDateTimeUtc)
                     .ThenBy(x => x.Elo)
                     .Select(x => new EloTeamEvolutionPoint(x.GameDateTimeUtc, x.Elo, x.EloDelta, x.Rank))
-                    .ToList()))
+                    .ToList(),
+                checked((int)group.First().TotalRows)))
             .OrderBy(x => selectedTeamIds.IndexOf(x.TeamId))
             .ToList();
 
-        return Ok(new EloRankingsEvolutionResponse(poolKey, selectedRuleset, series));
+        var response = new EloRankingsEvolutionResponse(poolKey, selectedRuleset, series);
+        if (evolutionCacheKey is not null)
+        {
+            responseCache.Set(evolutionCacheKey, response, poolKey, selectedRuleset);
+        }
+
+        return Ok(response);
     }
 
     [HttpGet("rankings/movers")]
@@ -1189,6 +1333,58 @@ public class EloController(
         return EloRulesetVersions.All.Contains(normalized) ? normalized : null;
     }
 
+    private static bool IsDefaultRankingsRequest(
+        string? rulesetVersion,
+        string? pool,
+        string? country,
+        string? competition,
+        string? season,
+        DateTime? fromUtc,
+        DateTime? toUtc,
+        DateTime? asOfDate,
+        int minimumGames,
+        string? team,
+        string teamScope,
+        int page,
+        int pageSize)
+        => string.IsNullOrWhiteSpace(rulesetVersion) &&
+            IsDefaultResponseCachePool(ResolvePoolOrDefault(pool)) &&
+            string.IsNullOrWhiteSpace(country) &&
+            string.IsNullOrWhiteSpace(competition) &&
+            string.IsNullOrWhiteSpace(season) &&
+            !fromUtc.HasValue &&
+            !toUtc.HasValue &&
+            !asOfDate.HasValue &&
+            minimumGames == 0 &&
+            string.IsNullOrWhiteSpace(team) &&
+            teamScope == EloNbaTeamScopes.Current &&
+            page == 1 &&
+            pageSize == 50;
+
+    private static bool IsDefaultResponseCachePool(string? poolKey)
+        => poolKey is EloPoolKeys.Default or EloPoolKeys.EuropeClubs;
+
+    private async Task<bool> IsDefaultEvolutionTeamSetAsync(
+        string poolKey,
+        string rulesetVersion,
+        IReadOnlyList<Guid> selectedTeamIds,
+        CancellationToken cancellationToken)
+    {
+        var defaultTeamIds = await dbContext.TeamRatings
+            .AsNoTracking()
+            .Where(x =>
+                x.EloPoolKey == poolKey &&
+                x.RulesetVersion == rulesetVersion &&
+                (poolKey != EloPoolKeys.Nba || x.Team.IsActive))
+            .OrderByDescending(x => x.Elo)
+            .ThenBy(x => x.Team.CanonicalName)
+            .Take(20)
+            .Select(x => x.TeamId)
+            .ToListAsync(cancellationToken);
+
+        return defaultTeamIds.SequenceEqual(selectedTeamIds);
+    }
+
     private static string? ResolvePoolOrDefault(string? poolKey)
     {
         var resolved = string.IsNullOrWhiteSpace(poolKey)
@@ -1421,6 +1617,8 @@ public class EloController(
         public decimal? EloDelta { get; set; }
 
         public int? Rank { get; set; }
+
+        public long TotalRows { get; set; }
     }
 
     private sealed record HistoricalRankingRow(

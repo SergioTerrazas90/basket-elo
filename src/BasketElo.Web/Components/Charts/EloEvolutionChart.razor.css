@@ -39,6 +39,70 @@
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
+    flex-wrap: wrap;
+}
+
+.elo-chart-metrics {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    color: var(--color-muted);
+}
+
+.elo-chart-metrics span + span::before {
+    content: "•";
+    margin-right: 0.45rem;
+    color: var(--color-border-strong);
+}
+
+.elo-chart-series-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    padding: var(--space-2) var(--space-3) 0;
+}
+
+.elo-chart-series-controls-label {
+    margin-right: 0.2rem;
+    color: var(--color-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.elo-chart-series-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.38rem;
+    max-width: 220px;
+    padding: 0.28rem 0.48rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 0.76rem;
+}
+
+.elo-chart-series-toggle.is-hidden {
+    opacity: 0.48;
+}
+
+.elo-chart-series-toggle-swatch {
+    width: 0.62rem;
+    height: 0.62rem;
+    flex: 0 0 0.62rem;
+    border-radius: var(--radius-pill);
+}
+
+.elo-chart-series-toggle-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.elo-chart-series-toggle small {
+    color: var(--color-muted);
+    white-space: nowrap;
 }
 
 .elo-chart-refinement-slot {
@@ -92,11 +156,43 @@
     font-size: 0.98rem;
 }
 
+.elo-chart-selection-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 2.8rem;
+    margin: 0 0 var(--space-2);
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--color-border);
+    border-left: 0.22rem solid var(--active-team-color, var(--color-accent));
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+    color: var(--color-muted);
+    font-size: 0.82rem;
+}
+
+.elo-chart-selection-strip strong {
+    color: var(--color-text);
+    font-size: 0.96rem;
+}
+
+.elo-chart-selection-clear {
+    margin-left: auto;
+    border: 0;
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 1.2rem;
+    line-height: 1;
+}
+
+.elo-chart-selection-clear:hover {
+    color: var(--color-text);
+}
+
+/* Kept as a compatibility selector for older rendered chart state. */
 .elo-chart-selection-tooltip {
-    position: absolute;
-    top: var(--space-3);
-    right: var(--space-3);
-    z-index: 2;
     display: grid;
     gap: 0.18rem;
     min-width: 165px;
@@ -121,4 +217,18 @@
         flex-direction: column;
     }
 
+}
+
+/* Keep punctuation readable even if the component source is rendered with a legacy encoding. */
+.elo-chart-metrics span + span::before {
+    content: "\2022";
+}
+
+.elo-chart-selection-clear {
+    font-size: 0;
+}
+
+.elo-chart-selection-clear::before {
+    content: "\00d7";
+    font-size: 1.2rem;
 }

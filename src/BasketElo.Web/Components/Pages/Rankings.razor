@@ -292,7 +292,8 @@
                     }
                     else
                     {
-                        <EloEvolutionChart Series="@evolutionChartSeries"
+                        <EloEvolutionChart @key="activeRankingsCacheKey"
+                                           Series="@evolutionChartSeries"
                                            EnableRangeNavigation="true"
                                            ShowLegend="false"
                                            SharedTooltip="false"
@@ -477,15 +478,40 @@
     private string? lastMoversApiUri;
     private string? lastEvolutionRankingsApiUri;
     private string? lastEvolutionApiUri;
+    private RankingsClientCacheKey? activeRankingsCacheKey;
     private long evolutionDataRevision;
     private bool isEvolutionRefining;
     private readonly Dictionary<Guid, int> evolutionVisibleRatedPointCounts = new();
     private CancellationTokenSource? evolutionRefinementCancellation;
+    private readonly Dictionary<RankingsClientCacheKey, RankingsClientCacheEntry> rankingsClientCache = new();
     private readonly Dictionary<string, EloRankingsEvolutionResponse> evolutionRangeCache = new(StringComparer.Ordinal);
     private readonly Queue<string> evolutionRangeCacheOrder = new();
 
     private const int EvolutionRefinementDebounceMilliseconds = 600;
     private const int EvolutionRangeCacheLimit = 8;
+
+    private sealed record RankingsClientCacheKey(
+        string Pool,
+        string View,
+        string RankingsUri,
+        string MoverDirection,
+        int MoverWindowDays);
+
+    private sealed class RankingsClientCacheEntry
+    {
+        public EloRankingsResponse? Rankings { get; set; }
+        public EloMoversResponse? Movers { get; set; }
+        public EloRankingsEvolutionResponse? Evolution { get; set; }
+        public EloRankingsEvolutionResponse? FullEvolution { get; set; }
+        public EloRankingsResponse? EvolutionRankings { get; set; }
+        public IReadOnlyList<EloChartSeries> EvolutionChartSeries { get; set; } = [];
+        public Dictionary<Guid, int> EvolutionVisibleRatedPointCounts { get; set; } = new();
+        public string? RankingsApiUri { get; set; }
+        public string? MoversApiUri { get; set; }
+        public string? EvolutionRankingsApiUri { get; set; }
+        public string? EvolutionApiUri { get; set; }
+        public long EvolutionDataRevision { get; set; }
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -494,6 +520,8 @@
         {
             return;
         }
+
+        CaptureActiveRankingsCacheEntry();
 
         selectedPool = EloPoolKeys.IsSupported(Pool?.Trim().ToLowerInvariant() ?? string.Empty)
             ? Pool!.Trim().ToLowerInvariant()
@@ -526,6 +554,12 @@
         evolutionRangeCache.Clear();
         evolutionRangeCacheOrder.Clear();
 
+        activeRankingsCacheKey = null;
+        response = null;
+        movers = null;
+        evolution = null;
+        evolutionRankings = null;
+        evolutionChartSeries = [];
         fullEvolution = null;
 
         await RefreshAsync();
@@ -647,7 +681,16 @@
         try
         {
             var rankingsUri = BuildApiUri();
-            if (response is null || !string.Equals(rankingsUri, lastRankingsApiUri, StringComparison.Ordinal))
+            var cacheKey = BuildRankingsClientCacheKey(rankingsUri);
+            if (rankingsClientCache.TryGetValue(cacheKey, out var cachedEntry))
+            {
+                RestoreRankingsCacheEntry(cacheKey, cachedEntry);
+                return;
+            }
+
+            if (response is null ||
+                !string.Equals(rankingsUri, lastRankingsApiUri, StringComparison.Ordinal) ||
+                activeRankingsCacheKey != cacheKey)
             {
                 response = await Http.GetFromJsonAsync<EloRankingsResponse>(rankingsUri);
                 lastRankingsApiUri = rankingsUri;
@@ -681,6 +724,8 @@
                 fullEvolution = evolution;
                 RebuildEvolutionChartSeries();
             }
+
+            StoreRankingsCacheEntry(cacheKey);
         }
         catch (Exception ex)
         {
@@ -689,6 +734,94 @@
         finally
         {
             isBusy = false;
+        }
+    }
+
+    private RankingsClientCacheKey BuildRankingsClientCacheKey(string rankingsUri)
+        => new(
+            selectedPool,
+            selectedView,
+            rankingsUri,
+            selectedView == "movers" ? selectedMoverDirection : string.Empty,
+            selectedView == "movers" ? selectedWindowDays : 0);
+
+    private void CaptureActiveRankingsCacheEntry()
+    {
+        if (activeRankingsCacheKey is null ||
+            !rankingsClientCache.TryGetValue(activeRankingsCacheKey, out var entry))
+        {
+            return;
+        }
+
+        entry.Rankings = response;
+        entry.Movers = movers;
+        entry.Evolution = evolution;
+        entry.FullEvolution = fullEvolution;
+        entry.EvolutionRankings = evolutionRankings;
+        entry.EvolutionChartSeries = evolutionChartSeries.ToList();
+        entry.EvolutionVisibleRatedPointCounts = new(evolutionVisibleRatedPointCounts);
+        entry.RankingsApiUri = lastRankingsApiUri;
+        entry.MoversApiUri = lastMoversApiUri;
+        entry.EvolutionRankingsApiUri = lastEvolutionRankingsApiUri;
+        entry.EvolutionApiUri = lastEvolutionApiUri;
+        entry.EvolutionDataRevision = evolutionDataRevision;
+    }
+
+    private void StoreRankingsCacheEntry(RankingsClientCacheKey cacheKey)
+    {
+        var entry = rankingsClientCache.TryGetValue(cacheKey, out var existing)
+            ? existing
+            : new RankingsClientCacheEntry();
+
+        entry.Rankings = response;
+        entry.Movers = movers;
+        entry.Evolution = evolution;
+        entry.FullEvolution = fullEvolution;
+        entry.EvolutionRankings = evolutionRankings;
+        entry.EvolutionChartSeries = evolutionChartSeries.ToList();
+        entry.EvolutionVisibleRatedPointCounts = new(evolutionVisibleRatedPointCounts);
+        entry.RankingsApiUri = lastRankingsApiUri;
+        entry.MoversApiUri = lastMoversApiUri;
+        entry.EvolutionRankingsApiUri = lastEvolutionRankingsApiUri;
+        entry.EvolutionApiUri = lastEvolutionApiUri;
+        entry.EvolutionDataRevision = evolutionDataRevision;
+
+        rankingsClientCache[cacheKey] = entry;
+        activeRankingsCacheKey = cacheKey;
+    }
+
+    private void RestoreRankingsCacheEntry(
+        RankingsClientCacheKey cacheKey,
+        RankingsClientCacheEntry entry)
+    {
+        response = entry.Rankings;
+        movers = entry.Movers;
+        evolution = entry.Evolution;
+        fullEvolution = entry.FullEvolution;
+        evolutionRankings = entry.EvolutionRankings;
+        evolutionChartSeries = entry.EvolutionChartSeries.ToList();
+        evolutionVisibleRatedPointCounts.Clear();
+        foreach (var item in entry.EvolutionVisibleRatedPointCounts)
+        {
+            evolutionVisibleRatedPointCounts[item.Key] = item.Value;
+        }
+
+        lastRankingsApiUri = entry.RankingsApiUri;
+        lastMoversApiUri = entry.MoversApiUri;
+        lastEvolutionRankingsApiUri = entry.EvolutionRankingsApiUri;
+        lastEvolutionApiUri = entry.EvolutionApiUri;
+        evolutionDataRevision = entry.EvolutionDataRevision;
+        activeRankingsCacheKey = cacheKey;
+
+        if (response is not null)
+        {
+            page = response.Page;
+            requestedPage = response.Page;
+        }
+        else if (movers is not null)
+        {
+            page = movers.Page;
+            requestedPage = movers.Page;
         }
     }
 
@@ -958,6 +1091,7 @@
                 evolutionVisibleRatedPointCounts[series.TeamId] = series.RatedPointCount;
             }
             RebuildEvolutionChartSeries(resetViewport: false);
+            CaptureActiveRankingsCacheEntry();
             errorMessage = null;
             await InvokeAsync(StateHasChanged);
         }
@@ -997,6 +1131,7 @@
         evolutionChartSeries = evolutionChartSeries
             .Select(series => series with { VisibleRatedPointCount = series.RatedPointCount })
             .ToList();
+        CaptureActiveRankingsCacheEntry();
         return Task.CompletedTask;
     }
 

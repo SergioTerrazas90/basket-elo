@@ -166,6 +166,133 @@ public class EloRebuildControllerTests
     }
 
     [Fact]
+    public async Task EuropeanClubRankingsDefaultToCurrentTeamsAndCanIncludeHistoricalTeams()
+    {
+        await using var dbContext = CreateDbContext();
+        var currentClub = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "Real Madrid",
+            CountryCode = "ES",
+            IsActive = true
+        };
+        var relegatedClub = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "Historical Club",
+            CountryCode = "ES",
+            IsActive = true
+        };
+        var acb = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "ACB",
+            Type = "league",
+            CountryCode = "ES",
+            EloPoolKey = EloPoolKeys.EuropeClubs
+        };
+        var latestSeason = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = acb.Id,
+            Competition = acb,
+            Label = "2025-2026",
+            StartDateUtc = new DateTime(2025, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(2026, 6, 30, 23, 59, 59, DateTimeKind.Utc)
+        };
+        var oldSeason = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = acb.Id,
+            Competition = acb,
+            Label = "2013-2014",
+            StartDateUtc = new DateTime(2013, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(2014, 6, 30, 23, 59, 59, DateTimeKind.Utc)
+        };
+        dbContext.Teams.AddRange(currentClub, relegatedClub);
+        dbContext.Competitions.Add(acb);
+        dbContext.Seasons.AddRange(latestSeason, oldSeason);
+        dbContext.Games.AddRange(
+            new Game
+            {
+                Id = Guid.NewGuid(),
+                CompetitionId = acb.Id,
+                Competition = acb,
+                SeasonId = latestSeason.Id,
+                Season = latestSeason,
+                GameDateTimeUtc = new DateTime(2026, 1, 10, 19, 0, 0, DateTimeKind.Utc),
+                HomeTeamId = currentClub.Id,
+                AwayTeamId = currentClub.Id,
+                Status = "finished"
+            },
+            new Game
+            {
+                Id = Guid.NewGuid(),
+                CompetitionId = acb.Id,
+                Competition = acb,
+                SeasonId = oldSeason.Id,
+                Season = oldSeason,
+                GameDateTimeUtc = new DateTime(2014, 1, 10, 19, 0, 0, DateTimeKind.Utc),
+                HomeTeamId = relegatedClub.Id,
+                AwayTeamId = currentClub.Id,
+                Status = "finished"
+            });
+        dbContext.TeamRatings.AddRange(
+            new TeamRating
+            {
+                TeamId = currentClub.Id,
+                Team = currentClub,
+                EloPoolKey = EloPoolKeys.EuropeClubs,
+                RulesetVersion = EloRulesetVersions.AdjustedV1,
+                Elo = 1600m
+            },
+            new TeamRating
+            {
+                TeamId = relegatedClub.Id,
+                Team = relegatedClub,
+                EloPoolKey = EloPoolKeys.EuropeClubs,
+                RulesetVersion = EloRulesetVersions.AdjustedV1,
+                Elo = 1700m
+            });
+        await dbContext.SaveChangesAsync();
+        var controller = CreateController(dbContext, new ScopedIdentityHealthService(EloPoolKeys.EuropeClubs));
+
+        var currentResult = await controller.GetRankings(
+            rulesetVersion: null,
+            pool: EloPoolKeys.EuropeClubs,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: null);
+
+        var current = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(currentResult.Result).Value);
+        Assert.Equal(EloTeamScopes.Current, current.TeamScope);
+        Assert.Collection(current.Rankings, row => Assert.Equal(currentClub.Id, row.TeamId));
+
+        var historicalResult = await controller.GetRankings(
+            rulesetVersion: null,
+            pool: EloPoolKeys.EuropeClubs,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: null,
+            teams: EloTeamScopes.Historical);
+
+        var historical = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(historicalResult.Result).Value);
+        Assert.Equal(EloTeamScopes.Historical, historical.TeamScope);
+        Assert.Equal(2, historical.Rankings.Count);
+        Assert.False(historical.Rankings.Single(row => row.TeamId == relegatedClub.Id).IsActive);
+    }
+
+    [Fact]
     public async Task PoolRebuildUsesPoolScopedIdentityGate()
     {
         await using var dbContext = CreateDbContext();

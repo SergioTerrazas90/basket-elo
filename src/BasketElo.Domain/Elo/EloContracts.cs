@@ -126,7 +126,7 @@ public static class EloFranchiseIdentityEventTypes
     public const string TemporaryRelocation = "temporary-relocation";
 }
 
-public static class EloNbaTeamScopes
+public static class EloTeamScopes
 {
     public const string Current = "current";
     public const string Historical = "historical";
@@ -135,6 +135,15 @@ public static class EloNbaTeamScopes
         string.Equals(value, Historical, StringComparison.OrdinalIgnoreCase)
             ? Historical
             : Current;
+}
+
+// Kept as a compatibility alias for callers that still use the NBA-specific name.
+public static class EloNbaTeamScopes
+{
+    public const string Current = EloTeamScopes.Current;
+    public const string Historical = EloTeamScopes.Historical;
+
+    public static string Normalize(string? value) => EloTeamScopes.Normalize(value);
 }
 
 public sealed record EloRankingFilterOptions(

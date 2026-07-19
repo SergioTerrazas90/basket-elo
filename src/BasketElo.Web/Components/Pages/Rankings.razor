@@ -1,5 +1,6 @@
 @page "/"
 @page "/rankings"
+@page "/movers"
 @rendermode @(new InteractiveServerRenderMode(prerender: true))
 @using System.Globalization
 @using Microsoft.AspNetCore.Components
@@ -7,34 +8,25 @@
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
-<PageTitle>Basket ELO Rankings</PageTitle>
+<PageTitle>Basket ELO @((selectedView == "movers") ? "Biggest Movers" : "Rankings")</PageTitle>
 
 <div class="rankings-page">
-    <nav class="rating-pool-tabs" aria-label="Rating pools">
-        @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
-        {
-            <button type="button" class="@PoolTabClass(option.Key)" @onclick="() => SelectPoolAsync(option.Key)" disabled="@isBusy">
-                @option.DisplayName
-            </button>
-        }
-    </nav>
+    <header class="rankings-header">
+        <nav class="rating-pool-tabs" aria-label="Rating pools">
+            @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
+            {
+                <button type="button" class="@PoolTabClass(option.Key)" @onclick="() => SelectPoolAsync(option.Key)" disabled="@isBusy">
+                    @(option.Key == EloPoolKeys.EuropeClubs ? "Europe" : option.Key == EloPoolKeys.NationalTeams ? "International" : option.DisplayName)
+                </button>
+            }
+        </nav>
 
-    <section class="rankings-hero">
         <div>
             <p class="eyebrow">Basket ELO</p>
-            <h1>@PoolHeading()</h1>
+            <h1>@PageHeading()</h1>
             <p class="intro">@PoolIntroduction()</p>
         </div>
-
-        @if (response?.Summary is not null)
-        {
-            <div class="leader-strip" aria-label="Top ranked team">
-                <span>@LeaderLabel()</span>
-                <strong>@(response.Summary.TopTeamName ?? "-")</strong>
-                <small>@FormatRating(response.Summary.TopTeamElo)</small>
-            </div>
-        }
-    </section>
+    </header>
 
     @if (!string.IsNullOrWhiteSpace(errorMessage))
     {
@@ -43,26 +35,23 @@
         </div>
     }
 
-    <section class="ranking-filters" aria-label="Ranking filters">
-        @if (selectedPool == EloPoolKeys.Nba)
+    <section class="ranking-controls" aria-label="Ranking controls">
+        @if (SupportsTeamScope)
         {
-            <div class="franchise-scope-field">
-                <div>
-                    <span class="filter-label">Franchises</span>
-                    <div class="franchise-scope-control" role="group" aria-label="NBA franchise scope">
-                        <button type="button" class="@TeamScopeClass(EloNbaTeamScopes.Current)" @onclick="() => SelectTeamScopeAsync(EloNbaTeamScopes.Current)" disabled="@isBusy">
-                            Current
-                        </button>
-                        <button type="button" class="@TeamScopeClass(EloNbaTeamScopes.Historical)" @onclick="() => SelectTeamScopeAsync(EloNbaTeamScopes.Historical)" disabled="@isBusy">
-                            Historical
-                        </button>
-                    </div>
+            <div class="scope-control-block">
+                <span class="filter-label">@(selectedPool == EloPoolKeys.Nba ? "Franchises" : "Teams")</span>
+                <div class="franchise-scope-control" role="group" aria-label="@TeamScopeAriaLabel()">
+                    <button type="button" class="@TeamScopeClass(EloTeamScopes.Current)" @onclick="() => SelectTeamScopeAsync(EloTeamScopes.Current)" disabled="@isBusy">
+                        Current
+                    </button>
+                    <button type="button" class="@TeamScopeClass(EloTeamScopes.Historical)" @onclick="() => SelectTeamScopeAsync(EloTeamScopes.Historical)" disabled="@isBusy">
+                        Historical
+                    </button>
                 </div>
-                <p>Current shows active NBA franchises. Historical also includes franchises that no longer compete.</p>
             </div>
         }
 
-        <div class="filter-field wide">
+        <div class="filter-field team-search-field">
             <label for="teamSearch">Team</label>
             <div class="clearable-field">
                 <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" placeholder="Search teams" />
@@ -100,26 +89,25 @@
             </div>
         }
 
-        <div class="filter-field">
-            <label for="fromSeasonFilter">From season</label>
-            <select id="fromSeasonFilter" class="form-select" @bind="selectedFromSeason">
-                <option value="">All history</option>
-                @foreach (var option in response?.Filters.Seasons ?? [])
-                {
-                    <option value="@option">@option</option>
-                }
-            </select>
-        </div>
-
-        <div class="filter-field">
-            <label for="toSeasonFilter">To season</label>
-            <select id="toSeasonFilter" class="form-select" @bind="selectedToSeason">
-                <option value="">Current</option>
-                @foreach (var option in response?.Filters.Seasons ?? [])
-                {
-                    <option value="@option">@option</option>
-                }
-            </select>
+        <div class="season-range-field">
+            <span class="filter-label">Seasons</span>
+            <div class="season-range-control">
+                <select id="fromSeasonFilter" class="form-select" aria-label="From season" @bind="selectedFromSeason">
+                    <option value="">All history</option>
+                    @foreach (var option in response?.Filters.Seasons ?? [])
+                    {
+                        <option value="@option">@option</option>
+                    }
+                </select>
+                <span aria-hidden="true">to</span>
+                <select id="toSeasonFilter" class="form-select" aria-label="To season" @bind="selectedToSeason">
+                    <option value="">Current</option>
+                    @foreach (var option in response?.Filters.Seasons ?? [])
+                    {
+                        <option value="@option">@option</option>
+                    }
+                </select>
+            </div>
         </div>
 
         <div class="filter-field compact">
@@ -133,37 +121,17 @@
         </div>
     </section>
 
-    <nav class="ranking-view-tabs" aria-label="Ranking views">
-        <button type="button" class='@ViewTabClass("rankings")' @onclick='() => SelectViewAsync("rankings")' disabled="@isBusy">
-            Rankings
-        </button>
-        <button type="button" class='@ViewTabClass("movers")' @onclick='() => SelectViewAsync("movers")' disabled="@isBusy">
-            Biggest movers
-        </button>
-    </nav>
-
     @if (isBusy && response is null)
     {
         <section class="loading-panel">Loading rankings...</section>
     }
     else if (response is not null)
     {
-        <section class="ranking-summary">
-            <div>
-                <span>Rated teams</span>
-                <strong>@response.Summary.RatedTeams</strong>
-            </div>
-            <div>
-                <span>Showing</span>
-                <strong>@response.Summary.FilteredTeams</strong>
-            </div>
-            <div>
-                <span>@LatestGameLabel()</span>
-                <strong>@FormatDate(response.Summary.LatestGameUtc)</strong>
-            </div>
-            <div>
-                <span>Ruleset</span>
-                <strong>@response.RulesetVersion</strong>
+        <section class="results-header">
+            <div class="results-context">
+                <span class="results-kicker">@((selectedView == "movers") ? "Movement view" : "Current rankings")</span>
+                <strong>@response.Summary.FilteredTeams <span>of @response.Summary.RatedTeams teams</span></strong>
+                <small>@LatestGameLabel(): @FormatDate(response.Summary.LatestGameUtc) | @LeaderLabel(): @(response.Summary.TopTeamName ?? "-") (@FormatRating(response.Summary.TopTeamElo)) | Ruleset @response.RulesetVersion</small>
             </div>
         </section>
 
@@ -249,7 +217,7 @@
                                                     <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
                                                     @if (!row.IsActive)
                                                     {
-                                                        <span class="franchise-status">Defunct</span>
+                                                        <span class="franchise-status">@HistoricalTeamLabel()</span>
                                                     }
                                                 </div>
                                             </div>
@@ -379,7 +347,7 @@
                                                     <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
                                                     @if (!row.IsActive)
                                                     {
-                                                        <span class="franchise-status">Defunct</span>
+                                                        <span class="franchise-status">@HistoricalTeamLabel()</span>
                                                     }
                                                 </div>
                                             </div>
@@ -402,6 +370,7 @@
                 </div>
             </section>
         }
+
     }
 </div>
 
@@ -463,7 +432,7 @@
     private string? selectedCountry;
     private string? selectedCompetition;
     private string selectedPool = EloPoolKeys.Default;
-    private string selectedTeamScope = EloNbaTeamScopes.Current;
+    private string selectedTeamScope = EloTeamScopes.Current;
     private string? selectedFromSeason;
     private string? selectedToSeason;
     private string? teamSearch;
@@ -526,9 +495,9 @@
         selectedPool = EloPoolKeys.IsSupported(Pool?.Trim().ToLowerInvariant() ?? string.Empty)
             ? Pool!.Trim().ToLowerInvariant()
             : EloPoolKeys.Default;
-        selectedTeamScope = selectedPool == EloPoolKeys.Nba
-            ? EloNbaTeamScopes.Normalize(Teams)
-            : EloNbaTeamScopes.Current;
+        selectedTeamScope = SupportsTeamScope
+            ? EloTeamScopes.Normalize(Teams)
+            : EloTeamScopes.Current;
         selectedCountry = Country;
         selectedCompetition = Competition;
         selectedFromSeason = FromSeason;
@@ -544,7 +513,9 @@
         }
         minimumGames = Math.Max(0, MinGames ?? 0);
         teamSearch = Team;
-        selectedView = string.Equals(View, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
+        var currentPath = Navigation.ToBaseRelativePath(currentUri).Split('?', 2)[0].Trim('/');
+        var isMoversRoute = string.Equals(currentPath, "movers", StringComparison.OrdinalIgnoreCase);
+        selectedView = isMoversRoute || string.Equals(View, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
         selectedMoverDirection = string.Equals(Movement, "fallers", StringComparison.OrdinalIgnoreCase) ? "fallers" : "risers";
         selectedWindowDays = WindowDays is 7 or 30 or 90 ? WindowDays.Value : 30;
         page = Math.Max(1, Page ?? 1);
@@ -573,7 +544,7 @@
 
     private Task ResetFiltersAsync()
     {
-        selectedTeamScope = EloNbaTeamScopes.Current;
+        selectedTeamScope = EloTeamScopes.Current;
         selectedCountry = null;
         selectedCompetition = null;
         selectedFromSeason = null;
@@ -584,16 +555,9 @@
         return Task.CompletedTask;
     }
 
-    private Task SelectViewAsync(string view)
-    {
-        selectedView = string.Equals(view, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
-        NavigateToRankings(1);
-        return Task.CompletedTask;
-    }
-
     private Task SelectTeamScopeAsync(string teamScope)
     {
-        selectedTeamScope = EloNbaTeamScopes.Normalize(teamScope);
+        selectedTeamScope = EloTeamScopes.Normalize(teamScope);
         NavigateToRankings(1);
         return Task.CompletedTask;
     }
@@ -601,7 +565,7 @@
     private Task SelectPoolAsync(string poolKey)
     {
         selectedPool = EloPoolKeys.Normalize(poolKey);
-        selectedTeamScope = EloNbaTeamScopes.Current;
+        selectedTeamScope = EloTeamScopes.Current;
         selectedCountry = null;
         selectedCompetition = null;
         selectedFromSeason = null;
@@ -832,15 +796,24 @@
         page = targetPage;
         lastLoadedUri = null;
 
+        Navigation.NavigateTo(BuildRankingsHref(targetPage));
+    }
+
+    private string BuildRankingsHref(int targetPage)
+    {
+        var view = string.Equals(selectedView, "movers", StringComparison.OrdinalIgnoreCase)
+            ? "movers"
+            : "rankings";
+        var route = view == "movers" ? "/movers" : "/rankings";
+
         var query = new Dictionary<string, object?>
         {
             ["pool"] = selectedPool == EloPoolKeys.Default ? null : selectedPool,
-            ["teams"] = selectedPool == EloPoolKeys.Nba && selectedTeamScope == EloNbaTeamScopes.Historical
+            ["teams"] = SupportsTeamScope && selectedTeamScope == EloTeamScopes.Historical
                 ? selectedTeamScope
                 : null,
-            ["view"] = selectedView == "movers" ? selectedView : null,
-            ["movement"] = selectedView == "movers" ? selectedMoverDirection : null,
-            ["windowDays"] = selectedView == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
+            ["movement"] = view == "movers" ? selectedMoverDirection : null,
+            ["windowDays"] = view == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
             ["country"] = selectedCountry,
             ["competition"] = selectedCompetition,
             ["fromSeason"] = selectedFromSeason,
@@ -850,7 +823,7 @@
             ["page"] = targetPage > 1 ? targetPage : null
         };
 
-        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters("/rankings", query));
+        return Navigation.GetUriWithQueryParameters(route, query);
     }
 
     private static int ClampRequestedPage(int value, int totalPages)
@@ -952,9 +925,6 @@
     private bool HasTeamSearch
         => !string.IsNullOrWhiteSpace(teamSearch);
 
-    private string ViewTabClass(string view)
-        => selectedView == view ? "view-tab active" : "view-tab";
-
     private string PoolTabClass(string poolKey)
         => selectedPool == poolKey ? "pool-tab active" : "pool-tab";
 
@@ -983,7 +953,7 @@
         Append(query, "asOfDate", seasonRange.AsOfUtc?.ToString("O"));
         Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
         Append(query, "team", teamSearch);
-        Append(query, "teams", selectedPool == EloPoolKeys.Nba ? selectedTeamScope : null);
+        Append(query, "teams", SupportsTeamScope ? selectedTeamScope : null);
 
         return $"api/elo/rankings?{string.Join("&", query)}";
     }
@@ -1007,7 +977,7 @@
         Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
         Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
         Append(query, "team", teamSearch);
-        Append(query, "teams", selectedPool == EloPoolKeys.Nba ? selectedTeamScope : null);
+        Append(query, "teams", SupportsTeamScope ? selectedTeamScope : null);
 
         return $"api/elo/rankings/movers?{string.Join("&", query)}";
     }
@@ -1198,7 +1168,7 @@
         Append(query, "asOfDate", seasonRange.AsOfUtc?.ToString("O"));
         Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
         Append(query, "team", teamSearch);
-        Append(query, "teams", selectedPool == EloPoolKeys.Nba ? selectedTeamScope : null);
+        Append(query, "teams", SupportsTeamScope ? selectedTeamScope : null);
 
         return $"api/elo/rankings?{string.Join("&", query)}";
     }
@@ -1219,8 +1189,8 @@
             ? "Rating history for the top 20 teams in the archived result set."
             : response?.Summary.IsFiltered == true
             ? "Rating history for the top 20 teams in the current filtered result set."
-            : IsHistoricalFranchiseScope
-            ? "Rating history for the top 20 franchises in the current and defunct historical scope."
+            : IsHistoricalTeamScope
+            ? $"Rating history for the top 20 {TeamScopeNoun().ToLowerInvariant()} in the current and historical scope."
             : "Rating history for the top 20 teams overall.";
 
     private string TableContextLabel()
@@ -1234,8 +1204,8 @@
         var rangeEnd = Math.Min(response.TotalCount, response.Page * response.PageSize);
         var scope = response.Summary.IsFiltered
             ? "filtered teams"
-            : IsHistoricalFranchiseScope
-                ? "current and defunct franchises"
+            : IsHistoricalTeamScope
+                ? $"current and historical {TeamScopeNoun().ToLowerInvariant()}"
                 : "rated teams";
 
         return $"Showing {rangeStart}-{rangeEnd} of {response.TotalCount} {scope}. Page {response.Page} of {response.TotalPages}.";
@@ -1244,8 +1214,25 @@
     private bool IsArchiveMode
         => string.Equals(response?.Archive.Mode, "archive", StringComparison.OrdinalIgnoreCase);
 
-    private bool IsHistoricalFranchiseScope
-        => selectedPool == EloPoolKeys.Nba && selectedTeamScope == EloNbaTeamScopes.Historical;
+    private bool SupportsTeamScope
+        => selectedPool == EloPoolKeys.Nba || selectedPool == EloPoolKeys.EuropeClubs;
+
+    private bool IsHistoricalTeamScope
+        => SupportsTeamScope && selectedTeamScope == EloTeamScopes.Historical;
+
+    private string TeamScopeNoun()
+        => selectedPool == EloPoolKeys.Nba ? "franchises" : "teams";
+
+    private string TeamScopeAriaLabel()
+        => selectedPool == EloPoolKeys.Nba ? "NBA franchise scope" : "European club team scope";
+
+    private string TeamScopeDescription()
+        => selectedPool == EloPoolKeys.Nba
+            ? "Current shows active NBA franchises. Historical also includes franchises that no longer compete."
+            : "Current shows clubs that participated in the latest imported European season. Historical includes clubs from earlier seasons.";
+
+    private string HistoricalTeamLabel()
+        => selectedPool == EloPoolKeys.Nba ? "Defunct" : "Historical";
 
     private string PoolHeading() => selectedPool switch
     {
@@ -1253,6 +1240,11 @@
         EloPoolKeys.NationalTeams => "National team power rankings",
         _ => "NBA power rankings"
     };
+
+    private string PageHeading()
+        => selectedView == "movers"
+            ? PoolHeading().Replace("power rankings", "biggest movers", StringComparison.Ordinal)
+            : PoolHeading();
 
     private string PoolIntroduction() => selectedPool switch
     {
@@ -1264,7 +1256,7 @@
     private string LeaderLabel()
         => IsArchiveMode
             ? "Strongest as of"
-            : IsHistoricalFranchiseScope
+            : IsHistoricalTeamScope
                 ? "Highest retained rating"
                 : "Strongest right now";
 

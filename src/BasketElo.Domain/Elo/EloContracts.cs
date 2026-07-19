@@ -198,7 +198,8 @@ public sealed record EloMoversSummary(
 public sealed record EloTeamEvolutionSeries(
     Guid TeamId,
     string TeamName,
-    IReadOnlyCollection<EloTeamEvolutionPoint> Points);
+    IReadOnlyCollection<EloTeamEvolutionPoint> Points,
+    int RatedPointCount = 0);
 
 public sealed record EloTeamEvolutionPoint(
     DateTime GameDateTimeUtc,

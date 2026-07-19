@@ -1,5 +1,6 @@
 using BasketElo.Infrastructure;
 using BasketElo.Infrastructure.Persistence;
+using BasketElo.Api.Elo;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,6 +9,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<EloResponseCache>();
+builder.Services.AddHostedService<PostgresEloRebuildCacheInvalidationListener>();
 builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

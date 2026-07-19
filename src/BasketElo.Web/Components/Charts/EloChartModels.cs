@@ -4,7 +4,9 @@ public sealed record EloChartSeries(
     Guid? TeamId,
     string TeamName,
     string Color,
-    IReadOnlyList<EloChartPoint> Points);
+    IReadOnlyList<EloChartPoint> Points,
+    int RatedPointCount = 0,
+    int? VisibleRatedPointCount = null);
 
 public sealed record EloChartPoint(
     DateTime GameDateTimeUtc,

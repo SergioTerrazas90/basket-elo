@@ -6,18 +6,20 @@
         <div class="elo-chart-toolbar" aria-label="Chart range controls">
             <div class="elo-chart-controls">
                 <div class="elo-chart-segment" aria-label="Chart sampling mode">
-                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.GameByGame)" @onclick="() => SetSamplingMode(EloChartSamplingMode.GameByGame)">Game snapshots</button>
-                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.Weekly)" @onclick="() => SetSamplingMode(EloChartSamplingMode.Weekly)">Weekly</button>
-                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.Monthly)" @onclick="() => SetSamplingMode(EloChartSamplingMode.Monthly)">Monthly</button>
+                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.GameByGame)" @onclick="() => SetSamplingMode(EloChartSamplingMode.GameByGame)">Games</button>
+                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.Weekly)" @onclick="() => SetSamplingMode(EloChartSamplingMode.Weekly)">Weeks</button>
+                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.Monthly)" @onclick="() => SetSamplingMode(EloChartSamplingMode.Monthly)">Months</button>
                 </div>
                 <div class="elo-chart-range-buttons">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Full span</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowRecentHalf">Recent half</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowRecentQuarter">Recent quarter</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Reset zoom</button>
                 </div>
             </div>
             <span class="elo-chart-context">
                 <span>@ChartContextLabel</span>
+                <span class="elo-chart-metrics">
+                    <span>@VisibleChartPointCount plotted</span>
+                    <span>@CurrentRatedPointCount rated in view / @TotalRatedPointCount full range</span>
+                </span>
                 <span class="elo-chart-refinement-slot" aria-live="polite">
                     @if (IsRefining)
                     {
@@ -29,12 +31,59 @@
         </div>
     }
 
+    @if (EnableRangeNavigation && SourceSeries.Count > 1)
+    {
+        <div class="elo-chart-series-controls" aria-label="Team comparison controls">
+            <span class="elo-chart-series-controls-label">Compare teams</span>
+            <button type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    @onclick="ShowAllSeries"
+                    disabled="@(hiddenSeriesKeys.Count == 0)">Show all</button>
+            @foreach (var series in SourceSeries)
+            {
+                var isVisible = IsSeriesVisible(series);
+                <button type="button"
+                        class="elo-chart-series-toggle @(isVisible ? "is-visible" : "is-hidden")"
+                        aria-pressed="@isVisible"
+                        title="@(isVisible ? $"Hide {series.TeamName}" : $"Show {series.TeamName}")"
+                        @onclick="() => ToggleSeries(series)">
+                    <span class="elo-chart-series-toggle-swatch" style="background: @series.Color"></span>
+                    <span class="elo-chart-series-toggle-name">@series.TeamName</span>
+                    <small>@GetVisibleChartPointCount(series) plotted &#183; @RatedPointCount(series) rated</small>
+                </button>
+            }
+        </div>
+    }
+
     <div class="elo-chart-plot">
-        <RadzenChart class="elo-radzen-chart"
+        @if (selectedPoint is not null)
+        {
+            <div class="elo-chart-selection-strip" style="--active-team-color: @selectedPoint.Color" role="status" aria-live="polite">
+                <div class="elo-chart-tooltip-team">
+                    <span class="elo-chart-active-swatch"></span>
+                    <strong>@selectedPoint.TeamName</strong>
+                </div>
+                <span>@FormatDate(selectedPoint.GameDateTimeUtc)</span>
+                <strong>@selectedPoint.Elo.ToString("0") ELO</strong>
+                @if (selectedPoint.EloDelta.HasValue)
+                {
+                    <span>Change @FormatMovement(selectedPoint.EloDelta.Value)</span>
+                }
+                @if (selectedPoint.Rank.HasValue)
+                {
+                    <span>Rank #@selectedPoint.Rank</span>
+                }
+                <button type="button" class="elo-chart-selection-clear" @onclick="ClearSelection" aria-label="Clear selected chart point">×</button>
+            </div>
+        }
+
+        <RadzenChart @key="samplingMode"
+                     class="elo-radzen-chart"
                      Style="@ChartStyle"
                      TooltipTolerance="40"
                      ClickTolerance="40"
                      MouseMoveThrottle="25"
+                     AllowSeriesHover="true"
                      AllowZoom="@EnableRangeNavigation"
                      AllowPan="@EnableRangeNavigation"
                      @bind-Zoom="chartZoom"
@@ -42,7 +91,7 @@
                      @bind-ViewEnd="viewEnd"
                      ViewChange="@HandleViewChangeAsync"
                      SeriesClick="@HandleSeriesClickAsync">
-        <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="@TooltipTrigger" />
+        <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="@TooltipTrigger" HighlightDataPoint="false" />
         <RadzenLegend Visible="@ShowLegend" Position="LegendPosition.Bottom" />
 
         @foreach (var series in DisplaySeries)
@@ -90,27 +139,22 @@
             <RadzenGridLines Visible="true" />
             <RadzenAxisCrosshair Visible="true" Label="true" Stroke="#9aa6b2" />
         </RadzenValueAxis>
-        </RadzenChart>
 
-        @if (selectedPoint is not null)
+        @if (DisplaySeries.FirstOrDefault() is { } navigatorSeries)
         {
-            <div class="elo-chart-selection-tooltip" style="--active-team-color: @selectedPoint.Color" role="status" aria-live="polite">
-                <div class="elo-chart-tooltip-team">
-                    <span class="elo-chart-active-swatch"></span>
-                    <strong>@selectedPoint.TeamName</strong>
-                </div>
-                <span>@FormatDate(selectedPoint.GameDateTimeUtc)</span>
-                <strong>@selectedPoint.Elo.ToString("0") ELO</strong>
-                @if (selectedPoint.EloDelta.HasValue)
-                {
-                    <span>Change @FormatMovement(selectedPoint.EloDelta.Value)</span>
-                }
-                @if (selectedPoint.Rank.HasValue)
-                {
-                    <span>Rank #@selectedPoint.Rank</span>
-                }
-            </div>
+            <RadzenChartRangeNavigator Visible="@EnableRangeNavigation"
+                                       Height="52"
+                                       ShowHandleLabels="true">
+                <RadzenRangeNavigatorLineSeries TItem="EloChartPoint"
+                                                Data="@navigatorSeries.Points"
+                                                CategoryProperty="@nameof(EloChartPoint.GameDateTimeUtc)"
+                                                ValueProperty="@nameof(EloChartPoint.Elo)"
+                                                Stroke="@navigatorSeries.Color"
+                                                StrokeWidth="2"
+                                                Smooth="@Smooth" />
+            </RadzenChartRangeNavigator>
         }
+        </RadzenChart>
     </div>
 </div>
 
@@ -156,6 +200,7 @@
     private IReadOnlyList<DateTime> activeDates = [];
     private EloChartPoint? selectedPoint;
     private long renderedDataRevision = -1;
+    private readonly HashSet<string> hiddenSeriesKeys = new(StringComparer.Ordinal);
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
 
@@ -178,9 +223,7 @@
             ? TickPlacement.On
             : TickPlacement.Between;
 
-    private ChartTooltipTrigger TooltipTrigger => SharedTooltip
-        ? ChartTooltipTrigger.Axis
-        : ChartTooltipTrigger.Point;
+    private ChartTooltipTrigger TooltipTrigger => ChartTooltipTrigger.Axis;
 
     private IReadOnlyList<EloChartSeries> SourceSeries
         => sourceSeries;
@@ -190,6 +233,15 @@
 
     private IReadOnlyList<EloChartPoint> AllPoints
         => allPoints;
+
+    private int VisibleChartPointCount
+        => DisplaySeries.Sum(GetVisibleChartPointCount);
+
+    private int TotalRatedPointCount
+        => DisplaySeries.Sum(RatedPointCount);
+
+    private int CurrentRatedPointCount
+        => DisplaySeries.Sum(series => series.VisibleRatedPointCount ?? RatedPointCount(series));
 
     private string ChartContextLabel
     {
@@ -223,6 +275,7 @@
             })
             .Where(x => x.Points.Count >= 2)
             .ToList();
+        hiddenSeriesKeys.RemoveWhere(key => sourceSeries.All(series => SeriesKey(series) != key));
         RebuildDisplaySeries();
 
         if (!EnableRangeNavigation || dataChanged)
@@ -257,20 +310,6 @@
         }
     }
 
-    private Task ShowRecentHalf()
-        => SetRecentRange(0.5, 200);
-
-    private Task ShowRecentQuarter()
-        => SetRecentRange(0.25, 400);
-
-    private async Task SetRecentRange(double fraction, double zoom)
-    {
-        chartZoom = zoom;
-        viewStart = 1 - fraction;
-        viewEnd = 1;
-        await RequestViewportRefinementAsync(viewStart, viewEnd);
-    }
-
     private void SetSamplingMode(EloChartSamplingMode mode)
     {
         if (samplingMode == mode)
@@ -283,6 +322,54 @@
         ResetView();
     }
 
+    private void ToggleSeries(EloChartSeries series)
+    {
+        var key = SeriesKey(series);
+        if (!hiddenSeriesKeys.Add(key))
+        {
+            hiddenSeriesKeys.Remove(key);
+        }
+
+        if (selectedPoint is not null && !IsSeriesVisible(series) && selectedPoint.TeamName == series.TeamName)
+        {
+            selectedPoint = null;
+        }
+
+        RebuildDisplaySeries();
+    }
+
+    private void ShowAllSeries()
+    {
+        hiddenSeriesKeys.Clear();
+        RebuildDisplaySeries();
+    }
+
+    private bool IsSeriesVisible(EloChartSeries series)
+        => !hiddenSeriesKeys.Contains(SeriesKey(series));
+
+    private static string SeriesKey(EloChartSeries series)
+        => series.TeamId?.ToString("D") ?? series.TeamName;
+
+    private int GetVisibleChartPointCount(EloChartSeries series)
+    {
+        var display = displaySeries.FirstOrDefault(item => SeriesKey(item) == SeriesKey(series));
+        if (display is null)
+        {
+            return 0;
+        }
+
+        var range = GetVisibleDateRange(viewStart, viewEnd);
+        return range is null
+            ? display.Points.Count
+            : display.Points.Count(point => point.GameDateTimeUtc >= range.Value.FromUtc && point.GameDateTimeUtc <= range.Value.ToUtc);
+    }
+
+    private static int RatedPointCount(EloChartSeries series)
+        => series.RatedPointCount > 0 ? series.RatedPointCount : series.Points.Count;
+
+    private void ClearSelection()
+        => selectedPoint = null;
+
     private void RebuildDisplaySeries()
     {
         var sampledSeries = sourceSeries
@@ -290,6 +377,7 @@
             {
                 Points = SamplePoints(series.Points, samplingMode)
             })
+            .Where(IsSeriesVisible)
             .Where(x => x.Points.Count >= 2)
             .ToList();
 
@@ -474,7 +562,7 @@
         {
             EloChartSamplingMode.Weekly => "Weekly snapshots",
             EloChartSamplingMode.Monthly => "Monthly snapshots",
-            _ => "Game snapshots"
+            _ => "Game-level snapshots"
         };
 
     private static string FormatDate(DateTime value)

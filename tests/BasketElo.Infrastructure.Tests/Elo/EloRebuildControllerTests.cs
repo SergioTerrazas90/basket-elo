@@ -1,4 +1,5 @@
 using BasketElo.Api.Controllers;
+using BasketElo.Api.Elo;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Elo;
@@ -7,6 +8,7 @@ using BasketElo.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace BasketElo.Infrastructure.Tests.Elo;
@@ -222,12 +224,16 @@ public class EloRebuildControllerTests
 
     private static EloController CreateController(
         BasketEloDbContext dbContext,
-        IIdentityHealthCheckService identityService) =>
-        new(
+        IIdentityHealthCheckService identityService)
+    {
+        var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        return new(
             dbContext,
             new NoOpNotificationPublisher(),
             identityService,
-            new MemoryCache(new MemoryCacheOptions()));
+            memoryCache,
+            new EloResponseCache(memoryCache, NullLogger<EloResponseCache>.Instance));
+    }
 
     private sealed class ScopedIdentityHealthService(string cleanPoolKey) : IIdentityHealthCheckService
     {

@@ -145,6 +145,21 @@
     transform: translate(0.12rem, -0.08rem) skewY(-18deg);
 }
 
+.movers-icon::before {
+    width: 0.9rem;
+    height: 0.72rem;
+    border-bottom: 2px solid currentColor;
+    transform: skewY(-20deg);
+}
+
+.movers-icon::after {
+    width: 0.52rem;
+    height: 0.52rem;
+    border-top: 2px solid var(--color-accent);
+    border-right: 2px solid var(--color-accent);
+    transform: translate(0.17rem, -0.18rem) rotate(45deg);
+}
+
 .games-icon::before {
     width: 0.95rem;
     height: 0.95rem;

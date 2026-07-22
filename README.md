@@ -220,6 +220,10 @@ The historical FIBA qualification systems, including the regional changes over
 time and the ingestion/ELO interpretation rules, are documented in
 `docs/international-qualification-systems.md`.
 
+The ingestion architecture, provider responsibilities, source policy,
+competition reconciliation, unresolved-game handling, and production backfill
+operations are documented in `docs/ingestion.md`.
+
 ## Troubleshooting (Windows + Docker)
 
 If `postgres:16-alpine` fails with "no matching manifest for windows/amd64", Docker is in Windows container mode.

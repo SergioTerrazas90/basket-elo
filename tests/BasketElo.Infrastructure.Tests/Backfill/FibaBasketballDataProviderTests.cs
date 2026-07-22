@@ -94,6 +94,39 @@ public sealed class FibaBasketballDataProviderTests
         Assert.Equal(2, handler.RequestCount);
     }
 
+    [Fact]
+    public async Task UsesEuroBasket2005EventPageButKeepsOnlyQualificationRounds()
+    {
+        var handler = new FixtureHandler();
+        var provider = new FibaBasketballDataProvider(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "Europe",
+            "FIBA EuroBasket Qualifiers",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+        var result = await provider.GetGamesAsync(
+            league!,
+            "2005",
+            new BackfillExecutionContext(1, 0),
+            CancellationToken.None);
+
+        Assert.Equal(3, result.Games.Count);
+        Assert.All(result.Games, game =>
+            Assert.Contains(
+                game.CompetitionPhase,
+                new[]
+                {
+                    "Qualifying Round",
+                    "Additional Qualifying Round Games",
+                    "Additional Qualifying Tournament"
+                }));
+        Assert.Equal(1, handler.RequestCount);
+    }
+
     private sealed class FixtureHandler : HttpMessageHandler
     {
         public int RequestCount { get; private set; }
@@ -102,7 +135,9 @@ public sealed class FibaBasketballDataProviderTests
         {
             RequestCount++;
             var content = request.RequestUri?.AbsolutePath.EndsWith("/games", StringComparison.Ordinal) == true
-                ? request.RequestUri.AbsolutePath.Contains("world-cup-2027-americas", StringComparison.OrdinalIgnoreCase)
+                ? request.RequestUri.AbsolutePath.Contains("208-fiba-eurobasket/2725", StringComparison.OrdinalIgnoreCase)
+                    ? EuroBasket2005GamesHtml
+                    : request.RequestUri.AbsolutePath.Contains("world-cup-2027-americas", StringComparison.OrdinalIgnoreCase)
                     ? AmericasEventGamesHtml
                     : request.RequestUri.AbsolutePath.Contains("world-cup-2027", StringComparison.OrdinalIgnoreCase)
                         ? DirectEventGamesHtml
@@ -155,6 +190,16 @@ public sealed class FibaBasketballDataProviderTests
                 <div class="wa01avm"><div>BRA BRA 70</div></div>
               </a>
             </div></div>
+            """;
+
+        private const string EuroBasket2005GamesHtml = """
+            <script>
+            {"gameId":200501,"teamA":{"code":"CRO","officialName":"Croatia"},"teamB":{"code":"RUS","officialName":"Russia"},"teamAScore":86,"teamBScore":63,"gameDateTimeUTC":"2004-09-08T17:45:00","round":{"roundCode":"QR","roundName":"Qualifying Round"}}
+            {"gameId":200502,"teamA":{"code":"LAT","officialName":"Latvia"},"teamB":{"code":"ISR","officialName":"Israel"},"teamAScore":80,"teamBScore":57,"gameDateTimeUTC":"2004-09-08T18:00:00","round":{"roundCode":"AQG","roundName":"Additional Qualifying Round Games"}}
+            {"gameId":200503,"teamA":{"code":"CZE","officialName":"Czechia"},"teamB":{"code":"POL","officialName":"Poland"},"teamAScore":82,"teamBScore":57,"gameDateTimeUTC":"2004-09-08T19:00:00","round":{"roundCode":"AQT","roundName":"Additional Qualifying Tournament"}}
+            {"gameId":200504,"teamA":{"code":"GER","officialName":"Germany"},"teamB":{"code":"FRA","officialName":"France"},"teamAScore":74,"teamBScore":68,"gameDateTimeUTC":"2005-09-22T19:00:00","round":{"roundCode":"PR","roundName":"Preliminary Round"}}
+            {"gameId":200505,"teamA":{"code":"DEN","officialName":"Denmark"},"teamB":{"code":"IRL","officialName":"Ireland"},"teamAScore":86,"teamBScore":70,"gameDateTimeUTC":"2005-09-23T19:00:00","round":{"roundCode":"QG","roundName":"Qualification Games"}}
+            </script>
             """;
     }
 

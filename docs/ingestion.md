@@ -91,7 +91,12 @@ FIBA families currently used include:
 
 - EuroBasket Qualifiers: historical seasons through 2015, with the 1991 game
   list sourced from Wikipedia because the FIBA historical entry does not expose
-  usable games. The documented reliable coverage begins in 1989; no verified
+  usable games. The 2005 qualifier season is a special case: FIBA exposes it
+  under the [EuroBasket 2005 event page](https://www.fiba.basketball/en/history/208-fiba-eurobasket/2725/games),
+  not in the qualifiers family. The importer keeps its Qualifying Round,
+  Additional Qualifying Round Games, and Additional Qualifying Tournament
+  phases, while excluding the 2005 championship and promotion/relegation
+  phases. The documented reliable coverage begins in 1989; no verified
   qualifier game coverage is claimed before that point.
 - EuroBasket Division B: 2007, 2009, and 2011.
 - EuroBasket Pre-Qualifiers: historical seasons 1995, 1997, 1999, 2001, and

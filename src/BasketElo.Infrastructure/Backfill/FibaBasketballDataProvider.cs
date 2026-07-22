@@ -109,7 +109,15 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             try
             {
                 var gamesPage = await GetPageAsync(gamesPath, context, cancellationToken);
-                games.AddRange(ParseGames(gamesPage.Content, gamesPage.FetchedAtUtc, gamesPage.Revision, gamesPath, year, warnings));
+                var parsedGames = ParseGames(gamesPage.Content, gamesPage.FetchedAtUtc, gamesPage.Revision, gamesPath, year, warnings);
+                if (IsEuroBasket2005Event(editionPath))
+                {
+                    parsedGames = parsedGames
+                        .Where(IsEuroBasket2005QualificationGame)
+                        .ToArray();
+                }
+
+                games.AddRange(parsedGames);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -186,10 +194,12 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                     "/en/history/205-fiba-eurobasket-qualifiers/1286",
                     "/en/history/205-fiba-eurobasket-qualifiers/1284"
                 ],
-                // 2005 and 1993 have no usable edition in the current FIBA
-                // archive. Returning an empty collection records the gap in
-                // the backfill instead of silently importing a wrong cycle.
-                2005 or 1993 => [],
+                // 2005 is listed under the EuroBasket event family rather than
+                // the qualifiers family. Its event page contains both the
+                // tournament and qualifying games, so GetGamesAsync filters it
+                // to QR/AQG/AQT below. 1993 still has no usable edition here.
+                2005 => ["/en/history/208-fiba-eurobasket/2725"],
+                1993 => [],
                 _ => null
             };
         }
@@ -312,6 +322,17 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
         return null;
     }
+
+    private static bool IsEuroBasket2005Event(string editionPath)
+        => editionPath.Contains(
+            "/en/history/208-fiba-eurobasket/2725",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEuroBasket2005QualificationGame(BasketballProviderGame game)
+        => game.CompetitionPhase?.Trim() is
+            "Qualifying Round" or
+            "Additional Qualifying Round Games" or
+            "Additional Qualifying Tournament";
 
     private async Task<(string Content, DateTime FetchedAtUtc, string Revision)> GetPageAsync(
         string path,

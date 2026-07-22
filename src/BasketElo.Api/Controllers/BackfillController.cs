@@ -44,9 +44,10 @@ public class BackfillController(
              !string.Equals(request.Provider, BasketballReferenceBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, FiveThirtyEightBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
-             !string.Equals(request.Provider, GlobalSportsArchiveBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase)))
+             !string.Equals(request.Provider, GlobalSportsArchiveBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, WikipediaEuroBasketQualificationDataProvider.Source, StringComparison.OrdinalIgnoreCase)))
         {
-            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba' and 'global-sports-archive'.");
+            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba', 'global-sports-archive' and 'wikipedia'.");
         }
 
         var job = BuildJob(request, FindConfiguredLeague(request.Provider, request.Country, request.LeagueName));

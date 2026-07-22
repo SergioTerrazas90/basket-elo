@@ -89,9 +89,9 @@ Important mapping rules:
 
 FIBA families currently used include:
 
-- EuroBasket Qualifiers: historical seasons through 2015, with the 1991 game
-  list sourced from Wikipedia because the FIBA historical entry does not expose
-  usable games. The 2005 qualifier season is a special case: FIBA exposes it
+- EuroBasket Qualifiers: historical seasons through 2015, with the 1991 and
+  1993 game lists sourced from Wikipedia because the FIBA historical entries do
+  not expose usable games. The 2005 qualifier season is a special case: FIBA exposes it
   under the [EuroBasket 2005 event page](https://www.fiba.basketball/en/history/208-fiba-eurobasket/2725/games),
   not in the qualifiers family. The importer keeps its Qualifying Round,
   Additional Qualifying Round Games, and Additional Qualifying Tournament
@@ -113,11 +113,12 @@ Relevant FIBA history families:
 
 ### Wikipedia
 
-Wikipedia is used only for the EuroBasket 1991 qualification match list,
-because that historical FIBA entry does not provide a complete usable game
-archive. It is a documented exception, not a general fallback for FIBA or GSA.
+Wikipedia is used for the EuroBasket 1991 and 1993 qualification match lists,
+because those historical FIBA entries do not provide complete usable game
+archives. It is a documented exception, not a general fallback for FIBA or GSA.
 
-Source: [FIBA EuroBasket 1991 qualification](https://en.wikipedia.org/wiki/FIBA_EuroBasket_1991_qualification).
+Sources: [FIBA EuroBasket 1991 qualification](https://en.wikipedia.org/wiki/FIBA_EuroBasket_1991_qualification)
+and [FIBA EuroBasket 1993 qualification](https://en.wikipedia.org/wiki/FIBA_EuroBasket_1993_qualification).
 
 ### NBA and other domestic sources
 

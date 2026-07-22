@@ -168,7 +168,7 @@ public class BackfillCatalog : IBackfillCatalog
         new("fiba", "Europe", "FIBA EuroBasket Pre-Qualifiers", "Europe: FIBA EuroBasket Pre-Qualifiers", "1995", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2003, 2001, 1999, 1997, 1995), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "Europe", "FIBA EuroBasket Pre-Qualifiers", "Europe: FIBA EuroBasket Pre-Qualifiers", "2021", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2029, 2025, 2021), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "Europe", "EuroBasket Qualifiers", "Europe: EuroBasket Qualifiers", "2017", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2017, 2021, 2025), UsesSingleYearSeasonLabel: true),
-        new("fiba", "Europe", "EuroBasket Qualifiers", "Europe: EuroBasket Qualifiers", "2015", ProviderLeagues: [new("Europe", "FIBA EuroBasket Qualifiers", "year")], CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2015, 2013, 2011, 2009, 2007, 2005, 2003, 2001, 1999, 1997, 1995, 1993), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Europe", "EuroBasket Qualifiers", "Europe: EuroBasket Qualifiers", "2015", ProviderLeagues: [new("Europe", "FIBA EuroBasket Qualifiers", "year")], CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2015, 2013, 2011, 2009, 2007, 2005, 2003, 2001, 1999, 1997, 1995), UsesSingleYearSeasonLabel: true),
         new(
             "wikipedia",
             "Europe",
@@ -178,7 +178,7 @@ public class BackfillCatalog : IBackfillCatalog
             ProviderLeagues: [new("Europe", "EuroBasket Qualifiers", "year")],
             CompetitionType: "qualifier",
             EloPoolKey: EloPoolKeys.NationalTeams,
-            ExplicitSeasons: Years(1991),
+            ExplicitSeasons: Years(1993, 1991),
             UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "World", "FIBA Basketball World Cup", "World: FIBA Basketball World Cup", "1950", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1950, 1954, 1959, 1963, 1967, 1970, 1974, 1978, 1982, 1986, 1990, 1994, 1998, 2002, 2006, 2010, 2014, 2019, 2023), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "World", "Summer Olympics", "World: Summer Olympics (men)", "2012", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2012, 2016, 2020, 2024), UsesSingleYearSeasonLabel: true),

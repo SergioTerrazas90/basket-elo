@@ -9,16 +9,19 @@ using HtmlAgilityPack;
 namespace BasketElo.Infrastructure.Backfill;
 
 /// <summary>
-/// Imports the 1991 EuroBasket qualification game boxes from Wikipedia.  FIBA's
-/// archive exposes the 1991 event labels but not a complete usable game list,
-/// while the Wikipedia article contains the dated score boxes for both stages.
+/// Imports EuroBasket qualification game boxes from Wikipedia for cycles whose
+/// FIBA archive entry does not expose a complete usable game list.
 /// </summary>
 public sealed class WikipediaEuroBasketQualificationDataProvider(HttpClient httpClient) : IBasketballDataProvider
 {
     public const string Source = "wikipedia";
     public const string ParserVersion = "wikipedia-eurobasket-qualification-html-v1";
-    private const string PagePath = "/wiki/FIBA_EuroBasket_1991_qualification";
-    private const string PageUrl = "https://en.wikipedia.org/wiki/FIBA_EuroBasket_1991_qualification";
+    private static readonly IReadOnlyDictionary<int, (string Path, string Url)> Pages =
+        new Dictionary<int, (string, string)>
+        {
+            [1991] = ("/wiki/FIBA_EuroBasket_1991_qualification", "https://en.wikipedia.org/wiki/FIBA_EuroBasket_1991_qualification"),
+            [1993] = ("/wiki/FIBA_EuroBasket_1993_qualification", "https://en.wikipedia.org/wiki/FIBA_EuroBasket_1993_qualification")
+        };
 
     public string SourceKey => Source;
 
@@ -38,7 +41,7 @@ public sealed class WikipediaEuroBasketQualificationDataProvider(HttpClient http
         return Task.FromResult<BasketballProviderLeague?>(
             new BasketballProviderLeague(
                 Source,
-                "fiba-eurobasket-1991-qualification",
+                "fiba-eurobasket-qualification",
                 "EuroBasket Qualifiers",
                 "EUR",
                 "year"));
@@ -51,27 +54,28 @@ public sealed class WikipediaEuroBasketQualificationDataProvider(HttpClient http
         CancellationToken cancellationToken)
     {
         var warnings = new List<string>();
-        if (!season.StartsWith("1991", StringComparison.Ordinal))
+        var year = ParseStartYear(season);
+        if (!Pages.TryGetValue(year, out var page))
         {
-            warnings.Add($"Wikipedia source is only configured for the 1991 EuroBasket qualification cycle, not {season}.");
+            warnings.Add($"Wikipedia source is not configured for the {season} EuroBasket qualification cycle.");
             return ([], false, warnings);
         }
 
         if (!context.CanUseRequest())
         {
-            warnings.Add($"Wikipedia request budget reached before {PagePath} could be fetched.");
+            warnings.Add($"Wikipedia request budget reached before {page.Path} could be fetched.");
             return ([], false, warnings);
         }
 
         context.ConsumeRequest();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
-        using var response = await httpClient.GetAsync(PagePath, timeout.Token);
+        using var response = await httpClient.GetAsync(page.Path, timeout.Token);
         response.EnsureSuccessStatusCode();
         var html = await response.Content.ReadAsStringAsync(cancellationToken);
         var fetchedAtUtc = DateTime.UtcNow;
         var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(html)))[..16];
-        var games = ParseGames(html, fetchedAtUtc, revision, warnings);
+        var games = ParseGames(html, year, page.Url, fetchedAtUtc, revision, warnings);
 
         if (games.Count > 0)
         {
@@ -83,6 +87,8 @@ public sealed class WikipediaEuroBasketQualificationDataProvider(HttpClient http
 
     private static List<BasketballProviderGame> ParseGames(
         string html,
+        int year,
+        string pageUrl,
         DateTime fetchedAtUtc,
         string revision,
         ICollection<string> warnings)
@@ -137,7 +143,7 @@ public sealed class WikipediaEuroBasketQualificationDataProvider(HttpClient http
 
                 var renderedGame = metadataNode.SelectSingleNode("following-sibling::div[1]");
                 var teamNames = ExtractTeamNames(renderedGame, homeCode, awayCode);
-                var sourceGameId = BuildSourceGameId(ordinal, gameDate, homeCode, awayCode, homeScore.Value, awayScore.Value);
+                var sourceGameId = BuildSourceGameId(year, ordinal, gameDate, homeCode, awayCode, homeScore.Value, awayScore.Value);
                 var phase = FindHeading(metadataNode, "h2");
                 var round = FindHeading(metadataNode, "h3");
 
@@ -153,8 +159,8 @@ public sealed class WikipediaEuroBasketQualificationDataProvider(HttpClient http
                     homeScore,
                     awayScore,
                     new BasketballProviderGameProvenance(
-                        PageUrl,
-                        "1991",
+                        pageUrl,
+                        year.ToString(CultureInfo.InvariantCulture),
                         fetchedAtUtc,
                         ParserVersion,
                         revision),
@@ -184,7 +190,7 @@ public sealed class WikipediaEuroBasketQualificationDataProvider(HttpClient http
 
     private static string? ExtractTeamCode(string value)
     {
-        var match = Regex.Match(value, @"\{\{Bk\|(?<code>[A-Za-z]{3})(?:\|[^}]*)?\}\}", RegexOptions.IgnoreCase);
+        var match = Regex.Match(value, @"\{\{Bk\|\s*(?<code>[A-Za-z]{3})(?:\|[^}]*)?\}\}", RegexOptions.IgnoreCase);
         return match.Success ? match.Groups["code"].Value.ToUpperInvariant() : null;
     }
 
@@ -214,10 +220,18 @@ public sealed class WikipediaEuroBasketQualificationDataProvider(HttpClient http
         return string.IsNullOrWhiteSpace(text) ? null : Regex.Replace(text, @"\s+", " ");
     }
 
-    private static string BuildSourceGameId(int ordinal, DateTime date, string homeCode, string awayCode, short homeScore, short awayScore)
+    private static string BuildSourceGameId(int year, int ordinal, DateTime date, string homeCode, string awayCode, short homeScore, short awayScore)
     {
-        var value = $"1991|{ordinal}|{date:yyyy-MM-dd}|{homeCode}|{awayCode}|{homeScore}|{awayScore}";
+        var value = $"{year}|{ordinal}|{date:yyyy-MM-dd}|{homeCode}|{awayCode}|{homeScore}|{awayScore}";
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..16].ToLowerInvariant();
-        return $"wiki-eurobasket-1991-{hash}";
+        return $"wiki-eurobasket-{year}-{hash}";
+    }
+
+    private static int ParseStartYear(string season)
+    {
+        var match = Regex.Match(season, @"\b(19|20)\d{2}\b");
+        return match.Success && int.TryParse(match.Value, out var year)
+            ? year
+            : throw new ArgumentException($"Wikipedia season '{season}' has no four-digit year.", nameof(season));
     }
 }

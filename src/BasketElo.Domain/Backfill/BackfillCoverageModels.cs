@@ -13,7 +13,8 @@ public record ConfiguredBackfillLeague(
     string? EndSeason = null,
     string EloPoolKey = EloPoolKeys.EuropeClubs,
     IReadOnlyCollection<string>? ExplicitSeasons = null,
-    bool UsesSingleYearSeasonLabel = false);
+    bool UsesSingleYearSeasonLabel = false,
+    IReadOnlyCollection<string>? ExcludedSeasons = null);
 
 public record ConfiguredProviderLeague(
     string Country,

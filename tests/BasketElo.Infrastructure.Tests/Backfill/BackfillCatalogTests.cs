@@ -45,6 +45,31 @@ public class BackfillCatalogTests
     }
 
     [Fact]
+    public void CovidFallbackSeasonsAreNotExposedAsRedundantApiSportsBackfills()
+    {
+        var catalog = new BackfillCatalog();
+        var fallbackLeagues = new[]
+        {
+            (Country: "Spain", LeagueName: "ACB"),
+            (Country: "Europe", LeagueName: "ABA League"),
+            (Country: "Europe", LeagueName: "BIBL"),
+            (Country: "Europe", LeagueName: "Champions League"),
+            (Country: "Europe", LeagueName: "Eurocup"),
+            (Country: "Europe", LeagueName: "Euroleague")
+        };
+
+        foreach (var (country, leagueName) in fallbackLeagues)
+        {
+            var league = Assert.Single(catalog.GetLeagues(), candidate =>
+                candidate.Provider == ApiSportsBasketballDataProvider.Source &&
+                candidate.Country == country &&
+                candidate.LeagueName == leagueName);
+
+            Assert.DoesNotContain("2019-2020", catalog.GetSeasonsForLeague(league));
+        }
+    }
+
+    [Fact]
     public void FiveThirtyEightNbaCoverageFillsPreApiSportsRange()
     {
         var catalog = new BackfillCatalog();

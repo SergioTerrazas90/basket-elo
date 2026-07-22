@@ -9,12 +9,12 @@ public class BackfillCatalog : IBackfillCatalog
     [
         new("fivethirtyeight", "United States", "NBA", "United States: NBA", "1946-1947", EndSeason: "2007-2008", EloPoolKey: EloPoolKeys.Nba),
         new("api-sports", "USA", "NBA", "United States: NBA", "2008-2009", EndSeason: "2025-2026", EloPoolKey: EloPoolKeys.Nba),
-        new("api-sports", "Spain", "ACB", "Spain: ACB", "2008-2009", EndSeason: "2025-2026"),
+        new("api-sports", "Spain", "ACB", "Spain: ACB", "2008-2009", EndSeason: "2025-2026", ExcludedSeasons: ["2019-2020"]),
         new("api-sports", "Spain", "Spanish Cup", "Spain: Copa del Rey", "2008", CompetitionType: "domestic_cup"),
         new("api-sports", "Spain", "Supercopa ACB", "Spain: Supercopa ACB", "2010", CompetitionType: "domestic_cup", EndSeason: "2025"),
-        new("api-sports", "Europe", "Euroleague", "International: Euroleague", "2008-2009", EndSeason: "2025-2026"),
-        new("api-sports", "Europe", "Eurocup", "International: EuroCup", "2008-2009", EndSeason: "2025-2026"),
-        new("api-sports", "Europe", "ABA League", "International: ABA League", "2008-2009", EndSeason: "2025-2026"),
+        new("api-sports", "Europe", "Euroleague", "International: Euroleague", "2008-2009", EndSeason: "2025-2026", ExcludedSeasons: ["2019-2020"]),
+        new("api-sports", "Europe", "Eurocup", "International: EuroCup", "2008-2009", EndSeason: "2025-2026", ExcludedSeasons: ["2019-2020"]),
+        new("api-sports", "Europe", "ABA League", "International: ABA League", "2008-2009", EndSeason: "2025-2026", ExcludedSeasons: ["2019-2020"]),
         new("api-sports", "Europe", "ABA Supercup", "International: ABA Supercup", "2017", CompetitionType: "international_cup", EndSeason: "2023"),
         new("api-sports", "Europe", "Alpe Adria Cup", "International: Alpe Adria Cup", "2015", CompetitionType: "international", EndSeason: "2023"),
         new("api-sports", "Europe", "Baltic League", "International: Baltic League", "2009", CompetitionType: "international", EndSeason: "2017"),
@@ -29,7 +29,8 @@ public class BackfillCatalog : IBackfillCatalog
                 new("Europe", "BIBL", "bibl")
             ],
             CompetitionType: "international",
-            EndSeason: "2023"),
+            EndSeason: "2023",
+            ExcludedSeasons: ["2019-2020"]),
         new(
             "api-sports",
             "Europe",
@@ -42,7 +43,7 @@ public class BackfillCatalog : IBackfillCatalog
             ],
             CompetitionType: "international",
             EndSeason: "2025-2026"),
-        new("api-sports", "Europe", "Champions League", "International: Basketball Champions League", "2016-2017", EndSeason: "2025-2026"),
+        new("api-sports", "Europe", "Champions League", "International: Basketball Champions League", "2016-2017", EndSeason: "2025-2026", ExcludedSeasons: ["2019-2020"]),
         new(
             "api-sports",
             "Europe",
@@ -193,7 +194,9 @@ public class BackfillCatalog : IBackfillCatalog
     {
         if (league.ExplicitSeasons is not null)
         {
-            return league.ExplicitSeasons;
+            return league.ExplicitSeasons
+                .Where(season => !IsExcluded(league, season))
+                .ToArray();
         }
 
         var startYear = SeasonLabelNormalizer.ParseStartYear(league.StartSeason);
@@ -207,8 +210,13 @@ public class BackfillCatalog : IBackfillCatalog
             seasons.Add($"{year}-{year + 1}");
         }
 
-        return seasons;
+        return seasons
+            .Where(season => !IsExcluded(league, season))
+            .ToArray();
     }
+
+    private static bool IsExcluded(ConfiguredBackfillLeague league, string season)
+        => league.ExcludedSeasons?.Contains(season, StringComparer.OrdinalIgnoreCase) == true;
 
     private static int GetCurrentSeasonStartYear()
     {

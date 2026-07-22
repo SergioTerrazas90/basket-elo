@@ -116,6 +116,11 @@
     font-size: 1.22rem;
 }
 
+.review-summary-card {
+    border-color: rgba(181, 84, 49, 0.34);
+    background: var(--color-rust-soft);
+}
+
 .table-section {
     display: flex;
     flex-direction: column;
@@ -155,6 +160,68 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
+}
+
+.game-actions {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.source-game-id {
+    display: block;
+    color: var(--color-subtle);
+    font-size: 0.72rem;
+}
+
+.game-result-editor {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(80px, 1fr));
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+}
+
+.game-result-editor label {
+    display: grid;
+    gap: 0.2rem;
+    color: var(--color-subtle);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.game-result-editor-actions {
+    display: flex;
+    align-items: end;
+    gap: var(--space-2);
+}
+
+.game-review-details {
+    min-width: 13rem;
+    color: var(--color-rust);
+}
+
+.game-review-details summary {
+    cursor: pointer;
+    font-weight: 780;
+}
+
+.game-review-details ul {
+    margin: 0.45rem 0 0;
+    padding-left: 1.1rem;
+}
+
+.game-review-details li {
+    margin-bottom: 0.25rem;
+}
+
+.muted-cell {
+    color: var(--color-subtle);
 }
 
 .explanation-error-indicator {

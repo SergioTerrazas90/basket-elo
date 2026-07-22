@@ -63,6 +63,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             .Where(x =>
                 x.GameDateTimeUtc >= fromUtc &&
                 x.GameDateTimeUtc <= toUtc &&
+                x.EloEligible &&
                 x.HomeScore.HasValue &&
                 x.AwayScore.HasValue &&
                 x.HomeScore != x.AwayScore);

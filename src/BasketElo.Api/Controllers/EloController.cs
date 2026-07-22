@@ -1939,11 +1939,11 @@ public class EloController(
 
         SetSingleYearSeasonLabels(normalized, out var previousSingleYearSeasonLabel, out var currentSingleYearSeasonLabel);
         return query.Where(x =>
+            x.Game.Season.Label == normalized ||
+            x.Game.Season.Label == currentSingleYearSeasonLabel ||
             (x.GameDateTimeUtc >= seasonStartUtc &&
              x.GameDateTimeUtc <= seasonEndUtc &&
-             x.Game.Season.Label != previousSingleYearSeasonLabel) ||
-            (x.Game.Season.Label == currentSingleYearSeasonLabel &&
-             x.GameDateTimeUtc > seasonEndUtc));
+             x.Game.Season.Label != previousSingleYearSeasonLabel));
     }
 
     private static string NormalizeSeasonLabel(string season, DateTime? gameDateTimeUtc = null)

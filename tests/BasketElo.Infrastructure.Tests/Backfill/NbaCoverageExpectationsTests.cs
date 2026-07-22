@@ -68,6 +68,87 @@ public class NbaCoverageExpectationsTests
         Assert.Contains(low.InspectionReasons, reason => reason.Contains("vs median 100", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task ProviderCoverageDoesNotCountFallbackGamesFromAnotherSource()
+    {
+        await using var dbContext = CreateDbContext();
+        var catalog = new SelectedSeasonCatalog(
+            new ConfiguredBackfillLeague(
+                "fiba",
+                "Africa",
+                "FIBA AfroBasket",
+                "FIBA: AfroBasket",
+                "1962",
+                ExplicitSeasons: ["1962"],
+                UsesSingleYearSeasonLabel: true),
+            ["1962"]);
+        var competition = await SeedCompetitionAsync(dbContext, "FIBA AfroBasket", "AFR");
+        dbContext.CompetitionAliases.Add(new CompetitionAlias
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Source = "fiba",
+            SourceCompetitionId = "179-fiba-afrobasket",
+            AliasName = "FIBA AfroBasket"
+        });
+        var season = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Label = "1962",
+            StartDateUtc = new DateTime(1962, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(1962, 12, 31, 23, 59, 59, DateTimeKind.Utc)
+        };
+        dbContext.Seasons.Add(season);
+        dbContext.BackfillJobs.Add(new BackfillJob
+        {
+            Id = Guid.NewGuid(),
+            Provider = "fiba",
+            Country = "Africa",
+            LeagueName = "FIBA AfroBasket",
+            Season = "1962",
+            Status = BackfillJobStatus.CompletedWithWarnings,
+            DryRun = false,
+            WarningCount = 1,
+            FinishedAtUtc = DateTime.UtcNow
+        });
+        dbContext.Games.AddRange(
+            new Game
+            {
+                Id = Guid.NewGuid(),
+                Source = "fiba",
+                SourceGameId = "fiba-1",
+                CompetitionId = competition.Id,
+                SeasonId = season.Id,
+                GameDateTimeUtc = season.StartDateUtc,
+                HomeTeamId = Guid.NewGuid(),
+                AwayTeamId = Guid.NewGuid(),
+                HomeScore = 70,
+                AwayScore = 60,
+                Status = "finished"
+            },
+            new Game
+            {
+                Id = Guid.NewGuid(),
+                Source = "global-sports-archive",
+                SourceGameId = "gsa-1",
+                CompetitionId = competition.Id,
+                SeasonId = season.Id,
+                GameDateTimeUtc = season.StartDateUtc,
+                HomeTeamId = Guid.NewGuid(),
+                AwayTeamId = Guid.NewGuid(),
+                HomeScore = 70,
+                AwayScore = 60,
+                Status = "finished"
+            });
+        await dbContext.SaveChangesAsync();
+
+        var response = await new BackfillCoverageService(dbContext, catalog)
+            .GetCoverageAsync("fiba", "Africa", "FIBA AfroBasket", CancellationToken.None);
+
+        Assert.Equal(1, Row(response, "1962").GameCount);
+    }
+
     private static BasketEloDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()

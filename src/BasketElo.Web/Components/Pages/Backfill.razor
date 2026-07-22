@@ -3,6 +3,8 @@
 @rendermode InteractiveServer
 @using BasketElo.Domain.Backfill
 @inject HttpClient Http
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>Backfill Coverage</PageTitle>
 
@@ -101,10 +103,13 @@
                 <span class="summary-label">Missing</span>
                 <strong>@FilteredRows.Count(x => x.CoverageStatus == "not_started")</strong>
             </div>
-            <div class="summary-card inspection-card">
+            <button class="summary-card summary-card-button inspection-card @(NeedsInspectionFilterActive ? "selected" : null)"
+                    type="button"
+                    @onclick="ShowNeedsInspection">
                 <span class="summary-label">Needs Inspection</span>
                 <strong>@FilteredRows.Count(x => x.NeedsInspection)</strong>
-            </div>
+                <span class="summary-action">Click to show flagged seasons</span>
+            </button>
             <div class="summary-card reviewed-card">
                 <span class="summary-label">Reviewed Flags</span>
                 <strong>@FilteredRows.Count(x => !string.IsNullOrWhiteSpace(x.InspectionStatus))</strong>
@@ -240,7 +245,7 @@
                             <th>Inspect</th>
                             <th>Data</th>
                             <th>Games</th>
-                            <th>Action</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -323,13 +328,37 @@
                                     }
                                 </td>
                                 <td>@(row.DataPresent ? "Yes" : "No")</td>
-                                <td>@row.GameCount</td>
                                 <td>
-                                    <button class="btn btn-sm btn-primary"
-                                            @onclick="() => TriggerSeasonAsync(row)"
-                                            disabled="@isBusy">
-                                        Trigger season
-                                    </button>
+                                    @if (row.GameCount > 0)
+                                    {
+                                        <a class="game-link" href="@GamesUri(row)">View @row.GameCount</a>
+                                    }
+                                    else
+                                    {
+                                        <span>0</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="row-actions">
+                                        @if (row.GameCount > 0)
+                                        {
+                                            <a class="btn btn-sm btn-outline-secondary" href="@ReviewGamesUri(row)">Review games</a>
+                                        }
+                                        <button class="btn btn-sm btn-primary"
+                                                @onclick="() => TriggerSeasonAsync(row)"
+                                                disabled="@isBusy">
+                                            @SeasonActionLabel(row)
+                                        </button>
+                                        @if (row.LatestJobId is not null)
+                                        {
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    @onclick="() => RemoveBackfillAsync(row)"
+                                                    disabled="@(isBusy || !CanRemoveBackfill(row))"
+                                                    title="Remove only pending, failed, or unresolved warning jobs">
+                                                Remove backfill
+                                            </button>
+                                        }
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -393,6 +422,15 @@
     private IReadOnlyCollection<LeagueSummary> AllLeagueSummaries => SummarizeLeagues(rows);
 
     private IReadOnlyCollection<LeagueSummary> LeagueSummaries => SummarizeLeagues(FilteredRows);
+
+    private bool NeedsInspectionFilterActive =>
+        selectedInspection == "active" && string.IsNullOrWhiteSpace(selectedStatus);
+
+    private void ShowNeedsInspection()
+    {
+        selectedStatus = null;
+        selectedInspection = "active";
+    }
 
     private static IReadOnlyCollection<LeagueSummary> SummarizeLeagues(IEnumerable<BackfillCoverageRow> source) => source
         .GroupBy(x => x.DisplayName)
@@ -494,6 +532,47 @@
                 MaxRequests = maxRequests
             },
             $"Queued {row.DisplayName} {row.Season}.");
+    }
+
+    private async Task RemoveBackfillAsync(BackfillCoverageRow row)
+    {
+        if (row.LatestJobId is null || !CanRemoveBackfill(row))
+        {
+            return;
+        }
+
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Remove the {row.DisplayName} {row.Season} backfill job? Imported games will not be deleted.");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        isBusy = true;
+        feedbackMessage = null;
+        try
+        {
+            var response = await Http.DeleteAsync($"api/backfill/jobs/{row.LatestJobId.Value}");
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body);
+            }
+
+            feedbackIsError = false;
+            feedbackMessage = $"Removed {row.DisplayName} {row.Season} backfill job.";
+            await RefreshAsync(preserveFeedback: true);
+        }
+        catch (Exception ex)
+        {
+            feedbackIsError = true;
+            feedbackMessage = $"Action failed: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
     }
 
     private async Task TriggerLeagueAsync(LeagueSummary league)
@@ -625,6 +704,31 @@
     };
 
     private static string FormatDate(DateTime? value) => value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
+
+    private string GamesUri(BackfillCoverageRow row)
+        => Navigation.GetUriWithQueryParameters("/games", new Dictionary<string, object?>
+        {
+            ["source"] = row.Provider,
+            ["league"] = row.LeagueName,
+            ["season"] = row.Season
+        });
+
+    private string ReviewGamesUri(BackfillCoverageRow row)
+        => Navigation.GetUriWithQueryParameters("/games", new Dictionary<string, object?>
+        {
+            ["source"] = row.Provider,
+            ["league"] = row.LeagueName,
+            ["season"] = row.Season,
+            ["review"] = "needs_review"
+        });
+
+    private static string SeasonActionLabel(BackfillCoverageRow row)
+        => row.CoverageStatus is "failed" or "not_started" or "no_data" ? "Retry season" : "Refresh season";
+
+    private static bool CanRemoveBackfill(BackfillCoverageRow row) =>
+        row.LatestJobId is not null &&
+        (row.LatestJobStatus is "pending" or "failed" or "completed_with_warnings") &&
+        !string.Equals(row.InspectionStatus, "resolved", StringComparison.OrdinalIgnoreCase);
 
     private static string StatusClass(string status) => status switch
     {

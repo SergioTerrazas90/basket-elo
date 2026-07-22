@@ -89,13 +89,26 @@ public class BackfillCoverageService(
             .ToListAsync(cancellationToken);
 
         var latestJobs = jobs
-            .GroupBy(x => $"{x.Provider}|{x.Country}|{x.LeagueName}|{x.Season}")
+            .GroupBy(x =>
+            {
+                var league = configuredLeagues.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Provider, x.Provider, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(candidate.Country, x.Country, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(candidate.LeagueName, x.LeagueName, StringComparison.OrdinalIgnoreCase));
+                var season = SeasonLabelNormalizer.ToCanonicalSeasonLabel(
+                    x.Season,
+                    league?.UsesSingleYearSeasonLabel == true);
+                return $"{x.Provider}|{x.Country}|{x.LeagueName}|{season}";
+            })
             .ToDictionary(
                 x => x.Key,
                 x => x.OrderByDescending(j => j.CreatedAtUtc).First());
 
-        var gameCountsBySeasonId = games
-            .GroupBy(game => game.SeasonId)
+        // A competition can have multiple provider aliases (for example, FIBA plus
+        // Global Sports Archive fallbacks). Coverage is provider-specific, so do not
+        // let the fallback rows inflate the count shown for the FIBA row, or vice versa.
+        var gameCountsBySeasonAndSource = games
+            .GroupBy(game => (game.SeasonId, game.Source))
             .ToDictionary(group => group.Key, group => group.Count());
 
         var rowCandidates = new List<BackfillCoverageCandidate>();
@@ -111,9 +124,15 @@ public class BackfillCoverageService(
 
                 var gameCount = seasons
                     .Where(s => competitionIds.Contains(s.CompetitionId) && string.Equals(s.Label, season, StringComparison.OrdinalIgnoreCase))
-                    .Sum(s => gameCountsBySeasonId.GetValueOrDefault(s.Id));
+                    .Sum(s => gameCountsBySeasonAndSource.GetValueOrDefault((s.Id, league.Provider)));
                 var dataPresent = gameCount > 0;
-                var coverageStatus = ComputeCoverageStatus(latestJob, dataPresent);
+                var coverageStatus = ComputeCoverageStatus(
+                    latestJob,
+                    dataPresent,
+                    league.Provider,
+                    league.Country,
+                    league.LeagueName,
+                    season);
 
                 rowCandidates.Add(new BackfillCoverageCandidate(
                     league.Provider,
@@ -145,11 +164,19 @@ public class BackfillCoverageService(
             .ToList());
     }
 
-    private static string ComputeCoverageStatus(BackfillJob? job, bool dataPresent)
+    private static string ComputeCoverageStatus(
+        BackfillJob? job,
+        bool dataPresent,
+        string provider,
+        string country,
+        string leagueName,
+        string season)
     {
         if (job is null)
         {
-            return dataPresent ? "partial" : "not_started";
+            return dataPresent && IsImportedEuroBasketPreQualifier(provider, country, leagueName, season)
+                ? "completed"
+                : dataPresent ? "partial" : "not_started";
         }
 
         return job.Status switch
@@ -165,6 +192,16 @@ public class BackfillCoverageService(
             _ => dataPresent ? "partial" : "not_started"
         };
     }
+
+    private static bool IsImportedEuroBasketPreQualifier(
+        string provider,
+        string country,
+        string leagueName,
+        string season)
+        => string.Equals(provider, GlobalSportsArchiveBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(country, "Europe", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(leagueName, "FIBA EuroBasket Pre-Qualifiers", StringComparison.OrdinalIgnoreCase)
+            && season is "2021" or "2025";
 
     private static IReadOnlyCollection<string> ExtractWarnings(BackfillJob? job)
     {

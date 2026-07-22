@@ -19,7 +19,11 @@ public record BasketballProviderGame(
     short? HomeScore,
     short? AwayScore,
     BasketballProviderGameProvenance? Provenance = null,
-    string? ExclusionReason = null);
+    string? ExclusionReason = null,
+    string? CompetitionPhase = null,
+    string? CompetitionRound = null,
+    string? SourceHomeTeamCountryCode = null,
+    string? SourceAwayTeamCountryCode = null);
 
 public sealed record BasketballProviderGameProvenance(
     string? SourceUrl,
@@ -34,7 +38,9 @@ public class BackfillExecutionContext(int maxRequests, int requestsUsed)
 
     public int RequestsUsed { get; private set; } = requestsUsed;
 
-    public bool CanUseRequest() => RequestsUsed < MaxRequests;
+    // A non-positive limit means unlimited. This is required for archive
+    // tournaments whose stage and gameweek/page counts are discovered at run time.
+    public bool CanUseRequest() => MaxRequests <= 0 || RequestsUsed < MaxRequests;
 
     public void ConsumeRequest()
     {

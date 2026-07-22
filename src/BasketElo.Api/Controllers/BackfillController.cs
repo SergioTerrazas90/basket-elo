@@ -42,12 +42,14 @@ public class BackfillController(
         if (string.IsNullOrWhiteSpace(request.Provider) ||
             (!string.Equals(request.Provider, ApiSportsBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, BasketballReferenceBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
-             !string.Equals(request.Provider, FiveThirtyEightBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase)))
+             !string.Equals(request.Provider, FiveThirtyEightBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, GlobalSportsArchiveBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase)))
         {
-            return BadRequest("Supported providers are 'api-sports', 'basketball-reference' and 'fivethirtyeight'.");
+            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba' and 'global-sports-archive'.");
         }
 
-        var job = BuildJob(request);
+        var job = BuildJob(request, FindConfiguredLeague(request.Provider, request.Country, request.LeagueName));
 
         dbContext.BackfillJobs.Add(job);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -63,6 +65,49 @@ public class BackfillController(
             maxRequests = job.MaxRequests,
             status = job.Status
         });
+    }
+
+    [HttpDelete("jobs/{jobId:guid}")]
+    public async Task<IActionResult> RemoveBackfillJob(Guid jobId, CancellationToken cancellationToken)
+    {
+        var job = await dbContext.BackfillJobs
+            .FirstOrDefaultAsync(x => x.Id == jobId, cancellationToken);
+        if (job is null)
+        {
+            return NotFound("Backfill job was not found.");
+        }
+
+        if (!CanRemoveBackfillJob(job.Status))
+        {
+            return Conflict("Only pending, failed, or unresolved completed-with-warnings backfills can be removed.");
+        }
+
+        var configuredLeague = FindConfiguredLeague(job.Provider, job.Country, job.LeagueName);
+        var season = SeasonLabelNormalizer.ToCanonicalSeasonLabel(
+            job.Season,
+            configuredLeague?.UsesSingleYearSeasonLabel == true);
+        var decision = await dbContext.BackfillInspectionDecisions
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Provider == job.Provider &&
+                    x.Country == job.Country &&
+                    x.LeagueName == job.LeagueName &&
+                    x.Season == season,
+                cancellationToken);
+        if (decision?.Status == BackfillInspectionStatus.Resolved)
+        {
+            return Conflict("A resolved backfill cannot be removed.");
+        }
+
+        if (decision is not null)
+        {
+            dbContext.BackfillInspectionDecisions.Remove(decision);
+        }
+
+        dbContext.BackfillJobs.Remove(job);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return NoContent();
     }
 
     [HttpPost("coverage/decisions")]
@@ -88,7 +133,10 @@ public class BackfillController(
         var provider = request.Provider.Trim().ToLowerInvariant();
         var country = request.Country.Trim();
         var leagueName = request.LeagueName.Trim();
-        var season = SeasonLabelNormalizer.ToFullSeasonLabel(request.Season);
+        var configuredLeague = FindConfiguredLeague(request.Provider, request.Country, request.LeagueName);
+        var season = SeasonLabelNormalizer.ToCanonicalSeasonLabel(
+            request.Season,
+            configuredLeague?.UsesSingleYearSeasonLabel == true);
 
         var decision = await dbContext.BackfillInspectionDecisions
             .FirstOrDefaultAsync(
@@ -208,26 +256,35 @@ public class BackfillController(
             return NotFound("Configured league was not found in the backfill catalog.");
         }
 
-        var requestedSeasons = Enumerable.Range(startYear, endYear - startYear + 1)
-            .Select(year => $"{year}-{year + 1}")
-            .ToList();
+        var requestedYears = Enumerable.Range(startYear, endYear - startYear + 1).ToList();
         var routes = new List<(ConfiguredBackfillLeague League, string Season)>();
-        foreach (var season in requestedSeasons)
+        foreach (var year in requestedYears)
         {
             var matchingLeagues = leagues
-                .Where(league => backfillCatalog.GetSeasonsForLeague(league).Contains(season))
+                .Where(league =>
+                {
+                    var season = SeasonLabelNormalizer.ToCanonicalSeasonLabel(
+                        year.ToString(),
+                        league.UsesSingleYearSeasonLabel);
+                    return backfillCatalog.GetSeasonsForLeague(league).Contains(season);
+                })
                 .ToList();
+            var requestedSeason = $"{year}-{year + 1}";
             if (matchingLeagues.Count == 0)
             {
-                return BadRequest($"Season {season} is not configured for this league.");
+                return BadRequest($"Season {requestedSeason} is not configured for this league.");
             }
 
             if (matchingLeagues.Count > 1)
             {
-                return BadRequest($"Season {season} is configured for multiple sources; resolve the catalog overlap before queueing it.");
+                return BadRequest($"Season {requestedSeason} is configured for multiple sources; resolve the catalog overlap before queueing it.");
             }
 
-            routes.Add((matchingLeagues[0], season));
+            routes.Add((
+                matchingLeagues[0],
+                SeasonLabelNormalizer.ToCanonicalSeasonLabel(
+                    requestedSeason,
+                    matchingLeagues[0].UsesSingleYearSeasonLabel)));
         }
 
         var groupedRoutes = routes.GroupBy(x => x.League);
@@ -381,7 +438,7 @@ public class BackfillController(
                 Season = season,
                 DryRun = dryRun,
                 MaxRequests = maxRequests
-            }));
+            }, league));
         }
 
         if (jobs.Count > 0)
@@ -405,7 +462,15 @@ public class BackfillController(
             skippedExisting);
     }
 
-    private static BackfillJob BuildJob(CreateBackfillJobRequest request)
+    private ConfiguredBackfillLeague? FindConfiguredLeague(string provider, string country, string leagueName)
+        => backfillCatalog.GetLeagues().FirstOrDefault(x =>
+            string.Equals(x.Provider, provider, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(x.Country, country, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(x.LeagueName, leagueName, StringComparison.OrdinalIgnoreCase));
+
+    private static BackfillJob BuildJob(
+        CreateBackfillJobRequest request,
+        ConfiguredBackfillLeague? configuredLeague)
     {
         return new BackfillJob
         {
@@ -413,9 +478,14 @@ public class BackfillController(
             Provider = request.Provider.Trim().ToLowerInvariant(),
             Country = request.Country.Trim(),
             LeagueName = request.LeagueName.Trim(),
-            Season = SeasonLabelNormalizer.ToFullSeasonLabel(request.Season),
+            Season = SeasonLabelNormalizer.ToCanonicalSeasonLabel(
+                request.Season,
+                configuredLeague?.UsesSingleYearSeasonLabel == true),
             DryRun = request.DryRun,
-            MaxRequests = request.MaxRequests <= 0 ? 2 : request.MaxRequests,
+            // Zero is an intentional unlimited budget for discovered archives
+            // such as Global Sports Archive; negative values retain the safe
+            // default for malformed/manual requests.
+            MaxRequests = request.MaxRequests < 0 ? 2 : request.MaxRequests,
             Status = BackfillJobStatus.Pending,
             RequestsUsed = 0,
             WarningCount = 0,
@@ -434,4 +504,9 @@ public class BackfillController(
             ? normalized
             : null;
     }
+
+    private static bool CanRemoveBackfillJob(string status) =>
+        status is BackfillJobStatus.Pending or
+            BackfillJobStatus.Failed or
+            BackfillJobStatus.CompletedWithWarnings;
 }

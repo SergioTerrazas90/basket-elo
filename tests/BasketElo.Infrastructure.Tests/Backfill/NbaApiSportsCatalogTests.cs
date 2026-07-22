@@ -114,9 +114,15 @@ public class NbaApiSportsCatalogTests
 
         Assert.Equal(BackfillJobStatus.Completed, job.Status);
         Assert.Equal("USA", (await dbContext.Competitions.SingleAsync()).CountryCode);
-        Assert.Single(await dbContext.Games.ToListAsync());
+        var persistedGames = await dbContext.Games.ToListAsync();
+        Assert.True(
+            persistedGames.Count == 2,
+            string.Join(",", persistedGames.Select(game => $"{game.SourceGameId}:{game.EloEligible}")));
+        Assert.Contains(persistedGames, game => game.EloEligible);
+        var exhibition = Assert.Single(persistedGames, game => !game.EloEligible);
+        Assert.Equal("nba-non-franchise-exhibition", exhibition.EloExclusionReason);
         Assert.Equal(
-            ["Boston Celtics", "New York Knicks"],
+            ["Boston Celtics", "New York Knicks", "Team Stars", "Team World"],
             await dbContext.Teams.OrderBy(team => team.CanonicalName).Select(team => team.CanonicalName).ToListAsync());
         using var summary = JsonDocument.Parse(job.SummaryJson!);
         Assert.Equal(2, summary.RootElement.GetProperty("GamesFetched").GetInt32());

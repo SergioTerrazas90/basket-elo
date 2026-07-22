@@ -15,11 +15,13 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
     [HttpGet]
     public async Task<ActionResult<GameBrowseResponse>> GetGames(
         [FromQuery] string? country,
+        [FromQuery] string? source,
         [FromQuery] string? leagueName,
         [FromQuery] string? season,
         [FromQuery] string? status,
         [FromQuery] string? team,
         [FromQuery] string? search,
+        [FromQuery] string? review,
         [FromQuery] DateTime? fromUtc,
         [FromQuery] DateTime? toUtc,
         [FromQuery] int page = 1,
@@ -45,6 +47,11 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         {
             var countryCodes = GetCountryCodes(country);
             query = query.Where(x => countryCodes.Contains(x.Competition.CountryCode ?? string.Empty));
+        }
+
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            query = query.Where(x => x.Source == source);
         }
 
         if (!string.IsNullOrWhiteSpace(leagueName))
@@ -89,6 +96,11 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             query = query.Where(x => x.GameDateTimeUtc <= toUtc.Value);
         }
 
+        if (!string.IsNullOrWhiteSpace(review))
+        {
+            query = ApplyReviewFilter(query, review, DateTime.UtcNow);
+        }
+
         var filteredCount = await query.CountAsync(cancellationToken);
         var totalCount = await baseQuery.CountAsync(cancellationToken);
         var totalPages = Math.Max(1, (int)Math.Ceiling(filteredCount / (double)pageSize));
@@ -103,6 +115,8 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             {
                 x.Id,
                 x.Source,
+                x.SourceGameId,
+                x.SourceUrl,
                 x.GameDateTimeUtc,
                 x.Competition.CountryCode,
                 LeagueName = x.Competition.Name,
@@ -111,7 +125,9 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
                 AwayTeam = x.AwayTeam.CanonicalName,
                 x.HomeScore,
                 x.AwayScore,
-                x.Status
+                x.Status,
+                x.EloEligible,
+                x.EloExclusionReason
             })
             .ToListAsync(cancellationToken);
 
@@ -119,6 +135,8 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             .Select(x => new GameListItem(
                 x.Id,
                 x.Source,
+                x.SourceGameId,
+                x.SourceUrl,
                 x.GameDateTimeUtc,
                 DisplayCountryFromCode(x.CountryCode),
                 x.LeagueName,
@@ -127,10 +145,22 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
                 x.AwayTeam,
                 x.HomeScore,
                 x.AwayScore,
-                x.Status))
+                x.Status,
+                x.EloEligible,
+                x.EloExclusionReason,
+                GetReviewReasons(x.Status, x.GameDateTimeUtc, x.HomeScore, x.AwayScore, x.EloEligible, x.EloExclusionReason).Count > 0,
+                GetReviewReasons(x.Status, x.GameDateTimeUtc, x.HomeScore, x.AwayScore, x.EloEligible, x.EloExclusionReason)))
             .ToList();
 
-        var filteredSummaryQuery = query.Select(x => new { x.Status, x.GameDateTimeUtc });
+        var filteredSummaryQuery = query.Select(x => new
+        {
+            x.Status,
+            x.GameDateTimeUtc,
+            x.HomeScore,
+            x.AwayScore,
+            x.EloEligible,
+            x.EloExclusionReason
+        });
         var summaryRows = await filteredSummaryQuery.ToListAsync(cancellationToken);
 
         var response = new GameBrowseResponse(
@@ -141,6 +171,7 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
                 filteredCount,
                 summaryRows.Count(x => IsFinishedStatus(x.Status)),
                 summaryRows.Count(x => !IsFinishedStatus(x.Status)),
+                summaryRows.Count(x => GetReviewReasons(x.Status, x.GameDateTimeUtc, x.HomeScore, x.AwayScore, x.EloEligible, x.EloExclusionReason).Count > 0),
                 summaryRows.Count == 0 ? null : summaryRows.Min(x => x.GameDateTimeUtc),
                 summaryRows.Count == 0 ? null : summaryRows.Max(x => x.GameDateTimeUtc)),
             page,
@@ -149,6 +180,54 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             totalPages);
 
         return Ok(response);
+    }
+
+    [HttpPatch("{id:guid}/result")]
+    public async Task<IActionResult> UpdateResult(
+        Guid id,
+        [FromBody] UpdateGameResultRequest request,
+        CancellationToken cancellationToken)
+    {
+        var game = await dbContext.Games.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (game is null)
+        {
+            return NotFound();
+        }
+
+        var status = string.IsNullOrWhiteSpace(request.Status)
+            ? "finished"
+            : request.Status.Trim().ToLowerInvariant();
+        var supportedStatuses = new[] { "finished", "score_pending", "postponed", "cancelled" };
+        if (!supportedStatuses.Contains(status, StringComparer.Ordinal))
+        {
+            return BadRequest(new ProblemDetails { Detail = "Status must be finished, score_pending, postponed, or cancelled." });
+        }
+
+        if (request.HomeScore.HasValue != request.AwayScore.HasValue)
+        {
+            return BadRequest(new ProblemDetails { Detail = "Both scores are required together." });
+        }
+
+        if ((request.HomeScore is < 0) || (request.AwayScore is < 0))
+        {
+            return BadRequest(new ProblemDetails { Detail = "Scores cannot be negative." });
+        }
+
+        if (status == "finished" && (!request.HomeScore.HasValue || !request.AwayScore.HasValue))
+        {
+            return BadRequest(new ProblemDetails { Detail = "A finished game requires both scores." });
+        }
+
+        game.HomeScore = request.HomeScore;
+        game.AwayScore = request.AwayScore;
+        game.Status = status;
+        game.HasManualResultOverride = true;
+        game.EloEligible = status == "finished" && request.HomeScore.HasValue && request.AwayScore.HasValue;
+        game.EloExclusionReason = game.EloEligible ? null : "manual_result_not_eligible";
+        game.UpdatedAtUtc = DateTime.UtcNow;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return NoContent();
     }
 
     private static async Task<GameFilterOptions> BuildFilterOptionsAsync(IQueryable<Domain.Entities.Game> baseQuery, CancellationToken cancellationToken)
@@ -182,12 +261,66 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             countries.Select(DisplayCountryFromCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x).ToList(),
             leagues,
             seasons.Select(x => NormalizeSeasonLabel(x.Label, x.GameDateTimeUtc)).Distinct().OrderByDescending(x => x).ToList(),
-            statuses);
+            statuses,
+            await baseQuery.Select(x => x.Source).Distinct().OrderBy(x => x).ToListAsync(cancellationToken));
+    }
+
+    private static IQueryable<Domain.Entities.Game> ApplyReviewFilter(
+        IQueryable<Domain.Entities.Game> query,
+        string review,
+        DateTime nowUtc)
+    {
+        var cutoff = nowUtc.AddDays(-2);
+
+        return review.Trim().ToLowerInvariant() switch
+        {
+            "needs_review" => query.Where(x =>
+                !x.EloEligible ||
+                ((x.Status.Contains("finished") || x.Status.Contains("after overtime") || x.Status.Contains("after over time") || x.Status.Contains("final")) && (!x.HomeScore.HasValue || !x.AwayScore.HasValue)) ||
+                (!(x.Status.Contains("finished") || x.Status.Contains("after overtime") || x.Status.Contains("after over time") || x.Status.Contains("final")) && x.GameDateTimeUtc < cutoff)),
+            "excluded_from_elo" => query.Where(x => !x.EloEligible),
+            "missing_score" => query.Where(x => (x.Status.Contains("finished") || x.Status.Contains("after overtime") || x.Status.Contains("after over time") || x.Status.Contains("final")) && (!x.HomeScore.HasValue || !x.AwayScore.HasValue)),
+            "stale_status" => query.Where(x => !(x.Status.Contains("finished") || x.Status.Contains("after overtime") || x.Status.Contains("after over time") || x.Status.Contains("final")) && x.GameDateTimeUtc < cutoff),
+            _ => query
+        };
+    }
+
+    private static IReadOnlyCollection<string> GetReviewReasons(
+        string status,
+        DateTime gameDateTimeUtc,
+        short? homeScore,
+        short? awayScore,
+        bool eloEligible,
+        string? eloExclusionReason)
+    {
+        var reasons = new List<string>();
+        if (!eloEligible)
+        {
+            reasons.Add(string.IsNullOrWhiteSpace(eloExclusionReason)
+                ? "Excluded from ELO"
+                : $"Excluded from ELO: {eloExclusionReason}");
+        }
+
+        if (IsFinishedStatus(status) && (!homeScore.HasValue || !awayScore.HasValue))
+        {
+            reasons.Add("Finished game is missing a score");
+        }
+
+        if (!IsFinishedStatus(status) && gameDateTimeUtc < DateTime.UtcNow.AddDays(-2))
+        {
+            reasons.Add("Game date is more than two days old but status is not finished");
+        }
+
+        return reasons;
     }
 
     private static bool IsFinishedStatus(string status)
-        => status.Contains("finished", StringComparison.OrdinalIgnoreCase) ||
-           status.Contains("after overtime", StringComparison.OrdinalIgnoreCase);
+    {
+        var normalized = status.Replace(" ", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
+        return normalized.Contains("finished", StringComparison.Ordinal) ||
+            normalized.Contains("afterovertime", StringComparison.Ordinal) ||
+            normalized is "final" or "completed";
+    }
 
     private static string DisplayCountryFromCode(string? countryCode)
     {
@@ -257,11 +390,11 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
 
         SetSingleYearSeasonLabels(normalized, out var previousSingleYearSeasonLabel, out var currentSingleYearSeasonLabel);
         return query.Where(x =>
+            x.Season.Label == normalized ||
+            x.Season.Label == currentSingleYearSeasonLabel ||
             (x.GameDateTimeUtc >= seasonStartUtc &&
              x.GameDateTimeUtc <= seasonEndUtc &&
-             x.Season.Label != previousSingleYearSeasonLabel) ||
-            (x.Season.Label == currentSingleYearSeasonLabel &&
-             x.GameDateTimeUtc > seasonEndUtc));
+             x.Season.Label != previousSingleYearSeasonLabel));
     }
 
     private static string NormalizeSeasonLabel(string season, DateTime? gameDateTimeUtc = null)

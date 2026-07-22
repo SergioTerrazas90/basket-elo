@@ -42,11 +42,35 @@ public static class DependencyInjection
             client.BaseAddress = new Uri(providerOptions.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(30);
         });
+        services.AddHttpClient<FibaBasketballDataProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://www.fiba.basketball");
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
+        services.AddHttpClient<WikipediaEuroBasketQualificationDataProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://en.wikipedia.org");
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
+        services.AddHttpClient<GlobalSportsArchiveBasketballDataProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://globalsportsarchive.com");
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
 
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<ApiSportsBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<BasketballReferenceBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<FibaBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<WikipediaEuroBasketQualificationDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<GlobalSportsArchiveBasketballDataProvider>());
         services.AddSingleton<FiveThirtyEightBasketballDataProvider>();
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<FiveThirtyEightBasketballDataProvider>());

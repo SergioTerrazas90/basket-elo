@@ -1,6 +1,7 @@
 @page "/games"
 @attribute [Authorize(Roles = "admin")]
 @rendermode InteractiveServer
+@using System.Globalization
 @using System.Text.Json
 @using BasketElo.Domain.Elo
 @using BasketElo.Domain.Games
@@ -26,6 +27,13 @@
     {
         <div class="alert alert-danger" role="alert">
             @errorMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="alert alert-success" role="alert">
+            @successMessage
         </div>
     }
 
@@ -74,6 +82,17 @@
         </div>
 
         <div class="filter-field">
+            <label for="sourceFilter">Source</label>
+            <select id="sourceFilter" class="form-select" @bind="selectedSource">
+                <option value="">All</option>
+                @foreach (var option in response?.Filters.Sources ?? [])
+                {
+                    <option value="@option">@option</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-field">
             <label for="statusFilter">Status</label>
             <select id="statusFilter" class="form-select" @bind="selectedStatus">
                 <option value="">All</option>
@@ -81,6 +100,17 @@
                 {
                     <option value="@option">@option</option>
                 }
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="reviewFilter">Review</label>
+            <select id="reviewFilter" class="form-select" @bind="selectedReview">
+                <option value="">All games</option>
+                <option value="needs_review">Needs review</option>
+                <option value="excluded_from_elo">Excluded from ELO</option>
+                <option value="missing_score">Missing score</option>
+                <option value="stale_status">Old non-final status</option>
             </select>
         </div>
 
@@ -128,6 +158,10 @@
                 <span class="summary-label">Scheduled / Other</span>
                 <strong>@response.Summary.ScheduledGames</strong>
             </div>
+            <div class="summary-card @(response.Summary.ReviewGames > 0 ? "review-summary-card" : null)">
+                <span class="summary-label">Needs Review</span>
+                <strong>@response.Summary.ReviewGames</strong>
+            </div>
             <div class="summary-card">
                 <span class="summary-label">Date Span</span>
                 <strong>@FormatDateSpan(response.Summary.FirstGameUtc, response.Summary.LastGameUtc)</strong>
@@ -163,6 +197,7 @@
                             <th>Score</th>
                             <th>Status</th>
                             <th>Source</th>
+                            <th>Review</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -170,7 +205,7 @@
                         @if (response.Games.Count == 0)
                         {
                             <tr>
-                                <td colspan="9" class="empty-state">No games match the current filters.</td>
+                                <td colspan="10" class="empty-state">No games match the current filters.</td>
                             </tr>
                         }
                         else
@@ -191,12 +226,50 @@
                                     </td>
                                     <td>@FormatScore(game)</td>
                                     <td><span class="status-pill @StatusClass(game.Status)">@game.Status</span></td>
-                                    <td>@game.Source</td>
                                     <td>
-                                        <div class="explain-action">
+                                        @if (!string.IsNullOrWhiteSpace(game.SourceUrl))
+                                        {
+                                            <a href="@game.SourceUrl" target="_blank" rel="noopener noreferrer">@game.Source</a>
+                                        }
+                                        else
+                                        {
+                                            @game.Source
+                                        }
+                                        <small class="source-game-id">@game.SourceGameId</small>
+                                    </td>
+                                    <td>
+                                        @if (game.NeedsReview)
+                                        {
+                                            <details class="game-review-details">
+                                                <summary>Review</summary>
+                                                <ul>
+                                                    @foreach (var reason in game.ReviewReasons)
+                                                    {
+                                                        <li>@reason</li>
+                                                    }
+                                                </ul>
+                                            </details>
+                                        }
+                                        else
+                                        {
+                                            <span class="muted-cell">-</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <div class="game-actions">
                                             <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => LoadExplanationAsync(game.Id)" disabled="@IsExplanationLoading(game.Id)">
                                                 @(IsExplanationLoading(game.Id) ? "Loading" : "Explain")
                                             </button>
+                                            @if (game.NeedsReview)
+                                            {
+                                                <a class="btn btn-sm btn-outline-secondary" href="@IdentityReviewUri(game)">Identity review</a>
+                                            }
+                                            @if (CanEditResult(game))
+                                            {
+                                                <button type="button" class="btn btn-sm btn-outline-warning" @onclick="() => BeginResultEdit(game)" disabled="@isBusy">
+                                                    @(editingGameId == game.Id ? "Editing" : "Edit result")
+                                                </button>
+                                            }
                                             @if (HasExplanationError(game.Id))
                                             {
                                                 <span class="explanation-error-indicator"
@@ -209,6 +282,32 @@
                                                 </span>
                                             }
                                         </div>
+                                        @if (editingGameId == game.Id)
+                                        {
+                                            <div class="game-result-editor">
+                                                <label>
+                                                    Home
+                                                    <input class="form-control form-control-sm" type="number" min="0" @bind="editingHomeScore" />
+                                                </label>
+                                                <label>
+                                                    Away
+                                                    <input class="form-control form-control-sm" type="number" min="0" @bind="editingAwayScore" />
+                                                </label>
+                                                <label>
+                                                    Status
+                                                    <select class="form-select form-select-sm" @bind="editingStatus">
+                                                        <option value="finished">Finished</option>
+                                                        <option value="score_pending">Score pending</option>
+                                                        <option value="postponed">Postponed</option>
+                                                        <option value="cancelled">Cancelled</option>
+                                                    </select>
+                                                </label>
+                                                <div class="game-result-editor-actions">
+                                                    <button type="button" class="btn btn-sm btn-primary" @onclick="SaveResultAsync" disabled="@isBusy">Save result</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelResultEdit" disabled="@isBusy">Cancel</button>
+                                                </div>
+                                            </div>
+                                        }
                                     </td>
                                 </tr>
                             }
@@ -232,6 +331,9 @@
     [SupplyParameterFromQuery(Name = "country")]
     public string? Country { get; set; }
 
+    [SupplyParameterFromQuery(Name = "source")]
+    public string? Source { get; set; }
+
     [SupplyParameterFromQuery(Name = "league")]
     public string? League { get; set; }
 
@@ -240,6 +342,9 @@
 
     [SupplyParameterFromQuery(Name = "status")]
     public string? Status { get; set; }
+
+    [SupplyParameterFromQuery(Name = "review")]
+    public string? Review { get; set; }
 
     [SupplyParameterFromQuery(Name = "team")]
     public string? Team { get; set; }
@@ -262,10 +367,13 @@
     private GameBrowseResponse? response;
     private bool isBusy;
     private string? errorMessage;
+    private string? successMessage;
     private string? selectedCountry;
+    private string? selectedSource;
     private string? selectedLeague;
     private string? selectedSeason;
     private string? selectedStatus;
+    private string? selectedReview;
     private string? team;
     private string? search;
     private DateTime? fromDate;
@@ -278,6 +386,10 @@
     private EloGameExplanationResponse? selectedExplanation;
     private bool isExplanationLoading;
     private string? explanationError;
+    private Guid? editingGameId;
+    private string editingHomeScore = string.Empty;
+    private string editingAwayScore = string.Empty;
+    private string editingStatus = "finished";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -288,9 +400,11 @@
         }
 
         selectedCountry = Country;
+        selectedSource = Source;
         selectedLeague = League;
         selectedSeason = Season;
         selectedStatus = Status;
+        selectedReview = Review;
         team = Team;
         search = Search;
         fromDate = From;
@@ -342,9 +456,11 @@
     private Task ResetFiltersAsync()
     {
         selectedCountry = null;
+        selectedSource = null;
         selectedLeague = null;
         selectedSeason = null;
         selectedStatus = null;
+        selectedReview = null;
         team = null;
         search = null;
         fromDate = null;
@@ -359,6 +475,7 @@
     {
         isBusy = true;
         errorMessage = null;
+        successMessage = null;
 
         try
         {
@@ -388,9 +505,11 @@
         var query = new Dictionary<string, object?>
         {
             ["country"] = selectedCountry,
+            ["source"] = selectedSource,
             ["league"] = selectedLeague,
             ["season"] = selectedSeason,
             ["status"] = selectedStatus,
+            ["review"] = selectedReview,
             ["team"] = team,
             ["search"] = search,
             ["from"] = fromDate?.ToString("yyyy-MM-dd"),
@@ -411,9 +530,11 @@
         };
 
         Append(query, "country", selectedCountry);
+        Append(query, "source", selectedSource);
         Append(query, "leagueName", selectedLeague);
         Append(query, "season", selectedSeason);
         Append(query, "status", selectedStatus);
+        Append(query, "review", selectedReview);
         Append(query, "team", team);
         Append(query, "search", search);
         Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));
@@ -466,6 +587,77 @@
         explanationError = null;
         isExplanationLoading = false;
     }
+
+    private static bool CanEditResult(GameListItem game)
+        => !game.EloEligible || !game.HomeScore.HasValue || !game.AwayScore.HasValue;
+
+    private void BeginResultEdit(GameListItem game)
+    {
+        editingGameId = game.Id;
+        editingHomeScore = game.HomeScore?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        editingAwayScore = game.AwayScore?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        editingStatus = game.Status.Contains("finished", StringComparison.OrdinalIgnoreCase) ? "finished" : "score_pending";
+        errorMessage = null;
+        successMessage = null;
+    }
+
+    private void CancelResultEdit()
+    {
+        editingGameId = null;
+        editingHomeScore = string.Empty;
+        editingAwayScore = string.Empty;
+        editingStatus = "finished";
+    }
+
+    private async Task SaveResultAsync()
+    {
+        if (editingGameId is null)
+        {
+            return;
+        }
+
+        short? homeScore = ParseScore(editingHomeScore);
+        short? awayScore = ParseScore(editingAwayScore);
+        if ((homeScore.HasValue != awayScore.HasValue) ||
+            (editingStatus == "finished" && (!homeScore.HasValue || !awayScore.HasValue)))
+        {
+            errorMessage = "Enter both scores before marking the game finished.";
+            return;
+        }
+
+        isBusy = true;
+        errorMessage = null;
+        successMessage = null;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/games/{editingGameId.Value}/result")
+            {
+                Content = JsonContent.Create(new UpdateGameResultRequest(homeScore, awayScore, editingStatus))
+            };
+            using var responseMessage = await Http.SendAsync(request);
+            if (!responseMessage.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(responseMessage));
+            }
+
+            CancelResultEdit();
+            await RefreshAsync();
+            successMessage = "Game result updated. Rebuild the affected ELO pool to include it in ratings.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not update game result: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static short? ParseScore(string value)
+        => short.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var score) && score >= 0
+            ? score
+            : null;
 
     private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage responseMessage)
     {
@@ -525,6 +717,13 @@
         => game.HomeScore.HasValue && game.AwayScore.HasValue
             ? $"{game.HomeScore}-{game.AwayScore}"
             : "-";
+
+    private string IdentityReviewUri(GameListItem game)
+        => Navigation.GetUriWithQueryParameters("/admin/identity", new Dictionary<string, object?>
+        {
+            ["source"] = game.Source,
+            ["season"] = game.Season
+        });
 
     private static string FormatDateSpan(DateTime? first, DateTime? last)
     {

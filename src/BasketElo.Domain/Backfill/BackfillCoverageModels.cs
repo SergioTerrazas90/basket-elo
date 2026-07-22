@@ -11,7 +11,9 @@ public record ConfiguredBackfillLeague(
     IReadOnlyCollection<ConfiguredProviderLeague>? ProviderLeagues = null,
     string? CompetitionType = null,
     string? EndSeason = null,
-    string EloPoolKey = EloPoolKeys.EuropeClubs);
+    string EloPoolKey = EloPoolKeys.EuropeClubs,
+    IReadOnlyCollection<string>? ExplicitSeasons = null,
+    bool UsesSingleYearSeasonLabel = false);
 
 public record ConfiguredProviderLeague(
     string Country,

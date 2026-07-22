@@ -31,7 +31,7 @@ public class EloRebuildService(
                 : null;
 
             var scopedGames = dbContext.Games
-                .Where(x => x.Competition.EloPoolKey == poolKey);
+                .Where(x => x.Competition.EloPoolKey == poolKey && x.EloEligible);
 
             await DeleteExistingRatingsAsync(
                 poolKey,

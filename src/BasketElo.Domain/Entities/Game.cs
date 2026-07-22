@@ -18,6 +18,11 @@ public class Game
     public short? HomeScore { get; set; }
     public short? AwayScore { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string? CompetitionPhase { get; set; }
+    public string? CompetitionRound { get; set; }
+    public bool EloEligible { get; set; } = true;
+    public string? EloExclusionReason { get; set; }
+    public bool HasManualResultOverride { get; set; }
     public DateTime IngestedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 

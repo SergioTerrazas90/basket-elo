@@ -69,6 +69,19 @@
     box-shadow: var(--shadow-sm);
 }
 
+.summary-card-button {
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+}
+
+.summary-card-button:hover,
+.summary-card-button.selected {
+    border-color: var(--color-rust);
+    box-shadow: var(--shadow-md);
+}
+
 .summary-label {
     display: block;
     margin-bottom: 0.35rem;
@@ -80,6 +93,13 @@
 .summary-card strong {
     color: var(--color-text);
     font-size: 1.55rem;
+}
+
+.summary-action {
+    display: block;
+    margin-top: 0.35rem;
+    color: var(--color-subtle);
+    font-size: 0.78rem;
 }
 
 .range-panel {
@@ -249,6 +269,23 @@
 
 .muted-cell {
     color: var(--color-subtle);
+}
+
+.row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.game-link {
+    color: var(--color-brand);
+    font-weight: 760;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.game-link:hover {
+    text-decoration: underline;
 }
 
 @media (max-width: 768px) {

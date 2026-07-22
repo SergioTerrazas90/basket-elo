@@ -216,6 +216,10 @@ database context and records `DatabaseWrites: 0` in JSON output.
 Current-season NBA refresh scheduling, manual queueing, correction handling, and
 the post-refresh Elo workflow are documented in `docs/nba-refresh-operations.md`.
 
+The historical FIBA qualification systems, including the regional changes over
+time and the ingestion/ELO interpretation rules, are documented in
+`docs/international-qualification-systems.md`.
+
 ## Troubleshooting (Windows + Docker)
 
 If `postgres:16-alpine` fails with "no matching manifest for windows/amd64", Docker is in Windows container mode.

@@ -217,6 +217,92 @@ public class NbaBackfillControllerTests
             });
     }
 
+    [Fact]
+    public async Task RemoveBackfillDeletesUnresolvedWarningJobAndInspectionDecision()
+    {
+        await using var dbContext = CreateDbContext();
+        var job = new BackfillJob
+        {
+            Id = Guid.NewGuid(),
+            Provider = FiveThirtyEightBasketballDataProvider.Source,
+            Country = "United States",
+            LeagueName = "NBA",
+            Season = "2020-2021",
+            Status = BackfillJobStatus.CompletedWithWarnings
+        };
+        dbContext.BackfillJobs.Add(job);
+        dbContext.BackfillInspectionDecisions.Add(new BackfillInspectionDecision
+        {
+            Id = Guid.NewGuid(),
+            Provider = job.Provider,
+            Country = job.Country,
+            LeagueName = job.LeagueName,
+            Season = job.Season,
+            Status = BackfillInspectionStatus.ProviderGap
+        });
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateController(dbContext).RemoveBackfillJob(job.Id, CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Empty(await dbContext.BackfillJobs.ToListAsync());
+        Assert.Empty(await dbContext.BackfillInspectionDecisions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task RemoveBackfillRejectsCompletedJob()
+    {
+        await using var dbContext = CreateDbContext();
+        var job = new BackfillJob
+        {
+            Id = Guid.NewGuid(),
+            Provider = FiveThirtyEightBasketballDataProvider.Source,
+            Country = "United States",
+            LeagueName = "NBA",
+            Season = "2020-2021",
+            Status = BackfillJobStatus.Completed
+        };
+        dbContext.BackfillJobs.Add(job);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateController(dbContext).RemoveBackfillJob(job.Id, CancellationToken.None);
+
+        Assert.IsType<ConflictObjectResult>(result);
+        Assert.Single(await dbContext.BackfillJobs.ToListAsync());
+    }
+
+    [Fact]
+    public async Task RemoveBackfillRejectsResolvedWarningJob()
+    {
+        await using var dbContext = CreateDbContext();
+        var job = new BackfillJob
+        {
+            Id = Guid.NewGuid(),
+            Provider = FiveThirtyEightBasketballDataProvider.Source,
+            Country = "United States",
+            LeagueName = "NBA",
+            Season = "2020-2021",
+            Status = BackfillJobStatus.CompletedWithWarnings
+        };
+        dbContext.BackfillJobs.Add(job);
+        dbContext.BackfillInspectionDecisions.Add(new BackfillInspectionDecision
+        {
+            Id = Guid.NewGuid(),
+            Provider = job.Provider,
+            Country = job.Country,
+            LeagueName = job.LeagueName,
+            Season = job.Season,
+            Status = BackfillInspectionStatus.Resolved
+        });
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateController(dbContext).RemoveBackfillJob(job.Id, CancellationToken.None);
+
+        Assert.IsType<ConflictObjectResult>(result);
+        Assert.Single(await dbContext.BackfillJobs.ToListAsync());
+        Assert.Single(await dbContext.BackfillInspectionDecisions.ToListAsync());
+    }
+
     private static BasketEloDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()

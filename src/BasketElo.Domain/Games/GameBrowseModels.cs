@@ -12,6 +12,8 @@ public record GameBrowseResponse(
 public record GameListItem(
     Guid Id,
     string Source,
+    string SourceGameId,
+    string? SourceUrl,
     DateTime GameDateTimeUtc,
     string Country,
     string LeagueName,
@@ -20,18 +22,29 @@ public record GameListItem(
     string AwayTeam,
     short? HomeScore,
     short? AwayScore,
-    string Status);
+    string Status,
+    bool EloEligible,
+    string? EloExclusionReason,
+    bool NeedsReview,
+    IReadOnlyCollection<string> ReviewReasons);
 
 public record GameFilterOptions(
     IReadOnlyCollection<string> Countries,
     IReadOnlyCollection<string> Leagues,
     IReadOnlyCollection<string> Seasons,
-    IReadOnlyCollection<string> Statuses);
+    IReadOnlyCollection<string> Statuses,
+    IReadOnlyCollection<string> Sources);
 
 public record GameBrowseSummary(
     int TotalGames,
     int FilteredGames,
     int FinishedGames,
     int ScheduledGames,
+    int ReviewGames,
     DateTime? FirstGameUtc,
     DateTime? LastGameUtc);
+
+public record UpdateGameResultRequest(
+    short? HomeScore,
+    short? AwayScore,
+    string Status = "finished");

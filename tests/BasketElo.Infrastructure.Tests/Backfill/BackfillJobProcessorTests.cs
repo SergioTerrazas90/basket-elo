@@ -113,6 +113,49 @@ public class BackfillJobProcessorTests
         Assert.Equal(BackfillJobStatus.Completed, laterJob.Status);
     }
 
+    [Fact]
+    public async Task ReimportPreservesManualResultOverrideWhenProviderStillHasNoFinalScore()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var provider = new TestProvider { HomeScore = null, AwayScore = null, Status = "score_pending", ExclusionReason = "source_missing_final_score" };
+        var catalog = new TestCatalog();
+        var processor = new BackfillJobProcessor(
+            dbContext,
+            [provider],
+            new IdentityHealthCheckService(dbContext, catalog),
+            catalog,
+            NullLogger<BackfillJobProcessor>.Instance);
+
+        var firstJob = CreateJob();
+        dbContext.BackfillJobs.Add(firstJob);
+        await dbContext.SaveChangesAsync();
+        Assert.True(await processor.TryProcessNextPendingJobAsync(CancellationToken.None));
+
+        var game = await dbContext.Games.SingleAsync();
+        game.HomeScore = 77;
+        game.AwayScore = 70;
+        game.Status = "finished";
+        game.EloEligible = true;
+        game.EloExclusionReason = null;
+        game.HasManualResultOverride = true;
+        await dbContext.SaveChangesAsync();
+
+        var secondJob = CreateJob();
+        dbContext.BackfillJobs.Add(secondJob);
+        await dbContext.SaveChangesAsync();
+        Assert.True(await processor.TryProcessNextPendingJobAsync(CancellationToken.None));
+
+        var updated = await dbContext.Games.SingleAsync();
+        Assert.Equal((short)77, updated.HomeScore);
+        Assert.Equal((short)70, updated.AwayScore);
+        Assert.Equal("finished", updated.Status);
+        Assert.True(updated.HasManualResultOverride);
+        Assert.True(updated.EloEligible);
+    }
+
     private static BackfillJob CreateJob(string season = "2024-2025", bool dryRun = false) => new()
     {
         Id = Guid.NewGuid(),
@@ -129,8 +172,10 @@ public class BackfillJobProcessorTests
         public const string Source = "test-source";
 
         public string SourceKey => Source;
-        public short HomeScore { get; set; } = 90;
+        public short? HomeScore { get; set; } = 90;
+        public short? AwayScore { get; set; } = 88;
         public string Status { get; set; } = "scheduled";
+        public string? ExclusionReason { get; set; }
         public string? FailSeason { get; set; }
         public BasketballProviderGameProvenance Provenance { get; set; } = new(
             "https://data.example.test/seasons/2024",
@@ -173,8 +218,9 @@ public class BackfillJobProcessorTests
                     "away-1",
                     "Away Club",
                     HomeScore,
-                    88,
-                    Provenance)
+                    AwayScore,
+                    Provenance,
+                    ExclusionReason)
             ];
             return Task.FromResult((games, false, (IReadOnlyCollection<string>)[]));
         }

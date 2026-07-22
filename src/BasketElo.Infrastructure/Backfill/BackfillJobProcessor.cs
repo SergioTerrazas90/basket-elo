@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Elo;
@@ -107,7 +109,8 @@ public class BackfillJobProcessor(
         var filteredGameReasons = new Dictionary<string, int>(StringComparer.Ordinal);
         var warnings = new List<string>();
         var hasMorePages = false;
-        var canonicalSeason = SeasonLabelNormalizer.ToFullSeasonLabel(job.Season);
+        var usesSingleYearSeasonLabel = configuredLeague?.UsesSingleYearSeasonLabel == true;
+        var canonicalSeason = SeasonLabelNormalizer.ToCanonicalSeasonLabel(job.Season, usesSingleYearSeasonLabel);
         if (!string.Equals(job.Season, canonicalSeason, StringComparison.Ordinal))
         {
             job.Season = canonicalSeason;
@@ -167,14 +170,12 @@ public class BackfillJobProcessor(
             warnings.AddRange(gamesResult.Warnings.Select(warning => $"{league.Name}: {warning}"));
             foreach (var game in gamesResult.Games)
             {
-                if (game.ExclusionReason is null)
+                allGames.Add(game);
+                if (game.ExclusionReason is not null)
                 {
-                    allGames.Add(game);
-                    continue;
+                    filteredGameReasons[game.ExclusionReason] =
+                        filteredGameReasons.GetValueOrDefault(game.ExclusionReason) + 1;
                 }
-
-                filteredGameReasons[game.ExclusionReason] =
-                    filteredGameReasons.GetValueOrDefault(game.ExclusionReason) + 1;
             }
         }
 
@@ -197,7 +198,7 @@ public class BackfillJobProcessor(
             Source = provider.SourceKey,
             RequestsUsed = job.RequestsUsed,
             HasMorePages = hasMorePages,
-            GamesFetched = allGames.Count + filteredGameReasons.Values.Sum(),
+            GamesFetched = allGames.Count,
             GamesFiltered = filteredGameReasons.Values.Sum()
         };
         summary.FilteredGameReasons.AddRange(filteredGameReasons
@@ -237,12 +238,20 @@ public class BackfillJobProcessor(
                 await EnsureCompetitionAliasAsync(competition, additionalLeague, cancellationToken);
             }
 
-            var season = await GetOrCreateSeasonAsync(competition, canonicalSeason, cancellationToken);
+            var season = await GetOrCreateSeasonAsync(competition, canonicalSeason, usesSingleYearSeasonLabel, cancellationToken);
 
             foreach (var providerGame in allGames)
             {
-                var homeTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceHomeTeamId, providerGame.HomeTeamName, competition.CountryCode, canonicalSeason, cancellationToken);
-                var awayTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceAwayTeamId, providerGame.AwayTeamName, competition.CountryCode, canonicalSeason, cancellationToken);
+                var homeCountryCode = providerGame.SourceHomeTeamCountryCode ??
+                    (string.Equals(providerGame.Source, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase)
+                        ? FibaBasketballDataProvider.CountryCodeFromTeamId(providerGame.SourceHomeTeamId)
+                        : competition.CountryCode);
+                var awayCountryCode = providerGame.SourceAwayTeamCountryCode ??
+                    (string.Equals(providerGame.Source, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase)
+                        ? FibaBasketballDataProvider.CountryCodeFromTeamId(providerGame.SourceAwayTeamId)
+                        : competition.CountryCode);
+                var homeTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceHomeTeamId, providerGame.HomeTeamName, homeCountryCode, canonicalSeason, cancellationToken);
+                var awayTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceAwayTeamId, providerGame.AwayTeamName, awayCountryCode, canonicalSeason, cancellationToken);
 
                 var existingGame = await dbContext.Games
                     .FirstOrDefaultAsync(x =>
@@ -252,6 +261,25 @@ public class BackfillJobProcessor(
 
                 if (existingGame is null)
                 {
+                    var duplicateAcrossSources = await dbContext.Games
+                        .Where(x =>
+                            x.SeasonId == season.Id &&
+                            x.Source != providerGame.Source &&
+                            x.GameDateTimeUtc >= providerGame.GameDateTimeUtc.Date &&
+                            x.GameDateTimeUtc < providerGame.GameDateTimeUtc.Date.AddDays(1) &&
+                            x.HomeScore == providerGame.HomeScore &&
+                            x.AwayScore == providerGame.AwayScore &&
+                            (x.HomeTeamId == homeTeam.Id ||
+                                (!string.IsNullOrWhiteSpace(homeCountryCode) && x.HomeTeam.CountryCode == homeCountryCode)) &&
+                            (x.AwayTeamId == awayTeam.Id ||
+                                (!string.IsNullOrWhiteSpace(awayCountryCode) && x.AwayTeam.CountryCode == awayCountryCode)))
+                        .AnyAsync(cancellationToken);
+                    if (duplicateAcrossSources)
+                    {
+                        summary.GamesDeduplicated += 1;
+                        continue;
+                    }
+
                     dbContext.Games.Add(new Game
                     {
                         Id = Guid.NewGuid(),
@@ -270,6 +298,10 @@ public class BackfillJobProcessor(
                         HomeScore = providerGame.HomeScore,
                         AwayScore = providerGame.AwayScore,
                         Status = providerGame.Status,
+                        CompetitionPhase = providerGame.CompetitionPhase,
+                        CompetitionRound = providerGame.CompetitionRound,
+                        EloEligible = providerGame.ExclusionReason is null,
+                        EloExclusionReason = providerGame.ExclusionReason,
                         IngestedAtUtc = DateTime.UtcNow,
                         UpdatedAtUtc = DateTime.UtcNow
                     });
@@ -278,12 +310,22 @@ public class BackfillJobProcessor(
                 }
                 else
                 {
+                    var preserveManualResult = existingGame.HasManualResultOverride;
+                    existingGame.CompetitionId = competition.Id;
+                    existingGame.SeasonId = season.Id;
                     existingGame.GameDateTimeUtc = providerGame.GameDateTimeUtc;
                     existingGame.HomeTeamId = homeTeam.Id;
                     existingGame.AwayTeamId = awayTeam.Id;
-                    existingGame.HomeScore = providerGame.HomeScore;
-                    existingGame.AwayScore = providerGame.AwayScore;
-                    existingGame.Status = providerGame.Status;
+                    if (!preserveManualResult)
+                    {
+                        existingGame.HomeScore = providerGame.HomeScore;
+                        existingGame.AwayScore = providerGame.AwayScore;
+                        existingGame.Status = providerGame.Status;
+                        existingGame.CompetitionPhase = providerGame.CompetitionPhase;
+                        existingGame.CompetitionRound = providerGame.CompetitionRound;
+                        existingGame.EloEligible = providerGame.ExclusionReason is null;
+                        existingGame.EloExclusionReason = providerGame.ExclusionReason;
+                    }
                     existingGame.SourceUrl = providerGame.Provenance?.SourceUrl;
                     existingGame.SourceSeasonKey = providerGame.Provenance?.SourceSeasonKey;
                     existingGame.SourceFetchedAtUtc = providerGame.Provenance?.FetchedAtUtc;
@@ -509,9 +551,13 @@ public class BackfillJobProcessor(
         });
     }
 
-    private async Task<Season> GetOrCreateSeasonAsync(Competition competition, string seasonLabel, CancellationToken cancellationToken)
+    private async Task<Season> GetOrCreateSeasonAsync(
+        Competition competition,
+        string seasonLabel,
+        bool usesSingleYearSeasonLabel,
+        CancellationToken cancellationToken)
     {
-        var canonicalSeasonLabel = SeasonLabelNormalizer.ToFullSeasonLabel(seasonLabel);
+        var canonicalSeasonLabel = SeasonLabelNormalizer.ToCanonicalSeasonLabel(seasonLabel, usesSingleYearSeasonLabel);
         var existing = await dbContext.Seasons
             .FirstOrDefaultAsync(
                 x => x.CompetitionId == competition.Id && x.Label == canonicalSeasonLabel,
@@ -522,7 +568,9 @@ public class BackfillJobProcessor(
             return existing;
         }
 
-        var legacyLabel = LegacySingleYearLabel(canonicalSeasonLabel);
+        var legacyLabel = usesSingleYearSeasonLabel
+            ? SeasonLabelNormalizer.ToFullSeasonLabel(canonicalSeasonLabel)
+            : LegacySingleYearLabel(canonicalSeasonLabel);
         if (legacyLabel is not null)
         {
             existing = await dbContext.Seasons
@@ -532,7 +580,7 @@ public class BackfillJobProcessor(
 
             if (existing is not null)
             {
-                var (updatedStartDate, updatedEndDate) = ParseSeasonDates(canonicalSeasonLabel);
+                var (updatedStartDate, updatedEndDate) = ParseSeasonDates(canonicalSeasonLabel, usesSingleYearSeasonLabel);
                 existing.Label = canonicalSeasonLabel;
                 existing.StartDateUtc = updatedStartDate;
                 existing.EndDateUtc = updatedEndDate;
@@ -541,7 +589,7 @@ public class BackfillJobProcessor(
             }
         }
 
-        var (startDate, endDate) = ParseSeasonDates(canonicalSeasonLabel);
+        var (startDate, endDate) = ParseSeasonDates(canonicalSeasonLabel, usesSingleYearSeasonLabel);
         var season = new Season
         {
             Id = Guid.NewGuid(),
@@ -689,6 +737,15 @@ public class BackfillJobProcessor(
                     existingTeam.CountryCode == countryCode,
                 cancellationToken);
         }
+        else if (!string.IsNullOrWhiteSpace(countryCode))
+        {
+            var normalizedTeamName = NormalizeInternationalTeamName(teamName);
+            var candidates = await dbContext.Teams
+                .Where(existingTeam => existingTeam.CountryCode == countryCode)
+                .ToListAsync(cancellationToken);
+            team = candidates.FirstOrDefault(existingTeam =>
+                NormalizeInternationalTeamName(existingTeam.CanonicalName) == normalizedTeamName);
+        }
 
         if (team is null)
         {
@@ -751,8 +808,15 @@ public class BackfillJobProcessor(
         return $"name:{normalizedName}";
     }
 
-    private static (DateTime StartDateUtc, DateTime EndDateUtc) ParseSeasonDates(string seasonLabel)
+    private static (DateTime StartDateUtc, DateTime EndDateUtc) ParseSeasonDates(string seasonLabel, bool usesSingleYearSeasonLabel)
     {
+        if (usesSingleYearSeasonLabel && int.TryParse(seasonLabel, out var singleYear))
+        {
+            return (
+                new DateTime(singleYear, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                new DateTime(singleYear, 12, 31, 23, 59, 59, DateTimeKind.Utc));
+        }
+
         var pieces = SeasonLabelNormalizer.ToFullSeasonLabel(seasonLabel)
             .Split('-', StringSplitOptions.TrimEntries);
         if (pieces.Length == 2 &&
@@ -786,6 +850,17 @@ public class BackfillJobProcessor(
 
         var normalized = providerCountryCode.Trim().ToUpperInvariant();
         return normalized.Length <= 3 ? normalized : normalized[..3];
+    }
+
+    private static string NormalizeInternationalTeamName(string value)
+    {
+        var decomposed = value.Trim().Normalize(NormalizationForm.FormD);
+        return new string(decomposed
+            .Where(character =>
+                CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark &&
+                char.IsLetterOrDigit(character))
+            .ToArray())
+            .ToUpperInvariant();
     }
 
     private static string? CountryCodeFromDisplay(string country)
@@ -836,6 +911,7 @@ public class BackfillJobProcessor(
         public bool HasMorePages { get; set; }
         public int GamesFetched { get; set; }
         public int GamesFiltered { get; set; }
+        public int GamesDeduplicated { get; set; }
         public int GamesInserted { get; set; }
         public int GamesUpdated { get; set; }
         public List<string> ProviderLeagues { get; } = [];

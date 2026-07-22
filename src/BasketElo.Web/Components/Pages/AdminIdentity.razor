@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject HttpClient Http
 
+
 <PageTitle>Identity Health</PageTitle>
 
 <h1>Identity Health</h1>
@@ -290,6 +291,12 @@ else
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "source")]
+    public string? Source { get; set; }
+
+    [SupplyParameterFromQuery(Name = "season")]
+    public string? Season { get; set; }
+
     private IdentityHealthCheckRequest checkRequest = new() { Source = "api-sports" };
     private string? competitionIdText;
     private IdentityHealthOptionsDto? options;
@@ -312,6 +319,16 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (!string.IsNullOrWhiteSpace(Source))
+        {
+            checkRequest.Source = Source;
+        }
+
+        if (!string.IsNullOrWhiteSpace(Season))
+        {
+            checkRequest.Season = Season;
+        }
+
         options = await Http.GetFromJsonAsync<IdentityHealthOptionsDto>("api/identity-health/options");
         if (!string.IsNullOrWhiteSpace(checkRequest.Source) &&
             options is not null &&

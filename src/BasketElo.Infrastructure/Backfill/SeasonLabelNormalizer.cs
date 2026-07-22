@@ -2,6 +2,18 @@ namespace BasketElo.Infrastructure.Backfill;
 
 public static class SeasonLabelNormalizer
 {
+    public static string ToCanonicalSeasonLabel(string season, bool usesSingleYearLabel)
+        => usesSingleYearLabel ? ToSingleYearLabel(season) : ToFullSeasonLabel(season);
+
+    public static string ToSingleYearLabel(string season)
+    {
+        var trimmed = season.Trim();
+        var pieces = trimmed.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return pieces.Length > 0 && int.TryParse(pieces[0], out var year)
+            ? year.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : trimmed;
+    }
+
     public static string ToFullSeasonLabel(string season)
     {
         var trimmed = season.Trim();

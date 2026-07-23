@@ -45,6 +45,20 @@ public class BackfillCatalogTests
     }
 
     [Fact]
+    public void PolishCupUsesTheProviderEndYearSeasonKey()
+    {
+        var catalog = new BackfillCatalog();
+        var polishCup = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == ApiSportsBasketballDataProvider.Source &&
+            league.Country == "Poland" &&
+            league.LeagueName == "Polish Cup");
+
+        var mapping = Assert.Single(polishCup.ProviderLeagues!);
+        Assert.Equal("end_year", mapping.SeasonParameterFormat);
+        Assert.Contains("2020-2021", catalog.GetSeasonsForLeague(polishCup));
+    }
+
+    [Fact]
     public void CovidFallbackSeasonsAreNotExposedAsRedundantApiSportsBackfills()
     {
         var catalog = new BackfillCatalog();

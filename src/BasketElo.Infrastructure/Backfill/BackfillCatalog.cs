@@ -74,6 +74,8 @@ public class BackfillCatalog : IBackfillCatalog
             ],
             CompetitionType: "international",
             EndSeason: "2025-2026"),
+        new("french-historical", "France", "LNB", "France: LNB Pro A / Betclic Elite", "1981-1982", ExplicitSeasons: FrenchLeagueHistoricalSeasons()),
+        new("french-historical", "France", "French Cup", "France: Coupe de France", "2004-2005", CompetitionType: "domestic_cup", EndSeason: "2007-2008"),
         new("api-sports", "France", "LNB", "France: LNB Pro A / Betclic Elite", "2008-2009", EndSeason: "2025-2026"),
         new("api-sports", "France", "French Cup", "France: Coupe de France", "2008", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new("api-sports", "France", "LNB Super Cup", "France: LNB Super Cup", "2011", CompetitionType: "domestic_cup", EndSeason: "2025"),
@@ -246,4 +248,7 @@ public class BackfillCatalog : IBackfillCatalog
         => Enumerable.Range(1983, 25)
             .Select(year => $"{year}-{year + 1}")
             .ToArray();
+
+    private static string[] FrenchLeagueHistoricalSeasons()
+        => ["1981-1982", .. Enumerable.Range(1998, 10).Select(year => $"{year}-{year + 1}")];
 }

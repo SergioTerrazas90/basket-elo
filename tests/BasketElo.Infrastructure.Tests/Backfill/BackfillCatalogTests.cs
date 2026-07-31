@@ -7,6 +7,26 @@ namespace BasketElo.Infrastructure.Tests.Backfill;
 public class BackfillCatalogTests
 {
     [Fact]
+    public void FrenchHistoricalCatalogPreservesVerifiedGapAndCupLeagueOverlap()
+    {
+        var catalog = new BackfillCatalog();
+        var league = catalog.GetLeagues().Single(item =>
+            item.Provider == FrenchHistoricalBasketballDataProvider.Source && item.Country == "France" && item.LeagueName == "LNB");
+        var cup = catalog.GetLeagues().Single(item =>
+            item.Provider == FrenchHistoricalBasketballDataProvider.Source && item.Country == "France" && item.LeagueName == "French Cup");
+
+        var leagueSeasons = catalog.GetSeasonsForLeague(league);
+        var cupSeasons = catalog.GetSeasonsForLeague(cup);
+
+        Assert.Contains("1981-1982", leagueSeasons);
+        Assert.DoesNotContain("1982-1983", leagueSeasons);
+        Assert.Contains("1998-1999", leagueSeasons);
+        Assert.Contains("2007-2008", leagueSeasons);
+        Assert.Equal(4, cupSeasons.Count);
+        Assert.All(cupSeasons, season => Assert.Contains(season, leagueSeasons));
+    }
+
+    [Fact]
     public void NbaIsOneCanonicalCompetitionFromInauguralSeasonThroughCurrentCatalogEnd()
     {
         var catalog = new BackfillCatalog();

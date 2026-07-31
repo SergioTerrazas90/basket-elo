@@ -203,6 +203,8 @@ See [`nba-source-policy.md`](nba-source-policy.md) and
 [`nba-refresh-operations.md`](nba-refresh-operations.md) for NBA-specific rules.
 See [`italian-ingestion.md`](italian-ingestion.md) for the ranked Italian Serie A
 sources, official LBA traversal, coverage gaps, and newest-first runbook.
+See [`french-ingestion.md`](french-ingestion.md) for the ranked French league and
+cup sources, the explicit historical gap, and the no-cup-only-season rule.
 
 ## Competition separation and reconciliation
 

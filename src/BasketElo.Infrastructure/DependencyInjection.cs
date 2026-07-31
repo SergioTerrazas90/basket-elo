@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.Configure<DbasketOptions>(configuration.GetSection(DbasketOptions.SectionName));
         services.Configure<LbaOfficialOptions>(configuration.GetSection(LbaOfficialOptions.SectionName));
         services.Configure<ItalianCupWikipediaOptions>(configuration.GetSection(ItalianCupWikipediaOptions.SectionName));
+        services.Configure<FrenchHistoricalOptions>(configuration.GetSection(FrenchHistoricalOptions.SectionName));
         services.Configure<BasketballReferenceOptions>(configuration.GetSection(BasketballReferenceOptions.SectionName));
         services.Configure<FiveThirtyEightOptions>(configuration.GetSection(FiveThirtyEightOptions.SectionName));
         services.Configure<NbaRefreshOptions>(configuration.GetSection(NbaRefreshOptions.SectionName));
@@ -97,6 +98,10 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(45);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(providerOptions.UserAgent);
         });
+        services.AddHttpClient<FrenchHistoricalBasketballDataProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(45);
+        });
         services.AddHttpClient<GlobalSportsArchiveBasketballDataProvider>(client =>
         {
             client.BaseAddress = new Uri("https://globalsportsarchive.com");
@@ -133,6 +138,8 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<WikipediaEuroBasketQualificationDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<ItalianCupWikipediaBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<FrenchHistoricalBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<GlobalSportsArchiveBasketballDataProvider>());
         services.AddSingleton<FiveThirtyEightBasketballDataProvider>();

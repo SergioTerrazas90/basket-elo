@@ -63,6 +63,16 @@ static async Task<int> RunAsync(string[] args)
         return await RunItalySerieAIngestAsync(args[1..]);
     }
 
+    if (args.Length > 0 && args[0].Equals("italy-cup-dry-run", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunItalyCupDryRunAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("italy-cup-ingest", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunItalyCupIngestAsync(args[1..]);
+    }
+
     AuditCommandOptions command;
     try
     {
@@ -628,6 +638,169 @@ static async Task<int> RunItalySerieAIngestAsync(string[] args)
     return summary.Any(item => item.Status == BackfillJobStatus.Failed) ? 2 : 0;
 }
 
+static async Task<int> RunItalyCupDryRunAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var interval = ParseNonNegative(values, "--interval-ms", 1000);
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Configuration["ItalianCupWikipedia:MinRequestIntervalMilliseconds"] = interval.ToString();
+    builder.Configuration["LbaOfficial:MinRequestIntervalMilliseconds"] = interval.ToString();
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    var catalog = host.Services.GetRequiredService<IBackfillCatalog>();
+    var configuredLeague = catalog.GetLeagues().SingleOrDefault(candidate =>
+        candidate.Country == "Italy" && candidate.LeagueName == "Italian Cup" &&
+        candidate.Provider != ApiSportsBasketballDataProvider.Source &&
+        catalog.GetSeasonsForLeague(candidate).Contains(season, StringComparer.OrdinalIgnoreCase));
+    if (configuredLeague is null)
+    {
+        Console.Error.WriteLine($"No historical Italian Cup source is configured for {season}.");
+        return 1;
+    }
+
+    var provider = host.Services.GetRequiredService<IEnumerable<IBasketballDataProvider>>()
+        .Single(candidate => candidate.SourceKey == configuredLeague.Provider);
+    var context = new BackfillExecutionContext(maxRequests, 0);
+    var league = await provider.ResolveLeagueAsync("Italy", "Italian Cup", context, CancellationToken.None);
+    var result = await provider.GetGamesAsync(league!, season, context, CancellationToken.None);
+
+    Console.WriteLine($"Italian Cup dry-run: {season}; source: {configuredLeague.Provider}");
+    Console.WriteLine($"Requests: {context.RequestsUsed}/{context.MaxRequests}; games: {result.Games.Count}; warnings: {result.Warnings.Count}");
+    foreach (var phase in result.Games.GroupBy(game => game.CompetitionRound).OrderBy(group => group.Key))
+    {
+        Console.WriteLine($"{phase.Key ?? "Unknown round"}: {phase.Count()} games");
+    }
+    foreach (var game in result.Games.Take(12))
+    {
+        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} [{game.CompetitionRound}] {game.Provenance?.SourceUrl}");
+    }
+    foreach (var warning in result.Warnings.Take(20))
+    {
+        Console.WriteLine($"WARNING: {warning}");
+    }
+
+    return result.Games.Count == 0 ? 2 : 0;
+}
+
+static async Task<int> RunItalyCupIngestAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var startSeason = Required(values, "--start");
+    var endSeason = values.GetValueOrDefault("--end") ?? startSeason;
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var interval = ParseNonNegative(values, "--interval-ms", 1000);
+    var lowerYear = Math.Min(
+        SeasonLabelNormalizer.ParseStartYear(startSeason),
+        SeasonLabelNormalizer.ParseStartYear(endSeason));
+    var upperYear = Math.Max(
+        SeasonLabelNormalizer.ParseStartYear(startSeason),
+        SeasonLabelNormalizer.ParseStartYear(endSeason));
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Configuration["ItalianCupWikipedia:MinRequestIntervalMilliseconds"] = interval.ToString();
+    builder.Configuration["LbaOfficial:MinRequestIntervalMilliseconds"] = interval.ToString();
+    if (values.TryGetValue("--connection-string", out var connectionString))
+    {
+        builder.Configuration["ConnectionStrings:Postgres"] = connectionString;
+    }
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
+    await dbContext.Database.MigrateAsync();
+
+    var historicalProviders = new[]
+    {
+        ItalianCupWikipediaBasketballDataProvider.Source,
+        LbaOfficialSerieABasketballDataProvider.Source
+    };
+    var unrelatedPendingJobs = await dbContext.BackfillJobs.CountAsync(job =>
+        job.Status == BackfillJobStatus.Pending &&
+        !(historicalProviders.Contains(job.Provider) && job.Country == "Italy" && job.LeagueName == "Italian Cup"));
+    if (unrelatedPendingJobs > 0)
+    {
+        Console.Error.WriteLine(
+            $"Refusing to start: {unrelatedPendingJobs} unrelated backfill job(s) are pending and would be processed first.");
+        return 2;
+    }
+
+    var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
+    var seasons = catalog.GetLeagues()
+        .Where(league => historicalProviders.Contains(league.Provider) &&
+            league.Country == "Italy" && league.LeagueName == "Italian Cup")
+        .SelectMany(league => catalog.GetSeasonsForLeague(league)
+            .Select(season => new { league.Provider, Season = season }))
+        .Where(item =>
+        {
+            var year = SeasonLabelNormalizer.ParseStartYear(item.Season);
+            return year >= lowerYear && year <= upperYear;
+        })
+        .OrderByDescending(item => SeasonLabelNormalizer.ParseStartYear(item.Season))
+        .ToList();
+    if (seasons.Count == 0)
+    {
+        Console.Error.WriteLine(
+            $"No played Italian Cup editions fall inside {startSeason} through {endSeason}.");
+        return 1;
+    }
+
+    var existing = await dbContext.BackfillJobs
+        .Where(job => historicalProviders.Contains(job.Provider) &&
+            job.Country == "Italy" && job.LeagueName == "Italian Cup" &&
+            (job.Status == BackfillJobStatus.Completed ||
+             job.Status == BackfillJobStatus.CompletedWithWarnings ||
+             job.Status == BackfillJobStatus.Pending ||
+             job.Status == BackfillJobStatus.Running))
+        .Select(job => new { job.Provider, job.Season })
+        .ToListAsync();
+    var now = DateTime.UtcNow;
+    var jobs = seasons
+        .Where(item => !existing.Any(job =>
+            job.Provider == item.Provider && job.Season.Equals(item.Season, StringComparison.OrdinalIgnoreCase)))
+        .Select((item, index) => new BackfillJob
+        {
+            Id = Guid.NewGuid(),
+            Provider = item.Provider,
+            Country = "Italy",
+            LeagueName = "Italian Cup",
+            Season = item.Season,
+            DryRun = false,
+            MaxRequests = maxRequests,
+            Status = BackfillJobStatus.Pending,
+            CreatedAtUtc = now.AddTicks(index),
+            UpdatedAtUtc = now.AddTicks(index)
+        })
+        .ToList();
+    dbContext.BackfillJobs.AddRange(jobs);
+    await dbContext.SaveChangesAsync();
+    Console.WriteLine($"Queued {jobs.Count} historical Italian Cup edition(s), newest first; skipped {existing.Count} completed or active edition(s).");
+
+    var processor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
+    var processed = 0;
+    while (await processor.TryProcessNextPendingJobAsync(CancellationToken.None))
+    {
+        processed++;
+        Console.WriteLine($"Processed Italian Cup job {processed}/{jobs.Count}.");
+    }
+
+    var selectedSeasonLabels = seasons.Select(item => item.Season).Distinct().ToList();
+    var summary = await dbContext.BackfillJobs
+        .Where(job => historicalProviders.Contains(job.Provider) &&
+            job.Country == "Italy" && job.LeagueName == "Italian Cup" &&
+            selectedSeasonLabels.Contains(job.Season))
+        .GroupBy(job => job.Status)
+        .Select(group => new { Status = group.Key, Count = group.Count() })
+        .OrderBy(item => item.Status)
+        .ToListAsync();
+    Console.WriteLine($"Italian Cup ingest processed {processed} jobs. Status: {string.Join(", ", summary.Select(item => $"{item.Status}={item.Count}"))}");
+    return summary.Any(item => item.Status == BackfillJobStatus.Failed) ? 2 : 0;
+}
+
 static int ParseNonNegative(IReadOnlyDictionary<string, string> values, string name, int defaultValue)
 {
     var value = values.GetValueOrDefault(name);
@@ -715,6 +888,17 @@ static void PrintUsage()
         dotnet run --project src/BasketElo.Tools -- italy-serie-a-ingest \
           --start 2007-2008 --end 1974-1975 \
           [--max-requests 0] [--interval-ms 100] [--connection-string "..."]
+
+        Historical Italian Cup dry-run (Wikipedia through 2007-2008; official LBA for 2008-2009)
+
+        dotnet run --project src/BasketElo.Tools -- italy-cup-dry-run \
+          --season 2007-2008 [--max-requests 0] [--interval-ms 1000]
+
+        Historical Italian Cup ingest (writes configured Postgres, newest first)
+
+        dotnet run --project src/BasketElo.Tools -- italy-cup-ingest \
+          --start 2008-2009 --end 1967-1968 \
+          [--max-requests 0] [--interval-ms 1000] [--connection-string "..."]
         """);
 }
 

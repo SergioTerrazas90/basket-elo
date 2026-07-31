@@ -25,6 +25,7 @@ public static class DependencyInjection
         services.Configure<AcbArchiveOptions>(configuration.GetSection(AcbArchiveOptions.SectionName));
         services.Configure<DbasketOptions>(configuration.GetSection(DbasketOptions.SectionName));
         services.Configure<LbaOfficialOptions>(configuration.GetSection(LbaOfficialOptions.SectionName));
+        services.Configure<ItalianCupWikipediaOptions>(configuration.GetSection(ItalianCupWikipediaOptions.SectionName));
         services.Configure<BasketballReferenceOptions>(configuration.GetSection(BasketballReferenceOptions.SectionName));
         services.Configure<FiveThirtyEightOptions>(configuration.GetSection(FiveThirtyEightOptions.SectionName));
         services.Configure<NbaRefreshOptions>(configuration.GetSection(NbaRefreshOptions.SectionName));
@@ -87,6 +88,15 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(45);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
         });
+        services.AddHttpClient<ItalianCupWikipediaBasketballDataProvider>((serviceProvider, client) =>
+        {
+            var providerOptions = serviceProvider
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<ItalianCupWikipediaOptions>>()
+                .Value;
+            client.BaseAddress = new Uri(providerOptions.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(providerOptions.UserAgent);
+        });
         services.AddHttpClient<GlobalSportsArchiveBasketballDataProvider>(client =>
         {
             client.BaseAddress = new Uri("https://globalsportsarchive.com");
@@ -121,6 +131,8 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<FibaBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<WikipediaEuroBasketQualificationDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<ItalianCupWikipediaBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<GlobalSportsArchiveBasketballDataProvider>());
         services.AddSingleton<FiveThirtyEightBasketballDataProvider>();

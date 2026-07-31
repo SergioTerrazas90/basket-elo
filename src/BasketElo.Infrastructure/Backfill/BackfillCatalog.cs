@@ -86,6 +86,8 @@ public class BackfillCatalog : IBackfillCatalog
         new("api-sports", "Greece", "Super Cup", "Greece: Super Cup", "2020", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new("lba-official", "Italy", "Serie A", "Italy: Lega Basket Serie A", "1974-1975", EndSeason: "2007-2008"),
         new("api-sports", "Italy", "Lega A", "Italy: Lega Basket Serie A", "2008-2009", EndSeason: "2025-2026"),
+        new("wikipedia-italian-cup", "Italy", "Italian Cup", "Italy: Italian Cup", "1967-1968", CompetitionType: "domestic_cup", ExplicitSeasons: ItalianCupHistoricalSeasons()),
+        new("lba-official", "Italy", "Italian Cup", "Italy: Italian Cup", "2008-2009", CompetitionType: "domestic_cup", ExplicitSeasons: ["2008-2009"]),
         new("api-sports", "Italy", "Italian Cup", "Italy: Italian Cup", "2009", CompetitionType: "domestic_cup"),
         new("api-sports", "Italy", "Lega A - Super Cup", "Italy: Lega A Super Cup", "2011-2012", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
         new("api-sports", "Turkey", "Super Ligi", "Turkey: BSL", "2016-2017", EndSeason: "2025-2026"),
@@ -240,4 +242,10 @@ public class BackfillCatalog : IBackfillCatalog
 
     private static string[] Years(params int[] years)
         => years.Select(year => year.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+
+    private static string[] ItalianCupHistoricalSeasons()
+        => Enumerable.Range(1967, 7)
+            .Concat(Enumerable.Range(1983, 25))
+            .Select(year => $"{year}-{year + 1}")
+            .ToArray();
 }

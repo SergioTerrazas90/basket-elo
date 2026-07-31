@@ -74,6 +74,28 @@ public class BackfillCatalogTests
     }
 
     [Fact]
+    public void HistoricalItalianCupCatalogContainsOnlyPlayedEditionsAndBridgesApiSports()
+    {
+        var catalog = new BackfillCatalog();
+        var wikipedia = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == ItalianCupWikipediaBasketballDataProvider.Source &&
+            league.Country == "Italy" && league.LeagueName == "Italian Cup");
+        var officialBridge = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == LbaOfficialSerieABasketballDataProvider.Source &&
+            league.Country == "Italy" && league.LeagueName == "Italian Cup");
+
+        var historicalSeasons = catalog.GetSeasonsForLeague(wikipedia).ToList();
+        Assert.Equal(32, historicalSeasons.Count);
+        Assert.Equal("1967-1968", historicalSeasons[0]);
+        Assert.Equal("2007-2008", historicalSeasons[^1]);
+        Assert.DoesNotContain("1974-1975", historicalSeasons);
+        Assert.DoesNotContain("1982-1983", historicalSeasons);
+        Assert.Equal(["2008-2009"], catalog.GetSeasonsForLeague(officialBridge));
+        Assert.Equal("domestic_cup", wikipedia.CompetitionType);
+        Assert.Equal(wikipedia.DisplayName, officialBridge.DisplayName);
+    }
+
+    [Fact]
     public void PolishCupUsesTheProviderEndYearSeasonKey()
     {
         var catalog = new BackfillCatalog();

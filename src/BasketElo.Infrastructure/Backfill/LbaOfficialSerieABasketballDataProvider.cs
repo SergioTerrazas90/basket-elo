@@ -8,8 +8,8 @@ using Microsoft.Extensions.Options;
 namespace BasketElo.Infrastructure.Backfill;
 
 /// <summary>
-/// Reads historical Serie A regular-season and playoff calendars from the
-/// public JSON endpoints used by the official Lega Basket Serie A website.
+/// Reads historical Serie A calendars and the first complete archived Italian
+/// Cup edition from the public JSON endpoints used by the official LBA site.
 /// </summary>
 public sealed class LbaOfficialSerieABasketballDataProvider(
     HttpClient httpClient,
@@ -18,6 +18,7 @@ public sealed class LbaOfficialSerieABasketballDataProvider(
     public const string Source = "lba-official";
     public const string ParserVersion = "lba-official-calendar-v1";
     private const int SerieACompetitionSeriesId = 1;
+    private const int ItalianCupCompetitionSeriesId = 5;
 
     public string SourceKey => Source;
 
@@ -27,11 +28,19 @@ public sealed class LbaOfficialSerieABasketballDataProvider(
         BackfillExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var league = string.Equals(country, "Italy", StringComparison.OrdinalIgnoreCase) &&
-            (string.Equals(leagueName, "Serie A", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(leagueName, "Lega A", StringComparison.OrdinalIgnoreCase))
-                ? new BasketballProviderLeague(Source, "SERIE_A", "Lega Basket Serie A", "IT", "start_year")
-                : null;
+        BasketballProviderLeague? league = null;
+        if (string.Equals(country, "Italy", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.Equals(leagueName, "Serie A", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(leagueName, "Lega A", StringComparison.OrdinalIgnoreCase))
+            {
+                league = new BasketballProviderLeague(Source, "SERIE_A", "Lega Basket Serie A", "IT", "start_year");
+            }
+            else if (string.Equals(leagueName, "Italian Cup", StringComparison.OrdinalIgnoreCase))
+            {
+                league = new BasketballProviderLeague(Source, "ITALIAN_CUP", "Italian Cup", "IT", "start_year");
+            }
+        }
         return Task.FromResult(league);
     }
 
@@ -41,18 +50,24 @@ public sealed class LbaOfficialSerieABasketballDataProvider(
         BackfillExecutionContext context,
         CancellationToken cancellationToken)
     {
+        var isSerieA = string.Equals(league.SourceLeagueId, "SERIE_A", StringComparison.OrdinalIgnoreCase);
+        var isItalianCup = string.Equals(league.SourceLeagueId, "ITALIAN_CUP", StringComparison.OrdinalIgnoreCase);
         if (!string.Equals(league.Source, Source, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(league.SourceLeagueId, "SERIE_A", StringComparison.OrdinalIgnoreCase))
+            (!isSerieA && !isItalianCup))
         {
-            throw new InvalidOperationException("Official LBA provider only supports Italy: Serie A.");
+            throw new InvalidOperationException("Official LBA provider only supports Italy: Serie A and Italian Cup.");
         }
 
-        var startYear = ParseStartYear(season);
+        var startYear = isItalianCup
+            ? ParseStartYear(season, 2008, 2008, "Official Italian Cup bridge coverage supports 2008-2009.")
+            : ParseStartYear(season, 1974, 2007, "Official historical LBA coverage supports 1974-1975 through 2007-2008.");
+        var competitionSeriesId = isItalianCup ? ItalianCupCompetitionSeriesId : SerieACompetitionSeriesId;
+        var competitionTypeCodes = isItalianCup ? new HashSet<string>(["CI"], StringComparer.OrdinalIgnoreCase) : new HashSet<string>(["RS", "PO"], StringComparer.OrdinalIgnoreCase);
         var warnings = new List<string>();
         var games = new Dictionary<string, BasketballProviderGame>(StringComparer.OrdinalIgnoreCase);
 
         using var championships = await FetchJsonAsync(
-            $"/api/championships/get-championships?items=1000&cs_id={SerieACompetitionSeriesId}",
+            $"/api/championships/get-championships?items=1000&cs_id={competitionSeriesId}",
             context,
             cancellationToken);
         if (championships is null)
@@ -60,13 +75,17 @@ public sealed class LbaOfficialSerieABasketballDataProvider(
             return ([], false, ["The official LBA championship catalog could not be fetched."]);
         }
 
-        var competitions = ReadCompetitions(championships.RootElement, startYear).ToList();
-        if (competitions.All(competition => !competition.TypeCode.Equals("RS", StringComparison.OrdinalIgnoreCase)))
+        var competitions = ReadCompetitions(championships.RootElement, startYear, competitionTypeCodes).ToList();
+        if (isItalianCup && competitions.Count == 0)
+        {
+            warnings.Add($"{season}: no official Italian Cup championship was found.");
+        }
+        if (isSerieA && competitions.All(competition => !competition.TypeCode.Equals("RS", StringComparison.OrdinalIgnoreCase)))
         {
             warnings.Add($"{season}: no official Serie A regular-season championship was found.");
         }
 
-        if (competitions.All(competition => !competition.TypeCode.Equals("PO", StringComparison.OrdinalIgnoreCase)))
+        if (isSerieA && competitions.All(competition => !competition.TypeCode.Equals("PO", StringComparison.OrdinalIgnoreCase)))
         {
             warnings.Add($"{season}: the official LBA catalog does not expose a separate playoff championship.");
         }
@@ -281,7 +300,10 @@ public sealed class LbaOfficialSerieABasketballDataProvider(
         return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
     }
 
-    private static IEnumerable<LbaCompetition> ReadCompetitions(JsonElement root, int startYear)
+    private static IEnumerable<LbaCompetition> ReadCompetitions(
+        JsonElement root,
+        int startYear,
+        IReadOnlySet<string> allowedTypeCodes)
     {
         if (!root.TryGetProperty("competitions", out var competitions) || competitions.ValueKind != JsonValueKind.Array)
         {
@@ -296,7 +318,7 @@ public sealed class LbaOfficialSerieABasketballDataProvider(
             }
 
             var typeCode = String(competition, "ctype_code");
-            if (typeCode is not ("RS" or "PO"))
+            if (typeCode is null || !allowedTypeCodes.Contains(typeCode))
             {
                 continue;
             }
@@ -341,16 +363,19 @@ public sealed class LbaOfficialSerieABasketballDataProvider(
         }
     }
 
-    private static int ParseStartYear(string season)
+    private static int ParseStartYear(
+        string season,
+        int minimumStartYear,
+        int maximumStartYear,
+        string coverageMessage)
     {
         var canonical = SeasonLabelNormalizer.ToFullSeasonLabel(season);
         var pieces = canonical.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (pieces.Length != 2 || !int.TryParse(pieces[0], out var startYear) ||
-            !int.TryParse(pieces[1], out var endYear) || endYear != startYear + 1 || startYear is < 1974 or > 2007)
+            !int.TryParse(pieces[1], out var endYear) || endYear != startYear + 1 ||
+            startYear < minimumStartYear || startYear > maximumStartYear)
         {
-            throw new ArgumentException(
-                "Official historical LBA coverage currently supports 1974-1975 through 2007-2008.",
-                nameof(season));
+            throw new ArgumentException(coverageMessage, nameof(season));
         }
 
         return startYear;

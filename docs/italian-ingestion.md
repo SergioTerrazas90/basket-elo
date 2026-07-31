@@ -1,9 +1,10 @@
-# Italian Serie A historical ingestion
+# Italian league and cup historical ingestion
 
 This runbook covers issue #124: game-level Italian men's top-flight ingestion
 backward from 2007-2008. Source ranking prioritizes the number of target seasons
 with individual games, then access and parsing difficulty, provenance quality,
-and identity stability.
+and identity stability. The league and cup remain separate canonical
+competitions with separate source boundaries.
 
 ## Ranked sources
 
@@ -63,3 +64,49 @@ The ingest command migrates the configured Postgres database, skips completed
 or active seasons, and refuses to run while an unrelated backfill is pending.
 Start with 2007-2008 alone, review game/phase counts, warnings, aliases, and
 identity findings, then extend the end season backward.
+
+## Italian Cup sources
+
+Historical cup source ranking prioritizes complete played-edition coverage and
+machine-readable access. The official LBA catalog is authoritative, but its
+pre-2008-2009 cup calendar payloads are empty even though the edition records
+exist.
+
+| Rank | Source | Verified coverage | Access and ingestion assessment | Intended use |
+| --- | --- | --- | --- | --- |
+| 1 | [Italian Wikipedia edition archive](https://it.wikipedia.org/wiki/Coppa_Italia_di_pallacanestro_maschile) | All 32 editions played from 1967-1968 through 2007-2008; the cup was not played from 1974-1975 through 1982-1983 | One MediaWiki API request per edition, revision IDs, game-level brackets, two-leg ties, result matrices, and listed results | Primary historical ingestion source |
+| 2 | [Official LBA Coppa Italia](https://www.legabasket.it/competizioni/5/coppa-italia) | Catalog entries from 1967-1968 onward; complete machine-readable games begin in 2008-2009 | First-party JSON with official game and club IDs; older catalog entries have empty calendars | Authoritative 2008-2009 bridge and reconciliation |
+| 3 | API-Sports Italian Cup | 2009-2010 onward in the reviewed catalog | Existing structured provider integration | Modern coverage |
+| 4 | Archived LBA tournament PDFs linked by individual edition pages | Scattered historical editions | First-party documents, but links are inconsistent and often require web archives | Manual score/date reconciliation |
+
+The `wikipedia-italian-cup` provider uses the MediaWiki revisions API and parses
+the four historical result shapes used by the edition pages: knockout brackets,
+two-leg templates, two-leg result tables, and round-robin matrices/lists. Team
+article targets are retained as stable source identities while sponsor names are
+kept as observed aliases. Administrative 2-0 results are stored but explicitly
+excluded from ELO.
+
+Live probes on every played historical edition produced 1,246 published games
+across 32 seasons, with no zero-game editions. The source often publishes only
+stage-level dates for older rounds; deterministic date fallbacks are retained as
+warnings instead of being presented as exact dates. The official LBA bridge adds
+all seven games from 2008-2009. Existing API-Sports coverage starts in
+2009-2010, so the three catalog segments do not overlap.
+
+Inspect one historical cup edition without database writes:
+
+```powershell
+dotnet run --project src/BasketElo.Tools -- italy-cup-dry-run `
+  --season 2007-2008 --max-requests 0 --interval-ms 1000
+```
+
+Queue every played historical edition newest-first, including the official LBA
+bridge:
+
+```powershell
+dotnet run --project src/BasketElo.Tools -- italy-cup-ingest `
+  --start 2008-2009 --end 1967-1968 --max-requests 0 --interval-ms 1000
+```
+
+The command skips the nine-season hiatus automatically, skips completed or
+active editions, and refuses to run while an unrelated backfill is pending.

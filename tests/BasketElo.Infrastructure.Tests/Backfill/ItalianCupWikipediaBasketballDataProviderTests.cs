@@ -171,11 +171,13 @@ public sealed class ItalianCupWikipediaBasketballDataProviderTests
             == Risultati ==
             * [[Knorr Bologna]] - [[Virtus Roma]] 88-80
             * [[Enichem Livorno]] - [[Pallacanestro Livorno|Garessio 2000 Livorno]] 91-87
+            * [[Divarese Varese]] - [[Ipifim Torino]] 79-75
+            * [[Koncret Rimini]] - [[Basket Arese]] 83-78
             """;
 
         var games = Parse(wikitext, "1989-1990");
 
-        Assert.Equal(2, games.Count);
+        Assert.Equal(4, games.Count);
         var bologna = Assert.Single(games, game => game.HomeTeamName == "Knorr Bologna");
         Assert.Equal("wiki-team:virtus-pallacanestro-bologna", bologna.SourceHomeTeamId);
         Assert.Equal("wiki-team:pallacanestro-virtus-roma", bologna.SourceAwayTeamId);
@@ -183,6 +185,24 @@ public sealed class ItalianCupWikipediaBasketballDataProviderTests
         Assert.NotEqual(livorno.SourceHomeTeamId, livorno.SourceAwayTeamId);
         Assert.Equal("wiki-team:libertas-livorno", livorno.SourceHomeTeamId);
         Assert.Equal("wiki-team:pallacanestro-livorno", livorno.SourceAwayTeamId);
+        var varese = Assert.Single(games, game => game.HomeTeamName == "Divarese Varese");
+        Assert.Equal("wiki-team:pallacanestro-varese", varese.SourceHomeTeamId);
+        Assert.Equal("wiki-team:auxilium-torino", varese.SourceAwayTeamId);
+        var rimini = Assert.Single(games, game => game.HomeTeamName == "Koncret Rimini");
+        Assert.Equal("wiki-team:basket-rimini-crabs", rimini.SourceHomeTeamId);
+        Assert.Equal("wiki-team:basket-arese", rimini.SourceAwayTeamId);
+    }
+
+    [Fact]
+    public void MapsSnaideroToTheCorrectUdineClubForTheSeason()
+    {
+        const string wikitext = "* [[Snaidero Udine]] - [[Virtus Bologna]] 80-75";
+
+        var historical = Assert.Single(Parse(wikitext, "1971-1972"));
+        var relaunched = Assert.Single(Parse(wikitext, "2005-2006"));
+
+        Assert.Equal("wiki-team:associazione-pallacanestro-udinese", historical.SourceHomeTeamId);
+        Assert.Equal("wiki-team:pallalcesto-amatori-udine", relaunched.SourceHomeTeamId);
     }
 
     private static List<BasketElo.Domain.Backfill.BasketballProviderGame> Parse(string wikitext, string season)

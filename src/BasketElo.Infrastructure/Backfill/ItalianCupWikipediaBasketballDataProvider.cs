@@ -66,6 +66,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
             ["cantine-riunite-reggio-emilia"] = "pallacanestro-reggiana",
             ["climamio-bologna"] = "fortitudo-pallacanestro-bologna",
             ["eldorado-bologna"] = "fortitudo-pallacanestro-bologna",
+            ["divarese-varese"] = "pallacanestro-varese",
             ["enichem-livorno"] = "libertas-livorno",
             ["enimont-livorno"] = "libertas-livorno",
             ["fortitudo-bologna"] = "fortitudo-pallacanestro-bologna",
@@ -85,8 +86,10 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
             ["pallacanestro-trieste-2004"] = "pallacanestro-trieste",
             ["stefanel-trieste"] = "pallacanestro-trieste",
             ["irge-desio"] = "pallacanestro-aurora-desio",
+            ["ipifim-torino"] = "auxilium-torino",
             ["kinder-bologna"] = "virtus-pallacanestro-bologna",
             ["knorr-bologna"] = "virtus-pallacanestro-bologna",
+            ["koncret-rimini"] = "basket-rimini-crabs",
             ["virtus-bologna"] = "virtus-pallacanestro-bologna",
             ["rb-montecatini-terme"] = "montecatini-sporting-club",
             ["marr-rimini"] = "basket-rimini-crabs",
@@ -100,7 +103,6 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
             ["vismara-cantu"] = "pallacanestro-cantu",
             ["sidis-reggio-emilia"] = "pallacanestro-reggiana",
             ["skipper-bologna"] = "fortitudo-pallacanestro-bologna",
-            ["snaidero-udine"] = "pallalcesto-amatori-udine",
             ["corona-cremona"] = "unione-sportiva-corona",
             ["spondilatte-cremona"] = "unione-sportiva-corona"
         };
@@ -240,7 +242,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
                      RegexOptions.IgnoreCase | RegexOptions.Singleline);
         foreach (Match match in teamMatches)
         {
-            var team = ParseTeam(match.Groups["value"].Value);
+            var team = ParseTeam(match.Groups["value"].Value, startYear);
             if (team is not null)
             {
                 teams[(int.Parse(match.Groups["round"].Value, CultureInfo.InvariantCulture),
@@ -359,8 +361,8 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
                 continue;
             }
 
-            var firstTeam = ParseTeam(values[0]);
-            var secondTeam = ParseTeam(values[3]);
+            var firstTeam = ParseTeam(values[0], startYear);
+            var secondTeam = ParseTeam(values[3], startYear);
             if (firstTeam is null || secondTeam is null ||
                 !TryParseScorePair(values[5], out var firstLeg) ||
                 !TryParseScorePair(values[6], out var secondLeg))
@@ -412,7 +414,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
             var context = FindContext(wikitext, tableMatch.Index, startYear, endYear, fallbackDate);
             if (Regex.IsMatch(tableText, "Risultati\\s+girone", RegexOptions.IgnoreCase))
             {
-                ParseRoundRobinTable(rows, tableOrdinal, context, accumulator);
+                ParseRoundRobinTable(rows, tableOrdinal, startYear, context, accumulator);
                 continue;
             }
 
@@ -425,8 +427,8 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
                     continue;
                 }
 
-                var firstTeam = ParseTeam(firstRaw);
-                var secondTeam = ParseTeam(secondRaw);
+                var firstTeam = ParseTeam(firstRaw, startYear);
+                var secondTeam = ParseTeam(secondRaw, startYear);
                 if (firstTeam is null || secondTeam is null)
                 {
                     continue;
@@ -466,11 +468,12 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
     private static void ParseRoundRobinTable(
         IReadOnlyList<IReadOnlyList<string>> rows,
         int tableOrdinal,
+        int startYear,
         PageContext context,
         GameAccumulator accumulator)
     {
         var teamRows = rows
-            .Select((cells, index) => new { Cells = cells, Index = index, Team = cells.Count > 0 ? ParseTeam(cells[0]) : null })
+            .Select((cells, index) => new { Cells = cells, Index = index, Team = cells.Count > 0 ? ParseTeam(cells[0], startYear) : null })
             .Where(row => row.Team is not null && row.Cells.Skip(1).Any(cell => TryParseScorePair(cell, out _)))
             .ToList();
         var teamCount = teamRows.Count;
@@ -568,8 +571,8 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
                 continue;
             }
 
-            var firstTeam = ParseTeam(firstRaw);
-            var secondTeam = ParseTeam(secondRaw);
+            var firstTeam = ParseTeam(firstRaw, startYear);
+            var secondTeam = ParseTeam(secondRaw, startYear);
             if (firstTeam is null || secondTeam is null)
             {
                 continue;
@@ -781,7 +784,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
         return round >= 1 && round <= names.Length ? names[round - 1] : $"Round {round}";
     }
 
-    private static TeamRef? ParseTeam(string raw)
+    private static TeamRef? ParseTeam(string raw, int startYear)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -804,7 +807,11 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
         }
 
         var id = Slugify(canonical);
-        id = CanonicalTeamSlugs.GetValueOrDefault(id) ?? id;
+        id = id.Equals("snaidero-udine", StringComparison.OrdinalIgnoreCase)
+            ? startYear < 1999
+                ? "associazione-pallacanestro-udinese"
+                : "pallalcesto-amatori-udine"
+            : CanonicalTeamSlugs.GetValueOrDefault(id) ?? id;
         return string.IsNullOrWhiteSpace(id) ? null : new TeamRef($"wiki-team:{id}", name);
     }
 

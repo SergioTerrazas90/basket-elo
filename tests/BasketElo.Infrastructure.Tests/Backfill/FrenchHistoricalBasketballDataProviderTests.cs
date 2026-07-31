@@ -25,6 +25,7 @@ public sealed class FrenchHistoricalBasketballDataProviderTests
         Assert.Equal("Lyon-Villeurbanne", games[0].HomeTeamName);
         Assert.Equal("Round 2", games[1].CompetitionRound);
         Assert.Equal((short)126, games[1].AwayScore);
+        Assert.Equal("Le Mans", games[1].AwayTeamName);
         Assert.Equal(games.Count, games.Select(game => game.SourceGameId).Distinct().Count());
     }
 

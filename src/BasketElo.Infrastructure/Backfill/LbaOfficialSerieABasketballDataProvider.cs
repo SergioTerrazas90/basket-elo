@@ -8,8 +8,8 @@ using Microsoft.Extensions.Options;
 namespace BasketElo.Infrastructure.Backfill;
 
 /// <summary>
-/// Reads historical Serie A calendars and the first complete archived Italian
-/// Cup edition from the public JSON endpoints used by the official LBA site.
+/// Reads historical Serie A calendars and complete modern Italian Cup editions
+/// from the public JSON endpoints used by the official LBA site.
 /// </summary>
 public sealed class LbaOfficialSerieABasketballDataProvider(
     HttpClient httpClient,
@@ -59,7 +59,7 @@ public sealed class LbaOfficialSerieABasketballDataProvider(
         }
 
         var startYear = isItalianCup
-            ? ParseStartYear(season, 2008, 2008, "Official Italian Cup bridge coverage supports 2008-2009.")
+            ? ParseStartYear(season, 2008, 2025, "Official Italian Cup coverage supports 2008-2009 through 2025-2026.")
             : ParseStartYear(season, 1974, 2007, "Official historical LBA coverage supports 1974-1975 through 2007-2008.");
         var competitionSeriesId = isItalianCup ? ItalianCupCompetitionSeriesId : SerieACompetitionSeriesId;
         var competitionTypeCodes = isItalianCup ? new HashSet<string>(["CI"], StringComparer.OrdinalIgnoreCase) : new HashSet<string>(["RS", "PO"], StringComparer.OrdinalIgnoreCase);

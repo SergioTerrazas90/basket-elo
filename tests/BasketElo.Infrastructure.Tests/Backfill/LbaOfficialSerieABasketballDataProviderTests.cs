@@ -80,7 +80,7 @@ public sealed class LbaOfficialSerieABasketballDataProviderTests
     }
 
     [Fact]
-    public async Task ReadsTheOfficial2008To2009ItalianCupBridge()
+    public async Task ReadsAnOfficialItalianCupEdition()
     {
         var handler = new ItalianCupHandler();
         var provider = new LbaOfficialSerieABasketballDataProvider(
@@ -98,6 +98,23 @@ public sealed class LbaOfficialSerieABasketballDataProviderTests
         Assert.Equal("club:101", game.SourceHomeTeamId);
         Assert.Equal((short)70, game.HomeScore);
         Assert.Equal((short)69, game.AwayScore);
+    }
+
+    [Fact]
+    public async Task ReadsTheLatestConfiguredOfficialItalianCupEdition()
+    {
+        var handler = new ItalianCupHandler(2025);
+        var provider = new LbaOfficialSerieABasketballDataProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("https://www.legabasket.it") },
+            Options.Create(new LbaOfficialOptions { MinRequestIntervalMilliseconds = 0 }));
+        var context = new BackfillExecutionContext(0, 0);
+        var league = await provider.ResolveLeagueAsync("Italy", "Italian Cup", context, CancellationToken.None);
+
+        var result = await provider.GetGamesAsync(league!, "2025-2026", context, CancellationToken.None);
+
+        var game = Assert.Single(result.Games);
+        Assert.Empty(result.Warnings);
+        Assert.Equal(new DateTime(2026, 2, 22, 15, 0, 0, DateTimeKind.Utc), game.GameDateTimeUtc);
     }
 
     private sealed class LbaHandler : HttpMessageHandler
@@ -154,7 +171,7 @@ public sealed class LbaOfficialSerieABasketballDataProviderTests
         }
     }
 
-    private sealed class ItalianCupHandler : HttpMessageHandler
+    private sealed class ItalianCupHandler(int startYear = 2008) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -164,20 +181,32 @@ public sealed class LbaOfficialSerieABasketballDataProviderTests
             var json = uri.AbsolutePath switch
             {
                 "/api/championships/get-championships" =>
-                    """{"competitions":[{"id":403,"year":2008,"ctype_code":"CI","ctype_name":"Coppa Italia","full_name":"TIM CUP FINAL EIGHT 2009"}]}""",
+                    startYear == 2025
+                        ? """{"competitions":[{"id":597,"year":2025,"ctype_code":"CI","ctype_name":"Coppa Italia","full_name":"FRECCIAROSSA FINAL EIGHT 2026"}]}"""
+                        : """{"competitions":[{"id":403,"year":2008,"ctype_code":"CI","ctype_name":"Coppa Italia","full_name":"TIM CUP FINAL EIGHT 2009"}]}""",
                 "/api/teams/get-teams" =>
                     """{"teams":[{"id":11,"club_id":101,"club_code":"SIE","name":"Montepaschi Siena"},{"id":22,"club_id":202,"club_code":"BOL","name":"La Fortezza Bologna"}]}""",
                 "/api/championships/get-championships-calendar-by-id"
                     when !uri.Query.Contains("&d=", StringComparison.Ordinal) =>
                     """{"filters":{"days":[{"event_serial":201,"name":"Finale"}]}}""",
-                "/api/championships/get-championships-calendar-by-id" => """
-                    {"matches":[{
-                      "id":19899,"match_datetime":"2009-02-21T18:00:00+01:00",
-                      "h_team_id":11,"h_team_name":"Montepaschi Siena",
-                      "v_team_id":22,"v_team_name":"La Fortezza Bologna",
-                      "home_final_score":70,"visitor_final_score":69,"day_name":"Finale"
-                    }]}
-                    """,
+                "/api/championships/get-championships-calendar-by-id" =>
+                    startYear == 2025
+                        ? """
+                          {"matches":[{
+                            "id":29999,"match_datetime":"2026-02-22T16:00:00+01:00",
+                            "h_team_id":11,"h_team_name":"Montepaschi Siena",
+                            "v_team_id":22,"v_team_name":"La Fortezza Bologna",
+                            "home_final_score":85,"visitor_final_score":77,"day_name":"Finale"
+                          }]}
+                          """
+                        : """
+                          {"matches":[{
+                            "id":19899,"match_datetime":"2009-02-21T18:00:00+01:00",
+                            "h_team_id":11,"h_team_name":"Montepaschi Siena",
+                            "v_team_id":22,"v_team_name":"La Fortezza Bologna",
+                            "home_final_score":70,"visitor_final_score":69,"day_name":"Finale"
+                          }]}
+                          """,
                 _ => throw new InvalidOperationException($"Unexpected official LBA request: {uri}")
             };
 

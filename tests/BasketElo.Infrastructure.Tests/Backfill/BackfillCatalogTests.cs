@@ -74,25 +74,39 @@ public class BackfillCatalogTests
     }
 
     [Fact]
-    public void HistoricalItalianCupCatalogContainsOnlyPlayedEditionsAndBridgesApiSports()
+    public void ItalianCupCatalogStartsAtLeagueCoverageAndUsesOfficialLbaForModernEditions()
     {
         var catalog = new BackfillCatalog();
         var wikipedia = Assert.Single(catalog.GetLeagues(), league =>
             league.Provider == ItalianCupWikipediaBasketballDataProvider.Source &&
             league.Country == "Italy" && league.LeagueName == "Italian Cup");
-        var officialBridge = Assert.Single(catalog.GetLeagues(), league =>
+        var official = Assert.Single(catalog.GetLeagues(), league =>
             league.Provider == LbaOfficialSerieABasketballDataProvider.Source &&
+            league.Country == "Italy" && league.LeagueName == "Italian Cup");
+        Assert.DoesNotContain(catalog.GetLeagues(), league =>
+            league.Provider == ApiSportsBasketballDataProvider.Source &&
             league.Country == "Italy" && league.LeagueName == "Italian Cup");
 
         var historicalSeasons = catalog.GetSeasonsForLeague(wikipedia).ToList();
-        Assert.Equal(32, historicalSeasons.Count);
-        Assert.Equal("1967-1968", historicalSeasons[0]);
+        Assert.Equal(25, historicalSeasons.Count);
+        Assert.Equal("1983-1984", historicalSeasons[0]);
         Assert.Equal("2007-2008", historicalSeasons[^1]);
-        Assert.DoesNotContain("1974-1975", historicalSeasons);
         Assert.DoesNotContain("1982-1983", historicalSeasons);
-        Assert.Equal(["2008-2009"], catalog.GetSeasonsForLeague(officialBridge));
+        var officialSeasons = catalog.GetSeasonsForLeague(official).ToList();
+        Assert.Equal(18, officialSeasons.Count);
+        Assert.Equal("2008-2009", officialSeasons[0]);
+        Assert.Equal("2025-2026", officialSeasons[^1]);
         Assert.Equal("domestic_cup", wikipedia.CompetitionType);
-        Assert.Equal(wikipedia.DisplayName, officialBridge.DisplayName);
+        Assert.Equal(wikipedia.DisplayName, official.DisplayName);
+
+        var regularLeagueSeasons = catalog.GetLeagues()
+            .Where(league => league.Country == "Italy" && league.LeagueName is "Serie A" or "Lega A")
+            .SelectMany(catalog.GetSeasonsForLeague)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var cupSeasons = catalog.GetLeagues()
+            .Where(league => league.Country == "Italy" && league.LeagueName == "Italian Cup")
+            .SelectMany(catalog.GetSeasonsForLeague);
+        Assert.All(cupSeasons, season => Assert.Contains(season, regularLeagueSeasons));
     }
 
     [Fact]

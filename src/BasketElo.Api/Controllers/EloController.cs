@@ -287,6 +287,9 @@ public class EloController(
         var currentEuropeanTeamIds = poolKey == EloPoolKeys.EuropeClubs
             ? await GetCurrentEuropeanTeamIdsAsync(competition, cancellationToken)
             : null;
+        var currentNationalTeamIds = poolKey == EloPoolKeys.NationalTeams
+            ? await GetCurrentNationalTeamIdsAsync(competition, cancellationToken)
+            : null;
 
         if (asOfDate.HasValue)
         {
@@ -308,7 +311,7 @@ public class EloController(
                 .ToListAsync(cancellationToken);
 
             var globalArchiveRatings = archiveHistoryRows
-                .Where(x => !activeTeamsOnly || IsCurrentTeam(poolKey, x.TeamId, currentEuropeanTeamIds, x.IsActive))
+                .Where(x => !activeTeamsOnly || IsCurrentTeam(poolKey, x.TeamId, currentEuropeanTeamIds, currentNationalTeamIds, x.IsActive))
                 .GroupBy(x => x.TeamId)
                 .Select(group =>
                 {
@@ -318,7 +321,7 @@ public class EloController(
                         .First();
                     return latest with
                     {
-                        IsActive = IsCurrentTeam(poolKey, latest.TeamId, currentEuropeanTeamIds, latest.IsActive)
+                        IsActive = IsCurrentTeam(poolKey, latest.TeamId, currentEuropeanTeamIds, currentNationalTeamIds, latest.IsActive)
                     };
                 })
                 .OrderByDescending(x => x.Elo)
@@ -439,7 +442,9 @@ public class EloController(
         {
             globalRatingsQuery = poolKey == EloPoolKeys.Nba
                 ? globalRatingsQuery.Where(x => x.Team.IsActive)
-                : globalRatingsQuery.Where(x => currentEuropeanTeamIds!.Contains(x.TeamId));
+                : globalRatingsQuery.Where(x => (poolKey == EloPoolKeys.EuropeClubs
+                    ? currentEuropeanTeamIds!.Contains(x.TeamId)
+                    : currentNationalTeamIds!.Contains(x.TeamId)));
         }
 
         var globalRatings = await globalRatingsQuery
@@ -517,7 +522,7 @@ public class EloController(
                 rating.GamesPlayed,
                 recentMovement.GetValueOrDefault(rating.TeamId),
                 rating.LastGame?.GameDateTimeUtc,
-                IsCurrentTeam(poolKey, rating.TeamId, currentEuropeanTeamIds, rating.Team.IsActive)))
+                IsCurrentTeam(poolKey, rating.TeamId, currentEuropeanTeamIds, currentNationalTeamIds, rating.Team.IsActive)))
             .ToList();
 
         return Ok(new EloRankingsResponse(
@@ -763,6 +768,9 @@ public class EloController(
         var currentEuropeanTeamIds = poolKey == EloPoolKeys.EuropeClubs
             ? await GetCurrentEuropeanTeamIdsAsync(competition, cancellationToken)
             : null;
+        var currentNationalTeamIds = poolKey == EloPoolKeys.NationalTeams
+            ? await GetCurrentNationalTeamIdsAsync(competition, cancellationToken)
+            : null;
 
         var latestGameUtc = await dbContext.RatingHistories
             .AsNoTracking()
@@ -809,7 +817,9 @@ public class EloController(
         {
             currentRatingsQuery = poolKey == EloPoolKeys.Nba
                 ? currentRatingsQuery.Where(x => x.Team.IsActive)
-                : currentRatingsQuery.Where(x => currentEuropeanTeamIds!.Contains(x.TeamId));
+                : currentRatingsQuery.Where(x => (poolKey == EloPoolKeys.EuropeClubs
+                    ? currentEuropeanTeamIds!.Contains(x.TeamId)
+                    : currentNationalTeamIds!.Contains(x.TeamId)));
         }
 
         var currentRatings = await currentRatingsQuery
@@ -923,6 +933,7 @@ public class EloController(
                     poolKey,
                     row.TeamId,
                     currentEuropeanTeamIds,
+                    currentNationalTeamIds,
                     ratingByTeam.GetValueOrDefault(row.TeamId)?.Team.IsActive ?? true)))
             .ToList();
 
@@ -1047,6 +1058,9 @@ public class EloController(
         var currentEuropeanTeamIds = poolKey == EloPoolKeys.EuropeClubs
             ? await GetCurrentEuropeanTeamIdsAsync(null, cancellationToken)
             : null;
+        var currentNationalTeamIds = poolKey == EloPoolKeys.NationalTeams
+            ? await GetCurrentNationalTeamIdsAsync(null, cancellationToken)
+            : null;
 
         gamesPage = Math.Max(1, gamesPage);
         gamesPageSize = Math.Clamp(gamesPageSize, 10, 100);
@@ -1072,7 +1086,9 @@ public class EloController(
         {
             globalRankQuery = poolKey == EloPoolKeys.Nba
                 ? globalRankQuery.Where(x => x.Team.IsActive)
-                : globalRankQuery.Where(x => currentEuropeanTeamIds!.Contains(x.TeamId));
+                : globalRankQuery.Where(x => (poolKey == EloPoolKeys.EuropeClubs
+                    ? currentEuropeanTeamIds!.Contains(x.TeamId)
+                    : currentNationalTeamIds!.Contains(x.TeamId)));
         }
 
         var globalRank = await globalRankQuery.CountAsync(cancellationToken) + 1;
@@ -1152,7 +1168,7 @@ public class EloController(
             rating.GamesPlayed,
             recentMovement,
             rating.LastGame?.GameDateTimeUtc,
-            IsCurrentTeam(poolKey, rating.TeamId, currentEuropeanTeamIds, rating.Team.IsActive),
+            IsCurrentTeam(poolKey, rating.TeamId, currentEuropeanTeamIds, currentNationalTeamIds, rating.Team.IsActive),
             GetFranchiseIdentityEvents(poolKey, rating.Team.CanonicalName),
             competitionRows,
             recentGames,
@@ -1404,7 +1420,7 @@ public class EloController(
         => poolKey is EloPoolKeys.Default or EloPoolKeys.EuropeClubs;
 
     private static bool UsesTeamScope(string poolKey)
-        => poolKey is EloPoolKeys.Nba or EloPoolKeys.EuropeClubs;
+        => poolKey is EloPoolKeys.Nba or EloPoolKeys.EuropeClubs or EloPoolKeys.NationalTeams;
 
     private async Task<HashSet<Guid>> GetCurrentEuropeanTeamIdsAsync(
         string? competitionName,
@@ -1481,13 +1497,33 @@ public class EloController(
             .ToHashSet();
     }
 
+    private async Task<HashSet<Guid>> GetCurrentNationalTeamIdsAsync(
+        string? competitionName,
+        CancellationToken cancellationToken)
+    {
+        _ = competitionName;
+        var ratedTeams = await dbContext.TeamRatings
+            .AsNoTracking()
+            .Where(x => x.EloPoolKey == EloPoolKeys.NationalTeams)
+            .Select(x => new { x.TeamId, x.Team.CanonicalName, x.Team.CountryCode })
+            .ToListAsync(cancellationToken);
+
+        return ratedTeams
+            .Where(x => !InternationalTeamCatalog.IsHistoricalIdentity(x.CanonicalName, x.CountryCode))
+            .Select(x => x.TeamId)
+            .ToHashSet();
+    }
+
     private static bool IsCurrentTeam(
         string poolKey,
         Guid teamId,
         IReadOnlySet<Guid>? currentEuropeanTeamIds,
+        IReadOnlySet<Guid>? currentNationalTeamIds,
         bool teamIsActive)
         => poolKey == EloPoolKeys.EuropeClubs
             ? currentEuropeanTeamIds?.Contains(teamId) == true
+            : poolKey == EloPoolKeys.NationalTeams
+                ? currentNationalTeamIds?.Contains(teamId) == true
             : teamIsActive;
 
     private async Task<bool> IsDefaultEvolutionTeamSetAsync(
@@ -1509,6 +1545,11 @@ public class EloController(
         {
             var currentEuropeanTeamIds = await GetCurrentEuropeanTeamIdsAsync(null, cancellationToken);
             defaultTeamRatingsQuery = defaultTeamRatingsQuery.Where(x => currentEuropeanTeamIds.Contains(x.TeamId));
+        }
+        else if (poolKey == EloPoolKeys.NationalTeams)
+        {
+            var currentNationalTeamIds = await GetCurrentNationalTeamIdsAsync(null, cancellationToken);
+            defaultTeamRatingsQuery = defaultTeamRatingsQuery.Where(x => currentNationalTeamIds.Contains(x.TeamId));
         }
 
         var defaultTeamIds = await defaultTeamRatingsQuery
@@ -2046,6 +2087,11 @@ public class EloController(
         }
 
         var normalized = countryCode.Trim().ToUpperInvariant();
+        if (InternationalTeamCatalog.TryGetCanonicalName(normalized, out var internationalCountryName))
+        {
+            return internationalCountryName;
+        }
+
         if (CountryNameOverrides.TryGetValue(normalized, out var countryName))
         {
             return countryName;

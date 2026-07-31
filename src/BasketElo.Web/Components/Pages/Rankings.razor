@@ -1215,7 +1215,7 @@
         => string.Equals(response?.Archive.Mode, "archive", StringComparison.OrdinalIgnoreCase);
 
     private bool SupportsTeamScope
-        => selectedPool == EloPoolKeys.Nba || selectedPool == EloPoolKeys.EuropeClubs;
+        => selectedPool is EloPoolKeys.Nba or EloPoolKeys.EuropeClubs or EloPoolKeys.NationalTeams;
 
     private bool IsHistoricalTeamScope
         => SupportsTeamScope && selectedTeamScope == EloTeamScopes.Historical;
@@ -1224,12 +1224,20 @@
         => selectedPool == EloPoolKeys.Nba ? "franchises" : "teams";
 
     private string TeamScopeAriaLabel()
-        => selectedPool == EloPoolKeys.Nba ? "NBA franchise scope" : "European club team scope";
+        => selectedPool switch
+        {
+            EloPoolKeys.Nba => "NBA franchise scope",
+            EloPoolKeys.NationalTeams => "International team scope",
+            _ => "European club team scope"
+        };
 
     private string TeamScopeDescription()
-        => selectedPool == EloPoolKeys.Nba
-            ? "Current shows active NBA franchises. Historical also includes franchises that no longer compete."
-            : "Current shows clubs that participated in the latest imported European season. Historical includes clubs from earlier seasons.";
+        => selectedPool switch
+        {
+            EloPoolKeys.Nba => "Current shows active NBA franchises. Historical also includes franchises that no longer compete.",
+            EloPoolKeys.NationalTeams => "Current shows teams from the latest imported international cycle. Historical also includes former national-team identities.",
+            _ => "Current shows clubs that participated in the latest imported European season. Historical includes clubs from earlier seasons."
+        };
 
     private string HistoricalTeamLabel()
         => selectedPool == EloPoolKeys.Nba ? "Defunct" : "Historical";

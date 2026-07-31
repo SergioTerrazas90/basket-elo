@@ -23,6 +23,36 @@ static async Task<int> RunAsync(string[] args)
         return await RunFibaIngestAsync(args[1..]);
     }
 
+    if (args.Length > 0 && args[0].Equals("acb-dry-run", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunAcbDryRunAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("acb-ingest", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunAcbIngestAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("acb-tournament-dry-run", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunAcbTournamentDryRunAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("acb-tournament-ingest", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunAcbTournamentIngestAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("acb-liga-nacional-dry-run", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunAcbLigaNacionalDryRunAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("acb-liga-nacional-ingest", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunAcbLigaNacionalIngestAsync(args[1..]);
+    }
+
     AuditCommandOptions command;
     try
     {
@@ -117,9 +147,10 @@ static async Task<int> RunFibaIngestAsync(string[] args)
 
     var builder = Host.CreateApplicationBuilder();
     builder.Logging.SetMinimumLevel(LogLevel.Warning);
-    builder.Configuration["ConnectionStrings:Postgres"] =
-        values.GetValueOrDefault("--connection-string") ??
-        "Host=localhost;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo";
+    if (values.TryGetValue("--connection-string", out var connectionString))
+    {
+        builder.Configuration["ConnectionStrings:Postgres"] = connectionString;
+    }
     builder.Services.AddInfrastructure(builder.Configuration);
 
     using var host = builder.Build();
@@ -213,6 +244,239 @@ static async Task<int> RunFibaIngestAsync(string[] args)
     return 0;
 }
 
+static async Task<int> RunAcbDryRunAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 2);
+    var interval = ParseNonNegative(values, "--interval-ms", 0);
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Configuration["Dbasket:NetworkAccessEnabled"] = "true";
+    builder.Configuration["Dbasket:MinRequestIntervalMilliseconds"] = interval.ToString();
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    var provider = host.Services.GetRequiredService<IEnumerable<IBasketballDataProvider>>()
+        .Single(x => x.SourceKey == DbasketAcbBasketballDataProvider.Source);
+    var context = new BackfillExecutionContext(maxRequests, 0);
+    var league = await provider.ResolveLeagueAsync("Spain", "ACB", context, CancellationToken.None);
+    var result = await provider.GetGamesAsync(league!, season, context, CancellationToken.None);
+    Console.WriteLine($"ACB dry-run: Spain: ACB {season}");
+    Console.WriteLine($"Requests: {context.RequestsUsed}/{context.MaxRequests}; games: {result.Games.Count}; warnings: {result.Warnings.Count}");
+    foreach (var game in result.Games.Take(5))
+    {
+        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} {game.Provenance?.SourceUrl}");
+    }
+    foreach (var warning in result.Warnings.Take(10))
+    {
+        Console.WriteLine($"WARNING: {warning}");
+    }
+    return 0;
+}
+
+static async Task<int> RunAcbIngestAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var startSeason = Required(values, "--start");
+    var endSeason = values.GetValueOrDefault("--end") ?? startSeason;
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var interval = ParseNonNegative(values, "--interval-ms", 250);
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Configuration["Dbasket:NetworkAccessEnabled"] = "true";
+    builder.Configuration["Dbasket:MinRequestIntervalMilliseconds"] = interval.ToString();
+    if (values.TryGetValue("--connection-string", out var connectionString))
+    {
+        builder.Configuration["ConnectionStrings:Postgres"] = connectionString;
+    }
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
+    await dbContext.Database.MigrateAsync();
+    var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
+    var league = catalog.GetLeagues().Single(x =>
+        x.Provider == DbasketAcbBasketballDataProvider.Source &&
+        x.Country == "Spain" &&
+        x.LeagueName == "ACB");
+    var seasons = catalog.GetSeasonsForLeague(league)
+        .Where(x => SeasonLabelNormalizer.ParseStartYear(x) >= SeasonLabelNormalizer.ParseStartYear(startSeason) &&
+                    SeasonLabelNormalizer.ParseStartYear(x) <= SeasonLabelNormalizer.ParseStartYear(endSeason))
+        .ToList();
+    var completed = await dbContext.BackfillJobs
+        .Where(x => x.Provider == DbasketAcbBasketballDataProvider.Source &&
+                    x.Country == "Spain" && x.LeagueName == "ACB" &&
+                    (x.Status == BackfillJobStatus.Completed || x.Status == BackfillJobStatus.CompletedWithWarnings))
+        .Select(x => x.Season)
+        .ToListAsync();
+    var jobs = seasons.Where(x => !completed.Contains(x, StringComparer.OrdinalIgnoreCase))
+        .Select(x => new BackfillJob
+        {
+            Id = Guid.NewGuid(),
+            Provider = DbasketAcbBasketballDataProvider.Source,
+            Country = "Spain",
+            LeagueName = "ACB",
+            Season = x,
+            DryRun = false,
+            MaxRequests = maxRequests,
+            Status = BackfillJobStatus.Pending,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        }).ToList();
+    dbContext.BackfillJobs.AddRange(jobs);
+    await dbContext.SaveChangesAsync();
+    var processor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
+    var processed = 0;
+    while (await processor.TryProcessNextPendingJobAsync(CancellationToken.None))
+    {
+        processed++;
+        Console.WriteLine($"Processed ACB job {processed}/{jobs.Count}.");
+    }
+    Console.WriteLine($"ACB ingest complete: processed {processed} jobs.");
+    return 0;
+}
+
+static async Task<int> RunAcbTournamentDryRunAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var competition = Required(values, "--competition");
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var builder = Host.CreateApplicationBuilder();
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    var provider = host.Services.GetRequiredService<IEnumerable<IBasketballDataProvider>>()
+        .Single(x => x.SourceKey == AcbOfficialTournamentBasketballDataProvider.Source);
+    var context = new BackfillExecutionContext(maxRequests, 0);
+    var league = await provider.ResolveLeagueAsync("Spain", competition, context, CancellationToken.None);
+    if (league is null)
+    {
+        Console.Error.WriteLine($"Unknown ACB tournament: {competition}.");
+        return 1;
+    }
+
+    var result = await provider.GetGamesAsync(league, season, context, CancellationToken.None);
+    Console.WriteLine($"ACB tournament dry-run: Spain: {competition} {season}");
+    Console.WriteLine($"Requests: {context.RequestsUsed}/{context.MaxRequests}; games: {result.Games.Count}; warnings: {result.Warnings.Count}");
+    foreach (var game in result.Games.Take(10))
+    {
+        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} {game.Provenance?.SourceUrl}");
+    }
+    foreach (var warning in result.Warnings.Take(10))
+    {
+        Console.WriteLine($"WARNING: {warning}");
+    }
+
+    return 0;
+}
+
+static async Task<int> RunAcbTournamentIngestAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var competition = Required(values, "--competition");
+    var startSeason = Required(values, "--start");
+    var endSeason = values.GetValueOrDefault("--end") ?? startSeason;
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    if (values.TryGetValue("--connection-string", out var connectionString))
+    {
+        builder.Configuration["ConnectionStrings:Postgres"] = connectionString;
+    }
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
+    await dbContext.Database.MigrateAsync();
+    var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
+    var league = catalog.GetLeagues().Single(x =>
+        x.Provider == AcbOfficialTournamentBasketballDataProvider.Source &&
+        x.Country == "Spain" && x.LeagueName.Equals(competition, StringComparison.OrdinalIgnoreCase));
+    var seasons = catalog.GetSeasonsForLeague(league)
+        .Where(x => SeasonLabelNormalizer.ParseStartYear(x) >= SeasonLabelNormalizer.ParseStartYear(startSeason) &&
+                    SeasonLabelNormalizer.ParseStartYear(x) <= SeasonLabelNormalizer.ParseStartYear(endSeason))
+        .ToList();
+    var completed = await dbContext.BackfillJobs
+        .Where(x => x.Provider == AcbOfficialTournamentBasketballDataProvider.Source &&
+                    x.Country == "Spain" && x.LeagueName == competition &&
+                    (x.Status == BackfillJobStatus.Completed || x.Status == BackfillJobStatus.CompletedWithWarnings))
+        .Select(x => x.Season)
+        .ToListAsync();
+    var jobs = seasons.Where(x => !completed.Contains(x, StringComparer.OrdinalIgnoreCase))
+        .Select(x => new BackfillJob
+        {
+            Id = Guid.NewGuid(),
+            Provider = AcbOfficialTournamentBasketballDataProvider.Source,
+            Country = "Spain",
+            LeagueName = competition,
+            Season = x,
+            DryRun = false,
+            MaxRequests = maxRequests,
+            Status = BackfillJobStatus.Pending,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        }).ToList();
+    dbContext.BackfillJobs.AddRange(jobs);
+    await dbContext.SaveChangesAsync();
+    var processor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
+    var processed = 0;
+    while (await processor.TryProcessNextPendingJobAsync(CancellationToken.None))
+    {
+        processed++;
+        Console.WriteLine($"Processed {competition} job {processed}/{jobs.Count}.");
+    }
+    Console.WriteLine($"ACB tournament ingest complete: {competition}; processed {processed} jobs.");
+    return 0;
+}
+
+static async Task<int> RunAcbLigaNacionalDryRunAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var builder = Host.CreateApplicationBuilder();
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    var provider = host.Services.GetRequiredService<IEnumerable<IBasketballDataProvider>>().Single(x => x.SourceKey == AcbOfficialLigaNacionalBasketballDataProvider.Source);
+    var context = new BackfillExecutionContext(maxRequests, 0);
+    var league = await provider.ResolveLeagueAsync("Spain", "Liga Nacional", context, CancellationToken.None);
+    var result = await provider.GetGamesAsync(league!, season, context, CancellationToken.None);
+    Console.WriteLine($"ACB Liga Nacional dry-run: Spain: Liga Nacional {season}");
+    Console.WriteLine($"Requests: {context.RequestsUsed}/{context.MaxRequests}; games: {result.Games.Count}; warnings: {result.Warnings.Count}");
+    foreach (var game in result.Games.Take(10))
+        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} {game.Provenance?.SourceUrl}");
+    foreach (var warning in result.Warnings.Take(10)) Console.WriteLine($"WARNING: {warning}");
+    return 0;
+}
+
+static async Task<int> RunAcbLigaNacionalIngestAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    if (values.TryGetValue("--connection-string", out var connectionString)) builder.Configuration["ConnectionStrings:Postgres"] = connectionString;
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
+    await dbContext.Database.MigrateAsync();
+    var completed = await dbContext.BackfillJobs.Where(x => x.Provider == AcbOfficialLigaNacionalBasketballDataProvider.Source && x.Country == "Spain" && x.LeagueName == "Liga Nacional" && (x.Status == BackfillJobStatus.Completed || x.Status == BackfillJobStatus.CompletedWithWarnings)).Select(x => x.Season).ToListAsync();
+    if (!completed.Contains(season, StringComparer.OrdinalIgnoreCase))
+    {
+        dbContext.BackfillJobs.Add(new BackfillJob { Id = Guid.NewGuid(), Provider = AcbOfficialLigaNacionalBasketballDataProvider.Source, Country = "Spain", LeagueName = "Liga Nacional", Season = season, DryRun = false, MaxRequests = maxRequests, Status = BackfillJobStatus.Pending, CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow });
+        await dbContext.SaveChangesAsync();
+    }
+    var processor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
+    var processed = 0;
+    while (await processor.TryProcessNextPendingJobAsync(CancellationToken.None)) processed++;
+    Console.WriteLine($"ACB Liga Nacional ingest complete: {season}; processed {processed} jobs.");
+    return 0;
+}
+
 static int ParseNonNegative(IReadOnlyDictionary<string, string> values, string name, int defaultValue)
 {
     var value = values.GetValueOrDefault(name);
@@ -267,6 +531,28 @@ static void PrintUsage()
 
         dotnet run --project src/BasketElo.Tools -- fiba-ingest \
           [--max-jobs 0] [--max-requests 2]
+
+        ACB historical archive dry-run
+
+        dotnet run --project src/BasketElo.Tools -- acb-dry-run \
+          --season 2007-2008 [--max-requests 2] [--interval-ms 0]
+
+        ACB historical archive ingest (writes local Postgres)
+
+        dotnet run --project src/BasketElo.Tools -- acb-ingest \
+          --start 2007-2008 --end 2007-2008 \
+          [--max-requests 0] [--interval-ms 250]
+
+        ACB official tournament dry-run
+
+        dotnet run --project src/BasketElo.Tools -- acb-tournament-dry-run \
+          --competition "Spanish Cup" --season 2007-2008 [--max-requests 0]
+
+        ACB official tournament ingest (writes local Postgres)
+
+        dotnet run --project src/BasketElo.Tools -- acb-tournament-ingest \
+          --competition "Spanish Cup" --start 1983-1984 --end 2007-2008 \
+          [--max-requests 0]
         """);
 }
 

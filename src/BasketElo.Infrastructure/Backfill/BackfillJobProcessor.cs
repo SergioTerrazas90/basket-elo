@@ -250,8 +250,8 @@ public class BackfillJobProcessor(
                     (string.Equals(providerGame.Source, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase)
                         ? FibaBasketballDataProvider.CountryCodeFromTeamId(providerGame.SourceAwayTeamId)
                         : competition.CountryCode);
-                var homeTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceHomeTeamId, providerGame.HomeTeamName, homeCountryCode, canonicalSeason, cancellationToken);
-                var awayTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceAwayTeamId, providerGame.AwayTeamName, awayCountryCode, canonicalSeason, cancellationToken);
+                var homeTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceHomeTeamId, providerGame.HomeTeamName, homeCountryCode, canonicalSeason, competition.EloPoolKey, cancellationToken);
+                var awayTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceAwayTeamId, providerGame.AwayTeamName, awayCountryCode, canonicalSeason, competition.EloPoolKey, cancellationToken);
 
                 var existingGame = await dbContext.Games
                     .FirstOrDefaultAsync(x =>
@@ -611,9 +611,24 @@ public class BackfillJobProcessor(
         string teamName,
         string? countryCode,
         string season,
+        string? eloPoolKey,
         CancellationToken cancellationToken)
     {
         sourceTeamId = NormalizeSourceTeamId(sourceTeamId, teamName);
+        var isInternational = string.Equals(
+            eloPoolKey,
+            EloPoolKeys.NationalTeams,
+            StringComparison.OrdinalIgnoreCase);
+        var internationalCanonicalName = string.Empty;
+        var internationalCountryCode = string.Empty;
+        var hasInternationalIdentity = isInternational && InternationalTeamCatalog.TryResolve(
+            sourceTeamId,
+            teamName,
+            countryCode,
+            out internationalCanonicalName,
+            out internationalCountryCode);
+        var resolvedTeamName = hasInternationalIdentity ? internationalCanonicalName : teamName;
+        var resolvedCountryCode = hasInternationalIdentity ? internationalCountryCode : countryCode ?? string.Empty;
         var usesNbaFranchiseCatalog = string.Equals(
                 source,
                 BasketballReferenceBasketballDataProvider.Source,
@@ -671,9 +686,20 @@ public class BackfillJobProcessor(
                 aliasChanged = true;
             }
 
-            if (alias.Team.CountryCode == "UNK" && !string.IsNullOrWhiteSpace(countryCode))
+            if (hasInternationalIdentity && alias.Team.CanonicalName != resolvedTeamName)
             {
-                alias.Team.CountryCode = countryCode;
+                alias.Team.CanonicalName = resolvedTeamName;
+                aliasChanged = true;
+            }
+
+            if (hasInternationalIdentity && alias.Team.CountryCode != resolvedCountryCode)
+            {
+                alias.Team.CountryCode = resolvedCountryCode;
+                aliasChanged = true;
+            }
+            else if (alias.Team.CountryCode == "UNK" && !string.IsNullOrWhiteSpace(countryCode))
+            {
+                alias.Team.CountryCode = countryCode!;
                 aliasChanged = true;
             }
 
@@ -737,14 +763,17 @@ public class BackfillJobProcessor(
                     existingTeam.CountryCode == countryCode,
                 cancellationToken);
         }
-        else if (!string.IsNullOrWhiteSpace(countryCode))
+        else if (!string.IsNullOrWhiteSpace(resolvedCountryCode))
         {
-            var normalizedTeamName = NormalizeInternationalTeamName(teamName);
+            var normalizedTeamName = NormalizeInternationalTeamName(resolvedTeamName);
             var candidates = await dbContext.Teams
-                .Where(existingTeam => existingTeam.CountryCode == countryCode)
+                .Where(existingTeam =>
+                    existingTeam.CountryCode == resolvedCountryCode ||
+                    (hasInternationalIdentity && existingTeam.CountryCode == "UNK"))
                 .ToListAsync(cancellationToken);
             team = candidates.FirstOrDefault(existingTeam =>
-                NormalizeInternationalTeamName(existingTeam.CanonicalName) == normalizedTeamName);
+                NormalizeInternationalTeamName(existingTeam.CanonicalName) == normalizedTeamName ||
+                (hasInternationalIdentity && NormalizeInternationalTeamName(existingTeam.CanonicalName) == NormalizeInternationalTeamName(sourceTeamId)));
         }
 
         if (team is null)
@@ -752,8 +781,8 @@ public class BackfillJobProcessor(
             team = new Team
             {
                 Id = Guid.NewGuid(),
-                CanonicalName = franchiseMatch?.Franchise.CanonicalName ?? apiSportsCanonicalName ?? teamName,
-                CountryCode = string.IsNullOrWhiteSpace(countryCode) ? "UNK" : countryCode,
+                CanonicalName = franchiseMatch?.Franchise.CanonicalName ?? apiSportsCanonicalName ?? resolvedTeamName,
+                CountryCode = string.IsNullOrWhiteSpace(resolvedCountryCode) ? "UNK" : resolvedCountryCode,
                 IsActive = franchiseMatch?.Franchise.IsActive ?? true,
                 CreatedAtUtc = DateTime.UtcNow
             };
@@ -765,8 +794,13 @@ public class BackfillJobProcessor(
             team.IsActive = franchiseMatch.Franchise.IsActive;
             if (team.CountryCode == "UNK" && !string.IsNullOrWhiteSpace(countryCode))
             {
-                team.CountryCode = countryCode;
+                team.CountryCode = countryCode!;
             }
+        }
+        else if (hasInternationalIdentity)
+        {
+            team.CanonicalName = resolvedTeamName;
+            team.CountryCode = resolvedCountryCode;
         }
 
         var (newAliasValidFromUtc, newAliasValidToUtc) = franchiseMatch is null

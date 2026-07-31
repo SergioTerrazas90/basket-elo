@@ -3,6 +3,7 @@ using System;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BasketElo.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(BasketEloDbContext))]
-    partial class BasketEloDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260723173751_MergeDuplicateCongoIdentity")]
+    partial class MergeDuplicateCongoIdentity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -350,188 +353,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("competition_aliases", (string)null);
-                });
-
-            modelBuilder.Entity("BasketElo.Domain.Entities.CurrentResultReview", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<short?>("AwayScore")
-                        .HasColumnType("smallint");
-
-                    b.Property<string>("AwayTeamName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("AwayTeamSourceId")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)");
-
-                    b.Property<string>("CompetitionName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("CountryName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("GameDateTimeUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<short?>("HomeScore")
-                        .HasColumnType("smallint");
-
-                    b.Property<string>("HomeTeamName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("HomeTeamSourceId")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)");
-
-                    b.Property<string>("ParserVersion")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("ResultStatus")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<Guid?>("RunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateOnly>("SourceDate")
-                        .HasColumnType("date");
-
-                    b.Property<string>("SourceGameId")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)");
-
-                    b.Property<string>("SourceRevision")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("SourceUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("StageName")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<string>("SuggestedCompetitionCountryCode")
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)");
-
-                    b.Property<string>("SuggestedCompetitionName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RunId");
-
-                    b.HasIndex("SourceDate");
-
-                    b.HasIndex("Source", "SourceGameId")
-                        .IsUnique();
-
-                    b.HasIndex("Status", "UpdatedAtUtc");
-
-                    b.ToTable("current_result_reviews", (string)null);
-                });
-
-            modelBuilder.Entity("BasketElo.Domain.Entities.CurrentResultsRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("CandidatesRead")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DeferredEloPoolsJson")
-                        .HasColumnType("jsonb");
-
-                    b.Property<int>("EloPoolsQueued")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<DateTime?>("FinishedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateOnly>("FromDate")
-                        .HasColumnType("date");
-
-                    b.Property<int>("GamesUpserted")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("PagesRead")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<int>("ReviewsOpened")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("StartedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateOnly>("ToDate")
-                        .HasColumnType("date");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Status", "StartedAtUtc");
-
-                    b.HasIndex("FromDate", "ToDate", "Provider");
-
-                    b.ToTable("current_results_runs", (string)null);
                 });
 
             modelBuilder.Entity("BasketElo.Domain.Entities.EloRebuildRun", b =>
@@ -1755,16 +1576,6 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Competition");
-                });
-
-            modelBuilder.Entity("BasketElo.Domain.Entities.CurrentResultReview", b =>
-                {
-                    b.HasOne("BasketElo.Domain.Entities.CurrentResultsRun", "Run")
-                        .WithMany()
-                        .HasForeignKey("RunId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Run");
                 });
 
             modelBuilder.Entity("BasketElo.Domain.Entities.Game", b =>

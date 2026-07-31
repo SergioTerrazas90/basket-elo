@@ -28,6 +28,11 @@
     font-weight: 700;
 }
 
+.footer-separator {
+    margin-inline: var(--space-2);
+    color: var(--color-subtle);
+}
+
 .sidebar {
     position: sticky;
     top: 0;

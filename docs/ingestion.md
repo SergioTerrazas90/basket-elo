@@ -26,6 +26,33 @@ records rather than creating a second copy. Competition aliases allow several
 provider names or source competition IDs to resolve to one canonical
 competition.
 
+## Team and country identity
+
+Country identity has one display rule: use the full canonical country name,
+never a provider code. For example, `ESP`, `Spain`, and a provider's numeric
+team ID must resolve to the canonical team name `Spain`. The provider code may
+remain in `Team.CountryCode` as a compact internal/source key, but it is not a
+valid canonical name or ranking label. This applies equally to newly ingested
+games and historical games already in the database.
+
+Providers may expose a three-letter code, a full name, or both. Ingestion must
+resolve the identity in this order: stable source alias, known international
+country-code mapping, then the observed full name. Source spellings are kept
+as aliases for auditability. Historical entities such as `YUG`, `URS`, and
+`TCH` remain distinct canonical identities (`Yugoslavia`, `Soviet Union`, and
+`Czechoslovakia`) rather than being silently merged into successor countries.
+The provider label `FR Yugoslavia` is an alias for the post-1992 federation
+whose canonical name is `Serbia and Montenegro`; it must be merged with that
+identity, but never with historical `Yugoslavia`.
+
+Before accepting an international backfill, verify that no national-team
+ranking row is still named only by a code and that the country code is not
+`UNK` when the provider supplied a resolvable identity. A bulk identity change
+updates the referenced team rows; games keep their stable team foreign keys,
+so their historical results remain intact. Rebuild every affected national-team
+ELO ruleset after the change and verify that the rankings contain one row per
+canonical team identity.
+
 ## Providers and their responsibilities
 
 ### Global Sports Archive
@@ -129,6 +156,48 @@ The international pipeline does not replace the existing domestic sources:
   network fetching is disabled by default.
 - FiveThirtyEight supplies the pinned, checksum-verified historical NBA archive
   through the 2007-2008 season and does not make runtime network requests.
+
+### ACB historical archive
+
+The historical ACB catalog uses the 'acb-dbasket' provider for seasons
+1983-1984 through 2007-2008. It reads DBasket's season and round pages,
+which contain the date, home team, away team, score, regular-season round,
+and playoff phase. The [DBasket ACB historical index](https://dbasket.net/seasons/acb)
+and its season/round pages are the ingestion endpoints. DBasket states that
+its data is primarily collected from ACB and FEB sources and corrected against
+historical archives. API-Sports
+remains the provider for ACB from 2008-2009 onward. DBasket requests are
+disabled by default and must be explicitly enabled with
+'Dbasket:NetworkAccessEnabled'.
+
+Spanish club-basketball ingestion begins with the 1956-1957 Liga Nacional,
+which is the first continuous national league season. Pre-1957 Spanish club
+basketball consisted primarily of regional championships and the national
+Campeonato de España/Copa competition; those records are not ingested as
+league context unless a reliable national in-season source is added.
+
+The official ACB Liga Nacional provider covers the pre-ACB seasons currently
+loaded in the catalog. Historical ties are valid source results for this
+competition: contemporary season tables include a separate draws column, and
+the 1982-1983 Zaragoza season record explicitly lists Areslux Granollers-
+Zaragoza as 78-78. The provider therefore accepts equal home and away scores
+as completed games; they are not treated as parser failures or discarded.
+Source cross-checks: [1982-1983 season table](https://es.wikipedia.org/wiki/Primera_Divisi%C3%B3n_de_baloncesto_1982-83)
+and [C.B. Zaragoza 1982-1983 results archive](https://www.lacasadelbaloncesto.es/docs/resultados/Resultado20.pdf).
+
+### ACB historical cups
+
+The historical Spanish Cup catalog uses the `acb-official-tournaments`
+provider for Copa del Generalísimo seasons from the Liga Nacional boundary
+onward, and for Copa del Rey seasons 1983-1984 through 2007-2008. Cup games
+before 1956-1957 are excluded because there is no continuous national league
+context for them. The same
+provider covers the Supercopa editions that were actually played in that
+range: 1984-1985 through 1987-1988 and 2004-2005 through 2007-2008. It uses
+the official [ACB Copa del Rey archive](https://acb.com/es/copa-del-rey) and
+[Supercopa archive](https://acb.com/es/supercopa), follows the historical team
+pages for each bracket, and verifies each candidate against its official ACB
+Live match page before importing it.
 
 See [`nba-source-policy.md`](nba-source-policy.md) and
 [`nba-refresh-operations.md`](nba-refresh-operations.md) for NBA-specific rules.

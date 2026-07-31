@@ -1,0 +1,54 @@
+@page "/how-it-works"
+
+<PageTitle>How It Works - BasketElo</PageTitle>
+
+<div class="method-page">
+    <section class="method-hero">
+        <p class="eyebrow">How BasketElo works</p>
+        <h1>A rating that changes as the evidence changes.</h1>
+        <p class="method-lede">BasketElo uses ELO to compare teams across basketball competitions. After each game, the result is added to what the model already knows and the ratings move accordingly.</p>
+    </section>
+
+    <section class="method-section method-grid history-section" aria-labelledby="history-heading">
+        <div><p class="eyebrow">A short history</p><h2 id="history-heading">From chess boards to basketball courts.</h2></div>
+        <div class="method-copy"><p>ELO was developed by Arpad Elo, a physicist and chess player, for the World Chess Federation. The basic idea was practical: give every player a rating, compare the ratings before a match, and then update them based on the result.</p><p>A win against a highly rated opponent tells us more than a routine win against a lower-rated one. Over time, the ratings become a running record of performance relative to the field.</p><p>Basketball needs a few extra decisions because games have margins, home courts, leagues, seasons, and different levels of available data. BasketElo keeps the original idea, then makes those basketball-specific choices visible.</p></div>
+    </section>
+
+    <section class="method-section" aria-labelledby="rulesets-heading">
+        <div class="section-heading-wide"><p class="eyebrow">Different lenses</p><h2 id="rulesets-heading">The difference is in what a game tells the model.</h2><p>There is no single universally correct way to apply ELO to basketball. We keep the choices explicit so they can be tested, compared, and improved.</p></div>
+        <div class="ruleset-grid">
+            <article class="ruleset-card"><span class="ruleset-tag">Simple baseline</span><h3>Basic ELO</h3><p>A plain win/loss model. It is easy to understand and gives us a useful reference point for every other experiment.</p></article>
+            <article class="ruleset-card"><span class="ruleset-tag">Margin-aware</span><h3>Point-margin ELO</h3><p>A close win and a large win provide different amounts of information. This version lets the score margin strengthen or soften the normal rating movement.</p></article>
+            <article class="ruleset-card ruleset-card-featured"><span class="ruleset-tag">Public default</span><h3>Adjusted ELO</h3><p>Adjusted ELO is not a completely different algorithm from Point-margin ELO. It is the current calibrated version: it keeps margin adjustment, uses a 70-point home advantage, and provides the default constants we use for public ratings.</p></article>
+        </div>
+        <div class="method-callout"><strong>Nothing is written in stone.</strong><span>These are modelling choices, not laws of basketball. Different approaches can be sensible for different leagues or questions. Keeping the rulesets separate lets us compare them honestly instead of quietly changing the numbers underneath.</span></div>
+    </section>
+
+    <section class="method-section formula-section" aria-labelledby="formula-heading">
+        <div class="section-heading-wide"><p class="eyebrow">One game, step by step</p><h2 id="formula-heading">What the numbers are doing.</h2><p>Here is a simplified example using the public adjusted ruleset. It shows the shape of the calculation without hiding the important assumptions behind notation.</p></div>
+        <div class="formula-grid">
+            <div class="formula-card"><span>1 · Add the home edge</span><code>1,600 + 70 − 1,500 = 170</code><p>A 1,600-rated home team playing a 1,500-rated away team has an effective difference of 170 points.</p></div>
+            <div class="formula-card"><span>2 · Calculate the expected result</span><code>170-point difference → about 73%</code><p>Using a probability scale of 400, the model gives the home team an expected result of roughly 73%.</p></div>
+            <div class="formula-card"><span>3 · Update the ratings</span><code>20 × (1 − 0.73) = +5.4</code><p>If the home team wins, its normal change is about +5.4 points. Margin adjustment and competition weight can then modify that number.</p></div>
+        </div>
+    </section>
+
+    <section class="method-section" aria-labelledby="levers-heading">
+        <div class="section-heading-wide"><p class="eyebrow">Why these choices</p><h2 id="levers-heading">The levers behind an experiment.</h2><p>We are aiming for a model that is understandable, responsive to new information, and useful across different competitions. Model Lab exposes the assumptions that can reasonably vary between leagues or questions.</p></div>
+        <div class="lever-grid">
+            <article class="lever-card"><h3>K-factor</h3><p>How quickly a rating reacts. We use 20 as a steady starting point: higher values follow recent form more closely, while lower values take longer to move.</p></article>
+            <article class="lever-card"><h3>Home advantage</h3><p>How much home court contributes before the result is evaluated. The public adjusted ruleset uses 70 ELO points.</p></article>
+            <article class="lever-card"><h3>Probability scale</h3><p>How large a rating gap must be before the expected result becomes strongly one-sided. The current scale is 400.</p></article>
+            <article class="lever-card"><h3>Point-margin scale</h3><p>How an ELO gap translates into an expected scoring margin. The current scale is 28 points per ELO margin.</p></article>
+            <article class="lever-card"><h3>Margin dampener and cap</h3><p>How quickly margin matters, and how much it can amplify or reduce a normal update. This keeps one unusual blowout from taking over the ratings.</p></article>
+            <article class="lever-card"><h3>Competition weight</h3><p>Whether results from a competition should move the shared rating pool more or less. It is currently 1.0.</p></article>
+        </div>
+    </section>
+
+    <section class="method-section method-panel" aria-labelledby="implementation-heading">
+        <div><p class="eyebrow">Under the hood</p><h2 id="implementation-heading">The implementation is versioned, too.</h2></div>
+        <div class="method-copy"><p>Every rating is tied to a ruleset version. That means we can rebuild a history with a new formula without silently mixing it with ratings produced by an older one. It also makes experiments reproducible: the inputs, scope, seasons, and parameters can be reviewed alongside the result.</p><p>As the dataset grows, Model Lab gives us a place to test whether different settings improve the evidence.</p><a class="btn btn-primary" href="model-lab">Explore Model Lab</a></div>
+    </section>
+
+    <section class="method-note"><strong>A rating is a useful signal, not a verdict.</strong><span>It describes what the results support right now. Injuries, line-ups, travel, motivation, and future change can all sit outside the model.</span></section>
+</div>

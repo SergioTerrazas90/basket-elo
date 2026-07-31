@@ -1,6 +1,7 @@
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Elo;
 using BasketElo.Infrastructure.Backfill;
+using BasketElo.Infrastructure.CurrentResults;
 using BasketElo.Infrastructure.Elo;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
@@ -21,9 +22,13 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString));
 
         services.Configure<ApiSportsOptions>(configuration.GetSection(ApiSportsOptions.SectionName));
+        services.Configure<AcbArchiveOptions>(configuration.GetSection(AcbArchiveOptions.SectionName));
+        services.Configure<DbasketOptions>(configuration.GetSection(DbasketOptions.SectionName));
         services.Configure<BasketballReferenceOptions>(configuration.GetSection(BasketballReferenceOptions.SectionName));
         services.Configure<FiveThirtyEightOptions>(configuration.GetSection(FiveThirtyEightOptions.SectionName));
         services.Configure<NbaRefreshOptions>(configuration.GetSection(NbaRefreshOptions.SectionName));
+        services.Configure<CurrentResultsOptions>(configuration.GetSection(CurrentResultsOptions.SectionName));
+        services.Configure<LiveScoreOptions>(configuration.GetSection(LiveScoreOptions.SectionName));
         services.Configure<ModelLabPlanOptions>(configuration.GetSection(ModelLabPlanOptions.SectionName));
         services.AddSingleton<IApiSportsRateLimiter, ApiSportsRateLimiter>();
         services.AddSingleton<IApiSportsLeagueCache, ApiSportsLeagueCache>();
@@ -41,6 +46,25 @@ public static class DependencyInjection
                 .Value;
             client.BaseAddress = new Uri(providerOptions.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        services.AddHttpClient<AcbArchiveBasketballDataProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(45);
+        });
+        services.AddHttpClient<DbasketAcbBasketballDataProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://dbasket.net");
+            client.Timeout = TimeSpan.FromSeconds(45);
+        });
+        services.AddHttpClient<AcbOfficialTournamentBasketballDataProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://acb.com");
+            client.Timeout = TimeSpan.FromSeconds(45);
+        });
+        services.AddHttpClient<AcbOfficialLigaNacionalBasketballDataProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://www.acb.com");
+            client.Timeout = TimeSpan.FromSeconds(45);
         });
         services.AddHttpClient<FibaBasketballDataProvider>(client =>
         {
@@ -60,9 +84,26 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(45);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
         });
+        services.AddHttpClient<LiveScoreDailyResultsProvider>((serviceProvider, client) =>
+        {
+            var providerOptions = serviceProvider
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<LiveScoreOptions>>()
+                .Value;
+            client.BaseAddress = new Uri(providerOptions.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(providerOptions.UserAgent);
+        });
 
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<ApiSportsBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<AcbArchiveBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<DbasketAcbBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<AcbOfficialTournamentBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<AcbOfficialLigaNacionalBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<BasketballReferenceBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
@@ -76,6 +117,10 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<FiveThirtyEightBasketballDataProvider>());
         services.AddScoped<IBackfillJobProcessor, BackfillJobProcessor>();
         services.AddScoped<INbaCurrentSeasonRefreshService, NbaCurrentSeasonRefreshService>();
+        services.AddScoped<ICurrentResultsProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<LiveScoreDailyResultsProvider>());
+        services.AddScoped<ICurrentResultsIngestionService, CurrentResultsIngestionService>();
+        services.AddScoped<ICurrentResultsSchedulerService, CurrentResultsSchedulerService>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBackfillCoverageService, BackfillCoverageService>();
         services.AddSingleton<IBackfillCatalog, BackfillCatalog>();

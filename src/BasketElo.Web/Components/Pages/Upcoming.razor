@@ -1,0 +1,101 @@
+@page "/upcoming"
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@using BasketElo.Domain.Games
+@inject HttpClient Http
+
+<PageTitle>Upcoming games</PageTitle>
+
+<div class="games-page">
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Forward schedule</p>
+            <h1>Upcoming games</h1>
+            <p class="intro">The next seven days, ranked with the current ELO snapshot when both teams are rated.</p>
+        </div>
+        <button class="btn btn-outline-primary" @onclick="RefreshAsync" disabled="@isBusy">Refresh</button>
+    </section>
+
+    <section class="filters-panel">
+        <div class="filter-field">
+            <label for="minElo">Minimum team ELO</label>
+            <input id="minElo" class="form-control" type="number" @bind="minElo" />
+        </div>
+        <div class="filter-field actions">
+            <button class="btn btn-primary" @onclick="RefreshAsync" disabled="@isBusy">Apply</button>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+    else if (isBusy && response is null)
+    {
+        <p>Loading upcoming games...</p>
+    }
+    else if (response is not null)
+    {
+        <section class="summary-panel">
+            <div class="summary-card"><span class="summary-label">Games</span><strong>@response.TotalCount</strong></div>
+            <div class="summary-card"><span class="summary-label">Window</span><strong>@response.FromUtc.ToLocalTime().ToString("MMM d") – @response.ToUtc.ToLocalTime().ToString("MMM d")</strong></div>
+        </section>
+        <section class="table-section">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle games-table">
+                    <thead><tr><th>Date</th><th>Competition</th><th>Matchup</th><th>Team ELOs</th><th>Gap</th><th>Status</th></tr></thead>
+                    <tbody>
+                    @if (response.Games.Count == 0)
+                    {
+                        <tr><td colspan="6" class="empty-state">No upcoming games match the selected ELO threshold.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var game in response.Games)
+                        {
+                            <tr>
+                                <td>@game.GameDateTimeUtc.ToLocalTime().ToString("ddd, MMM d HH:mm")</td>
+                                <td><strong>@game.Competition</strong><br /><small>@game.Country</small></td>
+                                <td>@game.HomeTeam <span class="vs">vs</span> @game.AwayTeam</td>
+                                <td>@FormatElo(game.HomeElo) – @FormatElo(game.AwayElo)</td>
+                                <td>@FormatElo(game.EloDifference)</td>
+                                <td><span class="status-pill">@game.Status</span></td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private UpcomingGamesResponse? response;
+    private decimal? minElo = 1800;
+    private bool isBusy;
+    private string? errorMessage;
+
+    protected override Task OnInitializedAsync() => RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        isBusy = true;
+        errorMessage = null;
+        try
+        {
+            var query = minElo.HasValue ? $"?minElo={minElo.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : string.Empty;
+            response = await Http.GetFromJsonAsync<UpcomingGamesResponse>($"api/games/upcoming{query}");
+        }
+        catch (Exception exception)
+        {
+            errorMessage = $"Could not load upcoming games: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static string FormatElo(decimal? value) => value.HasValue ? value.Value.ToString("0") : "—";
+}

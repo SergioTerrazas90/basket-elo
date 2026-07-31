@@ -12,6 +12,19 @@ public partial class UseOfficialFibaSeasonYears : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
+        // Some early FIBA catalog rows were created as empty placeholder
+        // seasons. Remove the obsolete AmeriCup 2021 placeholder before the
+        // official-year update, otherwise it collides with the populated row
+        // whose source edition is also 2021.
+        migrationBuilder.Sql("""
+            DELETE FROM seasons s
+            USING competitions c
+            WHERE s."CompetitionId" = c."Id"
+              AND c."Name" = 'FIBA AmeriCup Qualifiers'
+              AND s."Label" = '2021-2022'
+              AND NOT EXISTS (SELECT 1 FROM games g WHERE g."SeasonId" = s."Id");
+            """);
+
         migrationBuilder.Sql("""
             WITH fiba_competitions AS (
                 SELECT DISTINCT "CompetitionId"

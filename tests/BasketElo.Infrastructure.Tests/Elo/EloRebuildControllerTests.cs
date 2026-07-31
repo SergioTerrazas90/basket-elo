@@ -293,6 +293,130 @@ public class EloRebuildControllerTests
     }
 
     [Fact]
+    public async Task InternationalRankingsDefaultToPresentDayTeamsAndCanIncludeHistoricalTeams()
+    {
+        await using var dbContext = CreateDbContext();
+        var currentTeam = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "Current Country",
+            CountryCode = "CUR"
+        };
+        var currentOpponent = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "Current Opponent",
+            CountryCode = "COP"
+        };
+        var historicalTeam = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "Yugoslavia",
+            CountryCode = "YUG"
+        };
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "International Test Competition",
+            Type = "international",
+            EloPoolKey = EloPoolKeys.NationalTeams
+        };
+        var currentSeason = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Competition = competition,
+            Label = "2025-2026"
+        };
+        var historicalSeason = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Competition = competition,
+            Label = "2000-2001"
+        };
+        var currentGame = new Game
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Competition = competition,
+            SeasonId = currentSeason.Id,
+            Season = currentSeason,
+            GameDateTimeUtc = new DateTime(2026, 1, 10, 19, 0, 0, DateTimeKind.Utc),
+            HomeTeamId = currentTeam.Id,
+            AwayTeamId = currentOpponent.Id,
+            HomeTeam = currentTeam,
+            AwayTeam = currentOpponent,
+            Status = "finished"
+        };
+        var historicalGame = new Game
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Competition = competition,
+            SeasonId = historicalSeason.Id,
+            Season = historicalSeason,
+            GameDateTimeUtc = new DateTime(2001, 1, 10, 19, 0, 0, DateTimeKind.Utc),
+            HomeTeamId = historicalTeam.Id,
+            AwayTeamId = currentOpponent.Id,
+            HomeTeam = historicalTeam,
+            AwayTeam = currentOpponent,
+            Status = "finished"
+        };
+
+        dbContext.Teams.AddRange(currentTeam, currentOpponent, historicalTeam);
+        dbContext.Competitions.Add(competition);
+        dbContext.Seasons.AddRange(currentSeason, historicalSeason);
+        dbContext.Games.AddRange(currentGame, historicalGame);
+        dbContext.TeamRatings.AddRange(
+            CreateRating(currentTeam, currentGame, 1600m),
+            CreateRating(currentOpponent, currentGame, 1550m),
+            CreateRating(historicalTeam, historicalGame, 1700m));
+        dbContext.RatingHistories.AddRange(
+            CreateHistory(currentTeam, currentOpponent, currentGame, 1600m),
+            CreateHistory(currentOpponent, currentTeam, currentGame, 1550m),
+            CreateHistory(historicalTeam, currentOpponent, historicalGame, 1700m));
+        await dbContext.SaveChangesAsync();
+        var controller = CreateController(dbContext, new ScopedIdentityHealthService(EloPoolKeys.NationalTeams));
+
+        var currentResult = await controller.GetRankings(
+            rulesetVersion: null,
+            pool: EloPoolKeys.NationalTeams,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: null);
+
+        var current = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(currentResult.Result).Value);
+        Assert.Equal(EloTeamScopes.Current, current.TeamScope);
+        Assert.DoesNotContain(current.Rankings, row => row.TeamId == historicalTeam.Id);
+        Assert.Contains(current.Rankings, row => row.TeamId == currentTeam.Id);
+        Assert.All(current.Rankings, row => Assert.True(row.IsActive));
+
+        var historicalResult = await controller.GetRankings(
+            rulesetVersion: null,
+            pool: EloPoolKeys.NationalTeams,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: null,
+            teams: EloTeamScopes.Historical);
+
+        var historical = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(historicalResult.Result).Value);
+        Assert.Equal(EloTeamScopes.Historical, historical.TeamScope);
+        Assert.Equal(3, historical.Rankings.Count);
+        Assert.False(historical.Rankings.Single(row => row.TeamId == historicalTeam.Id).IsActive);
+    }
+
+    [Fact]
     public async Task PoolRebuildUsesPoolScopedIdentityGate()
     {
         await using var dbContext = CreateDbContext();
@@ -348,6 +472,39 @@ public class EloRebuildControllerTests
         new DbContextOptionsBuilder<BasketEloDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
+
+    private static TeamRating CreateRating(Team team, Game lastGame, decimal elo) => new()
+    {
+        TeamId = team.Id,
+        Team = team,
+        EloPoolKey = EloPoolKeys.NationalTeams,
+        RulesetVersion = EloRulesetVersions.AdjustedV1,
+        Elo = elo,
+        GamesPlayed = 1,
+        LastGameId = lastGame.Id,
+        LastGame = lastGame
+    };
+
+    private static RatingHistory CreateHistory(Team team, Team opponent, Game game, decimal elo) => new()
+    {
+        Id = Guid.NewGuid(),
+        GameId = game.Id,
+        Game = game,
+        TeamId = team.Id,
+        Team = team,
+        OpponentTeamId = opponent.Id,
+        OpponentTeam = opponent,
+        EloPoolKey = EloPoolKeys.NationalTeams,
+        RulesetVersion = EloRulesetVersions.AdjustedV1,
+        GameDateTimeUtc = game.GameDateTimeUtc,
+        PreElo = elo,
+        PostElo = elo,
+        EloDelta = 0m,
+        KFactorUsed = 20,
+        ExpectedScore = 0.5m,
+        ActualScore = 0.5m,
+        GamesPlayedBefore = 0
+    };
 
     private static EloController CreateController(
         BasketEloDbContext dbContext,

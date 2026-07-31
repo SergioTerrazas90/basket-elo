@@ -1,4 +1,5 @@
 using BasketElo.Api.Auth;
+using BasketElo.Domain.Elo;
 using BasketElo.Domain.Games;
 using BasketElo.Infrastructure.Persistence;
 using System.Globalization;
@@ -12,6 +13,79 @@ namespace BasketElo.Api.Controllers;
 [RequireInternalAdmin]
 public class GamesController(BasketEloDbContext dbContext) : ControllerBase
 {
+    [HttpGet("upcoming")]
+    public async Task<ActionResult<UpcomingGamesResponse>> GetUpcomingGames(
+        [FromQuery] DateTime? fromUtc,
+        [FromQuery] DateTime? toUtc,
+        [FromQuery] string? poolKey,
+        [FromQuery] string? rulesetVersion,
+        [FromQuery] decimal? minElo,
+        [FromQuery] int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var from = fromUtc ?? DateTime.UtcNow;
+        var to = toUtc ?? from.AddDays(7);
+        var ruleset = string.IsNullOrWhiteSpace(rulesetVersion) ? EloRulesetVersions.Default : rulesetVersion.Trim().ToLowerInvariant();
+        if (!EloRulesetVersions.All.Contains(ruleset, StringComparer.Ordinal))
+        {
+            return BadRequest(new ProblemDetails { Detail = $"Unknown ELO ruleset '{ruleset}'." });
+        }
+
+        var query = dbContext.Games
+            .AsNoTracking()
+            .Include(x => x.Competition)
+            .Include(x => x.HomeTeam)
+            .Include(x => x.AwayTeam)
+            .Where(x => x.GameDateTimeUtc >= from && x.GameDateTimeUtc <= to &&
+                x.Status != "finished" && x.Status != "cancelled" && x.Status != "postponed");
+        if (!string.IsNullOrWhiteSpace(poolKey))
+        {
+            var normalizedPool = EloPoolKeys.Normalize(poolKey);
+            query = query.Where(x => x.Competition.EloPoolKey == normalizedPool);
+        }
+
+        var games = await query
+            .OrderBy(x => x.GameDateTimeUtc)
+            .ThenBy(x => x.Competition.Name)
+            .Take(5000)
+            .Select(x => new
+            {
+                x.Id,
+                x.GameDateTimeUtc,
+                CountryCode = x.Competition.CountryCode,
+                Competition = x.Competition.Name,
+                PoolKey = x.Competition.EloPoolKey,
+                HomeTeamId = x.HomeTeamId,
+                AwayTeamId = x.AwayTeamId,
+                HomeTeam = x.HomeTeam.CanonicalName,
+                AwayTeam = x.AwayTeam.CanonicalName,
+                x.Status,
+                x.SourceUrl
+            })
+            .ToListAsync(cancellationToken);
+
+        var teamIds = games.SelectMany(x => new[] { x.HomeTeamId, x.AwayTeamId }).Distinct().ToList();
+        var ratings = await dbContext.TeamRatings
+            .AsNoTracking()
+            .Where(x => teamIds.Contains(x.TeamId) && x.RulesetVersion == ruleset)
+            .ToDictionaryAsync(x => (x.EloPoolKey, x.TeamId), x => x.Elo, cancellationToken);
+
+        var projected = games
+            .Select(game =>
+            {
+                decimal? homeElo = game.PoolKey is not null && ratings.TryGetValue((game.PoolKey, game.HomeTeamId), out var home) ? home : null;
+                decimal? awayElo = game.PoolKey is not null && ratings.TryGetValue((game.PoolKey, game.AwayTeamId), out var away) ? away : null;
+                decimal? difference = homeElo.HasValue && awayElo.HasValue ? Math.Abs(homeElo.Value - awayElo.Value) : null;
+                decimal? minimum = homeElo.HasValue && awayElo.HasValue ? Math.Min(homeElo.Value, awayElo.Value) : null;
+                return new UpcomingGameListItem(game.Id, game.GameDateTimeUtc, DisplayCountryFromCode(game.CountryCode), game.Competition, game.HomeTeam, game.AwayTeam, game.Status, homeElo, awayElo, difference, minimum, homeElo.HasValue && awayElo.HasValue, game.SourceUrl);
+            })
+            .Where(x => !minElo.HasValue || (x.HomeElo >= minElo.Value && x.AwayElo >= minElo.Value))
+            .Take(Math.Clamp(limit, 1, 500))
+            .ToList();
+
+        return Ok(new UpcomingGamesResponse(projected, from, to, ruleset, projected.Count));
+    }
+
     [HttpGet]
     public async Task<ActionResult<GameBrowseResponse>> GetGames(
         [FromQuery] string? country,

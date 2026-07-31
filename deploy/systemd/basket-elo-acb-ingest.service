@@ -1,0 +1,16 @@
+[Unit]
+Description=Basket ELO ACB historical archive ingestion
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/basket-elo/releases/tools
+ExecStart=/opt/basket-elo/releases/tools/BasketElo.Tools acb-ingest --start 1985-1986 --end 2007-2008 --max-requests 0 --interval-ms 5000
+User=ubuntu
+EnvironmentFile=/etc/basket-elo/basket-elo.env
+Environment=ASPNETCORE_ENVIRONMENT=Production
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target

@@ -45,6 +45,20 @@ public class BackfillCatalogTests
     }
 
     [Fact]
+    public void DbasketAcbFillsTheHistoricalGapBeforeApiSports()
+    {
+        var catalog = new BackfillCatalog();
+        var archive = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == DbasketAcbBasketballDataProvider.Source &&
+            league.Country == "Spain" && league.LeagueName == "ACB");
+
+        var seasons = catalog.GetSeasonsForLeague(archive).ToList();
+        Assert.Equal("1983-1984", seasons[0]);
+        Assert.Equal("2007-2008", seasons[^1]);
+        Assert.Equal(25, seasons.Count);
+    }
+
+    [Fact]
     public void PolishCupUsesTheProviderEndYearSeasonKey()
     {
         var catalog = new BackfillCatalog();

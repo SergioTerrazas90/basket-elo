@@ -30,6 +30,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<EloRebuildRun> EloRebuildRuns => Set<EloRebuildRun>();
     public DbSet<BackfillJob> BackfillJobs => Set<BackfillJob>();
     public DbSet<BackfillInspectionDecision> BackfillInspectionDecisions => Set<BackfillInspectionDecision>();
+    public DbSet<CurrentResultsRun> CurrentResultsRuns => Set<CurrentResultsRun>();
+    public DbSet<CurrentResultReview> CurrentResultReviews => Set<CurrentResultReview>();
     public DbSet<IdentityHealthCheckRun> IdentityHealthCheckRuns => Set<IdentityHealthCheckRun>();
     public DbSet<IdentityHealthCheckFinding> IdentityHealthCheckFindings => Set<IdentityHealthCheckFinding>();
     public DbSet<IdentityReviewDecision> IdentityReviewDecisions => Set<IdentityReviewDecision>();
@@ -542,6 +544,52 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.ReviewedAtUtc).IsRequired();
             entity.HasIndex(x => new { x.Provider, x.Country, x.LeagueName, x.Season }).IsUnique();
             entity.HasIndex(x => x.Status);
+        });
+
+        modelBuilder.Entity<CurrentResultsRun>(entity =>
+        {
+            entity.ToTable("current_results_runs");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Provider).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.DeferredEloPoolsJson).HasColumnType("jsonb");
+            entity.Property(x => x.ErrorMessage).HasMaxLength(4000);
+            entity.Property(x => x.StartedAtUtc).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasIndex(x => new { x.Status, x.StartedAtUtc });
+            entity.HasIndex(x => new { x.FromDate, x.ToDate, x.Provider });
+        });
+
+        modelBuilder.Entity<CurrentResultReview>(entity =>
+        {
+            entity.ToTable("current_result_reviews");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Source).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.SourceGameId).HasMaxLength(150).IsRequired();
+            entity.Property(x => x.SourceUrl).HasMaxLength(1000);
+            entity.Property(x => x.CountryName).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.CompetitionName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.StageName).HasMaxLength(100);
+            entity.Property(x => x.HomeTeamName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.AwayTeamName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.HomeTeamSourceId).HasMaxLength(150).IsRequired();
+            entity.Property(x => x.AwayTeamSourceId).HasMaxLength(150).IsRequired();
+            entity.Property(x => x.ResultStatus).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.Reason).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.SuggestedCompetitionName).HasMaxLength(200);
+            entity.Property(x => x.SuggestedCompetitionCountryCode).HasMaxLength(3);
+            entity.Property(x => x.ParserVersion).HasMaxLength(100);
+            entity.Property(x => x.SourceRevision).HasMaxLength(100);
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.Property(x => x.UpdatedAtUtc).IsRequired();
+            entity.HasOne(x => x.Run)
+                .WithMany()
+                .HasForeignKey(x => x.RunId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(x => new { x.Source, x.SourceGameId }).IsUnique();
+            entity.HasIndex(x => new { x.Status, x.UpdatedAtUtc });
+            entity.HasIndex(x => x.SourceDate);
         });
 
         modelBuilder.Entity<IdentityHealthCheckRun>(entity =>

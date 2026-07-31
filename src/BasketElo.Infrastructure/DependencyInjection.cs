@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.Configure<ApiSportsOptions>(configuration.GetSection(ApiSportsOptions.SectionName));
         services.Configure<AcbArchiveOptions>(configuration.GetSection(AcbArchiveOptions.SectionName));
         services.Configure<DbasketOptions>(configuration.GetSection(DbasketOptions.SectionName));
+        services.Configure<LbaOfficialOptions>(configuration.GetSection(LbaOfficialOptions.SectionName));
         services.Configure<BasketballReferenceOptions>(configuration.GetSection(BasketballReferenceOptions.SectionName));
         services.Configure<FiveThirtyEightOptions>(configuration.GetSection(FiveThirtyEightOptions.SectionName));
         services.Configure<NbaRefreshOptions>(configuration.GetSection(NbaRefreshOptions.SectionName));
@@ -66,6 +67,14 @@ public static class DependencyInjection
             client.BaseAddress = new Uri("https://www.acb.com");
             client.Timeout = TimeSpan.FromSeconds(45);
         });
+        services.AddHttpClient<LbaOfficialSerieABasketballDataProvider>((serviceProvider, client) =>
+        {
+            var providerOptions = serviceProvider
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<LbaOfficialOptions>>()
+                .Value;
+            client.BaseAddress = new Uri(providerOptions.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(45);
+        });
         services.AddHttpClient<FibaBasketballDataProvider>(client =>
         {
             client.BaseAddress = new Uri("https://www.fiba.basketball");
@@ -104,6 +113,8 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<AcbOfficialTournamentBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<AcbOfficialLigaNacionalBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<LbaOfficialSerieABasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<BasketballReferenceBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>

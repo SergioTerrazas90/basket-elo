@@ -59,6 +59,21 @@ public class BackfillCatalogTests
     }
 
     [Fact]
+    public void OfficialLbaFillsThirtyFourSeasonsBeforeApiSports()
+    {
+        var catalog = new BackfillCatalog();
+        var archive = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == LbaOfficialSerieABasketballDataProvider.Source &&
+            league.Country == "Italy" && league.LeagueName == "Serie A");
+
+        var seasons = catalog.GetSeasonsForLeague(archive).ToList();
+        Assert.Equal("Italy: Lega Basket Serie A", archive.DisplayName);
+        Assert.Equal("1974-1975", seasons[0]);
+        Assert.Equal("2007-2008", seasons[^1]);
+        Assert.Equal(34, seasons.Count);
+    }
+
+    [Fact]
     public void PolishCupUsesTheProviderEndYearSeasonKey()
     {
         var catalog = new BackfillCatalog();

@@ -945,13 +945,17 @@ static async Task<int> RunFranceIngestAsync(string[] args)
         Console.WriteLine($"Processed French historical job {processed}/{jobs.Count}.");
     }
 
-    var summary = await dbContext.BackfillJobs
+    var attempts = await dbContext.BackfillJobs
         .Where(job => job.Provider == FrenchHistoricalBasketballDataProvider.Source &&
             job.Country == "France" && job.LeagueName == configuredLeague.LeagueName && seasons.Contains(job.Season))
+        .ToListAsync();
+    var summary = attempts
+        .GroupBy(job => job.Season, StringComparer.OrdinalIgnoreCase)
+        .Select(group => group.OrderByDescending(job => job.UpdatedAtUtc).First())
         .GroupBy(job => job.Status)
         .Select(group => new { Status = group.Key, Count = group.Count() })
         .OrderBy(item => item.Status)
-        .ToListAsync();
+        .ToList();
     Console.WriteLine($"French {competition} ingest processed {processed} jobs. Status: {string.Join(", ", summary.Select(item => $"{item.Status}={item.Count}"))}");
     return summary.Any(item => item.Status == BackfillJobStatus.Failed) ? 2 : 0;
 }

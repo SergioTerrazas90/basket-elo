@@ -83,8 +83,10 @@ The `wikipedia-italian-cup` provider uses the MediaWiki revisions API and parses
 the four historical result shapes used by the edition pages: knockout brackets,
 two-leg templates, two-leg result tables, and round-robin matrices/lists. Team
 article targets are retained as stable source identities while sponsor names are
-kept as observed aliases. Administrative 2-0 results are stored but explicitly
-excluded from ELO.
+kept as observed aliases. Verified sponsor-only cells are normalized to those
+same club identities, while same-city rivals and legal successor clubs remain
+separate. Administrative 2-0 results are stored but explicitly excluded from
+ELO.
 
 Live probes on every played historical edition produced 1,246 published games
 across 32 seasons, with no zero-game editions. The source often publishes only

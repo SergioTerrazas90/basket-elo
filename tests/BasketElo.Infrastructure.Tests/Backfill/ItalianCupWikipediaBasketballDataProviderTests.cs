@@ -163,6 +163,28 @@ public sealed class ItalianCupWikipediaBasketballDataProviderTests
         Assert.NotNull(forfeit.ExclusionReason);
     }
 
+    [Fact]
+    public void NormalizesVerifiedSponsorOnlyTeamIdsWithoutCollapsingCityRivals()
+    {
+        const string wikitext = """
+            |data_inizio = 1 settembre 1989
+            == Risultati ==
+            * [[Knorr Bologna]] - [[Virtus Roma]] 88-80
+            * [[Enichem Livorno]] - [[Pallacanestro Livorno|Garessio 2000 Livorno]] 91-87
+            """;
+
+        var games = Parse(wikitext, "1989-1990");
+
+        Assert.Equal(2, games.Count);
+        var bologna = Assert.Single(games, game => game.HomeTeamName == "Knorr Bologna");
+        Assert.Equal("wiki-team:virtus-pallacanestro-bologna", bologna.SourceHomeTeamId);
+        Assert.Equal("wiki-team:pallacanestro-virtus-roma", bologna.SourceAwayTeamId);
+        var livorno = Assert.Single(games, game => game.HomeTeamName == "Enichem Livorno");
+        Assert.NotEqual(livorno.SourceHomeTeamId, livorno.SourceAwayTeamId);
+        Assert.Equal("wiki-team:libertas-livorno", livorno.SourceHomeTeamId);
+        Assert.Equal("wiki-team:pallacanestro-livorno", livorno.SourceAwayTeamId);
+    }
+
     private static List<BasketElo.Domain.Backfill.BasketballProviderGame> Parse(string wikitext, string season)
     {
         var warnings = new List<string>();

@@ -47,6 +47,64 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
             ["dicembre"] = 12
         };
 
+    // Some historical tables use a sponsor name or a short Basket template
+    // instead of a club article link. Normalize only verified sponsor/club
+    // identities; similarly named city rivals and legal successor clubs remain
+    // separate (notably the two Livorno clubs and the two Udine entities).
+    private static readonly IReadOnlyDictionary<string, string> CanonicalTeamSlugs =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["algor-siena"] = "mens-sana-siena",
+            ["mens-sana-basket"] = "mens-sana-siena",
+            ["montepaschi-siena"] = "mens-sana-siena",
+            ["allibert-livorno"] = "pallacanestro-livorno",
+            ["alno-fabriano"] = "fabriano-basket",
+            ["arimo-bologna"] = "fortitudo-pallacanestro-bologna",
+            ["auxilium-pallacanestro-torino"] = "auxilium-torino",
+            ["berloni-torino"] = "auxilium-torino",
+            ["banco-sardegna-sassari"] = "dinamo-basket-sassari",
+            ["cantine-riunite-reggio-emilia"] = "pallacanestro-reggiana",
+            ["climamio-bologna"] = "fortitudo-pallacanestro-bologna",
+            ["eldorado-bologna"] = "fortitudo-pallacanestro-bologna",
+            ["enichem-livorno"] = "libertas-livorno",
+            ["enimont-livorno"] = "libertas-livorno",
+            ["fortitudo-bologna"] = "fortitudo-pallacanestro-bologna",
+            ["fernet-branca-pavia"] = "pallacanestro-pavia",
+            ["fides-napoli"] = "partenope-napoli-basket",
+            ["filanto-forli"] = "libertas-pallacanestro-forli",
+            ["jollycolombani-forli"] = "libertas-pallacanestro-forli",
+            ["latini-forli"] = "libertas-pallacanestro-forli",
+            ["libertas-forli"] = "libertas-pallacanestro-forli",
+            ["glaxo-verona"] = "scaligera-basket-verona",
+            ["garessio-2000-livorno"] = "pallacanestro-livorno",
+            ["hitachi-venezia"] = "reyer-venezia",
+            ["il-messaggero-roma"] = "pallacanestro-virtus-roma",
+            ["lottomatica-roma"] = "pallacanestro-virtus-roma",
+            ["virtus-pallacanestro-roma"] = "pallacanestro-virtus-roma",
+            ["virtus-roma"] = "pallacanestro-virtus-roma",
+            ["pallacanestro-trieste-2004"] = "pallacanestro-trieste",
+            ["stefanel-trieste"] = "pallacanestro-trieste",
+            ["irge-desio"] = "pallacanestro-aurora-desio",
+            ["kinder-bologna"] = "virtus-pallacanestro-bologna",
+            ["knorr-bologna"] = "virtus-pallacanestro-bologna",
+            ["virtus-bologna"] = "virtus-pallacanestro-bologna",
+            ["rb-montecatini-terme"] = "montecatini-sporting-club",
+            ["marr-rimini"] = "basket-rimini-crabs",
+            ["basket-rimini"] = "basket-rimini-crabs",
+            ["mulat-napoli"] = "napoli-basket-1978",
+            ["nuova-pallacanestro-firenze"] = "pallacanestro-firenze",
+            ["panasonic-reggio-calabria"] = "viola-reggio-calabria",
+            ["philips-milano"] = "olimpia-milano",
+            ["polti-cantu"] = "pallacanestro-cantu",
+            ["shampoo-clear-cantu"] = "pallacanestro-cantu",
+            ["vismara-cantu"] = "pallacanestro-cantu",
+            ["sidis-reggio-emilia"] = "pallacanestro-reggiana",
+            ["skipper-bologna"] = "fortitudo-pallacanestro-bologna",
+            ["snaidero-udine"] = "pallalcesto-amatori-udine",
+            ["corona-cremona"] = "unione-sportiva-corona",
+            ["spondilatte-cremona"] = "unione-sportiva-corona"
+        };
+
     private const string MonthPattern =
         "gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre";
 
@@ -746,6 +804,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
         }
 
         var id = Slugify(canonical);
+        id = CanonicalTeamSlugs.GetValueOrDefault(id) ?? id;
         return string.IsNullOrWhiteSpace(id) ? null : new TeamRef($"wiki-team:{id}", name);
     }
 

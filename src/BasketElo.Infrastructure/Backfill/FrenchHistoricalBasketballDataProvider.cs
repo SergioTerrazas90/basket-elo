@@ -180,6 +180,7 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
     {
         var games = new List<BasketballProviderGame>();
         var regularRoundOrdinal = 0;
+        var sourceGameOrdinal = 0;
         foreach (Match block in BasketArchivesBlockRegex().Matches(html))
         {
             var heading = CleanMarkup(block.Groups[1].Value);
@@ -206,7 +207,6 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
                 date = new DateTime(endYear, date.Month, date.Day);
             }
 
-            var gameIndex = 0;
             foreach (var row in Regex.Split(block.Groups[2].Value, @"<TR[^>]*>", RegexOptions.IgnoreCase).Skip(1))
             {
                 var cells = Regex.Split(row, @"<TD[^>]*>", RegexOptions.IgnoreCase)
@@ -227,9 +227,9 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
                     continue;
                 }
 
-                gameIndex++;
+                sourceGameOrdinal++;
                 games.Add(BuildGame(
-                    $"ba:{season}:{Slug(round)}:{gameIndex}",
+                    $"ba:{season}:{sourceGameOrdinal}",
                     date,
                     homeName,
                     Slug(homeName),

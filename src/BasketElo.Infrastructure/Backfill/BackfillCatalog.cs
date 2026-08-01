@@ -257,13 +257,13 @@ public class BackfillCatalog : IBackfillCatalog
             .ToArray();
 
     private static string[] GreekLeagueHistoricalSeasons()
-        => new[] { 1992 }
+        => new[] { 1992, 1993, 1994, 1995 }
             .Concat(Enumerable.Range(1996, 12))
             .Select(year => $"{year}-{year + 1}")
             .ToArray();
 
     private static string[] GreekCupHistoricalSeasons()
-        => new[] { 1992 }
+        => new[] { 1992, 1993, 1994, 1995 }
             .Concat(Enumerable.Range(1996, 12).Where(year => year != 2003))
             .Select(year => $"{year}-{year + 1}")
             .ToArray();

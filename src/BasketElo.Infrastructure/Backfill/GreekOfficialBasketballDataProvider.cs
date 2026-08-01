@@ -42,6 +42,9 @@ public sealed class GreekOfficialBasketballDataProvider(
         new Dictionary<int, string>
         {
             [1992] = "00000015",
+            [1993] = "00000014",
+            [1994] = "00000013",
+            [1995] = "00000012",
             [1999] = "0000000E",
             [2000] = "0000000D",
             [2001] = "0000000C",
@@ -57,6 +60,9 @@ public sealed class GreekOfficialBasketballDataProvider(
         new Dictionary<int, int>
         {
             [1992] = 1746,
+            [1993] = 1747,
+            [1994] = 1748,
+            [1995] = 1749,
             [1996] = 1750,
             [1997] = 1751,
             [1998] = 1752,
@@ -211,9 +217,9 @@ public sealed class GreekOfficialBasketballDataProvider(
             CupSourceId when EokCupPostIds.ContainsKey(startYear) =>
                 await GetCupGamesAsync(season, startYear, context, cancellationToken),
             LeagueSourceId => throw new ArgumentException(
-                "Historical Greek coverage supports 1992-1993 and 1996-1997 through 2007-2008.", nameof(season)),
+                "Historical Greek coverage supports 1992-1993 through 2007-2008, except the incomplete 2003-2004 Cup page.", nameof(season)),
             CupSourceId => throw new ArgumentException(
-                "Complete EOK Cup pages are cataloged for 1992-1993 and from 1996-1997 through 2007-2008, excluding incomplete 2003-2004.", nameof(season)),
+                "Complete EOK Cup pages are cataloged for 1992-1993 through 2007-2008, excluding incomplete 2003-2004.", nameof(season)),
             _ => throw new InvalidOperationException("Greek official provider only supports Greece: A1 and Greek Cup.")
         };
     }
@@ -385,6 +391,11 @@ public sealed class GreekOfficialBasketballDataProvider(
         {
             warnings.Add(
                 $"Expected 182 regular-season games for 1992-1993 but assembled {games.Values.Count(game => game.CompetitionPhase == "Regular Season")}; this season is incomplete.");
+        }
+        if (startYear is >= 1993 and <= 1995 && games.Values.Count(game => game.CompetitionPhase == "Regular Season") != 182)
+        {
+            warnings.Add(
+                $"ESAKE exposed {games.Values.Count(game => game.CompetitionPhase == "Regular Season")} regular-season games for {season}; the archive is missing one or more source rows versus the expected 182.");
         }
         return (games.Values.OrderBy(game => game.GameDateTimeUtc).ThenBy(game => game.SourceGameId).ToArray(), hasMorePages, warnings);
     }

@@ -10,16 +10,16 @@ starts in 2008-2009.
 | --- | --- | --- | --- | --- |
 | 1 | [L'Equipe Pro A archive](https://www.lequipe.fr/Basket/pro-a/saison-1987-1988/page-calendrier-resultats) | Every regular-season round and playoff stage from 1987-1988 onward | Complete dated scores, stable match IDs and stable club IDs. Requires one request per round or playoff stage. | 1987-1988 through 1997-1998 |
 | 2 | [TheSports Pro A archive](https://www.the-sports.org/basketball-french-national-championships-events-list-s6-c0-b0-g40-p2.html) | Regular season and playoffs from 2001-2002 onward; seven seasons in this backfill | Complete dated scores and stable team IDs. Requires one index request and one AJAX request per round, but avoids the known date and score typos in overlapping BasketArchives playoff pages. | 2001-2002 through 2007-2008 |
-| 3 | [BasketArchives](http://www.basketarchives.fr/somstats.htm) | Complete score pages for 1981-1982 and 1998-1999 through 2004-2005; eight full seasons, but not contiguous | Easiest source (one HTML request per season) and the specialist French archive. Some overlapping playoff pages contain incorrect years or impossible score transcriptions, so only the non-overlapping seasons are imported. | 1981-1982 and 1998-1999 through 2000-2001 |
+| 3 | [BasketArchives](http://www.basketarchives.fr/somstats.htm) | Complete score pages for 1981-1982 and 1998-1999 through 2004-2005, but no continuous coverage before 1987-1988 | Easiest source (one HTML request per season) and the specialist French archive. The isolated 1981-1982 season is intentionally excluded; some overlapping playoff pages also contain incorrect years or impossible score transcriptions. | 1998-1999 through 2000-2001 |
 | 4 | [LNB](https://www.lnb.fr/) historical publications | Official season validation and historical reports | Authoritative, but no stable bulk game-level archive for the requested years was found. | Validation only |
 | 5 | French/English Wikipedia season articles | Standings, champions and selected playoff results | Easy to access, but regular-season game lists are incomplete. | Validation only |
 
-The verified league catalog therefore contains the isolated complete 1981-1982
-season and a continuous 1987-1988 through 2007-2008 run. The remaining explicit
-gap is 1982-1983 through 1986-1987: BasketArchives and Wikipedia publish standings,
-playoff summaries or isolated club games for those years, not complete game-level
-top-flight schedules. Standings matrices and win/loss totals are not expanded into
-synthetic games.
+The verified league catalog starts with the first continuous complete run,
+1987-1988 through 2007-2008. The isolated 1981-1982 season and the incomplete
+1982-1983 through 1986-1987 seasons are excluded. BasketArchives and Wikipedia
+publish standings, playoff summaries or isolated club games for those years,
+not a continuous set of complete game-level top-flight schedules. Standings
+matrices and win/loss totals are not expanded into synthetic games.
 
 ## Ranked cup sources
 
@@ -38,7 +38,6 @@ count minus one when the source records an automatic advance.
 
 | Competition | Season | Games |
 | --- | --- | ---: |
-| LNB | 1981-1982 | 182 |
 | LNB | 1987-1988 | 264 |
 | LNB | 1988-1989 | 265 |
 | LNB | 1989-1990 | 332 |
@@ -78,7 +77,7 @@ Ingest newest first:
 
 ```bash
 dotnet run --project src/BasketElo.Tools -- france-ingest \
-  --competition "LNB" --start 2007-2008 --end 1981-1982 --interval-ms 100
+  --competition "LNB" --start 2007-2008 --end 1987-1988 --interval-ms 100
 
 dotnet run --project src/BasketElo.Tools -- france-ingest \
   --competition "French Cup" --start 2007-2008 --end 2004-2005 --interval-ms 100

@@ -1068,7 +1068,7 @@ static void PrintUsage()
         Historical French league or cup ingest (writes configured Postgres, newest first)
 
         dotnet run --project src/BasketElo.Tools -- france-ingest \
-          --competition "LNB" --start 2007-2008 --end 1981-1982 \
+          --competition "LNB" --start 2007-2008 --end 1987-1988 \
           [--max-requests 0] [--interval-ms 100] [--connection-string "..."]
         """);
 }

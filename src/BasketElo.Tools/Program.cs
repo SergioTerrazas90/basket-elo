@@ -1259,7 +1259,7 @@ static void PrintUsage()
         Greek official league or Cup ingest (writes configured Postgres, newest first)
 
         dotnet run --project src/BasketElo.Tools -- greece-ingest \
-          --competition "A1" --start 2007-2008 --end 1999-2000 \
+          --competition "A1" --start 2007-2008 --end 1996-1997 \
           [--max-requests 0] [--interval-ms 100] [--connection-string "..."]
         """);
 }

@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using BasketElo.Domain.Backfill;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Options;
@@ -24,6 +26,48 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
     public const string LEquipeParserVersion = "lequipe-fr-v1";
     public const string TheSportsParserVersion = "the-sports-fr-v1";
     public const string FrenchCupParserVersion = "fr-wikipedia-cup-v1";
+    public const string GallicaParserVersion = "ffbb-gallica-alto-v1";
+
+    private static readonly IReadOnlyDictionary<int, GallicaSeasonSource> GallicaSeasons =
+        new Dictionary<int, GallicaSeasonSource>
+        {
+            [1982] = new("bpt6k6559330r", 182),
+            [1983] = new("bpt6k6560640n", 182),
+            [1984] = new("bpt6k6558623b", 182),
+            [1985] = new("bpt6k6559621t", 432),
+            [1986] = new("bpt6k65592201", 427)
+        };
+
+    private static readonly IReadOnlyList<GallicaTeamAlias> GallicaTeamAliases =
+    [
+        new(@"(?:S\.?\s*C\.?\s*M\.?\s*)?Le\s+Mans", "Le Mans"),
+        new(@"(?:E\.?\s*[BS]\.?\s*)?(?:Pau[\s-]*)?Orthez", "Pau-Orthez"),
+        new(@"(?:A\.?\s*S\.?\s*)?Monaco", "Monaco"),
+        new(@"(?:C\.?\s*S\.?\s*P\.?\s*)?Limoges(?:\s+C\.?\s*S\.?\s*P\.?)?", "Limoges"),
+        new(@"(?:A\.?\s*S\.?\s*V\.?\s*E\.?\s*L\.?|A\.?\s*V\.?\s*S\.?\s*E\.?\s*L\.?|Villeurbanne|AS\s+Villeurbanne)", "Lyon-Villeurbanne"),
+        new(@"(?:O[l1i0]\.?|0[1l]?\.?)?\s*Antibes", "Antibes"),
+        new(@"(?:E\.?\s*S\.?\s*M\.?\s*)?Challans(?:\s+B[CV]{2})?", "Challans"),
+        new(@"Caen(?:\s+B\.?\s*C\.?)?", "Caen"),
+        new(@"(?:J\.?\s*A\.?\s*)?Vichy", "Vichy"),
+        new(@"(?:E\.?\s*S\.?\s*)?Avignon", "Avignon"),
+        new(@"Tours(?:\s+B\.?\s*C\.?)?", "Tours"),
+        new(@"Mulhouse(?:\s+B\.?\s*C\.?)?", "Mulhouse"),
+        new(@"Stade\s+Fran[cç]ais", "Stade Français"),
+        new(@"(?:C\.?\s*R\.?\s*O\.?\s*)?Lyon", "Lyon"),
+        new(@"Reims(?:\s+C\.?\s*B\.?)?", "Reims"),
+        new(@"(?:R\.?\s*C\.?\s*(?:F\.?\s*)?Paris|Racing(?:\s+Paris)?)", "Racing Paris"),
+        new(@"Nantes(?:\s+B\.?\s*C\.?)?", "Nantes"),
+        new(@"(?:C\.?\s*A\.?\s*)?S(?:ain)?t[\s.-]*Etienne", "Saint-Étienne"),
+        new(@"(?:S\.?\s*L\.?\s*U\.?\s*C\.?\s*)?Nancy", "Nancy"),
+        new(@"(?:C\.?\s*E\.?\s*P\.?\s*)?Lorient", "Lorient"),
+        new(@"(?:Stade\s+Clermontois|St\.?\s*Clermont|A\.?\s*S\.?\s*Clermont)", "Clermont"),
+        new(@"(?:J\.?\s*A\.?|J\.?\s*D\.?\s*A\.?)\s+Dijon", "Dijon"),
+        new(@"(?:Etoile|E\.?)\s+Vo[il]ron", "Voiron"),
+        new(@"(?:Avenir|A\.?)\s+Rennes", "Rennes"),
+        new(@"Grenoble(?:\s+B(?:C|CI)?)?", "Grenoble"),
+        new(@"Cholet(?:\s+B(?:asket)?)?", "Cholet"),
+        new(@"(?:B\.?\s*C\.?\s*)?Nice(?:\s+O[l1i]\.?)?", "Nice")
+    ];
 
     private static readonly IReadOnlyDictionary<int, (string Regular, string Playoffs)> TheSportsPages =
         new Dictionary<int, (string, string)>
@@ -194,6 +238,8 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
         {
             "FR_TOP_FLIGHT" when startYear is 1981 or >= 1998 and <= 2000 =>
                 await GetBasketArchivesLeagueAsync(season, endYear, context, cancellationToken),
+            "FR_TOP_FLIGHT" when startYear is >= 1982 and <= 1986 =>
+                await GetGallicaLeagueAsync(season, startYear, endYear, context, cancellationToken),
             "FR_TOP_FLIGHT" when startYear is >= 1987 and <= 1997 =>
                 await GetLEquipeLeagueAsync(season, startYear, endYear, context, cancellationToken),
             "FR_TOP_FLIGHT" when startYear is >= 2001 and <= 2007 =>
@@ -201,7 +247,7 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             "COUPE_DE_FRANCE" when startYear is >= 2004 and <= 2007 =>
                 await GetFrenchCupAsync(season, startYear, endYear, context, cancellationToken),
             "FR_TOP_FLIGHT" => throw new ArgumentException(
-                "French historical league coverage supports 1981-1982 and 1987-1988 through 2007-2008.", nameof(season)),
+                "French historical league coverage supports 1981-1982 through 2007-2008.", nameof(season)),
             "COUPE_DE_FRANCE" => throw new ArgumentException(
                 "Complete historical French Cup articles support 2004-2005 through 2007-2008.", nameof(season)),
             _ => throw new InvalidOperationException("French historical provider only supports France: LNB and French Cup.")
@@ -304,6 +350,307 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             }
         }
         return games;
+    }
+
+    private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetGallicaLeagueAsync(
+        string season,
+        int startYear,
+        int endYear,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var source = GallicaSeasons[startYear];
+        var searchUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
+            $"services/ContentSearch?ark={source.Ark}&query=LIMOGES").ToString();
+        var searchXml = await FetchGallicaStringAsync(searchUrl, context, cancellationToken);
+        var pages = ParseGallicaSearchPages(searchXml);
+        if (pages.Count == 0)
+        {
+            throw new InvalidOperationException($"Gallica returned no searchable FFBB magazine pages for {season}.");
+        }
+
+        var games = new List<BasketballProviderGame>();
+        foreach (var page in pages)
+        {
+            var altoUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
+                $"RequestDigitalElement?O={source.Ark}&E=ALTO&Deb={page}").ToString();
+            var alto = await FetchGallicaStringAsync(altoUrl, context, cancellationToken, searchUrl);
+            var sourceUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
+                $"ark:/12148/{source.Ark}/f{page}.item").ToString();
+            games.AddRange(ParseGallicaAltoPage(alto, season, endYear, page, sourceUrl));
+        }
+
+        var distinctGames = games
+            .DistinctBy(game => $"{game.GameDateTimeUtc:yyyyMMdd}|{game.SourceHomeTeamId}|{game.HomeScore}|{game.SourceAwayTeamId}|{game.AwayScore}")
+            .OrderBy(game => game.GameDateTimeUtc)
+            .ThenBy(game => game.SourceGameId, StringComparer.Ordinal)
+            .ToList();
+        if (distinctGames.Count != source.ExpectedGames)
+        {
+            throw new InvalidOperationException(
+                $"Gallica FFBB completeness check failed for {season}: parsed {distinctGames.Count} games, expected {source.ExpectedGames}. Nothing was imported.");
+        }
+
+        string[] warnings =
+        [
+            "Official FFBB magazine OCR supplied the historical results; score tables were constrained to senior Nationale Masculine 1 sections.",
+            "FFBB magazines do not supply reliable tip-off times; imported times are 12:00 UTC.",
+            "The 1986-1987 playoff summary omits exact dates; deterministic round-order dates preserve the playoff sequence."
+        ];
+        return (distinctGames, false, warnings);
+    }
+
+    internal static IReadOnlyList<int> ParseGallicaSearchPages(string xml)
+    {
+        var document = XDocument.Parse(xml);
+        return document.Descendants()
+            .Where(element => element.Name.LocalName == "p_id")
+            .Select(element => Regex.Match(element.Value, @"\d+").Value)
+            .Where(value => int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+            .Select(value => int.Parse(value, CultureInfo.InvariantCulture))
+            .Distinct()
+            .OrderBy(page => page)
+            .ToList();
+    }
+
+    internal static IReadOnlyList<BasketballProviderGame> ParseGallicaAltoPage(
+        string altoXml,
+        string season,
+        int endYear,
+        int page,
+        string sourceUrl)
+    {
+        var document = XDocument.Parse(altoXml);
+        var lines = document.Descendants()
+            .Where(element => element.Name.LocalName == "TextLine")
+            .Select(element => string.Join(' ', element.Descendants()
+                .Where(word => word.Name.LocalName == "String")
+                .Select(word => (string?)word.Attribute("CONTENT") ?? string.Empty)))
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+
+        var games = new List<BasketballProviderGame>();
+        var revision = Hash(altoXml);
+        var active = false;
+        var youth = false;
+        var phase = "Regular Season";
+        var division = string.Empty;
+        var round = string.Empty;
+        var pool = string.Empty;
+        DateTime? date = null;
+        var playoffOrdinals = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        for (var lineIndex = 0; lineIndex < lines.Count; lineIndex++)
+        {
+            var line = WebUtility.HtmlDecode(lines[lineIndex]);
+            var key = NormalizeKey(line);
+
+            if (TryParseFrenchDate(line, endYear, out var parsedDate))
+            {
+                date = parsedDate;
+                youth = false;
+                continue;
+            }
+            if (key.StartsWith("espoirs", StringComparison.Ordinal))
+            {
+                active = false;
+                youth = true;
+                continue;
+            }
+            if (Regex.IsMatch(key, @"(?:^|\s)(?:nationale\s+)?masculine\s+1(?:\s+[ab])?(?:\s|$)") ||
+                Regex.IsMatch(key, @"^nm\s*1$") )
+            {
+                active = !youth;
+                division = key.Contains("1 b", StringComparison.Ordinal) ? "N1B" :
+                    key.Contains("1 a", StringComparison.Ordinal) ? "N1A" : "N1";
+                pool = string.Empty;
+                continue;
+            }
+            if (key.Contains("resultats des play off", StringComparison.Ordinal))
+            {
+                active = !youth;
+                phase = "Playoffs";
+                division = "N1";
+                pool = string.Empty;
+                continue;
+            }
+            if (key.Contains("qualification korac", StringComparison.Ordinal) ||
+                (key.Contains("masculine", StringComparison.Ordinal) &&
+                 !Regex.IsMatch(key, @"(?:^|\s)1(?:\s+[ab])?(?:\s|$)")))
+            {
+                active = false;
+                continue;
+            }
+            if (!active)
+            {
+                continue;
+            }
+
+            var playoffRound = NormalizeGallicaPlayoffRound(line);
+            if (playoffRound.Length > 0)
+            {
+                phase = "Playoffs";
+                round = playoffRound;
+                pool = string.Empty;
+                continue;
+            }
+            if (key.Contains("phase", StringComparison.Ordinal))
+            {
+                phase = "Regular Season";
+                continue;
+            }
+            if (key.StartsWith("poule ", StringComparison.Ordinal))
+            {
+                pool = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(key);
+                continue;
+            }
+            if (Regex.IsMatch(key, @"(?:^|\s)tour(?:\s|$)") || key.Contains("journee", StringComparison.Ordinal))
+            {
+                phase = "Regular Season";
+                round = NormalizeGallicaRound(line);
+                pool = string.Empty;
+                continue;
+            }
+            if (round.Length == 0 || !TryParseGallicaGameLine(line, out var parsedGame))
+            {
+                continue;
+            }
+
+            var gameDate = date;
+            if (gameDate is null && phase == "Playoffs")
+            {
+                playoffOrdinals.TryGetValue(round, out var ordinal);
+                gameDate = GallicaPlayoffFallbackDate(round, endYear, ordinal);
+                playoffOrdinals[round] = ordinal + 1;
+            }
+            if (gameDate is null)
+            {
+                continue;
+            }
+
+            var competitionRound = string.Join(" / ", new[] { round, division, pool }
+                .Where(value => !string.IsNullOrWhiteSpace(value)));
+            games.Add(BuildGame(
+                $"gallica:{season}:{page}:{lineIndex}",
+                gameDate.Value,
+                parsedGame.Home,
+                Slug(parsedGame.Home),
+                parsedGame.HomeScore,
+                parsedGame.Away,
+                Slug(parsedGame.Away),
+                parsedGame.AwayScore,
+                sourceUrl,
+                season,
+                GallicaParserVersion,
+                revision,
+                phase,
+                competitionRound));
+        }
+        return games;
+    }
+
+    private static bool TryParseGallicaGameLine(string line, out GallicaGame game)
+    {
+        var matches = MatchGallicaTeams(line);
+        if (matches.Count < 2)
+        {
+            game = default!;
+            return false;
+        }
+
+        var homeMatch = matches[0];
+        var awayMatch = matches.FirstOrDefault(match => match.Index >= homeMatch.Index + homeMatch.Length);
+        if (awayMatch is null || matches.Any(match =>
+                match.Index >= awayMatch.Index + awayMatch.Length && match.Canonical != awayMatch.Canonical))
+        {
+            game = default!;
+            return false;
+        }
+
+        var between = line.Substring(homeMatch.Index + homeMatch.Length,
+            awayMatch.Index - homeMatch.Index - homeMatch.Length);
+        var after = line[(awayMatch.Index + awayMatch.Length)..];
+        var homeScoreMatch = Regex.Match(between, @"(?<!\d)(\d{2,3})(?!\d)");
+        var awayScoreMatch = Regex.Match(after, @"(?<!\d)(\d{2,3})(?!\d)");
+        if (homeScoreMatch.Success && awayScoreMatch.Success &&
+            short.TryParse(homeScoreMatch.Groups[1].Value, out var homeScore) &&
+            short.TryParse(awayScoreMatch.Groups[1].Value, out var awayScore))
+        {
+            game = new(homeMatch.Canonical, homeScore, awayMatch.Canonical, awayScore);
+            return true;
+        }
+
+        var winnerScore = Regex.Match(after, @"(?<!\d)(\d{2,3})\s*[-–]\s*(\d{2,3})(?!\d)");
+        if (!winnerScore.Success ||
+            !Regex.IsMatch(between, @"\b(?:b(?:at)?|et)\b", RegexOptions.IgnoreCase) ||
+            !short.TryParse(winnerScore.Groups[1].Value, out var firstScore) ||
+            !short.TryParse(winnerScore.Groups[2].Value, out var secondScore))
+        {
+            game = default!;
+            return false;
+        }
+
+        var firstIsHome = IsGallicaHomeMarked(line, homeMatch);
+        var secondIsHome = IsGallicaHomeMarked(line, awayMatch);
+        if (secondIsHome && !firstIsHome)
+        {
+            game = new(awayMatch.Canonical, secondScore, homeMatch.Canonical, firstScore);
+        }
+        else
+        {
+            game = new(homeMatch.Canonical, firstScore, awayMatch.Canonical, secondScore);
+        }
+        return true;
+    }
+
+    private static List<GallicaTeamMatch> MatchGallicaTeams(string line) =>
+        GallicaTeamAliases
+            .SelectMany(alias => Regex.Matches(line, alias.Pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Cast<Match>()
+                .Select(match => new GallicaTeamMatch(match.Index, match.Length, alias.Canonical)))
+            .OrderBy(match => match.Index)
+            .ThenByDescending(match => match.Length)
+            .ToList();
+
+    private static bool IsGallicaHomeMarked(string line, GallicaTeamMatch match)
+    {
+        var before = line[..match.Index].TrimEnd();
+        var after = line[(match.Index + match.Length)..].TrimStart();
+        return before.EndsWith('*') || before.EndsWith('\'') || before.EndsWith('"') ||
+            after.StartsWith('*') || after.StartsWith('\'') || after.StartsWith('"');
+    }
+
+    private static string NormalizeGallicaRound(string value)
+    {
+        var key = NormalizeKey(value);
+        var number = Regex.Match(key, @"\d+").Value;
+        var leg = key.Contains("retour", StringComparison.Ordinal) ? "Return" :
+            key.Contains("aller", StringComparison.Ordinal) ? "First Leg" : string.Empty;
+        return string.Join(" - ", new[] { number.Length > 0 ? $"Round {number}" : "Round", leg }
+            .Where(item => item.Length > 0));
+    }
+
+    private static string NormalizeGallicaPlayoffRound(string value)
+    {
+        if (Regex.IsMatch(value, @"1\s*/\s*8", RegexOptions.IgnoreCase)) return "Round of 16";
+        if (Regex.IsMatch(value, @"1\s*/\s*4", RegexOptions.IgnoreCase)) return "Quarterfinals";
+        if (Regex.IsMatch(value, @"1\s*/\s*2", RegexOptions.IgnoreCase)) return "Semifinals";
+        var key = NormalizeKey(value);
+        if (key is "finale" or "final") return "Final";
+        if (key.Contains("demi finale", StringComparison.Ordinal)) return "Semifinals";
+        return string.Empty;
+    }
+
+    private static DateTime GallicaPlayoffFallbackDate(string round, int endYear, int ordinal)
+    {
+        var (month, day, legSize) = round switch
+        {
+            "Round of 16" => (3, 21, 2),
+            "Quarterfinals" => (4, 4, 2),
+            "Semifinals" => (4, 18, 2),
+            "Final" => (5, 2, 1),
+            _ => (3, 1, 1)
+        };
+        return new DateTime(endYear, month, day).AddDays(7 * (ordinal % legSize));
     }
 
     private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetLEquipeLeagueAsync(
@@ -756,6 +1103,39 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
         return Encoding.UTF8.GetString(bytes);
     }
 
+    private async Task<string> FetchGallicaStringAsync(
+        string url,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken,
+        string? referer = null)
+    {
+        using var response = await BackfillHttpRetryPolicy.SendAsync(
+            async retryCancellationToken =>
+            {
+                if (!context.CanUseRequest())
+                {
+                    throw new InvalidOperationException("French historical Gallica request budget reached.");
+                }
+                context.ConsumeRequest();
+                if (options.Value.GallicaMinRequestIntervalMilliseconds > 0)
+                {
+                    await Task.Delay(options.Value.GallicaMinRequestIntervalMilliseconds, retryCancellationToken);
+                }
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.UserAgent.ParseAdd(options.Value.UserAgent);
+                if (!string.IsNullOrWhiteSpace(referer))
+                {
+                    request.Headers.Referrer = new Uri(referer);
+                }
+                return await httpClient.SendAsync(request, retryCancellationToken);
+            },
+            options.Value.GallicaMaxTransientRetries,
+            options.Value.GallicaRetryBaseDelayMilliseconds,
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
     private Task<HttpResponseMessage> SendAsync(
         string url,
         BackfillExecutionContext context,
@@ -1017,5 +1397,9 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
     [GeneratedRegex(@"<I>(.*?)(?:</I>|<I>)", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
     private static partial Regex BasketArchivesDateRegex();
 
+    private sealed record GallicaSeasonSource(string Ark, int ExpectedGames);
+    private sealed record GallicaTeamAlias(string Pattern, string Canonical);
+    private sealed record GallicaTeamMatch(int Index, int Length, string Canonical);
+    private sealed record GallicaGame(string Home, short HomeScore, string Away, short AwayScore);
     private sealed record CupGame(DateTime Date, string Home, short HomeScore, string Away, short AwayScore, string Round);
 }

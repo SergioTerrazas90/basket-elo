@@ -250,5 +250,7 @@ public class BackfillCatalog : IBackfillCatalog
             .ToArray();
 
     private static string[] FrenchLeagueHistoricalSeasons()
-        => ["1981-1982", .. Enumerable.Range(1987, 21).Select(year => $"{year}-{year + 1}")];
+        => Enumerable.Range(1981, 27)
+            .Select(year => $"{year}-{year + 1}")
+            .ToArray();
 }

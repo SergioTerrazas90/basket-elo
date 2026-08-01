@@ -12,9 +12,17 @@ public sealed class FrenchHistoricalOptions
 
     public string WikipediaBaseUrl { get; set; } = "https://fr.wikipedia.org/";
 
+    public string GallicaBaseUrl { get; set; } = "https://gallica.bnf.fr/";
+
     public string UserAgent { get; set; } = "BasketElo historical-ingest/1.0 (issue 125)";
 
     public int MinRequestIntervalMilliseconds { get; set; } = 100;
+
+    public int GallicaMinRequestIntervalMilliseconds { get; set; } = 1600;
+
+    public int GallicaMaxTransientRetries { get; set; } = 5;
+
+    public int GallicaRetryBaseDelayMilliseconds { get; set; } = 2000;
 
     public int MaxTransientRetries { get; set; } = 3;
 

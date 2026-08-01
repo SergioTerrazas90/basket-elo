@@ -128,4 +128,87 @@ public sealed class FrenchHistoricalBasketballDataProviderTests
         Assert.Contains(games, game => game.CompetitionRound == "Final" && game.AwayTeamName == "Gravelines-Dunkerque");
         Assert.All(games, game => Assert.Equal(FrenchHistoricalBasketballDataProvider.FrenchCupParserVersion, game.Provenance!.ParserVersion));
     }
+
+    [Fact]
+    public void ParsesOfficialGallicaSeniorSlateAndStopsBeforeEspoirs()
+    {
+        const string alto = """
+            <alto xmlns="http://bibnum.bnf.fr/ns/alto_prod"><Layout><Page><PrintSpace><TextBlock>
+              <TextLine><String CONTENT="29"/><String CONTENT="Septembre"/><String CONTENT="1984"/></TextLine>
+              <TextLine><String CONTENT="Nationale"/><String CONTENT="Masculine"/><String CONTENT="-"/><String CONTENT="1"/></TextLine>
+              <TextLine><String CONTENT="1er"/><String CONTENT="TOUR"/><String CONTENT="—"/><String CONTENT="ALLER"/></TextLine>
+              <TextLine><String CONTENT="SCM"/><String CONTENT="Le"/><String CONTENT="Mans"/><String CONTENT="99"/><String CONTENT="EB"/><String CONTENT="Orthez"/><String CONTENT="90"/></TextLine>
+              <TextLine><String CONTENT="AS"/><String CONTENT="Monaco"/><String CONTENT="75"/><String CONTENT="CSP"/><String CONTENT="Limoges"/><String CONTENT="93"/></TextLine>
+              <TextLine><String CONTENT="Tours"/><String CONTENT="BC"/><String CONTENT="102"/><String CONTENT="CA"/><String CONTENT="St-Etienne"/><String CONTENT="76"/></TextLine>
+              <TextLine><String CONTENT="Mulhouse"/><String CONTENT="BC"/><String CONTENT="85"/><String CONTENT="JA"/><String CONTENT="Vichy"/><String CONTENT="72"/></TextLine>
+              <TextLine><String CONTENT="ASVEL"/><String CONTENT="110"/><String CONTENT="ES"/><String CONTENT="Avignon"/><String CONTENT="88"/></TextLine>
+              <TextLine><String CONTENT="ESM"/><String CONTENT="Challans"/><String CONTENT="86/01."/><String CONTENT="Antibes"/><String CONTENT="83"/></TextLine>
+              <TextLine><String CONTENT="Stade"/><String CONTENT="Français"/><String CONTENT="94"/><String CONTENT="Caen"/><String CONTENT="BC"/><String CONTENT="82"/></TextLine>
+              <TextLine><String CONTENT="Espoirs"/><String CONTENT="-"/><String CONTENT="N.M."/><String CONTENT="1"/></TextLine>
+              <TextLine><String CONTENT="SCM"/><String CONTENT="Le"/><String CONTENT="Mans"/><String CONTENT="64"/><String CONTENT="EB"/><String CONTENT="Orthez"/><String CONTENT="84"/></TextLine>
+            </TextBlock></PrintSpace></Page></Layout></alto>
+            """;
+
+        var games = FrenchHistoricalBasketballDataProvider.ParseGallicaAltoPage(
+            alto, "1984-1985", 1985, 109, "https://example.test/f109.item");
+
+        Assert.Equal(7, games.Count);
+        Assert.Contains(games, game => game.HomeTeamName == "Le Mans" && game.HomeScore == 99 && game.AwayTeamName == "Pau-Orthez");
+        Assert.Contains(games, game => game.HomeTeamName == "Challans" && game.HomeScore == 86 && game.AwayTeamName == "Antibes");
+        Assert.DoesNotContain(games, game => game.HomeScore == 64);
+        Assert.All(games, game => Assert.Equal(FrenchHistoricalBasketballDataProvider.GallicaParserVersion, game.Provenance!.ParserVersion));
+    }
+
+    [Fact]
+    public void ParsesGallicaN1AAndN1BButRejectsTheirEspoirsDuplicates()
+    {
+        const string alto = """
+            <alto xmlns="http://bibnum.bnf.fr/ns/alto_prod"><Layout><Page><PrintSpace><TextBlock>
+              <TextLine><String CONTENT="14"/><String CONTENT="SEPTEMBRE"/><String CONTENT="1985"/></TextLine>
+              <TextLine><String CONTENT="MASCULINE"/><String CONTENT="1"/><String CONTENT="A"/></TextLine>
+              <TextLine><String CONTENT="1er"/><String CONTENT="TOUR"/><String CONTENT="—"/><String CONTENT="ALLER"/></TextLine>
+              <TextLine><String CONTENT="AS"/><String CONTENT="Monaco"/><String CONTENT="101"/><String CONTENT="Challans"/><String CONTENT="BVC"/><String CONTENT="73"/></TextLine>
+              <TextLine><String CONTENT="MASCULINE"/><String CONTENT="1"/><String CONTENT="B"/></TextLine>
+              <TextLine><String CONTENT="1er"/><String CONTENT="TOUR"/><String CONTENT="—"/><String CONTENT="ALLER"/></TextLine>
+              <TextLine><String CONTENT="Reims"/><String CONTENT="CB"/><String CONTENT="87"/><String CONTENT="Tours"/><String CONTENT="BC"/><String CONTENT="77"/></TextLine>
+              <TextLine><String CONTENT="ESPOIRS"/></TextLine>
+              <TextLine><String CONTENT="NATIONALE"/><String CONTENT="MASCULINE"/><String CONTENT="1"/><String CONTENT="A"/></TextLine>
+              <TextLine><String CONTENT="AS"/><String CONTENT="Monaco"/><String CONTENT="70"/><String CONTENT="Challans"/><String CONTENT="BVC"/><String CONTENT="72"/></TextLine>
+            </TextBlock></PrintSpace></Page></Layout></alto>
+            """;
+
+        var games = FrenchHistoricalBasketballDataProvider.ParseGallicaAltoPage(
+            alto, "1985-1986", 1986, 102, "https://example.test/f102.item");
+
+        Assert.Equal(2, games.Count);
+        Assert.Contains(games, game => game.CompetitionRound!.Contains("N1A") && game.HomeScore == 101);
+        Assert.Contains(games, game => game.CompetitionRound!.Contains("N1B") && game.HomeTeamName == "Reims");
+    }
+
+    [Fact]
+    public void ParsesUndatedGallicaPlayoffsAndUsesStarredTeamAsHome()
+    {
+        const string alto = """
+            <alto xmlns="http://bibnum.bnf.fr/ns/alto_prod"><Layout><Page><PrintSpace><TextBlock>
+              <TextLine><String CONTENT="NM1"/></TextLine>
+              <TextLine><String CONTENT="LES"/><String CONTENT="RÉSULTATS"/><String CONTENT="DES"/><String CONTENT="PLAY-OFF"/></TextLine>
+              <TextLine><String CONTENT="1/8"/><String CONTENT="DE"/><String CONTENT="FINALE"/></TextLine>
+              <TextLine><String CONTENT="Orthez"/><String CONTENT="bat"/><String CONTENT="*Caen"/><String CONTENT="92-91"/></TextLine>
+              <TextLine><String CONTENT="Orthez*"/><String CONTENT="bat"/><String CONTENT="Caen"/><String CONTENT="83-66"/></TextLine>
+              <TextLine><String CONTENT="QUALIFICATION"/><String CONTENT="KORAC"/></TextLine>
+              <TextLine><String CONTENT="Racing"/><String CONTENT="b."/><String CONTENT="Lorient"/><String CONTENT="97-80"/></TextLine>
+            </TextBlock></PrintSpace></Page></Layout></alto>
+            """;
+
+        var games = FrenchHistoricalBasketballDataProvider.ParseGallicaAltoPage(
+            alto, "1986-1987", 1987, 15, "https://example.test/f15.item");
+
+        Assert.Equal(2, games.Count);
+        Assert.Equal("Caen", games[0].HomeTeamName);
+        Assert.Equal((short)91, games[0].HomeScore);
+        Assert.Equal("Pau-Orthez", games[0].AwayTeamName);
+        Assert.Equal((short)92, games[0].AwayScore);
+        Assert.Equal(new DateTime(1987, 3, 21, 12, 0, 0, DateTimeKind.Utc), games[0].GameDateTimeUtc);
+        Assert.Equal(new DateTime(1987, 3, 28, 12, 0, 0, DateTimeKind.Utc), games[1].GameDateTimeUtc);
+    }
 }

@@ -83,6 +83,16 @@ static async Task<int> RunAsync(string[] args)
         return await RunFranceIngestAsync(args[1..]);
     }
 
+    if (args.Length > 0 && args[0].Equals("greece-dry-run", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunGreeceDryRunAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("greece-ingest", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunGreeceIngestAsync(args[1..]);
+    }
+
     AuditCommandOptions command;
     try
     {
@@ -961,6 +971,176 @@ static async Task<int> RunFranceIngestAsync(string[] args)
     return summary.Any(item => item.Status == BackfillJobStatus.Failed) ? 2 : 0;
 }
 
+static async Task<int> RunGreeceDryRunAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var competition = Required(values, "--competition");
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var interval = ParseNonNegative(values, "--interval-ms", 100);
+    var printAll = bool.TryParse(values.GetValueOrDefault("--print-all"), out var parsedPrintAll) && parsedPrintAll;
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Configuration["GreekOfficial:MinRequestIntervalMilliseconds"] = interval.ToString();
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    var catalog = host.Services.GetRequiredService<IBackfillCatalog>();
+    var configuredLeague = catalog.GetLeagues().SingleOrDefault(candidate =>
+        candidate.Provider == GreekOfficialBasketballDataProvider.Source &&
+        candidate.Country == "Greece" && candidate.LeagueName.Equals(competition, StringComparison.OrdinalIgnoreCase) &&
+        catalog.GetSeasonsForLeague(candidate).Contains(season, StringComparer.OrdinalIgnoreCase));
+    if (configuredLeague is null)
+    {
+        Console.Error.WriteLine($"No Greek official source is configured for {competition} {season}.");
+        return 1;
+    }
+
+    var provider = host.Services.GetRequiredService<IEnumerable<IBasketballDataProvider>>()
+        .Single(candidate => candidate.SourceKey == GreekOfficialBasketballDataProvider.Source);
+    var context = new BackfillExecutionContext(maxRequests, 0);
+    var league = await provider.ResolveLeagueAsync("Greece", configuredLeague.LeagueName, context, CancellationToken.None);
+    var result = await provider.GetGamesAsync(league!, season, context, CancellationToken.None);
+
+    Console.WriteLine($"Greek official dry-run: {competition} {season}");
+    Console.WriteLine($"Requests: {context.RequestsUsed}/{context.MaxRequests}; games: {result.Games.Count}; warnings: {result.Warnings.Count}; more pages: {result.HasMorePages}");
+    foreach (var phase in result.Games.GroupBy(game => game.CompetitionPhase ?? "Unknown").OrderBy(group => group.Key))
+    {
+        Console.WriteLine($"{phase.Key}: {phase.Count()} games");
+    }
+    foreach (var game in printAll ? result.Games : result.Games.Take(12))
+    {
+        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} [{game.CompetitionRound}] {game.Provenance?.SourceUrl}");
+    }
+    foreach (var warning in result.Warnings.Take(30))
+    {
+        Console.WriteLine($"WARNING: {warning}");
+    }
+    return result.Games.Count == 0 || result.HasMorePages ? 2 : 0;
+}
+
+static async Task<int> RunGreeceIngestAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var competition = Required(values, "--competition");
+    var startSeason = Required(values, "--start");
+    var endSeason = values.GetValueOrDefault("--end") ?? startSeason;
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var interval = ParseNonNegative(values, "--interval-ms", 100);
+    var lowerYear = Math.Min(SeasonLabelNormalizer.ParseStartYear(startSeason), SeasonLabelNormalizer.ParseStartYear(endSeason));
+    var upperYear = Math.Max(SeasonLabelNormalizer.ParseStartYear(startSeason), SeasonLabelNormalizer.ParseStartYear(endSeason));
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Configuration["GreekOfficial:MinRequestIntervalMilliseconds"] = interval.ToString();
+    if (values.TryGetValue("--connection-string", out var connectionString))
+    {
+        builder.Configuration["ConnectionStrings:Postgres"] = connectionString;
+    }
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
+    await dbContext.Database.MigrateAsync();
+
+    var unrelatedPendingJobs = await dbContext.BackfillJobs.CountAsync(job =>
+        job.Status == BackfillJobStatus.Pending &&
+        !(job.Provider == GreekOfficialBasketballDataProvider.Source &&
+          job.Country == "Greece" && job.LeagueName == competition));
+    if (unrelatedPendingJobs > 0)
+    {
+        Console.Error.WriteLine($"Refusing to start: {unrelatedPendingJobs} unrelated backfill job(s) are pending.");
+        return 2;
+    }
+
+    var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
+    var configuredLeague = catalog.GetLeagues().SingleOrDefault(candidate =>
+        candidate.Provider == GreekOfficialBasketballDataProvider.Source &&
+        candidate.Country == "Greece" && candidate.LeagueName.Equals(competition, StringComparison.OrdinalIgnoreCase));
+    if (configuredLeague is null)
+    {
+        Console.Error.WriteLine($"No historical Greek competition named '{competition}' is configured.");
+        return 1;
+    }
+    var seasons = catalog.GetSeasonsForLeague(configuredLeague)
+        .Where(season =>
+        {
+            var year = SeasonLabelNormalizer.ParseStartYear(season);
+            return year >= lowerYear && year <= upperYear;
+        })
+        .OrderByDescending(SeasonLabelNormalizer.ParseStartYear)
+        .ToList();
+    if (seasons.Count == 0)
+    {
+        Console.Error.WriteLine($"No {competition} seasons fall inside {startSeason} through {endSeason}.");
+        return 1;
+    }
+
+    if (configuredLeague.CompetitionType == "domestic_cup")
+    {
+        var leagueSeasons = await dbContext.Games
+            .Where(game => game.Competition.Name == "Greece: A1 / Greek Basket League" && seasons.Contains(game.Season.Label))
+            .Select(game => game.Season.Label)
+            .Distinct()
+            .ToListAsync();
+        var missingLeague = seasons.Where(season => !leagueSeasons.Contains(season, StringComparer.OrdinalIgnoreCase)).ToList();
+        seasons = seasons.Where(season => leagueSeasons.Contains(season, StringComparer.OrdinalIgnoreCase)).ToList();
+        foreach (var season in missingLeague)
+        {
+            Console.WriteLine($"Skipping Greek Cup {season}: no regular-league games exist for that season.");
+        }
+        if (seasons.Count == 0)
+        {
+            Console.Error.WriteLine("No Greek Cup seasons remain after enforcing league-season overlap.");
+            return 2;
+        }
+    }
+
+    var existing = await dbContext.BackfillJobs
+        .Where(job => job.Provider == GreekOfficialBasketballDataProvider.Source &&
+            job.Country == "Greece" && job.LeagueName == configuredLeague.LeagueName &&
+            (job.Status == BackfillJobStatus.Completed || job.Status == BackfillJobStatus.CompletedWithWarnings ||
+             job.Status == BackfillJobStatus.Pending || job.Status == BackfillJobStatus.Running))
+        .Select(job => job.Season)
+        .ToListAsync();
+    var now = DateTime.UtcNow;
+    var jobs = seasons
+        .Where(season => !existing.Contains(season, StringComparer.OrdinalIgnoreCase))
+        .Select((season, index) => new BackfillJob
+        {
+            Id = Guid.NewGuid(), Provider = GreekOfficialBasketballDataProvider.Source,
+            Country = "Greece", LeagueName = configuredLeague.LeagueName, Season = season,
+            DryRun = false, MaxRequests = maxRequests, Status = BackfillJobStatus.Pending,
+            CreatedAtUtc = now.AddTicks(index), UpdatedAtUtc = now.AddTicks(index)
+        })
+        .ToList();
+    dbContext.BackfillJobs.AddRange(jobs);
+    await dbContext.SaveChangesAsync();
+    Console.WriteLine($"Queued {jobs.Count} {competition} season(s), newest first; skipped {existing.Count} completed or active season(s).");
+
+    var processor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
+    var processed = 0;
+    while (await processor.TryProcessNextPendingJobAsync(CancellationToken.None))
+    {
+        processed++;
+        Console.WriteLine($"Processed Greek official job {processed}/{jobs.Count}.");
+    }
+
+    var attempts = await dbContext.BackfillJobs
+        .Where(job => job.Provider == GreekOfficialBasketballDataProvider.Source &&
+            job.Country == "Greece" && job.LeagueName == configuredLeague.LeagueName && seasons.Contains(job.Season))
+        .ToListAsync();
+    var summary = attempts
+        .GroupBy(job => job.Season, StringComparer.OrdinalIgnoreCase)
+        .Select(group => group.OrderByDescending(job => job.UpdatedAtUtc).First())
+        .GroupBy(job => job.Status)
+        .Select(group => new { Status = group.Key, Count = group.Count() })
+        .OrderBy(item => item.Status)
+        .ToList();
+    Console.WriteLine($"Greek {competition} ingest processed {processed} jobs. Status: {string.Join(", ", summary.Select(item => $"{item.Status}={item.Count}"))}");
+    return summary.Any(item => item.Status == BackfillJobStatus.Failed) ? 2 : 0;
+}
+
 static int ParseNonNegative(IReadOnlyDictionary<string, string> values, string name, int defaultValue)
 {
     var value = values.GetValueOrDefault(name);
@@ -1069,6 +1249,17 @@ static void PrintUsage()
 
         dotnet run --project src/BasketElo.Tools -- france-ingest \
           --competition "LNB" --start 2007-2008 --end 1987-1988 \
+          [--max-requests 0] [--interval-ms 100] [--connection-string "..."]
+
+        Greek official league or Cup dry-run
+
+        dotnet run --project src/BasketElo.Tools -- greece-dry-run \
+          --competition "A1" --season 2007-2008 [--max-requests 0] [--interval-ms 100]
+
+        Greek official league or Cup ingest (writes configured Postgres, newest first)
+
+        dotnet run --project src/BasketElo.Tools -- greece-ingest \
+          --competition "A1" --start 2007-2008 --end 1999-2000 \
           [--max-requests 0] [--interval-ms 100] [--connection-string "..."]
         """);
 }

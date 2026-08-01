@@ -5,30 +5,32 @@ flight and Greek Cup before modern API-Sports coverage begins in 2008-2009.
 
 ## Coverage decision
 
-The historical catalog starts at 1996-1997 and ends at 2007-2008. The apparent
-three-season gap before ESAKE's continuous 1999-2000 run was filled from two
-contemporary Greek archives: Bitzenis for 1996-1997 and archived Sport.gr pages
-for 1997-1998 and 1998-1999. The next older block remains separated by a real
-source gap, so 1996-1997 is the cutoff.
+The continuous historical catalog starts at 1996-1997 and ends at 2007-2008.
+One additional complete edition, 1992-1993, is cataloged before the unresolved
+1993-1994 through 1995-1996 gap. The apparent three-season gap before ESAKE's
+continuous 1999-2000 run was filled from two contemporary Greek archives:
+Bitzenis for 1996-1997 and archived Sport.gr pages for 1997-1998 and 1998-1999.
 
 | Competition | Season span | Provider | Notes |
 | --- | --- | --- | --- |
+| A1 / Greek Basket League | 1992-1993 | ESAKE, Greek Wikipedia, and Olympiacos BC | ESAKE supplies dated rounds 1-22 (154 games). Greek Wikipedia's complete score matrix supplies the 28 reverse fixtures in rounds 23-26, dated from Olympiacos' official round schedule. All 182 regular-season games are ingested; undated playoffs are excluded. |
 | A1 / Greek Basket League | 1996-1997 | Bitzenis historical results | All 182 regular-season games. The available playoff summary has no game dates, so those playoff rows are not ingested. |
 | A1 / Greek Basket League | 1997-1998 | Sport.gr via the Internet Archive | All 182 regular-season games and all 34 dated playoff games. |
 | A1 / Greek Basket League | 1998-1999 | Sport.gr via the Internet Archive | 181 scored regular-season games and 33 dated playoff games. Panionios-AEK was interrupted and nullified without a final score, so it is excluded. |
 | A1 / Greek Basket League | 1999-2000 through 2007-2008 | ESAKE official results archive | Regular season and playoffs, using stable official game and team IDs. |
 | A1 / Greek Basket League | 2008-2009 onward | API-Sports | Existing modern coverage. |
-| Greek Cup | 1996-1997 through 2007-2008, except 2003-2004 | EOK official Cup archive | Only cataloged when that season also has ingested A1 games. The 2003-2004 page is excluded because it starts at game 15 and omits the first 14 games. |
+| Greek Cup | 1992-1993 and 1996-1997 through 2007-2008, except 2003-2004 | EOK official Cup archive | Only cataloged when that season also has ingested A1 games. The 2003-2004 page is excluded because it starts at game 15 and omits the first 14 games. |
 | Greek Cup | 2008-2009 onward, except 2015-2016 | API-Sports | Existing modern coverage. The 2015-2016 Cup-only edition is excluded because API-Sports returned no matching A1 games. |
 
 Official 20-0 administrative awards are not treated as played games. Historical
 dates without a trustworthy tip-off time are stored at 12:00 UTC.
 
-The resulting historical production coverage is 2,491 A1 games across twelve
-seasons and 470 Cup games across eleven editions:
+The resulting historical production coverage is 2,673 A1 games across thirteen
+seasons and 509 Cup games across twelve editions:
 
 | Season | A1 games | Greek Cup games |
 | --- | ---: | ---: |
+| 1992-1993 | 182 | 39 (two 20-0 administrative awards excluded) |
 | 1996-1997 | 182 | 40 (one 20-0 award and incomplete source row 17 excluded) |
 | 1997-1998 | 216 | 42 |
 | 1998-1999 | 214 | 41 (one 20-0 award excluded) |
@@ -46,17 +48,18 @@ seasons and 470 Cup games across eleven editions:
 
 | Rank | Source | Seasons useful for this task | Assessment | Use |
 | --- | --- | --- | --- | --- |
-| 1 | [ESAKE official results archive](https://www.esake.gr/el/action/EsakeResults?idchampionship=0000000C&idseason=00000001&mode=2&series=undefined) | Nine continuous seasons, 1999-2000 through 2007-2008 | Authoritative, dated game scores, regular-season rounds, playoff series, stable game IDs, and stable source team IDs. | Ingested provider |
+| 1 | [ESAKE official results archive](https://www.esake.gr/el/action/EsakeResults?idchampionship=00000015&idseason=00000001&mode=1&series=undefined) | 1992-1993 rounds 1-22 and nine continuous seasons, 1999-2000 through 2007-2008 | Authoritative, dated game scores, regular-season rounds, playoff series, stable game IDs, and stable source team IDs. The 1992-1993 archive stops at round 22. | Ingested provider |
 | 2 | [Sport.gr archived by the Internet Archive](https://web.archive.org/web/20080528083751id_/http://archive.sport.gr/basket/hellas/a1/1-14.htm) | 1997-1998 and 1998-1999 | Complete paired regular-season round pages and dated playoff series. Easy deterministic traversal once the archived URL patterns are known. | Ingested provider |
 | 3 | [Bitzenis 1996-1997 results](https://bitzenis.gr/retro/bask.htm) | 1996-1997 regular season | A single compact page contains the full 182-game regular season. Its playoff summary lacks dates, so only the dated regular season is imported. | Ingested provider |
-| 4 | [Basketball-Reference Greek league schedules](https://www.basketball-reference.com/international/greek-basket-league/2002-schedule.html) | Seven seasons, 2001-2002 through 2007-2008 | Easy single-season schedules, but starts later and is not the competition owner. | Validation |
-| 5 | [Olympiacos official historical schedule](https://www.olympiacosbc.gr/en/games/gbl/schedule/1996.html), Galanis Sports Data, RealGM, and Wikipedia | Partial team schedules, standings, matrices, or summaries | Useful independent checks, not better complete ingestion feeds. | Validation only |
+| 4 | [Greek Wikipedia 1992-1993 results](https://el.wikipedia.org/wiki/%CE%A0%CF%81%CF%89%CF%84%CE%AC%CE%B8%CE%BB%CE%B7%CE%BC%CE%B1_%CE%BA%CE%B1%CE%BB%CE%B1%CE%B8%CE%BF%CF%83%CF%86%CE%B1%CE%AF%CF%81%CE%B9%CF%83%CE%B7%CF%82_%CE%911_%CE%B5%CE%B8%CE%BD%CE%B9%CE%BA%CE%AE%CF%82_%CE%BA%CE%B1%CF%84%CE%B7%CE%B3%CE%BF%CF%81%CE%AF%CE%B1%CF%82_%CE%B1%CE%BD%CE%B4%CF%81%CF%8E%CE%BD_1992-1993) plus the [Olympiacos official 1992-1993 schedule](https://www.olympiacosbc.gr/el/agones/ellada/programma/1992.html) | 1992-1993 rounds 23-26 | The full matrix supplies the missing scores; the official team schedule supplies dates and round numbers. Pairings are derived by reversing ESAKE rounds 10-13, making all 28 joins deterministic. | Ingested fallback |
+| 5 | [Basketball-Reference Greek league schedules](https://www.basketball-reference.com/international/greek-basket-league/2002-schedule.html) | Seven seasons, 2001-2002 through 2007-2008 | Easy single-season schedules, but starts later and is not the competition owner. | Validation |
+| 6 | Galanis Sports Data, RealGM, and other Wikipedia editions | Partial standings, matrices, or summaries | Useful independent checks, not better complete ingestion feeds for the cataloged seasons. | Validation only |
 
 ## Ranked Cup providers
 
 | Rank | Source | Seasons useful for this task | Assessment | Use |
 | --- | --- | --- | --- | --- |
-| 1 | [EOK official men's Cup archive](https://www.basket.gr/cup-men/kypello-andron-1996-1997/1750/) | Eleven usable editions in the league-overlap window | Authoritative game-level pages exposed through the site's WordPress API, with dates, teams, scores, and page revision metadata. | Ingested provider |
+| 1 | [EOK official men's Cup archive](https://www.basket.gr/cup-men/kypello-andron-1992-1993/1746/) | Twelve usable editions in the league-overlap window | Authoritative game-level pages exposed through the site's WordPress API, with dates, teams, scores, and page revision metadata. | Ingested provider |
 | 2 | TheSports and Livesport/Flashscore archives | Shorter or later coverage | Useful for spot checks, but they do not provide a better continuous pre-2008 run. | Validation only |
 | 3 | Wikipedia | Finals and edition summaries | Does not consistently contain all early-round games. | Validation only |
 

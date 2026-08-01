@@ -129,6 +129,42 @@ public sealed class GreekOfficialBasketballDataProviderTests
     }
 
     [Fact]
+    public void WikipediaMatrixParsesEveryHomeAwayCell()
+    {
+        const string html = """
+            <table><tbody>
+              <tr><th>Home / Away</th><th>PAOK</th><th>Olympiacos</th><th>AEK</th></tr>
+              <tr><th>PAOK</th><td></td><td>74–68</td><td>90-60</td></tr>
+              <tr><th>Olympiacos</th><td>71-85</td><td></td><td>85-71</td></tr>
+              <tr><th>AEK</th><td>67-88</td><td>76-78</td><td></td></tr>
+            </tbody></table>
+            """;
+
+        var games = GreekOfficialBasketballDataProvider.ParseWikipediaRegularSeasonMatrix(html);
+
+        Assert.Equal(6, games.Count);
+        Assert.Contains(games, game => game.Home == "Olympiacos" && game.Away == "AEK Athens" &&
+                                      game.HomeScore == 85 && game.AwayScore == 71);
+    }
+
+    [Fact]
+    public void OlympiacosScheduleIgnoresOutOfSeasonPlaceholderDates()
+    {
+        const string html = """
+            <table><tbody>
+              <tr><td>Olympiacos</td><td>AEK</td><td>21/02/1993 19:00</td><td>85-71</td><td>Regular Season</td><td>Round 23</td></tr>
+              <tr><td>Olympiacos</td><td>Aris</td><td>01/08/2026 23:54</td><td>59-72</td><td>Regular Season</td><td>Round 25</td></tr>
+              <tr><td>Olympiacos</td><td>Aris</td><td>07/03/1993 19:00</td><td>89-72</td><td>Regular Season</td><td>Round 25</td></tr>
+            </tbody></table>
+            """;
+
+        var dates = GreekOfficialBasketballDataProvider.ParseOlympiacosRegularSeasonRoundDates(html, 1992);
+
+        Assert.Equal(new DateTime(1993, 2, 21), dates[23]);
+        Assert.Equal(new DateTime(1993, 3, 7), dates[25]);
+    }
+
+    [Fact]
     public void EokLegacyPageSkipsAdministrativeTwentyZeroResult()
     {
         const string html = """

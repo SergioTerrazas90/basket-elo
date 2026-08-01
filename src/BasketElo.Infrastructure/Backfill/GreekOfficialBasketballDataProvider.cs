@@ -22,6 +22,7 @@ public sealed class GreekOfficialBasketballDataProvider(
     public const string EokCupParserVersion = "eok-cup-v1";
     public const string BitzenisParserVersion = "bitzenis-a1-v1";
     public const string SportGrParserVersion = "sportgr-a1-v1";
+    public const string WikipediaGapParserVersion = "wikipedia-olympiacos-a1-gap-v1";
 
     private const string LeagueSourceId = "ESAKE_A1";
     private const string CupSourceId = "EOK_GREEK_CUP";
@@ -40,6 +41,7 @@ public sealed class GreekOfficialBasketballDataProvider(
     private static readonly IReadOnlyDictionary<int, string> EsakeChampionshipIds =
         new Dictionary<int, string>
         {
+            [1992] = "00000015",
             [1999] = "0000000E",
             [2000] = "0000000D",
             [2001] = "0000000C",
@@ -54,6 +56,7 @@ public sealed class GreekOfficialBasketballDataProvider(
     private static readonly IReadOnlyDictionary<int, int> EokCupPostIds =
         new Dictionary<int, int>
         {
+            [1992] = 1746,
             [1996] = 1750,
             [1997] = 1751,
             [1998] = 1752,
@@ -208,9 +211,9 @@ public sealed class GreekOfficialBasketballDataProvider(
             CupSourceId when EokCupPostIds.ContainsKey(startYear) =>
                 await GetCupGamesAsync(season, startYear, context, cancellationToken),
             LeagueSourceId => throw new ArgumentException(
-                "Historical Greek coverage supports 1996-1997 through 2007-2008.", nameof(season)),
+                "Historical Greek coverage supports 1992-1993 and 1996-1997 through 2007-2008.", nameof(season)),
             CupSourceId => throw new ArgumentException(
-                "Complete EOK Cup pages are cataloged from 1996-1997 through 2007-2008, excluding incomplete 2003-2004.", nameof(season)),
+                "Complete EOK Cup pages are cataloged for 1992-1993 and from 1996-1997 through 2007-2008, excluding incomplete 2003-2004.", nameof(season)),
             _ => throw new InvalidOperationException("Greek official provider only supports Greece: A1 and Greek Cup.")
         };
     }
@@ -373,7 +376,91 @@ public sealed class GreekOfficialBasketballDataProvider(
         {
             warnings.Add("No regular-season games were parsed; this season must not be treated as complete.");
         }
+        if (startYear == 1992 && !hasMorePages)
+        {
+            hasMorePages = await Append1992RegularSeasonGapAsync(
+                games, season, context, warnings, cancellationToken);
+        }
+        if (startYear == 1992 && games.Values.Count(game => game.CompetitionPhase == "Regular Season") != 182)
+        {
+            warnings.Add(
+                $"Expected 182 regular-season games for 1992-1993 but assembled {games.Values.Count(game => game.CompetitionPhase == "Regular Season")}; this season is incomplete.");
+        }
         return (games.Values.OrderBy(game => game.GameDateTimeUtc).ThenBy(game => game.SourceGameId).ToArray(), hasMorePages, warnings);
+    }
+
+    private async Task<bool> Append1992RegularSeasonGapAsync(
+        IDictionary<string, BasketballProviderGame> games,
+        string season,
+        BackfillExecutionContext context,
+        ICollection<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        var regularGames = games.Values.Where(game => game.CompetitionPhase == "Regular Season").ToArray();
+        if (regularGames.Length == 182)
+        {
+            return false;
+        }
+        if (!context.CanUseRequest())
+        {
+            return true;
+        }
+        var wikipediaUrl = options.Value.GreekWikipedia1992Url;
+        var wikipediaHtml = await FetchStringAsync(wikipediaUrl, context, cancellationToken);
+        if (!context.CanUseRequest())
+        {
+            return true;
+        }
+        var olympiacosUrl = options.Value.Olympiacos1992ScheduleUrl;
+        var olympiacosHtml = await FetchStringAsync(olympiacosUrl, context, cancellationToken);
+        var matrix = ParseWikipediaRegularSeasonMatrix(wikipediaHtml);
+        var roundDates = ParseOlympiacosRegularSeasonRoundDates(olympiacosHtml, 1992);
+        var revision = Hash($"{wikipediaHtml}\n{olympiacosHtml}");
+        var appended = 0;
+
+        for (var round = 23; round <= 26; round++)
+        {
+            if (!roundDates.TryGetValue(round, out var date))
+            {
+                warnings.Add($"Olympiacos' official archive exposed no valid date for 1992-1993 round {round}.");
+                continue;
+            }
+            var mirroredRound = round - 13;
+            var firstLeg = regularGames.Where(game =>
+                string.Equals(game.CompetitionRound, $"Round {mirroredRound}", StringComparison.Ordinal)).ToArray();
+            foreach (var game in firstLeg)
+            {
+                var home = game.AwayTeamName;
+                var away = game.HomeTeamName;
+                var result = matrix.SingleOrDefault(candidate =>
+                    SameTeam(candidate.Home, home) && SameTeam(candidate.Away, away));
+                if (result is null)
+                {
+                    warnings.Add($"Wikipedia matrix result missing for round {round}: {home} - {away}.");
+                    continue;
+                }
+                var sourceGameId = $"wiki-el-a1:1992:{round:D2}:{Slug(home)}:{Slug(away)}";
+                games[sourceGameId] = new BasketballProviderGame(
+                    Source,
+                    sourceGameId,
+                    DateTime.SpecifyKind(date.Date.AddHours(12), DateTimeKind.Utc),
+                    "finished",
+                    $"esake-name:{Slug(home)}",
+                    home,
+                    $"esake-name:{Slug(away)}",
+                    away,
+                    result.HomeScore,
+                    result.AwayScore,
+                    new BasketballProviderGameProvenance(
+                        wikipediaUrl, season, DateTime.UtcNow, WikipediaGapParserVersion, revision),
+                    CompetitionPhase: "Regular Season",
+                    CompetitionRound: $"Round {round}");
+                appended++;
+            }
+        }
+        warnings.Add(
+            $"ESAKE ends after round 22; added {appended} round 23-26 games from the Greek Wikipedia score matrix, dated by Olympiacos' official round schedule ({olympiacosUrl}).");
+        return false;
     }
 
     private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetCupGamesAsync(
@@ -706,6 +793,88 @@ public sealed class GreekOfficialBasketballDataProvider(
                 .ToString("00", CultureInfo.InvariantCulture))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+
+    internal static IReadOnlyList<WikipediaMatrixGame> ParseWikipediaRegularSeasonMatrix(string html)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var candidates = new List<IReadOnlyList<WikipediaMatrixGame>>();
+        foreach (var table in document.DocumentNode.SelectNodes("//table") ?? Enumerable.Empty<HtmlNode>())
+        {
+            var rows = table.SelectNodes(".//tr")?.ToArray() ?? [];
+            if (rows.Length < 3)
+            {
+                continue;
+            }
+            var headers = rows[0].SelectNodes("./th|./td")?.Select(cell => Clean(cell.InnerText)).ToArray() ?? [];
+            if (headers.Length < 4 || headers.Length > 21)
+            {
+                continue;
+            }
+            var teamCount = headers.Length - 1;
+            var parsed = new List<WikipediaMatrixGame>();
+            foreach (var row in rows.Skip(1))
+            {
+                var cells = row.SelectNodes("./th|./td")?.Select(cell => Clean(cell.InnerText)).ToArray() ?? [];
+                if (cells.Length < teamCount + 1)
+                {
+                    continue;
+                }
+                var home = CanonicalizeTeamName(cells[0]);
+                for (var column = 1; column <= teamCount; column++)
+                {
+                    var score = Regex.Match(cells[column], @"^(\d{1,3})\s*[-–—]\s*(\d{1,3})$");
+                    if (!score.Success || !short.TryParse(score.Groups[1].Value, out var homeScore) ||
+                        !short.TryParse(score.Groups[2].Value, out var awayScore) || homeScore == awayScore)
+                    {
+                        continue;
+                    }
+                    parsed.Add(new WikipediaMatrixGame(
+                        home,
+                        CanonicalizeTeamName(headers[column]),
+                        homeScore,
+                        awayScore));
+                }
+            }
+            if (parsed.Count == teamCount * (teamCount - 1))
+            {
+                candidates.Add(parsed);
+            }
+        }
+        return candidates.OrderByDescending(candidate => candidate.Count).FirstOrDefault() ?? [];
+    }
+
+    internal static IReadOnlyDictionary<int, DateTime> ParseOlympiacosRegularSeasonRoundDates(
+        string html,
+        int startYear)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var dates = new Dictionary<int, DateTime>();
+        foreach (var row in document.DocumentNode.SelectNodes("//tr") ?? Enumerable.Empty<HtmlNode>())
+        {
+            var cells = row.SelectNodes("./th|./td")?.Select(cell => Clean(cell.InnerText)).ToArray() ?? [];
+            if (!cells.Any(cell => cell.Contains("Regular Season", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+            var roundMatch = cells.Select(cell => Regex.Match(cell, @"^Round\s+(\d+)$", RegexOptions.IgnoreCase))
+                .FirstOrDefault(match => match.Success);
+            var dateMatch = cells.Select(cell => Regex.Match(cell, @"(?<!\d)(\d{1,2})/(\d{1,2})/(\d{4})(?!\d)"))
+                .FirstOrDefault(match => match.Success);
+            if (roundMatch is null || dateMatch is null ||
+                !int.TryParse(roundMatch.Groups[1].Value, out var round) ||
+                !int.TryParse(dateMatch.Groups[1].Value, out var day) ||
+                !int.TryParse(dateMatch.Groups[2].Value, out var month) ||
+                !int.TryParse(dateMatch.Groups[3].Value, out var year) ||
+                year < startYear || year > startYear + 1 || !TryDate(year, month, day, out var date))
+            {
+                continue;
+            }
+            dates[round] = date;
+        }
+        return dates;
+    }
 
     internal static IReadOnlyList<BasketballProviderGame> ParseEsakeRound(
         string html,
@@ -1182,6 +1351,55 @@ public sealed class GreekOfficialBasketballDataProvider(
     private static bool IsAdministrativeScore(short homeScore, short awayScore) =>
         (homeScore == 20 && awayScore == 0) || (homeScore == 0 && awayScore == 20);
 
+    private static bool SameTeam(string first, string second) =>
+        string.Equals(TeamMatchKey(first), TeamMatchKey(second), StringComparison.Ordinal);
+
+    private static string TeamMatchKey(string value)
+    {
+        var rawKey = NormalizeKey(value);
+        var greekKey = rawKey switch
+        {
+            "παοκ" => "paok",
+            "παο" or "παναθηναικος" => "panathinaikos",
+            "πγσσ" or "πανιωνιος" => "panionios",
+            "οσφπ" or "ολυμπιακος" => "olympiacos",
+            "αρης" => "aris",
+            "περ" or "περιστερι" => "peristeri",
+            "αεκ" => "aek athens",
+            "ηρα" or "ηρακλης" => "iraklis",
+            "παγκ" or "παγκρατι" => "pagrati",
+            "δαφ" or "δαφνη" => "dafni",
+            "απολ" or "απολλων π" or "απολλων πατρων" => "apollon patras",
+            "λαρ" or "λαρισα" or "γσ λαρισας" => "ael 1964 b c",
+            "σπορ" or "σπορτιγκ" => "sporting",
+            "πειρ" or "πειραικος" => "peiraikos",
+            _ => string.Empty
+        };
+        if (greekKey.Length > 0)
+        {
+            return greekKey;
+        }
+        var key = NormalizeKey(CanonicalizeTeamName(value));
+        return key switch
+        {
+            "pao" => "panathinaikos",
+            "pgss" => "panionios",
+            "osfp" => "olympiacos",
+            "per" => "peristeri",
+            "ira" => "iraklis",
+            "pagk" => "pagrati",
+            "daf" => "dafni",
+            "apol" => "apollon patras",
+            "lar" => "larissa",
+            "spor" => "sporting",
+            "peir" => "peiraikos",
+            "apollon p" => "apollon patras",
+            "larisa" or "larissa" or "gs larissa" or "ael 1964 b c" => "larissa",
+            "paok thessalonikis" => "paok",
+            _ => key
+        };
+    }
+
     private static string Clean(string value) =>
         Regex.Replace(HtmlEntity.DeEntitize(value).Replace('\u00A0', ' '), @"\s+", " ").Trim();
 
@@ -1206,6 +1424,12 @@ public sealed class GreekOfficialBasketballDataProvider(
     internal sealed record CupParseResult(
         IReadOnlyList<BasketballProviderGame> Games,
         IReadOnlyList<string> Warnings);
+
+    internal sealed record WikipediaMatrixGame(
+        string Home,
+        string Away,
+        short HomeScore,
+        short AwayScore);
 
     private sealed record CupCandidate(
         string? GameNumber,

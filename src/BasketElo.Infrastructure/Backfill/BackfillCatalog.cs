@@ -83,8 +83,8 @@ public class BackfillCatalog : IBackfillCatalog
         new("api-sports", "Lithuania", "LKL", "Lithuania: LKL", "2011-2012", EndSeason: "2025-2026"),
         new("api-sports", "Lithuania", "King Mindaugas Cup", "Lithuania: King Mindaugas Cup", "2020-2021", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
         new("api-sports", "Lithuania", "LKF Cup", "Lithuania: LKF Cup", "2018", CompetitionType: "domestic_cup", EndSeason: "2019"),
-        new("greek-official", "Greece", "A1", "Greece: A1 / Greek Basket League", "1996-1997", EndSeason: "2007-2008"),
-        new("greek-official", "Greece", "Greek Cup", "Greece: Greek Cup", "1996-1997", CompetitionType: "domestic_cup", ExplicitSeasons: GreekCupHistoricalSeasons()),
+        new("greek-official", "Greece", "A1", "Greece: A1 / Greek Basket League", "1992-1993", ExplicitSeasons: GreekLeagueHistoricalSeasons()),
+        new("greek-official", "Greece", "Greek Cup", "Greece: Greek Cup", "1992-1993", CompetitionType: "domestic_cup", ExplicitSeasons: GreekCupHistoricalSeasons()),
         new("api-sports", "Greece", "A1", "Greece: A1 / Greek Basket League", "2008-2009", EndSeason: "2025-2026"),
         new("api-sports", "Greece", "Greek Cup", "Greece: Greek Cup", "2008-2009", CompetitionType: "domestic_cup", EndSeason: "2025-2026", ExcludedSeasons: ["2015-2016"]),
         new("api-sports", "Greece", "Super Cup", "Greece: Super Cup", "2020", CompetitionType: "domestic_cup", EndSeason: "2025"),
@@ -256,9 +256,15 @@ public class BackfillCatalog : IBackfillCatalog
             .Select(year => $"{year}-{year + 1}")
             .ToArray();
 
+    private static string[] GreekLeagueHistoricalSeasons()
+        => new[] { 1992 }
+            .Concat(Enumerable.Range(1996, 12))
+            .Select(year => $"{year}-{year + 1}")
+            .ToArray();
+
     private static string[] GreekCupHistoricalSeasons()
-        => Enumerable.Range(1996, 12)
-            .Where(year => year != 2003)
+        => new[] { 1992 }
+            .Concat(Enumerable.Range(1996, 12).Where(year => year != 2003))
             .Select(year => $"{year}-{year + 1}")
             .ToArray();
 }

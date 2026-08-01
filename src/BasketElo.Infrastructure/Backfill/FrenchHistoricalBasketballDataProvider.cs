@@ -21,6 +21,7 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
 {
     public const string Source = "french-historical";
     public const string BasketArchivesParserVersion = "basketarchives-fr-v1";
+    public const string LEquipeParserVersion = "lequipe-fr-v1";
     public const string TheSportsParserVersion = "the-sports-fr-v1";
     public const string FrenchCupParserVersion = "fr-wikipedia-cup-v1";
 
@@ -120,13 +121,16 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             ["paris br"] = "Paris Basket Racing",
             ["paris levallois"] = "Boulogne-Levallois",
             ["psg racing"] = "Paris Basket Racing",
+            ["pau lacq orthez"] = "Pau-Orthez",
             ["pau orthez"] = "Pau-Orthez",
             ["poitiers basket 86"] = "Poitiers",
             ["reims champagne basket"] = "Reims",
             ["rouen metropole basket"] = "Rouen",
             ["rupella basket 17"] = "La Rochelle",
             ["saint chamond basket"] = "St. Chamond",
+            ["saint etienne"] = "Saint-Étienne",
             ["saint etienne basket"] = "Saint-Étienne",
+            ["saint quentin"] = "Saint Quentin",
             ["saint quentin bb"] = "Saint Quentin",
             ["saint vallier basket drome"] = "Saint Vallier",
             ["saint vallier bd"] = "Saint Vallier",
@@ -141,6 +145,7 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             ["spo rouen"] = "Rouen",
             ["spo rouen bb"] = "Rouen",
             ["tours joue"] = "Tours",
+            ["toulouse spacer s"] = "Toulouse",
             ["ujap quimper"] = "Quimper",
             ["usa lievin basket"] = "Liévin",
             ["usa toulouges"] = "Toulouges",
@@ -189,12 +194,14 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
         {
             "FR_TOP_FLIGHT" when startYear is 1981 or >= 1998 and <= 2000 =>
                 await GetBasketArchivesLeagueAsync(season, endYear, context, cancellationToken),
+            "FR_TOP_FLIGHT" when startYear is >= 1987 and <= 1997 =>
+                await GetLEquipeLeagueAsync(season, startYear, endYear, context, cancellationToken),
             "FR_TOP_FLIGHT" when startYear is >= 2001 and <= 2007 =>
                 await GetTheSportsLeagueAsync(season, startYear, context, cancellationToken),
             "COUPE_DE_FRANCE" when startYear is >= 2004 and <= 2007 =>
                 await GetFrenchCupAsync(season, startYear, endYear, context, cancellationToken),
             "FR_TOP_FLIGHT" => throw new ArgumentException(
-                "French historical league coverage supports 1981-1982 and 1998-1999 through 2007-2008.", nameof(season)),
+                "French historical league coverage supports 1981-1982 and 1987-1988 through 2007-2008.", nameof(season)),
             "COUPE_DE_FRANCE" => throw new ArgumentException(
                 "Complete historical French Cup articles support 2004-2005 through 2007-2008.", nameof(season)),
             _ => throw new InvalidOperationException("French historical provider only supports France: LNB and French Cup.")
@@ -297,6 +304,128 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             }
         }
         return games;
+    }
+
+    private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetLEquipeLeagueAsync(
+        string season,
+        int startYear,
+        int endYear,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var relativeUrl = $"Basket/pro-a/saison-{season}/page-calendrier-resultats";
+        var landingUrl = new Uri(new Uri(options.Value.LEquipeBaseUrl), relativeUrl).ToString();
+        var landing = await FetchStringAsync(landingUrl, context, cancellationToken);
+        var document = new HtmlDocument();
+        document.LoadHtml(landing);
+        var stages = (document.DocumentNode.SelectNodes("//select//option[contains(@value,'page-calendrier-resultats/')]") ?? Enumerable.Empty<HtmlNode>())
+            .Select(node => new
+            {
+                Url = new Uri(new Uri(options.Value.LEquipeBaseUrl), node.GetAttributeValue("value", string.Empty)).ToString(),
+                Round = CleanHtml(node.InnerText)
+            })
+            .Where(item => item.Round.Length > 0)
+            .DistinctBy(item => item.Url)
+            .ToList();
+
+        var games = new List<BasketballProviderGame>();
+        foreach (var stage in stages)
+        {
+            var html = await FetchStringAsync(stage.Url, context, cancellationToken, landingUrl);
+            games.AddRange(ParseLEquipeStage(html, season, startYear, endYear, stage.Round, stage.Url));
+        }
+
+        var warnings = new List<string>
+        {
+            "L'Equipe supplies historical local dates without reliable tip-off times; imported times are 12:00 UTC."
+        };
+        if (stages.Count == 0)
+        {
+            warnings.Add($"No L'Equipe round links were found at {landingUrl}.");
+        }
+        if (games.Count == 0)
+        {
+            warnings.Add("L'Equipe pages contained no parseable games.");
+        }
+        return (games, false, warnings);
+    }
+
+    internal static IReadOnlyList<BasketballProviderGame> ParseLEquipeStage(
+        string html,
+        string season,
+        int startYear,
+        int endYear,
+        string round,
+        string sourceUrl)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var games = new List<BasketballProviderGame>();
+        foreach (var dateNode in document.DocumentNode.SelectNodes("//div[contains(@class,'caption--small')]") ?? Enumerable.Empty<HtmlNode>())
+        {
+            if (!TryParseLEquipeDate(CleanHtml(dateNode.InnerText), startYear, endYear, out var date))
+            {
+                continue;
+            }
+            var grid = dateNode.SelectSingleNode("following-sibling::div[contains(@class,'grid')][1]");
+            if (grid is null)
+            {
+                continue;
+            }
+            foreach (var match in grid.SelectNodes(".//div[contains(concat(' ',normalize-space(@class),' '),' TeamScore__top ')]") ?? Enumerable.Empty<HtmlNode>())
+            {
+                var game = ParseLEquipeMatch(match, date, season, round, sourceUrl, html);
+                if (game is not null) games.Add(game);
+            }
+        }
+        foreach (var childEvent in document.DocumentNode.SelectNodes("//div[contains(concat(' ',normalize-space(@class),' '),' CalendarResults__childEvent ')]") ?? Enumerable.Empty<HtmlNode>())
+        {
+            var dateNode = childEvent.SelectSingleNode("./span[contains(@class,'CalendarResults__childEventDate')]");
+            var match = childEvent.SelectSingleNode(".//div[contains(concat(' ',normalize-space(@class),' '),' TeamScore__top ')]");
+            if (dateNode is null || match is null ||
+                !TryParseLEquipeDate(CleanHtml(dateNode.InnerText), startYear, endYear, out var date))
+            {
+                continue;
+            }
+            var game = ParseLEquipeMatch(match, date, season, round, sourceUrl, html);
+            if (game is not null) games.Add(game);
+        }
+        return games.DistinctBy(game => game.SourceGameId).ToList();
+    }
+
+    private static BasketballProviderGame? ParseLEquipeMatch(
+        HtmlNode match,
+        DateTime date,
+        string season,
+        string round,
+        string sourceUrl,
+        string html)
+    {
+        var homeLink = match.SelectSingleNode(".//a[contains(@class,'TeamScore__team--home')]");
+        var awayLink = match.SelectSingleNode(".//a[contains(@class,'TeamScore__team--away')]");
+        var gameLink = match.SelectSingleNode(".//a[contains(@href,'match-en-direct')]");
+        var scoreNode = match.SelectSingleNode(".//div[contains(@class,'TeamScore__score--ended')]");
+        if (homeLink is null || awayLink is null || gameLink is null || scoreNode is null)
+        {
+            return null; // Series aggregate rows do not have a match URL.
+        }
+        var score = ScoreRegex().Match(CleanHtml(scoreNode.InnerText));
+        var homeId = LEquipeTeamIdRegex().Match(homeLink.GetAttributeValue("href", string.Empty)).Groups[1].Value;
+        var awayId = LEquipeTeamIdRegex().Match(awayLink.GetAttributeValue("href", string.Empty)).Groups[1].Value;
+        var gameId = LEquipeGameIdRegex().Match(gameLink.GetAttributeValue("href", string.Empty)).Groups[1].Value;
+        if (!score.Success || !short.TryParse(score.Groups[1].Value, out var homeScore) ||
+            !short.TryParse(score.Groups[2].Value, out var awayScore) ||
+            homeId.Length == 0 || awayId.Length == 0 || gameId.Length == 0)
+        {
+            return null;
+        }
+        var homeName = CanonicalizeTeamName(CleanHtml(homeLink.InnerText));
+        var awayName = CanonicalizeTeamName(CleanHtml(awayLink.InnerText));
+        return BuildGame(
+            $"lequipe:{gameId}", date, homeName, $"lequipe-club:{homeId}", homeScore,
+            awayName, $"lequipe-club:{awayId}", awayScore, sourceUrl, season,
+            LEquipeParserVersion, Hash(html), IsLEquipeRegularRound(round) ? "Regular Season" : "Playoffs",
+            NormalizeLEquipeRound(round));
     }
 
     private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetTheSportsLeagueAsync(
@@ -762,6 +891,62 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
         _ => new DateTime(endYear, 4, 1)
     };
 
+    private static bool TryParseLEquipeDate(string value, int startYear, int endYear, out DateTime date)
+    {
+        var match = Regex.Match(NormalizeKey(value), @"(?<!\d)(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?");
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var day))
+        {
+            date = default;
+            return false;
+        }
+        var monthToken = match.Groups[2].Value;
+        var month = monthToken switch
+        {
+            var token when token.StartsWith("janv", StringComparison.Ordinal) => 1,
+            var token when token.StartsWith("fevr", StringComparison.Ordinal) => 2,
+            var token when token.StartsWith("mars", StringComparison.Ordinal) => 3,
+            var token when token.StartsWith("avr", StringComparison.Ordinal) => 4,
+            var token when token.StartsWith("mai", StringComparison.Ordinal) => 5,
+            var token when token.StartsWith("juin", StringComparison.Ordinal) => 6,
+            var token when token.StartsWith("juil", StringComparison.Ordinal) => 7,
+            var token when token.StartsWith("aout", StringComparison.Ordinal) => 8,
+            var token when token.StartsWith("sept", StringComparison.Ordinal) => 9,
+            var token when token.StartsWith("oct", StringComparison.Ordinal) => 10,
+            var token when token.StartsWith("nov", StringComparison.Ordinal) => 11,
+            var token when token.StartsWith("dec", StringComparison.Ordinal) => 12,
+            _ => 0
+        };
+        var year = int.TryParse(match.Groups[3].Value, out var parsedYear)
+            ? parsedYear
+            : month >= 7 ? startYear : endYear;
+        try
+        {
+            date = new DateTime(year, month, day);
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            date = default;
+            return false;
+        }
+    }
+
+    private static bool IsLEquipeRegularRound(string round) =>
+        NormalizeKey(round).Contains("journee", StringComparison.Ordinal);
+
+    private static string NormalizeLEquipeRound(string round)
+    {
+        var key = NormalizeKey(round);
+        var roundNumber = Regex.Match(key, @"\d+").Value;
+        if (key.Contains("journee", StringComparison.Ordinal) && roundNumber.Length > 0) return $"Round {roundNumber}";
+        if (key.Contains("tour preliminaire", StringComparison.Ordinal)) return "Preliminary Round";
+        if (key.Contains("8es de finale", StringComparison.Ordinal) || key.Contains("huitieme", StringComparison.Ordinal)) return "Round of 16";
+        if (key.Contains("quart", StringComparison.Ordinal)) return "Quarterfinals";
+        if (key.Contains("demi", StringComparison.Ordinal)) return "Semifinals";
+        if (key.Contains("final", StringComparison.Ordinal)) return "Final";
+        return CleanHtml(round);
+    }
+
     private static bool TryParseFrenchDate(string value, int defaultYear, out DateTime date)
     {
         var key = NormalizeKey(value);
@@ -810,6 +995,12 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
 
     [GeneratedRegex(@"equ(\d+)\.html", RegexOptions.IgnoreCase)]
     private static partial Regex TeamIdRegex();
+
+    [GeneratedRegex(@"BasketFicheClub(\d+)\.html", RegexOptions.IgnoreCase)]
+    private static partial Regex LEquipeTeamIdRegex();
+
+    [GeneratedRegex(@"match-en-direct/.+?/(\d+)(?:[/?#]|$)", RegexOptions.IgnoreCase)]
+    private static partial Regex LEquipeGameIdRegex();
 
     [GeneratedRegex(@"^\s*(\d{1,3})\s*[-–]\s*(\d{1,3})(?:\s+(?:ot|a\.?p\.?))?\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex ScoreRegex();

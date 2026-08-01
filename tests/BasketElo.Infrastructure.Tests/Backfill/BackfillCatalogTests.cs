@@ -7,7 +7,7 @@ namespace BasketElo.Infrastructure.Tests.Backfill;
 public class BackfillCatalogTests
 {
     [Fact]
-    public void FrenchHistoricalCatalogPreservesVerifiedGapAndCupLeagueOverlap()
+    public void FrenchHistoricalCatalogPreservesVerifiedEarlyGapAndCupLeagueOverlap()
     {
         var catalog = new BackfillCatalog();
         var league = catalog.GetLeagues().Single(item =>
@@ -20,6 +20,8 @@ public class BackfillCatalogTests
 
         Assert.Contains("1981-1982", leagueSeasons);
         Assert.DoesNotContain("1982-1983", leagueSeasons);
+        Assert.DoesNotContain("1986-1987", leagueSeasons);
+        Assert.Contains("1987-1988", leagueSeasons);
         Assert.Contains("1998-1999", leagueSeasons);
         Assert.Contains("2007-2008", leagueSeasons);
         Assert.Equal(4, cupSeasons.Count);

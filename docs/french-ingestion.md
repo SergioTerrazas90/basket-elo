@@ -8,15 +8,18 @@ starts in 2008-2009.
 
 | Rank | Source | Historical game coverage | Access and quality | Use |
 | --- | --- | --- | --- | --- |
-| 1 | [TheSports Pro A archive](https://www.the-sports.org/basketball-french-national-championships-events-list-s6-c0-b0-g40-p2.html) | Regular season and playoffs from 2001-2002 onward; seven seasons in this backfill | Complete dated scores and stable team IDs. Requires one index request and one AJAX request per round, but avoids the known date and score typos in overlapping BasketArchives playoff pages. | 2001-2002 through 2007-2008 |
-| 2 | [BasketArchives](http://www.basketarchives.fr/somstats.htm) | Complete score pages for 1981-1982 and 1998-1999 through 2004-2005; eight full seasons, but not contiguous | Easiest source (one HTML request per season) and the specialist French archive. Some overlapping playoff pages contain incorrect years or impossible score transcriptions, so only the non-overlapping seasons are imported. | 1981-1982 and 1998-1999 through 2000-2001 |
-| 3 | [LNB](https://www.lnb.fr/) historical publications | Official season validation and historical reports | Authoritative, but no stable bulk game-level archive for the requested years was found. | Validation only |
-| 4 | French/English Wikipedia season articles | Standings, champions and selected playoff results | Easy to access, but regular-season game lists are incomplete. | Validation only |
+| 1 | [L'Equipe Pro A archive](https://www.lequipe.fr/Basket/pro-a/saison-1987-1988/page-calendrier-resultats) | Every regular-season round and playoff stage from 1987-1988 onward | Complete dated scores, stable match IDs and stable club IDs. Requires one request per round or playoff stage. | 1987-1988 through 1997-1998 |
+| 2 | [TheSports Pro A archive](https://www.the-sports.org/basketball-french-national-championships-events-list-s6-c0-b0-g40-p2.html) | Regular season and playoffs from 2001-2002 onward; seven seasons in this backfill | Complete dated scores and stable team IDs. Requires one index request and one AJAX request per round, but avoids the known date and score typos in overlapping BasketArchives playoff pages. | 2001-2002 through 2007-2008 |
+| 3 | [BasketArchives](http://www.basketarchives.fr/somstats.htm) | Complete score pages for 1981-1982 and 1998-1999 through 2004-2005; eight full seasons, but not contiguous | Easiest source (one HTML request per season) and the specialist French archive. Some overlapping playoff pages contain incorrect years or impossible score transcriptions, so only the non-overlapping seasons are imported. | 1981-1982 and 1998-1999 through 2000-2001 |
+| 4 | [LNB](https://www.lnb.fr/) historical publications | Official season validation and historical reports | Authoritative, but no stable bulk game-level archive for the requested years was found. | Validation only |
+| 5 | French/English Wikipedia season articles | Standings, champions and selected playoff results | Easy to access, but regular-season game lists are incomplete. | Validation only |
 
 The verified league catalog therefore contains the isolated complete 1981-1982
-season, an explicit 1982-1983 through 1997-1998 gap, and a continuous
-1998-1999 through 2007-2008 run. Standings matrices and win/loss totals are not
-expanded into synthetic games.
+season and a continuous 1987-1988 through 2007-2008 run. The remaining explicit
+gap is 1982-1983 through 1986-1987: BasketArchives and Wikipedia publish standings,
+playoff summaries or isolated club games for those years, not complete game-level
+top-flight schedules. Standings matrices and win/loss totals are not expanded into
+synthetic games.
 
 ## Ranked cup sources
 
@@ -36,6 +39,17 @@ count minus one when the source records an automatic advance.
 | Competition | Season | Games |
 | --- | --- | ---: |
 | LNB | 1981-1982 | 182 |
+| LNB | 1987-1988 | 264 |
+| LNB | 1988-1989 | 265 |
+| LNB | 1989-1990 | 332 |
+| LNB | 1990-1991 | 267 |
+| LNB | 1991-1992 | 268 |
+| LNB | 1992-1993 | 240 |
+| LNB | 1993-1994 | 209 |
+| LNB | 1994-1995 | 209 |
+| LNB | 1995-1996 | 258 |
+| LNB | 1996-1997 | 256 |
+| LNB | 1997-1998 | 258 |
 | LNB | 1998-1999 | 258 |
 | LNB | 1999-2000 | 258 |
 | LNB | 2000-2001 | 258 |

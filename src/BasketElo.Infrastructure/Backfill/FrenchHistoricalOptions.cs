@@ -8,6 +8,8 @@ public sealed class FrenchHistoricalOptions
 
     public string TheSportsBaseUrl { get; set; } = "https://www.the-sports.org/";
 
+    public string LEquipeBaseUrl { get; set; } = "https://www.lequipe.fr/";
+
     public string WikipediaBaseUrl { get; set; } = "https://fr.wikipedia.org/";
 
     public string UserAgent { get; set; } = "BasketElo historical-ingest/1.0 (issue 125)";

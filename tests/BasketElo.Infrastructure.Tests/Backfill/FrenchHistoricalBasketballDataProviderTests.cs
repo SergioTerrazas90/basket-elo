@@ -51,6 +51,61 @@ public sealed class FrenchHistoricalBasketballDataProviderTests
     }
 
     [Fact]
+    public void ParsesLEquipeDatedGamesAndSkipsSeriesAggregate()
+    {
+        const string html = """
+            <div><div class="caption caption--small">jeudi 17 sept.</div><div class="grid grid--noborder">
+              <div class="TeamScore__top">
+                <a class="TeamScore__team TeamScore__team--home" href="/Basket/BasketFicheClub1017.html"><span>Lyon CRO</span></a>
+                <a href="/Basket/match-en-direct/pro-a-1992-1993/lyon-cro-montpellier-live/126360"><div class="TeamScore__score TeamScore__score--ended"><span>88</span><span>-</span><span>81</span></div></a>
+                <a class="TeamScore__team TeamScore__team--away" href="/Basket/BasketFicheClub11.html"><span>Montpellier</span></a>
+              </div>
+              <div class="TeamScore__top">
+                <a class="TeamScore__team TeamScore__team--home" href="/Basket/BasketFicheClub12.html"><span>Limoges CSP</span></a>
+                <div class="TeamScore__score TeamScore__score--ended"><span>2</span><span>-</span><span>0</span></div>
+                <a class="TeamScore__team TeamScore__team--away" href="/Basket/BasketFicheClub9.html"><span>Pau</span></a>
+              </div>
+            </div></div>
+            """;
+
+        var games = FrenchHistoricalBasketballDataProvider.ParseLEquipeStage(
+            html, "1992-1993", 1992, 1993, "1re journée", "https://example.test/1re-journee");
+
+        var game = Assert.Single(games);
+        Assert.Equal("lequipe:126360", game.SourceGameId);
+        Assert.Equal(new DateTime(1992, 9, 17, 12, 0, 0, DateTimeKind.Utc), game.GameDateTimeUtc);
+        Assert.Equal("Lyon CRO", game.HomeTeamName);
+        Assert.Equal("Montpellier", game.AwayTeamName);
+        Assert.Equal("Regular Season", game.CompetitionPhase);
+        Assert.Equal("Round 1", game.CompetitionRound);
+        Assert.Equal(FrenchHistoricalBasketballDataProvider.LEquipeParserVersion, game.Provenance!.ParserVersion);
+    }
+
+    [Fact]
+    public void ParsesLEquipePlayoffChildEventsWithFullDates()
+    {
+        const string html = """
+            <div class="CalendarResults__childEvent">
+              <span class="CalendarResults__childEventDate">09 avril 1993 - 15h30</span>
+              <div class="TeamScore__top">
+                <a class="TeamScore__team TeamScore__team--home" href="/Basket/BasketFicheClub9.html"><span>Pau-Lacq-Orthez</span></a>
+                <a href="/Basket/match-en-direct/pro-a-1992-1993/pau-limoges-live/90438"><div class="TeamScore__score TeamScore__score--ended"><span>73</span><span>-</span><span>69</span></div></a>
+                <a class="TeamScore__team TeamScore__team--away" href="/Basket/BasketFicheClub12.html"><span>Limoges CSP</span></a>
+              </div>
+            </div>
+            """;
+
+        var games = FrenchHistoricalBasketballDataProvider.ParseLEquipeStage(
+            html, "1992-1993", 1992, 1993, "Finale", "https://example.test/finale");
+
+        var game = Assert.Single(games);
+        Assert.Equal(new DateTime(1993, 4, 9, 12, 0, 0, DateTimeKind.Utc), game.GameDateTimeUtc);
+        Assert.Equal("Pau-Orthez", game.HomeTeamName);
+        Assert.Equal("Playoffs", game.CompetitionPhase);
+        Assert.Equal("Final", game.CompetitionRound);
+    }
+
+    [Fact]
     public void ParsesFrenchCupTableAndFinalPhaseTemplateWithoutDuplicates()
     {
         const string html = """

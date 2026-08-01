@@ -91,7 +91,7 @@ public sealed class GreekOfficialBasketballDataProviderTests
             """;
 
         var games = GreekOfficialBasketballDataProvider.ParseBasketballReferenceGreekLeague(
-            html, "2015-2016", "https://www.basketball-reference.com/international/greek-basket-league/2016-schedule.html");
+            html, "2015-2016", "https://www.basketball-reference.com/euro/greek-basket-league/2016-schedule.html");
 
         Assert.Equal(2, games.Count);
         var regular = Assert.Single(games, game => game.CompetitionPhase == "Regular Season");

@@ -30,7 +30,7 @@ public sealed class GreekOfficialBasketballDataProvider(
     private const int MaxPlayoffSeries = 40;
     private const int EmptyPlayoffSeriesToStop = 3;
     private const string BasketballReferenceGreekLeague2015Url =
-        "https://www.basketball-reference.com/international/greek-basket-league/2016-schedule.html";
+        "https://www.basketball-reference.com/euro/greek-basket-league/2016-schedule.html";
 
     private const string SportGr1997RegularCapture =
         "web/20080528083751id_/http://archive.sport.gr/basket/hellas/a1/";
@@ -538,10 +538,11 @@ public sealed class GreekOfficialBasketballDataProvider(
         var revision = Hash(html);
         var document = new HtmlDocument();
         document.LoadHtml(html);
-        var games = new List<BasketballProviderGame>();
-        foreach (var table in document.DocumentNode.SelectNodes("//table[@id='regular-season-games' or @id='playoffs-games']") ?? Enumerable.Empty<HtmlNode>())
+        var games = new Dictionary<string, BasketballProviderGame>(StringComparer.Ordinal);
+        foreach (var table in document.DocumentNode.SelectNodes("//table[@id='games' or @id='games_playoffs' or @id='regular-season-games' or @id='playoffs-games']") ?? Enumerable.Empty<HtmlNode>())
         {
-            var phase = string.Equals(table.GetAttributeValue("id", string.Empty), "playoffs-games", StringComparison.Ordinal)
+            var tableId = table.GetAttributeValue("id", string.Empty);
+            var phase = string.Equals(tableId, "games_playoffs", StringComparison.Ordinal) || string.Equals(tableId, "playoffs-games", StringComparison.Ordinal)
                 ? "Playoffs"
                 : "Regular Season";
             foreach (var row in table.SelectNodes(".//tr") ?? Enumerable.Empty<HtmlNode>())
@@ -562,7 +563,7 @@ public sealed class GreekOfficialBasketballDataProvider(
 
                 var round = phase == "Regular Season" ? "Regular Season" : "Playoffs";
                 var sourceGameId = $"basketball-reference:greek:2016:{date:yyyyMMdd}:{Slug(visitor)}:{Slug(home)}";
-                games.Add(new BasketballProviderGame(
+                var game = new BasketballProviderGame(
                     Source,
                     sourceGameId,
                     DateTime.SpecifyKind(date.Date.AddHours(12), DateTimeKind.Utc),
@@ -576,13 +577,14 @@ public sealed class GreekOfficialBasketballDataProvider(
                     new BasketballProviderGameProvenance(
                         sourceUrl, season, DateTime.UtcNow, BasketballReferenceGreekParserVersion, revision),
                     CompetitionPhase: phase,
-                    CompetitionRound: round));
+                    CompetitionRound: round);
+                var matchupKey = $"{date:yyyyMMdd}:{NormalizeKey(CanonicalizeTeamName(visitor))}:{NormalizeKey(CanonicalizeTeamName(home))}";
+                games[matchupKey] = game;
             }
         }
 
         return games
-            .GroupBy(game => game.SourceGameId, StringComparer.Ordinal)
-            .Select(group => group.First())
+            .Values
             .OrderBy(game => game.GameDateTimeUtc)
             .ThenBy(game => game.SourceGameId)
             .ToArray();
@@ -1365,10 +1367,16 @@ public sealed class GreekOfficialBasketballDataProvider(
         var englishCanonical = key switch
         {
             "aek athens" or "aek" => "AEK Athens",
+            "paok thessaloniki" => "PAOK",
+            "olympiacos piraeus" => "Olympiacos",
+            "panathinaikos athens" => "Panathinaikos",
+            "aris thessaloniki" => "Aris",
             "kolossos h hotels" or "kolossos h hotels collection" or "kolossos" => "Kolossos Rhodes",
+            "kolossos rodou" => "Kolossos Rhodes",
             "rethymno cretan kings" or "rethymno" => "Rethymno",
+            "rethymno aegean" => "Rethymno",
             "apollon patras carna" or "apollon patras" => "Apollon Patras",
-            "trikala aries" or "trikala 2000" or "trikala" => "Trikala",
+            "trikala aries" or "aries trikala" or "trikala 2000" or "trikala" => "Trikala",
             "nea kifissia" => "Nea Kifisia",
             "koroivos" => "Koroivos",
             "lavrio" => "Lavrio",

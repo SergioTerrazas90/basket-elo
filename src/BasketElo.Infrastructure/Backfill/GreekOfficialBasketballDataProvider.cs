@@ -338,8 +338,8 @@ public sealed class GreekOfficialBasketballDataProvider(
                 continue;
             }
 
-            var rawHome = Clean(scoreColumns[0].InnerText);
-            var rawAway = Clean(scoreColumns[2].InnerText);
+            var rawHome = TeamNameFromScoreCell(scoreColumns[0]);
+            var rawAway = TeamNameFromScoreCell(scoreColumns[2]);
             if (rawHome.Length == 0 || rawAway.Length == 0)
             {
                 continue;
@@ -552,6 +552,12 @@ public sealed class GreekOfficialBasketballDataProvider(
             .ToArray();
     }
 
+    private static string TeamNameFromScoreCell(HtmlNode cell)
+    {
+        var span = cell.SelectSingleNode(".//span");
+        return string.Join(' ', LinesFromHtml(span?.InnerHtml ?? cell.InnerHtml));
+    }
+
     private static bool TryParseEsakeDate(string value, int startYear, out DateTime date)
     {
         var key = NormalizeKey(value);
@@ -597,6 +603,15 @@ public sealed class GreekOfficialBasketballDataProvider(
         {
             year = explicitYear < 100 ? 2000 + explicitYear : explicitYear;
             if (explicitYear is >= 90 and < 100) year = 1900 + explicitYear;
+
+            // Some EOK pages carry the previous calendar year on January-June
+            // headings even though the surrounding edition and later rounds
+            // make the intended season year unambiguous (for example the
+            // 1999-2000 quarterfinal heading says January 1999).
+            if (month < 7 && year == startYear)
+            {
+                year = startYear + 1;
+            }
         }
         return TryDate(year, month, day, out date);
     }

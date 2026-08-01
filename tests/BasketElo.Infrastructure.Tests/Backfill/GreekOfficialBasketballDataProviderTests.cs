@@ -65,4 +65,17 @@ public sealed class GreekOfficialBasketballDataProviderTests
         Assert.Equal("Semifinals", game.CompetitionRound);
         Assert.Equal("eok-cup:1765:44", game.SourceGameId);
     }
+
+    [Fact]
+    public void EokJanuaryHeadingWithPreviousYearTypoStaysInsideEditionSeason()
+    {
+        const string html = """
+            <p>ΠΡΟΗΜΙΤΕΛΙΚΟΙ 19/1/1999<br>34&nbsp;&nbsp;ΗΡΑΚΛΗΣ&nbsp;&nbsp;ΑΡΗΣ&nbsp;&nbsp;65-55</p>
+            """;
+
+        var result = GreekOfficialBasketballDataProvider.ParseEokCup(
+            html, "1999-2000", 1753, "https://www.basket.gr/cup-men/example", "fixture");
+
+        Assert.Equal(new DateTime(2000, 1, 19, 12, 0, 0, DateTimeKind.Utc), Assert.Single(result.Games).GameDateTimeUtc);
+    }
 }

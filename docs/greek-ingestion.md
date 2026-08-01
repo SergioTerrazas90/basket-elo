@@ -17,7 +17,7 @@ older block is not ingested.
 | A1 / Greek Basket League | 1999-2000 through 2007-2008 | ESAKE official results archive | Regular season and playoffs, using stable official game and team IDs. |
 | A1 / Greek Basket League | 2008-2009 onward | API-Sports | Existing modern coverage. |
 | Greek Cup | 1999-2000 through 2007-2008, except 2003-2004 | EOK official Cup archive | Only cataloged when that season also has ingested A1 games. The 2003-2004 page is excluded because it starts at game 15 and omits the first 14 games. |
-| Greek Cup | 2008-2009 onward | API-Sports | Existing modern coverage. |
+| Greek Cup | 2008-2009 onward, except 2015-2016 | API-Sports | Existing modern coverage. The 2015-2016 Cup-only edition is excluded because API-Sports returned no matching A1 games. |
 
 Official 20-0 administrative awards are not treated as played games. Historical
 dates without a trustworthy tip-off time are stored at 12:00 UTC.

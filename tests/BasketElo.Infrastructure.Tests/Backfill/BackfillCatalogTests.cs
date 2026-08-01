@@ -30,8 +30,14 @@ public class BackfillCatalogTests
             .Where(item => item.Country == "Greece" && item.LeagueName == "A1")
             .SelectMany(catalog.GetSeasonsForLeague)
             .ToList();
+        var allCupSeasons = catalog.GetLeagues()
+            .Where(item => item.Country == "Greece" && item.LeagueName == "Greek Cup")
+            .SelectMany(catalog.GetSeasonsForLeague)
+            .ToList();
         Assert.Equal(allLeagueSeasons.Count, allLeagueSeasons.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.Contains("2008-2009", allLeagueSeasons);
+        Assert.DoesNotContain("2015-2016", allCupSeasons);
+        Assert.All(allCupSeasons, season => Assert.Contains(season, allLeagueSeasons));
     }
 
     [Fact]

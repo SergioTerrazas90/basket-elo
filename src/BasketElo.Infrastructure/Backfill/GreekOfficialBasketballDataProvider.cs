@@ -612,6 +612,10 @@ public sealed class GreekOfficialBasketballDataProvider(
             {
                 year = startYear + 1;
             }
+            else if (month >= 7 && year == startYear + 1)
+            {
+                year = startYear;
+            }
         }
         return TryDate(year, month, day, out date);
     }

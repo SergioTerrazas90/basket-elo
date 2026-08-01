@@ -78,4 +78,17 @@ public sealed class GreekOfficialBasketballDataProviderTests
 
         Assert.Equal(new DateTime(2000, 1, 19, 12, 0, 0, DateTimeKind.Utc), Assert.Single(result.Games).GameDateTimeUtc);
     }
+
+    [Fact]
+    public void EokAutumnHeadingWithNextYearTypoStaysInsideEditionSeason()
+    {
+        const string html = """
+            <p>1η αγωνιστική 5-6/10/03<br>45&nbsp;&nbsp;ΑΕΚ&nbsp;&nbsp;ΜΑΚΕΔΟΝΙΚΟΣ&nbsp;&nbsp;70-78</p>
+            """;
+
+        var result = GreekOfficialBasketballDataProvider.ParseEokCup(
+            html, "2002-2003", 1756, "https://www.basket.gr/cup-men/example", "fixture");
+
+        Assert.Equal(new DateTime(2002, 10, 5, 12, 0, 0, DateTimeKind.Utc), Assert.Single(result.Games).GameDateTimeUtc);
+    }
 }

@@ -363,21 +363,31 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
         var searchUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
             $"services/ContentSearch?ark={source.Ark}&query=LIMOGES").ToString();
         var searchXml = await FetchGallicaStringAsync(searchUrl, context, cancellationToken);
-        var pages = ParseGallicaSearchPages(searchXml);
-        if (pages.Count == 0)
+        var pageGroups = ParseGallicaSearchPageGroups(searchXml);
+        if (pageGroups.Primary.Count + pageGroups.Supplemental.Count == 0)
         {
             throw new InvalidOperationException($"Gallica returned no searchable FFBB magazine pages for {season}.");
         }
 
         var games = new List<BasketballProviderGame>();
-        foreach (var page in pages)
+        var pages = pageGroups.Primary.ToList();
+        var supplementalAdded = false;
+        for (var pageIndex = 0; pageIndex < pages.Count; pageIndex++)
         {
+            var page = pages[pageIndex];
             var altoUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
                 $"RequestDigitalElement?O={source.Ark}&E=ALTO&Deb={page}").ToString();
             var alto = await FetchGallicaStringAsync(altoUrl, context, cancellationToken, searchUrl);
             var sourceUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
                 $"ark:/12148/{source.Ark}/f{page}.item").ToString();
             games.AddRange(ParseGallicaAltoPage(alto, season, endYear, page, sourceUrl));
+
+            if (!supplementalAdded && pageIndex == pages.Count - 1 && pageGroups.Supplemental.Count > 0 &&
+                DistinctGallicaGameCount(games) != source.ExpectedGames)
+            {
+                pages.AddRange(pageGroups.Supplemental);
+                supplementalAdded = true;
+            }
         }
 
         var distinctGames = games
@@ -402,16 +412,39 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
 
     internal static IReadOnlyList<int> ParseGallicaSearchPages(string xml)
     {
-        var document = XDocument.Parse(xml);
-        return document.Descendants()
-            .Where(element => element.Name.LocalName == "p_id")
-            .Select(element => Regex.Match(element.Value, @"\d+").Value)
-            .Where(value => int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out _))
-            .Select(value => int.Parse(value, CultureInfo.InvariantCulture))
-            .Distinct()
-            .OrderBy(page => page)
-            .ToList();
+        var groups = ParseGallicaSearchPageGroups(xml);
+        return [.. groups.Primary, .. groups.Supplemental];
     }
+
+    private static GallicaSearchPageGroups ParseGallicaSearchPageGroups(string xml)
+    {
+        var document = XDocument.Parse(xml);
+        var pages = document.Descendants()
+            .Where(element => element.Name.LocalName == "item")
+            .Select(element =>
+            {
+                var pageText = element.Elements().FirstOrDefault(child => child.Name.LocalName == "p_id")?.Value ?? string.Empty;
+                var pageMatch = Regex.Match(pageText, @"\d+");
+                var content = WebUtility.HtmlDecode(element.Elements()
+                    .FirstOrDefault(child => child.Name.LocalName == "content")?.Value ?? string.Empty);
+                var teamMatches = MatchGallicaTeams(content).Count;
+                var scoreTokens = Regex.Matches(content, @"(?<!\d)\d{2,3}(?!\d)").Count;
+                return new
+                {
+                    Page = pageMatch.Success ? int.Parse(pageMatch.Value, CultureInfo.InvariantCulture) : 0,
+                    IsScoreLike = teamMatches >= 4 && scoreTokens >= 8
+                };
+            })
+            .Where(item => item.Page > 0)
+            .DistinctBy(item => item.Page)
+            .ToList();
+        return new(
+            pages.Where(item => item.IsScoreLike).Select(item => item.Page).OrderBy(page => page).ToList(),
+            pages.Where(item => !item.IsScoreLike).Select(item => item.Page).OrderBy(page => page).ToList());
+    }
+
+    private static int DistinctGallicaGameCount(IEnumerable<BasketballProviderGame> games) =>
+        games.DistinctBy(game => $"{game.GameDateTimeUtc:yyyyMMdd}|{game.SourceHomeTeamId}|{game.HomeScore}|{game.SourceAwayTeamId}|{game.AwayScore}").Count();
 
     internal static IReadOnlyList<BasketballProviderGame> ParseGallicaAltoPage(
         string altoXml,
@@ -1398,6 +1431,7 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
     private static partial Regex BasketArchivesDateRegex();
 
     private sealed record GallicaSeasonSource(string Ark, int ExpectedGames);
+    private sealed record GallicaSearchPageGroups(IReadOnlyList<int> Primary, IReadOnlyList<int> Supplemental);
     private sealed record GallicaTeamAlias(string Pattern, string Canonical);
     private sealed record GallicaTeamMatch(int Index, int Length, string Canonical);
     private sealed record GallicaGame(string Home, short HomeScore, string Away, short AwayScore);

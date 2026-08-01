@@ -22,6 +22,21 @@ older block is not ingested.
 Official 20-0 administrative awards are not treated as played games. Historical
 dates without a trustworthy tip-off time are stored at 12:00 UTC.
 
+The resulting historical production coverage is 1,879 A1 games across nine
+seasons and 347 Cup games across eight editions:
+
+| Season | A1 games | Greek Cup games |
+| --- | ---: | ---: |
+| 1999-2000 | 218 | 41 |
+| 2000-2001 | 207 | 42 |
+| 2001-2002 | 211 | 42 |
+| 2002-2003 | 206 | 42 |
+| 2003-2004 | 203 | Not ingested: incomplete official page |
+| 2004-2005 | 209 | 42 |
+| 2005-2006 | 207 | 47 |
+| 2006-2007 | 209 | 47 |
+| 2007-2008 | 209 | 44 |
+
 ## Ranked league providers
 
 | Rank | Source | Seasons useful for this task | Assessment | Use |

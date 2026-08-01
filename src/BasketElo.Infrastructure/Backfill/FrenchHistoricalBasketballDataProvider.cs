@@ -26,16 +26,19 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
     public const string LEquipeParserVersion = "lequipe-fr-v1";
     public const string TheSportsParserVersion = "the-sports-fr-v1";
     public const string FrenchCupParserVersion = "fr-wikipedia-cup-v1";
-    public const string GallicaParserVersion = "ffbb-gallica-alto-v1";
+    public const string GallicaParserVersion = "ffbb-gallica-alto-v2";
+
+    private static readonly string[] GallicaPageSearchQueries =
+        ["LIMOGES", "MONACO", "ANTIBES", "LE MANS", "\"NATIONALE MASCULINE 1\""];
 
     private static readonly IReadOnlyDictionary<int, GallicaSeasonSource> GallicaSeasons =
         new Dictionary<int, GallicaSeasonSource>
         {
-            [1982] = new("bpt6k6559330r", 182),
-            [1983] = new("bpt6k6560640n", 182),
-            [1984] = new("bpt6k6558623b", 182),
-            [1985] = new("bpt6k6559621t", 432),
-            [1986] = new("bpt6k65592201", 427)
+            [1982] = new(["bpt6k6559328p", "bpt6k65593293", "bpt6k6559330r", "bpt6k65593315", "bpt6k6560636r"], 182),
+            [1983] = new(["bpt6k65606375", "bpt6k6560638k", "bpt6k65606390", "bpt6k6560640n", "bpt6k6558617m"], 182),
+            [1984] = new(["bpt6k65586181", "bpt6k6558619f", "bpt6k65586203", "bpt6k6558621h", "bpt6k6558622x", "bpt6k6558623b", "bpt6k6559611f"], 182),
+            [1985] = new(["bpt6k65596138", "bpt6k6559614p", "bpt6k65596153", "bpt6k6559616h", "bpt6k6559617x", "bpt6k6559618b", "bpt6k6559619r", "bpt6k6559620d", "bpt6k6559621t", "bpt6k65592112"], 188),
+            [1986] = new(["bpt6k6559213w", "bpt6k65592149", "bpt6k6559215q", "bpt6k65592164", "bpt6k6559217j", "bpt6k6559218z", "bpt6k6559219c", "bpt6k65592201", "bpt6k6560756v"], 427)
         };
 
     private static readonly IReadOnlyList<GallicaTeamAlias> GallicaTeamAliases =
@@ -49,10 +52,11 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
         new(@"(?:E\.?\s*S\.?\s*M\.?\s*)?Challans(?:\s+B[CV]{2})?", "Challans"),
         new(@"Caen(?:\s+B\.?\s*C\.?)?", "Caen"),
         new(@"(?:J\.?\s*A\.?\s*)?Vichy", "Vichy"),
-        new(@"(?:E\.?\s*S\.?\s*)?Avignon", "Avignon"),
+        new(@"(?:E\.?\s*S\.?\s*)?Avigno[nr]", "Avignon"),
         new(@"Tours(?:\s+B\.?\s*C\.?)?", "Tours"),
         new(@"Mulhouse(?:\s+B\.?\s*C\.?)?", "Mulhouse"),
         new(@"Stade\s+Fran[cç]ais", "Stade Français"),
+        new(@"L[NM][,.\s]*on(?:\s+C\.?\s*R\.?\s*O\.?)?", "Lyon"),
         new(@"(?:C\.?\s*R\.?\s*O\.?\s*)?Lyon", "Lyon"),
         new(@"Reims(?:\s+C\.?\s*B\.?)?", "Reims"),
         new(@"(?:R\.?\s*C\.?\s*(?:F\.?\s*)?Paris|Racing(?:\s+Paris)?)", "Racing Paris"),
@@ -360,34 +364,45 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
         CancellationToken cancellationToken)
     {
         var source = GallicaSeasons[startYear];
-        var searchUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
-            $"services/ContentSearch?ark={source.Ark}&query=LIMOGES").ToString();
-        var searchXml = await FetchGallicaStringAsync(searchUrl, context, cancellationToken);
-        var pageGroups = ParseGallicaSearchPageGroups(searchXml);
-        if (pageGroups.Primary.Count + pageGroups.Supplemental.Count == 0)
+        var games = new List<BasketballProviderGame>();
+        var searchableIssues = 0;
+        foreach (var ark in source.Arks)
+        {
+            var pages = new HashSet<int>();
+            string? referrer = null;
+            foreach (var query in GallicaPageSearchQueries)
+            {
+                var searchUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
+                    $"services/ContentSearch?ark={ark}&query={Uri.EscapeDataString(query)}").ToString();
+                var searchXml = await FetchGallicaStringAsync(searchUrl, context, cancellationToken, referrer);
+                referrer = searchUrl;
+                var groups = ParseGallicaSearchPageGroups(searchXml);
+                foreach (var page in query == "\"NATIONALE MASCULINE 1\""
+                    ? groups.Primary.Concat(groups.Supplemental)
+                    : groups.Primary)
+                {
+                    pages.Add(page);
+                }
+            }
+            if (pages.Count == 0)
+            {
+                continue;
+            }
+
+            searchableIssues++;
+            foreach (var page in pages.OrderBy(page => page))
+            {
+                var altoUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
+                    $"RequestDigitalElement?O={ark}&E=ALTO&Deb={page}").ToString();
+                var alto = await FetchGallicaStringAsync(altoUrl, context, cancellationToken, referrer);
+                var sourceUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
+                    $"ark:/12148/{ark}/f{page}.item").ToString();
+                games.AddRange(ParseGallicaAltoPage(alto, season, endYear, page, sourceUrl));
+            }
+        }
+        if (searchableIssues == 0)
         {
             throw new InvalidOperationException($"Gallica returned no searchable FFBB magazine pages for {season}.");
-        }
-
-        var games = new List<BasketballProviderGame>();
-        var pages = pageGroups.Primary.ToList();
-        var supplementalAdded = false;
-        for (var pageIndex = 0; pageIndex < pages.Count; pageIndex++)
-        {
-            var page = pages[pageIndex];
-            var altoUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
-                $"RequestDigitalElement?O={source.Ark}&E=ALTO&Deb={page}").ToString();
-            var alto = await FetchGallicaStringAsync(altoUrl, context, cancellationToken, searchUrl);
-            var sourceUrl = new Uri(new Uri(options.Value.GallicaBaseUrl),
-                $"ark:/12148/{source.Ark}/f{page}.item").ToString();
-            games.AddRange(ParseGallicaAltoPage(alto, season, endYear, page, sourceUrl));
-
-            if (!supplementalAdded && pageIndex == pages.Count - 1 && pageGroups.Supplemental.Count > 0 &&
-                DistinctGallicaGameCount(games) != source.ExpectedGames)
-            {
-                pages.AddRange(pageGroups.Supplemental);
-                supplementalAdded = true;
-            }
         }
 
         var distinctGames = games
@@ -395,18 +410,26 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             .OrderBy(game => game.GameDateTimeUtc)
             .ThenBy(game => game.SourceGameId, StringComparer.Ordinal)
             .ToList();
-        if (distinctGames.Count != source.ExpectedGames)
+        if (distinctGames.Count != source.ExpectedGames && !options.Value.GallicaAllowIncompleteResults)
         {
             throw new InvalidOperationException(
                 $"Gallica FFBB completeness check failed for {season}: parsed {distinctGames.Count} games, expected {source.ExpectedGames}. Nothing was imported.");
         }
 
-        string[] warnings =
-        [
+        var warnings = new List<string>
+        {
             "Official FFBB magazine OCR supplied the historical results; score tables were constrained to senior Nationale Masculine 1 sections.",
             "FFBB magazines do not supply reliable tip-off times; imported times are 12:00 UTC.",
-            "The 1986-1987 playoff summary omits exact dates; deterministic round-order dates preserve the playoff sequence."
-        ];
+            $"Searched {searchableIssues} official FFBB magazine issues and removed duplicate result slates."
+        };
+        if (endYear == 1987)
+        {
+            warnings.Add("The 1986-1987 playoff summary omits exact dates; deterministic round-order dates preserve the playoff sequence.");
+        }
+        if (distinctGames.Count != source.ExpectedGames)
+        {
+            warnings.Add($"DIAGNOSTIC ONLY: parsed {distinctGames.Count} of {source.ExpectedGames} expected games from prioritized pages; production ingestion remains blocked.");
+        }
         return (distinctGames, false, warnings);
     }
 
@@ -432,7 +455,7 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
                 return new
                 {
                     Page = pageMatch.Success ? int.Parse(pageMatch.Value, CultureInfo.InvariantCulture) : 0,
-                    IsScoreLike = teamMatches >= 4 && scoreTokens >= 8
+                    IsScoreLike = teamMatches >= 7 && scoreTokens >= 12
                 };
             })
             .Where(item => item.Page > 0)
@@ -442,9 +465,6 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             pages.Where(item => item.IsScoreLike).Select(item => item.Page).OrderBy(page => page).ToList(),
             pages.Where(item => !item.IsScoreLike).Select(item => item.Page).OrderBy(page => page).ToList());
     }
-
-    private static int DistinctGallicaGameCount(IEnumerable<BasketballProviderGame> games) =>
-        games.DistinctBy(game => $"{game.GameDateTimeUtc:yyyyMMdd}|{game.SourceHomeTeamId}|{game.HomeScore}|{game.SourceAwayTeamId}|{game.AwayScore}").Count();
 
     internal static IReadOnlyList<BasketballProviderGame> ParseGallicaAltoPage(
         string altoXml,
@@ -480,6 +500,10 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
 
             if (TryParseFrenchDate(line, endYear, out var parsedDate))
             {
+                if (parsedDate.Month >= 8 && !Regex.IsMatch(line, @"\b\d{4}\b"))
+                {
+                    parsedDate = parsedDate.AddYears(-1);
+                }
                 date = parsedDate;
                 youth = false;
                 continue;
@@ -493,14 +517,19 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             if (Regex.IsMatch(key, @"(?:^|\s)(?:nationale\s+)?masculine\s+1(?:\s+[ab])?(?:\s|$)") ||
                 Regex.IsMatch(key, @"^nm\s*1$") )
             {
-                active = !youth;
                 division = key.Contains("1 b", StringComparison.Ordinal) ? "N1B" :
                     key.Contains("1 a", StringComparison.Ordinal) ? "N1A" : "N1";
+                active = !youth && (endYear != 1986 || division != "N1B");
                 pool = string.Empty;
                 continue;
             }
             if (key.Contains("resultats des play off", StringComparison.Ordinal))
             {
+                if (endYear < 1987)
+                {
+                    active = false;
+                    continue;
+                }
                 active = !youth;
                 phase = "Playoffs";
                 division = "N1";
@@ -522,6 +551,11 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             var playoffRound = NormalizeGallicaPlayoffRound(line);
             if (playoffRound.Length > 0)
             {
+                if (endYear < 1987)
+                {
+                    active = false;
+                    continue;
+                }
                 phase = "Playoffs";
                 round = playoffRound;
                 pool = string.Empty;
@@ -534,7 +568,16 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             }
             if (key.StartsWith("poule ", StringComparison.Ordinal))
             {
+                if (endYear <= 1985)
+                {
+                    active = false;
+                    continue;
+                }
                 pool = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(key);
+                if (endYear == 1986)
+                {
+                    active = Regex.IsMatch(key, @"^poule\s+(?:1|i)$");
+                }
                 continue;
             }
             if (Regex.IsMatch(key, @"(?:^|\s)tour(?:\s|$)") || key.Contains("journee", StringComparison.Ordinal))
@@ -564,7 +607,7 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
             var competitionRound = string.Join(" / ", new[] { round, division, pool }
                 .Where(value => !string.IsNullOrWhiteSpace(value)));
             games.Add(BuildGame(
-                $"gallica:{season}:{page}:{lineIndex}",
+                $"gallica:{season}:{Hash(sourceUrl)[..12]}:{page}:{lineIndex}",
                 gameDate.Value,
                 parsedGame.Home,
                 Slug(parsedGame.Home),
@@ -584,6 +627,7 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
 
     private static bool TryParseGallicaGameLine(string line, out GallicaGame game)
     {
+        line = NormalizeGallicaScoreDigits(line);
         var matches = MatchGallicaTeams(line);
         if (matches.Count < 2)
         {
@@ -635,6 +679,15 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
         }
         return true;
     }
+
+    private static string NormalizeGallicaScoreDigits(string line) =>
+        Regex.Replace(line, @"(?<![A-Za-zÀ-ÿ])([0-9OoIl]{2,3})(?![A-Za-zÀ-ÿ])", match =>
+            new string(match.Value.Select(character => character switch
+            {
+                'O' or 'o' => '0',
+                'I' or 'l' => '1',
+                _ => character
+            }).ToArray()));
 
     private static List<GallicaTeamMatch> MatchGallicaTeams(string line) =>
         GallicaTeamAliases
@@ -1142,6 +1195,22 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
         CancellationToken cancellationToken,
         string? referer = null)
     {
+        string? cachePath = null;
+        if (!string.IsNullOrWhiteSpace(options.Value.GallicaCacheDirectory))
+        {
+            cachePath = Path.Combine(options.Value.GallicaCacheDirectory, $"{Hash(url)}.xml");
+            if (File.Exists(cachePath))
+            {
+                return await File.ReadAllTextAsync(cachePath, cancellationToken);
+            }
+        }
+
+        if (options.Value.GallicaCacheOnly)
+        {
+            throw new InvalidOperationException(
+                $"Gallica cache miss for {url}. Expected cache file: {cachePath ?? "<cache directory not configured>"}.");
+        }
+
         using var response = await BackfillHttpRetryPolicy.SendAsync(
             async retryCancellationToken =>
             {
@@ -1363,7 +1432,7 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
     private static bool TryParseFrenchDate(string value, int defaultYear, out DateTime date)
     {
         var key = NormalizeKey(value);
-        var match = Regex.Match(key, @"(?<!\d)(\d{1,2})\s+(janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre)(?:\s+(\d{4}))?");
+        var match = Regex.Match(key, @"(?<!\d)(\d{1,2})(?:er|e)?\s+(janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre)(?:\s+(\d{4}))?");
         if (match.Success && int.TryParse(match.Groups[1].Value, out var day) &&
             FrenchMonths.TryGetValue(match.Groups[2].Value, out var month))
         {
@@ -1430,7 +1499,7 @@ public sealed partial class FrenchHistoricalBasketballDataProvider(
     [GeneratedRegex(@"<I>(.*?)(?:</I>|<I>)", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
     private static partial Regex BasketArchivesDateRegex();
 
-    private sealed record GallicaSeasonSource(string Ark, int ExpectedGames);
+    private sealed record GallicaSeasonSource(IReadOnlyList<string> Arks, int ExpectedGames);
     private sealed record GallicaSearchPageGroups(IReadOnlyList<int> Primary, IReadOnlyList<int> Supplemental);
     private sealed record GallicaTeamAlias(string Pattern, string Canonical);
     private sealed record GallicaTeamMatch(int Index, int Length, string Canonical);

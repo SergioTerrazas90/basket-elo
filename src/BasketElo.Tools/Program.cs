@@ -818,6 +818,7 @@ static async Task<int> RunFranceDryRunAsync(string[] args)
     var season = Required(values, "--season");
     var maxRequests = ParseNonNegative(values, "--max-requests", 0);
     var interval = ParseNonNegative(values, "--interval-ms", 100);
+    var printAll = bool.TryParse(values.GetValueOrDefault("--print-all"), out var parsedPrintAll) && parsedPrintAll;
 
     var builder = Host.CreateApplicationBuilder();
     builder.Logging.SetMinimumLevel(LogLevel.Warning);
@@ -847,9 +848,9 @@ static async Task<int> RunFranceDryRunAsync(string[] args)
     {
         Console.WriteLine($"{phase.Key}: {phase.Count()} games");
     }
-    foreach (var game in result.Games.Take(12))
+    foreach (var game in printAll ? result.Games : result.Games.Take(12))
     {
-        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} [{game.CompetitionRound}]");
+        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} [{game.CompetitionRound}] {game.Provenance?.SourceUrl}");
     }
     foreach (var warning in result.Warnings.Take(20))
     {

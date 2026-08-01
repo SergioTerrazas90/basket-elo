@@ -14,6 +14,10 @@ public sealed class FrenchHistoricalOptions
 
     public string GallicaBaseUrl { get; set; } = "https://gallica.bnf.fr/";
 
+    public string? GallicaCacheDirectory { get; set; }
+
+    public bool GallicaCacheOnly { get; set; }
+
     public string UserAgent { get; set; } = "BasketElo historical-ingest/1.0 (issue 125)";
 
     public int MinRequestIntervalMilliseconds { get; set; } = 100;
@@ -23,6 +27,8 @@ public sealed class FrenchHistoricalOptions
     public int GallicaMaxTransientRetries { get; set; } = 5;
 
     public int GallicaRetryBaseDelayMilliseconds { get; set; } = 2000;
+
+    public bool GallicaAllowIncompleteResults { get; set; }
 
     public int MaxTransientRetries { get; set; } = 3;
 

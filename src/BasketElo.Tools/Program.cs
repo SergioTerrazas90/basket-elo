@@ -1079,7 +1079,7 @@ static async Task<int> RunGreeceIngestAsync(string[] args)
     if (configuredLeague.CompetitionType == "domestic_cup")
     {
         var leagueSeasons = await dbContext.Games
-            .Where(game => game.Competition.Name == "Greece: A1 / Greek Basket League" && seasons.Contains(game.Season.Label))
+            .Where(game => game.Competition.Name == "A1" && seasons.Contains(game.Season.Label))
             .Select(game => game.Season.Label)
             .Distinct()
             .ToListAsync();

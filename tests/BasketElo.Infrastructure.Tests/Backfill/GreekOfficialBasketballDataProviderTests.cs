@@ -79,6 +79,33 @@ public sealed class GreekOfficialBasketballDataProviderTests
     }
 
     [Fact]
+    public void BasketballReferenceGreekScheduleParsesRegularSeasonAndPlayoffs()
+    {
+        const string html = """
+            <table id="regular-season-games"><tbody>
+              <tr><th data-stat="date_game">Sat, Oct 10, 2015</th><td data-stat="visitor_team_name">PAOK</td><td data-stat="visitor_pts">72</td><td data-stat="home_team_name">Kolossos H Hotels</td><td data-stat="home_pts">79</td></tr>
+            </tbody></table>
+            <table id="playoffs-games"><tbody>
+              <tr><th data-stat="date_game">Sun, May 1, 2016</th><td data-stat="visitor_team_name">Olympiacos</td><td data-stat="visitor_pts">84</td><td data-stat="home_team_name">Panathinaikos</td><td data-stat="home_pts">88</td></tr>
+            </tbody></table>
+            """;
+
+        var games = GreekOfficialBasketballDataProvider.ParseBasketballReferenceGreekLeague(
+            html, "2015-2016", "https://www.basketball-reference.com/international/greek-basket-league/2016-schedule.html");
+
+        Assert.Equal(2, games.Count);
+        var regular = Assert.Single(games, game => game.CompetitionPhase == "Regular Season");
+        Assert.Equal("Kolossos Rhodes", regular.HomeTeamName);
+        Assert.Equal("PAOK", regular.AwayTeamName);
+        Assert.Equal((short)79, regular.HomeScore);
+        Assert.Equal((short)72, regular.AwayScore);
+        Assert.Equal(new DateTime(2015, 10, 10, 12, 0, 0, DateTimeKind.Utc), regular.GameDateTimeUtc);
+        var playoff = Assert.Single(games, game => game.CompetitionPhase == "Playoffs");
+        Assert.Equal("Panathinaikos", playoff.HomeTeamName);
+        Assert.Equal("Olympiacos", playoff.AwayTeamName);
+    }
+
+    [Fact]
     public void SportGrPlayoffParsesDatedRowsAndSkipsStarredAdministrativeResult()
     {
         const string datedHtml = """

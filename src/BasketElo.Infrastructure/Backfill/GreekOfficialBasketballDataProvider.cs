@@ -20,6 +20,7 @@ public sealed class GreekOfficialBasketballDataProvider(
     public const string Source = "greek-official";
     public const string EsakeParserVersion = "esake-a1-v1";
     public const string EokCupParserVersion = "eok-cup-v1";
+    public const string BasketballReferenceGreekParserVersion = "basketball-reference-greek-a1-v1";
     public const string BitzenisParserVersion = "bitzenis-a1-v1";
     public const string SportGrParserVersion = "sportgr-a1-v1";
     public const string WikipediaGapParserVersion = "wikipedia-olympiacos-a1-gap-v1";
@@ -28,6 +29,8 @@ public sealed class GreekOfficialBasketballDataProvider(
     private const string CupSourceId = "EOK_GREEK_CUP";
     private const int MaxPlayoffSeries = 40;
     private const int EmptyPlayoffSeriesToStop = 3;
+    private const string BasketballReferenceGreekLeague2015Url =
+        "https://www.basketball-reference.com/international/greek-basket-league/2016-schedule.html";
 
     private const string SportGr1997RegularCapture =
         "web/20080528083751id_/http://archive.sport.gr/basket/hellas/a1/";
@@ -74,7 +77,9 @@ public sealed class GreekOfficialBasketballDataProvider(
             [2004] = 1759,
             [2005] = 1761,
             [2006] = 1763,
-            [2007] = 1765
+            [2007] = 1765,
+            [2009] = 1769,
+            [2015] = 5706
         };
 
     private static readonly IReadOnlyDictionary<string, string> CanonicalTeamNames =
@@ -212,16 +217,43 @@ public sealed class GreekOfficialBasketballDataProvider(
         {
             LeagueSourceId when startYear is >= 1996 and <= 1998 =>
                 await GetLegacyLeagueGamesAsync(season, startYear, context, cancellationToken),
+            LeagueSourceId when startYear == 2015 =>
+                await GetBasketballReferenceGreekLeagueGamesAsync(season, context, cancellationToken),
             LeagueSourceId when EsakeChampionshipIds.ContainsKey(startYear) =>
                 await GetLeagueGamesAsync(season, startYear, context, cancellationToken),
             CupSourceId when EokCupPostIds.ContainsKey(startYear) =>
                 await GetCupGamesAsync(season, startYear, context, cancellationToken),
             LeagueSourceId => throw new ArgumentException(
-                "Historical Greek coverage supports 1992-1993 through 2007-2008, except the incomplete 2003-2004 Cup page.", nameof(season)),
+                "Historical Greek coverage supports the cataloged ESAKE seasons through 2007-2008 plus Basketball-Reference 2015-2016.", nameof(season)),
             CupSourceId => throw new ArgumentException(
-                "Complete EOK Cup pages are cataloged for 1992-1993 through 2007-2008, excluding incomplete 2003-2004.", nameof(season)),
+                "Complete EOK Cup pages are cataloged for the reviewed seasons; 2003-2004 and the COVID-suspended 2019-2020 edition are excluded.", nameof(season)),
             _ => throw new InvalidOperationException("Greek official provider only supports Greece: A1 and Greek Cup.")
         };
+    }
+
+    private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetBasketballReferenceGreekLeagueGamesAsync(
+        string season,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var warnings = new List<string>
+        {
+            "Basketball-Reference dates are imported at 12:00 UTC because historical tip-off times are not published."
+        };
+        if (!context.CanUseRequest())
+        {
+            return (Array.Empty<BasketballProviderGame>(), true, warnings);
+        }
+
+        var html = await FetchStringAsync(BasketballReferenceGreekLeague2015Url, context, cancellationToken);
+        var games = ParseBasketballReferenceGreekLeague(html, season, BasketballReferenceGreekLeague2015Url);
+        var regularCount = games.Count(game => game.CompetitionPhase == "Regular Season");
+        if (regularCount != 182)
+        {
+            warnings.Add($"Expected 182 regular-season games but parsed {regularCount}; this season is incomplete.");
+        }
+        warnings.Add($"Source: Basketball-Reference Greek Basket League schedule ({BasketballReferenceGreekLeague2015Url}).");
+        return (games, false, warnings);
     }
 
     private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetLegacyLeagueGamesAsync(
@@ -496,6 +528,64 @@ public sealed class GreekOfficialBasketballDataProvider(
             "EOK Cup dates are imported at 12:00 UTC because historical tip-off times are not published."
         };
         return (parsed.Games, false, warnings);
+    }
+
+    internal static IReadOnlyList<BasketballProviderGame> ParseBasketballReferenceGreekLeague(
+        string html,
+        string season,
+        string sourceUrl)
+    {
+        var revision = Hash(html);
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var games = new List<BasketballProviderGame>();
+        foreach (var table in document.DocumentNode.SelectNodes("//table[@id='regular-season-games' or @id='playoffs-games']") ?? Enumerable.Empty<HtmlNode>())
+        {
+            var phase = string.Equals(table.GetAttributeValue("id", string.Empty), "playoffs-games", StringComparison.Ordinal)
+                ? "Playoffs"
+                : "Regular Season";
+            foreach (var row in table.SelectNodes(".//tr") ?? Enumerable.Empty<HtmlNode>())
+            {
+                var dateText = Clean(row.SelectSingleNode("./th[@data-stat='date_game']")?.InnerText ?? string.Empty);
+                var visitor = Clean(row.SelectSingleNode("./td[@data-stat='visitor_team_name']")?.InnerText ?? string.Empty);
+                var home = Clean(row.SelectSingleNode("./td[@data-stat='home_team_name']")?.InnerText ?? string.Empty);
+                var visitorText = Clean(row.SelectSingleNode("./td[@data-stat='visitor_pts']")?.InnerText ?? string.Empty);
+                var homeText = Clean(row.SelectSingleNode("./td[@data-stat='home_pts']")?.InnerText ?? string.Empty);
+                if (!DateTime.TryParseExact(dateText, "ddd, MMM d, yyyy", CultureInfo.InvariantCulture,
+                        DateTimeStyles.None, out var date) || visitor.Length == 0 || home.Length == 0 ||
+                    !short.TryParse(visitorText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var visitorScore) ||
+                    !short.TryParse(homeText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var homeScore) ||
+                    homeScore == visitorScore || IsAdministrativeScore(homeScore, visitorScore))
+                {
+                    continue;
+                }
+
+                var round = phase == "Regular Season" ? "Regular Season" : "Playoffs";
+                var sourceGameId = $"basketball-reference:greek:2016:{date:yyyyMMdd}:{Slug(visitor)}:{Slug(home)}";
+                games.Add(new BasketballProviderGame(
+                    Source,
+                    sourceGameId,
+                    DateTime.SpecifyKind(date.Date.AddHours(12), DateTimeKind.Utc),
+                    "finished",
+                    $"basketball-reference:{Slug(home)}",
+                    CanonicalizeTeamName(home),
+                    $"basketball-reference:{Slug(visitor)}",
+                    CanonicalizeTeamName(visitor),
+                    homeScore,
+                    visitorScore,
+                    new BasketballProviderGameProvenance(
+                        sourceUrl, season, DateTime.UtcNow, BasketballReferenceGreekParserVersion, revision),
+                    CompetitionPhase: phase,
+                    CompetitionRound: round));
+            }
+        }
+
+        return games
+            .GroupBy(game => game.SourceGameId, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderBy(game => game.GameDateTimeUtc)
+            .ThenBy(game => game.SourceGameId)
+            .ToArray();
     }
 
     internal static IReadOnlyList<BasketballProviderGame> ParseBitzenisRegularSeason(
@@ -1092,6 +1182,22 @@ public sealed class GreekOfficialBasketballDataProvider(
         }
 
         var prefix = line[..scoreMatch.Index].Trim();
+        var dashMatch = Regex.Match(prefix,
+            @"^(?<number>\d+)[.)]?\s*(?<home>.+?)\s+[–—-]\s+(?<away>.+?)\s*$",
+            RegexOptions.CultureInvariant);
+        if (dashMatch.Success)
+        {
+            candidate = new CupCandidate(
+                dashMatch.Groups["number"].Value,
+                state.Date,
+                dashMatch.Groups["home"].Value.Trim(),
+                homeScore,
+                dashMatch.Groups["away"].Value.Trim(),
+                awayScore,
+                state.Phase,
+                state.Round);
+            return true;
+        }
         var parts = Regex.Split(prefix, @"\s{2,}").Where(value => value.Length > 0).ToList();
         string? gameNumber = null;
         if (parts.Count > 0 && Regex.IsMatch(parts[0], @"^\d+$"))
@@ -1256,6 +1362,24 @@ public sealed class GreekOfficialBasketballDataProvider(
         clean = Regex.Replace(clean, @"\b(?:CARNA|AKTOR|BETSSON|COSMORAMA\s+TRAVEL|H\s+HOTELS\s+COLLECTION|AM\.GENETICS|CRETAN\s+KINGS)\b",
             string.Empty, RegexOptions.IgnoreCase).Trim();
         var key = NormalizeKey(clean);
+        var englishCanonical = key switch
+        {
+            "aek athens" or "aek" => "AEK Athens",
+            "kolossos h hotels" or "kolossos h hotels collection" or "kolossos" => "Kolossos Rhodes",
+            "rethymno cretan kings" or "rethymno" => "Rethymno",
+            "apollon patras carna" or "apollon patras" => "Apollon Patras",
+            "trikala aries" or "trikala 2000" or "trikala" => "Trikala",
+            "nea kifissia" => "Nea Kifisia",
+            "koroivos" => "Koroivos",
+            "lavrio" => "Lavrio",
+            "kavala" => "Kavala",
+            "arkadikos" => "Arkadikos",
+            _ => null
+        };
+        if (englishCanonical is not null)
+        {
+            return englishCanonical;
+        }
         if (CanonicalTeamNames.TryGetValue(key, out var canonical))
         {
             return canonical;

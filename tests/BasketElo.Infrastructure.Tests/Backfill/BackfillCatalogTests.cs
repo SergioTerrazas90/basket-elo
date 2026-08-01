@@ -18,20 +18,22 @@ public class BackfillCatalogTests
         var leagueSeasons = catalog.GetSeasonsForLeague(league).ToList();
         var cupSeasons = catalog.GetSeasonsForLeague(cup).ToList();
 
-        Assert.Equal(16, leagueSeasons.Count);
+        Assert.Equal(17, leagueSeasons.Count);
         Assert.Equal("1992-1993", leagueSeasons[0]);
-        Assert.Equal("2007-2008", leagueSeasons[^1]);
+        Assert.Equal("2015-2016", leagueSeasons[^1]);
         Assert.Contains("1993-1994", leagueSeasons);
         Assert.Contains("1994-1995", leagueSeasons);
         Assert.Contains("1995-1996", leagueSeasons);
         Assert.Contains("1998-1999", leagueSeasons);
-        Assert.Equal(15, cupSeasons.Count);
+        Assert.Equal(17, cupSeasons.Count);
         Assert.Contains("1992-1993", cupSeasons);
         Assert.Contains("1993-1994", cupSeasons);
         Assert.Contains("1994-1995", cupSeasons);
         Assert.Contains("1995-1996", cupSeasons);
+        Assert.Contains("2009-2010", cupSeasons);
+        Assert.Contains("2015-2016", cupSeasons);
         Assert.DoesNotContain("2003-2004", cupSeasons);
-        Assert.All(cupSeasons, season => Assert.Contains(season, leagueSeasons));
+        Assert.Contains("2015-2016", leagueSeasons);
 
         var allLeagueSeasons = catalog.GetLeagues()
             .Where(item => item.Country == "Greece" && item.LeagueName == "A1")
@@ -43,7 +45,8 @@ public class BackfillCatalogTests
             .ToList();
         Assert.Equal(allLeagueSeasons.Count, allLeagueSeasons.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.Contains("2008-2009", allLeagueSeasons);
-        Assert.DoesNotContain("2015-2016", allCupSeasons);
+        Assert.Contains("2009-2010", allLeagueSeasons);
+        Assert.Contains("2015-2016", allCupSeasons);
         Assert.All(allCupSeasons, season => Assert.Contains(season, allLeagueSeasons));
     }
 

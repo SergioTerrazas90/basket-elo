@@ -85,7 +85,7 @@ public class BackfillCatalog : IBackfillCatalog
         new("api-sports", "Lithuania", "LKF Cup", "Lithuania: LKF Cup", "2018", CompetitionType: "domestic_cup", EndSeason: "2019"),
         new("greek-official", "Greece", "A1", "Greece: A1 / Greek Basket League", "1992-1993", ExplicitSeasons: GreekLeagueHistoricalSeasons()),
         new("greek-official", "Greece", "Greek Cup", "Greece: Greek Cup", "1992-1993", CompetitionType: "domestic_cup", ExplicitSeasons: GreekCupHistoricalSeasons()),
-        new("api-sports", "Greece", "A1", "Greece: A1 / Greek Basket League", "2008-2009", EndSeason: "2025-2026"),
+        new("api-sports", "Greece", "A1", "Greece: A1 / Greek Basket League", "2008-2009", EndSeason: "2025-2026", ExcludedSeasons: ["2015-2016"]),
         new("api-sports", "Greece", "Greek Cup", "Greece: Greek Cup", "2008-2009", CompetitionType: "domestic_cup", EndSeason: "2025-2026", ExcludedSeasons: ["2015-2016"]),
         new("api-sports", "Greece", "Super Cup", "Greece: Super Cup", "2020", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new("lba-official", "Italy", "Serie A", "Italy: Lega Basket Serie A", "1974-1975", EndSeason: "2007-2008"),
@@ -259,12 +259,14 @@ public class BackfillCatalog : IBackfillCatalog
     private static string[] GreekLeagueHistoricalSeasons()
         => new[] { 1992, 1993, 1994, 1995 }
             .Concat(Enumerable.Range(1996, 12))
+            .Concat(new[] { 2015 })
             .Select(year => $"{year}-{year + 1}")
             .ToArray();
 
     private static string[] GreekCupHistoricalSeasons()
         => new[] { 1992, 1993, 1994, 1995 }
             .Concat(Enumerable.Range(1996, 12).Where(year => year != 2003))
+            .Concat(new[] { 2009, 2015 })
             .Select(year => $"{year}-{year + 1}")
             .ToArray();
 }

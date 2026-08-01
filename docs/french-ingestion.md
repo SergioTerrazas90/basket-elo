@@ -4,6 +4,27 @@ This runbook covers issue #125: game-level ingestion of the French men's top
 flight and the Coupe de France through 2007-2008. Modern API-Sports coverage
 starts in 2008-2009.
 
+## Production coverage and provenance
+
+The catalog deliberately changes provider at season boundaries. These are the
+source spans used for the production data, rather than merely sources consulted
+during research:
+
+| Competition | Season span | Ingested provider | Notes |
+| --- | --- | --- | --- |
+| LNB | Before 1987-1988 | None | Not cataloged. The isolated complete 1981-1982 BasketArchives season was removed because it did not form a continuous run; 1982-1983 through 1986-1987 do not have verified complete game-level schedules. |
+| LNB | 1987-1988 through 1997-1998 | L'Equipe Pro A archive | Regular season and playoffs, parsed from the season's round and playoff-stage pages. |
+| LNB | 1998-1999 through 2000-2001 | BasketArchives | Complete season score pages; noon UTC is used because the archive does not publish tip-off times. |
+| LNB | 2001-2002 through 2007-2008 | TheSports | Regular-season and playoff round pages. This source was preferred over overlapping BasketArchives pages with known date or score errors. |
+| LNB | 2008-2009 onward | API-Sports | Modern provider coverage; outside the historical backfill performed for issue #125. |
+| French Cup | Before 2004-2005 | None | Not cataloged. In particular, there are no French Cup games before 1987-1988, and no Cup-only seasons are created. |
+| French Cup | 2004-2005 through 2007-2008 | French Wikipedia edition articles | Complete game-level edition tables and brackets through the MediaWiki API. Every Cup season has a matching ingested LNB season. |
+| French Cup | 2008-2009 onward | API-Sports | Modern provider coverage; outside the historical backfill performed for issue #125. |
+
+The completed historical LNB run therefore contains 21 consecutive seasons
+and 5,675 games from 1987-1988 through 2007-2008. The historical Cup addition
+contains four seasons and 214 games from 2004-2005 through 2007-2008.
+
 ## Ranked league sources
 
 | Rank | Source | Historical game coverage | Access and quality | Use |

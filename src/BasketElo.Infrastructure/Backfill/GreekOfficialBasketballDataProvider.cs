@@ -20,11 +20,22 @@ public sealed class GreekOfficialBasketballDataProvider(
     public const string Source = "greek-official";
     public const string EsakeParserVersion = "esake-a1-v1";
     public const string EokCupParserVersion = "eok-cup-v1";
+    public const string BitzenisParserVersion = "bitzenis-a1-v1";
+    public const string SportGrParserVersion = "sportgr-a1-v1";
 
     private const string LeagueSourceId = "ESAKE_A1";
     private const string CupSourceId = "EOK_GREEK_CUP";
     private const int MaxPlayoffSeries = 40;
     private const int EmptyPlayoffSeriesToStop = 3;
+
+    private const string SportGr1997RegularCapture =
+        "web/20080528083751id_/http://archive.sport.gr/basket/hellas/a1/";
+    private const string SportGr1997PlayoffCapture =
+        "web/20120601060752id_/http://archive.sport.gr/playoffs/playoffs/index.htm";
+    private const string SportGr1998RegularCapture =
+        "web/20110419043354id_/http://archive.sport.gr/basket/hellas99/a1/";
+    private const string SportGr1998PlayoffCapture =
+        "web/20100528104633id_/http://archive.sport.gr/play99/play/index.htm";
 
     private static readonly IReadOnlyDictionary<int, string> EsakeChampionshipIds =
         new Dictionary<int, string>
@@ -43,6 +54,9 @@ public sealed class GreekOfficialBasketballDataProvider(
     private static readonly IReadOnlyDictionary<int, int> EokCupPostIds =
         new Dictionary<int, int>
         {
+            [1996] = 1750,
+            [1997] = 1751,
+            [1998] = 1752,
             [1999] = 1753,
             [2000] = 1754,
             [2001] = 1755,
@@ -60,6 +74,12 @@ public sealed class GreekOfficialBasketballDataProvider(
             ["αεκ"] = "AEK Athens",
             ["α ε κ"] = "AEK Athens",
             ["aek"] = "AEK Athens",
+            ["paok"] = "PAOK",
+            ["bao"] = "BAO",
+            ["olympiakos"] = "Olympiacos",
+            ["larissa"] = "GS Larissa",
+            ["larisa"] = "GS Larissa",
+            ["λαρισα"] = "GS Larissa",
             ["αρης"] = "Aris",
             ["ασ αρης"] = "Aris",
             ["ολυμπιακος"] = "Olympiacos",
@@ -90,6 +110,7 @@ public sealed class GreekOfficialBasketballDataProvider(
             ["αο νηαρ ησ"] = "Near East",
             ["απολλων π"] = "Apollon Patras",
             ["απολλων πατρας"] = "Apollon Patras",
+            ["απολλων πατρων"] = "Apollon Patras",
             ["ασ απολλων πατρας"] = "Apollon Patras",
             ["ασ απολλων"] = "Apollon Patras",
             ["γσ απολλων"] = "Apollon Patras",
@@ -123,12 +144,14 @@ public sealed class GreekOfficialBasketballDataProvider(
             ["ολυμπια γε"] = "Olympia Larissa",
             ["πειραικος"] = "Peiraikos",
             ["πειραικος συνδεσμος"] = "Peiraikos",
+            ["πειραικος συνδ"] = "Peiraikos",
             ["αο αμυντας"] = "Amyntas",
             ["αμυντας"] = "Amyntas",
             ["ασε δουκα"] = "Douka",
             ["δουκα"] = "Douka",
             ["πανερυθραικος ασ"] = "Panerythraikos",
             ["φιλιππος βεροιας"] = "Filippos Verias",
+            ["φιλιππος"] = "Filippos Verias",
             ["ασ φιλιππος βεροιας"] = "Filippos Verias",
             ["χανθ"] = "Hanth",
             ["γας κομοτηνη"] = "Komotini",
@@ -178,16 +201,98 @@ public sealed class GreekOfficialBasketballDataProvider(
         var startYear = SeasonLabelNormalizer.ParseStartYear(season);
         return league.SourceLeagueId switch
         {
+            LeagueSourceId when startYear is >= 1996 and <= 1998 =>
+                await GetLegacyLeagueGamesAsync(season, startYear, context, cancellationToken),
             LeagueSourceId when EsakeChampionshipIds.ContainsKey(startYear) =>
                 await GetLeagueGamesAsync(season, startYear, context, cancellationToken),
             CupSourceId when EokCupPostIds.ContainsKey(startYear) =>
                 await GetCupGamesAsync(season, startYear, context, cancellationToken),
             LeagueSourceId => throw new ArgumentException(
-                "Continuous complete ESAKE coverage supports 1999-2000 through 2007-2008.", nameof(season)),
+                "Historical Greek coverage supports 1996-1997 through 2007-2008.", nameof(season)),
             CupSourceId => throw new ArgumentException(
-                "Complete EOK Cup pages are cataloged from 1999-2000 through 2007-2008, excluding incomplete 2003-2004.", nameof(season)),
+                "Complete EOK Cup pages are cataloged from 1996-1997 through 2007-2008, excluding incomplete 2003-2004.", nameof(season)),
             _ => throw new InvalidOperationException("Greek official provider only supports Greece: A1 and Greek Cup.")
         };
+    }
+
+    private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetLegacyLeagueGamesAsync(
+        string season,
+        int startYear,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var games = new Dictionary<string, BasketballProviderGame>(StringComparer.Ordinal);
+        var warnings = new List<string>
+        {
+            "Legacy Greek archive dates are imported at 12:00 UTC because historical tip-off times are incomplete."
+        };
+        var hasMorePages = false;
+
+        if (startYear == 1996)
+        {
+            if (!context.CanUseRequest())
+            {
+                return (games.Values.ToArray(), true, warnings);
+            }
+            var url = options.Value.Bitzenis1996Url;
+            var html = await FetchStringAsync(url, context, cancellationToken);
+            foreach (var game in ParseBitzenisRegularSeason(html, season, url))
+            {
+                games[game.SourceGameId] = game;
+            }
+            warnings.Add(
+                "The 1996-1997 source is complete for all 182 regular-season games; undated playoff summary rows are intentionally excluded.");
+        }
+        else
+        {
+            var regularCapture = startYear == 1997 ? SportGr1997RegularCapture : SportGr1998RegularCapture;
+            for (var firstRound = 1; firstRound <= 13; firstRound++)
+            {
+                if (!context.CanUseRequest())
+                {
+                    hasMorePages = true;
+                    break;
+                }
+                var url = new Uri(new Uri(options.Value.WaybackBaseUrl),
+                    $"{regularCapture}{firstRound}-{firstRound + 13}.htm").ToString();
+                var html = await FetchLegacyGreekStringAsync(url, context, cancellationToken);
+                foreach (var game in ParseSportGrRegularSeason(html, season, startYear, url))
+                {
+                    games[game.SourceGameId] = game;
+                }
+            }
+
+            if (!hasMorePages)
+            {
+                if (!context.CanUseRequest())
+                {
+                    hasMorePages = true;
+                }
+                else
+                {
+                    var playoffCapture = startYear == 1997 ? SportGr1997PlayoffCapture : SportGr1998PlayoffCapture;
+                    var url = new Uri(new Uri(options.Value.WaybackBaseUrl), playoffCapture).ToString();
+                    var html = await FetchLegacyGreekStringAsync(url, context, cancellationToken);
+                    foreach (var game in ParseSportGrPlayoffs(html, season, startYear, url))
+                    {
+                        games[game.SourceGameId] = game;
+                    }
+                }
+            }
+        }
+
+        var regularCount = games.Values.Count(game => game.CompetitionPhase == "Regular Season");
+        var expectedRegularCount = startYear == 1998 ? 181 : 182;
+        if (regularCount != expectedRegularCount)
+        {
+            warnings.Add($"Expected {expectedRegularCount} scored regular-season games but parsed {regularCount}; this season is incomplete.");
+        }
+        if (startYear == 1998)
+        {
+            warnings.Add("Panionios-AEK was interrupted and Panionios was nullified; the source publishes no final score, so the game is excluded.");
+        }
+        return (games.Values.OrderBy(game => game.GameDateTimeUtc).ThenBy(game => game.SourceGameId).ToArray(),
+            hasMorePages, warnings);
     }
 
     private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetLeagueGamesAsync(
@@ -293,6 +398,306 @@ public sealed class GreekOfficialBasketballDataProvider(
             "EOK Cup dates are imported at 12:00 UTC because historical tip-off times are not published."
         };
         return (parsed.Games, false, warnings);
+    }
+
+    internal static IReadOnlyList<BasketballProviderGame> ParseBitzenisRegularSeason(
+        string html,
+        string season,
+        string sourceUrl)
+    {
+        var startYear = SeasonLabelNormalizer.ParseStartYear(season);
+        var revision = Hash(html);
+        var games = new List<BasketballProviderGame>();
+        foreach (Match tableMatch in Regex.Matches(html, @"<table\b[^>]*>(.*?)</table>",
+                     RegexOptions.IgnoreCase | RegexOptions.Singleline))
+        {
+            var cells = LegacyCells(tableMatch.Groups[1].Value);
+            if (cells.Count < 31)
+            {
+                continue;
+            }
+            var roundMatch = Regex.Match(cells[0], @"Game\s+(\d+)\s*&\s*(\d+)", RegexOptions.IgnoreCase);
+            if (!roundMatch.Success || !TryParseLegacyDate(cells[1], startYear, out var firstDate) ||
+                !TryParseLegacyDate(cells[2], startYear, out var secondDate))
+            {
+                continue;
+            }
+            var firstRound = int.Parse(roundMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+            var secondRound = int.Parse(roundMatch.Groups[2].Value, CultureInfo.InvariantCulture);
+            var rowOrdinal = 0;
+            for (var index = 3; index + 3 < cells.Count; index += 4)
+            {
+                rowOrdinal++;
+                var firstTeam = cells[index];
+                var secondTeam = cells[index + 1];
+                if (!TryParseLegacyScore(cells[index + 2], out var firstHomeScore, out var firstAwayScore) ||
+                    !TryParseLegacyScore(cells[index + 3], out var secondHomeScore, out var secondAwayScore))
+                {
+                    continue;
+                }
+                AddLegacyGame(games, season, firstDate, firstTeam, firstHomeScore, secondTeam, firstAwayScore,
+                    "Regular Season", $"Round {firstRound}", sourceUrl, BitzenisParserVersion, revision,
+                    $"bitzenis:{startYear}:{firstRound:D2}:{rowOrdinal}");
+                AddLegacyGame(games, season, secondDate, secondTeam, secondHomeScore, firstTeam, secondAwayScore,
+                    "Regular Season", $"Round {secondRound}", sourceUrl, BitzenisParserVersion, revision,
+                    $"bitzenis:{startYear}:{secondRound:D2}:{rowOrdinal}");
+            }
+        }
+        return games;
+    }
+
+    internal static IReadOnlyList<BasketballProviderGame> ParseSportGrRegularSeason(
+        string html,
+        string season,
+        int startYear,
+        string sourceUrl)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var pageRoundMatch = Regex.Match(sourceUrl, @"/(\d+)-(\d+)\.htm", RegexOptions.IgnoreCase);
+        if (!pageRoundMatch.Success)
+        {
+            return [];
+        }
+        var firstRound = int.Parse(pageRoundMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+        var secondRound = int.Parse(pageRoundMatch.Groups[2].Value, CultureInfo.InvariantCulture);
+        DateTime? firstFallbackDate = null;
+        DateTime? secondFallbackDate = null;
+        foreach (var row in document.DocumentNode.SelectNodes("//tr") ?? Enumerable.Empty<HtmlNode>())
+        {
+            var cells = row.SelectNodes("./th|./td");
+            if (cells is null || cells.Count < 3)
+            {
+                continue;
+            }
+            var texts = cells.Select(cell => Clean(cell.InnerText)).ToArray();
+            if (!texts.Any(value => value.Contains("Αγωνιστική", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+            var dateValues = texts.SelectMany(value => Regex.Matches(value, @"(?<!\d)\d{1,2}/\d{1,2}(?!\d)")
+                    .Select(match => match.Value))
+                .ToArray();
+            if (dateValues.Length >= 2)
+            {
+                if (TryParseLegacyDate(dateValues[0], startYear, out var parsedFirst)) firstFallbackDate = parsedFirst;
+                if (TryParseLegacyDate(dateValues[^1], startYear, out var parsedSecond)) secondFallbackDate = parsedSecond;
+            }
+        }
+
+        var games = new List<BasketballProviderGame>();
+        var revision = Hash(html);
+        var rowOrdinal = 0;
+        foreach (var row in document.DocumentNode.SelectNodes("//tr") ?? Enumerable.Empty<HtmlNode>())
+        {
+            var cells = row.SelectNodes("./th|./td");
+            if (cells is null || cells.Count != 3 ||
+                !TrySplitLegacyTeams(Clean(cells[1].InnerText), out var firstTeam, out var secondTeam))
+            {
+                continue;
+            }
+            rowOrdinal++;
+            var firstHref = cells[0].SelectSingleNode(".//a")?.GetAttributeValue("href", string.Empty) ?? string.Empty;
+            var secondHref = cells[2].SelectSingleNode(".//a")?.GetAttributeValue("href", string.Empty) ?? string.Empty;
+            var firstDate = TryParseLegacyHrefDate(firstHref, out var parsedFirstDate)
+                ? parsedFirstDate
+                : firstFallbackDate;
+            var secondDate = TryParseLegacyHrefDate(secondHref, out var parsedSecondDate)
+                ? parsedSecondDate
+                : secondFallbackDate;
+            if (firstDate.HasValue &&
+                TryParseLegacyScore(Clean(cells[0].InnerText), out var firstHomeScore, out var firstAwayScore))
+            {
+                AddLegacyGame(games, season, firstDate.Value, firstTeam, firstHomeScore, secondTeam, firstAwayScore,
+                    "Regular Season", $"Round {firstRound}", ResolveLegacyUrl(sourceUrl, firstHref),
+                    SportGrParserVersion, revision, $"sportgr:{startYear}:{firstRound:D2}:{rowOrdinal}");
+            }
+            if (secondDate.HasValue &&
+                TryParseLegacyScore(Clean(cells[2].InnerText), out var secondHomeScore, out var secondAwayScore))
+            {
+                AddLegacyGame(games, season, secondDate.Value, secondTeam, secondHomeScore, firstTeam, secondAwayScore,
+                    "Regular Season", $"Round {secondRound}", ResolveLegacyUrl(sourceUrl, secondHref),
+                    SportGrParserVersion, revision, $"sportgr:{startYear}:{secondRound:D2}:{rowOrdinal}");
+            }
+        }
+        return games;
+    }
+
+    internal static IReadOnlyList<BasketballProviderGame> ParseSportGrPlayoffs(
+        string html,
+        string season,
+        int startYear,
+        string sourceUrl)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var games = new List<BasketballProviderGame>();
+        var revision = Hash(html);
+        var ordinal = 0;
+
+        foreach (var table in document.DocumentNode.SelectNodes("//table") ?? Enumerable.Empty<HtmlNode>())
+        {
+            var header = Clean(table.SelectSingleNode("./tr[1]//th")?.InnerText ?? string.Empty);
+            var headerKey = NormalizeKey(header);
+            var round = headerKey switch
+            {
+                var value when value.Contains("ημιτελ", StringComparison.Ordinal) => "Semifinals",
+                var value when value.Contains("τελικ", StringComparison.Ordinal) => "Finals",
+                var value when value.Contains("β φαση", StringComparison.Ordinal) ||
+                                   value.Contains("b φαση", StringComparison.Ordinal) ||
+                                   value.Contains("β γυρος", StringComparison.Ordinal) ||
+                                   value.Contains("b γυρος", StringComparison.Ordinal) => "Quarterfinals",
+                var value when value.Contains("α φαση", StringComparison.Ordinal) ||
+                                   value.Contains("a φαση", StringComparison.Ordinal) ||
+                                   value.Contains("α γυρος", StringComparison.Ordinal) ||
+                                   value.Contains("a γυρος", StringComparison.Ordinal) => "First Round",
+                _ => string.Empty
+            };
+            if (round.Length == 0)
+            {
+                continue;
+            }
+
+            foreach (var row in table.SelectNodes("./tr") ?? Enumerable.Empty<HtmlNode>())
+            {
+                var cells = row.SelectNodes("./th|./td");
+                if (cells is null)
+                {
+                    continue;
+                }
+                var texts = cells.Select(cell => Clean(cell.InnerText)).ToArray();
+
+                // The 1997-1998 page stores one dated game per row.
+                if (texts.Length >= 4 && TryParseLegacyDate(texts[0], startYear, out var rowDate) &&
+                    TrySplitLegacyTeams(texts[2], out var datedHome, out var datedAway) &&
+                    TryParseLegacyScore(texts[3], out var datedHomeScore, out var datedAwayScore))
+                {
+                    ordinal++;
+                    var href = cells[3].SelectSingleNode(".//a")?.GetAttributeValue("href", string.Empty) ?? string.Empty;
+                    AddLegacyGame(games, season, rowDate, datedHome, datedHomeScore, datedAway, datedAwayScore,
+                        "Playoffs", $"{round} Game {ordinal}", ResolveLegacyUrl(sourceUrl, href), SportGrParserVersion,
+                        revision, $"sportgr:{startYear}:playoffs:{ordinal:D2}");
+                    continue;
+                }
+
+                // The 1998-1999 page stores a series in one row and dates in score links.
+                if (texts.Length < 2 || !TrySplitLegacyTeams(texts[0], out var firstTeam, out var secondTeam))
+                {
+                    continue;
+                }
+                var seriesGame = 0;
+                for (var index = 1; index < cells.Count; index++)
+                {
+                    var scoreText = Clean(cells[index].InnerText);
+                    if (scoreText.Contains('*') ||
+                        !TryParseLegacyScore(scoreText, out var homeScore, out var awayScore))
+                    {
+                        continue;
+                    }
+                    var href = cells[index].SelectSingleNode(".//a")?.GetAttributeValue("href", string.Empty) ?? string.Empty;
+                    if (!TryParseLegacyHrefDate(href, out var date))
+                    {
+                        continue;
+                    }
+                    ordinal++;
+                    seriesGame++;
+                    var home = seriesGame % 2 == 1 ? firstTeam : secondTeam;
+                    var away = seriesGame % 2 == 1 ? secondTeam : firstTeam;
+                    AddLegacyGame(games, season, date, home, homeScore, away, awayScore, "Playoffs",
+                        $"{round} Game {seriesGame}", ResolveLegacyUrl(sourceUrl, href), SportGrParserVersion,
+                        revision, $"sportgr:{startYear}:playoffs:{ordinal:D2}");
+                }
+            }
+        }
+        return games;
+    }
+
+    private static IReadOnlyList<string> LegacyCells(string tableHtml) =>
+        Regex.Matches(tableHtml,
+                @"<(?:th|td)\b[^>]*>(.*?)(?=<(?:th|td|tr)\b|</table>|$)",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline)
+            .Select(match => Clean(Regex.Replace(match.Groups[1].Value, "<[^>]+>", string.Empty)))
+            .ToArray();
+
+    private static bool TrySplitLegacyTeams(string value, out string home, out string away)
+    {
+        var match = Regex.Match(value, @"^\s*(.+?)\s*-\s*(.+?)(?:\s*\([^)]+\))?\s*$");
+        home = match.Success ? Clean(match.Groups[1].Value) : string.Empty;
+        away = match.Success ? Clean(match.Groups[2].Value) : string.Empty;
+        return match.Success && home.Length > 0 && away.Length > 0;
+    }
+
+    private static bool TryParseLegacyScore(string value, out short homeScore, out short awayScore)
+    {
+        var match = Regex.Match(value, @"(?<!\d)(\d{1,3})\s*-+\s*(\d{1,3})(?!\d)");
+        homeScore = 0;
+        awayScore = 0;
+        return short.TryParse(match.Groups[1].Value, out homeScore) &&
+               short.TryParse(match.Groups[2].Value, out awayScore) && homeScore != awayScore &&
+               !IsAdministrativeScore(homeScore, awayScore);
+    }
+
+    private static bool TryParseLegacyDate(string value, int startYear, out DateTime date)
+    {
+        var match = Regex.Match(value, @"(?<!\d)(\d{1,2})[-/.](\d{1,2})(?:[-/.](\d{2,4}))?(?!\d)");
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var day) ||
+            !int.TryParse(match.Groups[2].Value, out var month))
+        {
+            date = default;
+            return false;
+        }
+        var year = month >= 7 ? startYear : startYear + 1;
+        if (int.TryParse(match.Groups[3].Value, out var explicitYear))
+        {
+            year = explicitYear < 50 ? 2000 + explicitYear : explicitYear < 100 ? 1900 + explicitYear : explicitYear;
+        }
+        return TryDate(year, month, day, out date);
+    }
+
+    private static bool TryParseLegacyHrefDate(string href, out DateTime date)
+    {
+        var match = Regex.Match(href, @"(?<!\d)(\d{2})(\d{2})(\d{2})(?!\d)");
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var year) ||
+            !int.TryParse(match.Groups[2].Value, out var month) || !int.TryParse(match.Groups[3].Value, out var day))
+        {
+            date = default;
+            return false;
+        }
+        return TryDate(1900 + year, month, day, out date);
+    }
+
+    private static string ResolveLegacyUrl(string sourceUrl, string href) =>
+        Uri.TryCreate(new Uri(sourceUrl), href, out var resolved) ? resolved.ToString() : sourceUrl;
+
+    private static void AddLegacyGame(
+        ICollection<BasketballProviderGame> games,
+        string season,
+        DateTime date,
+        string rawHome,
+        short homeScore,
+        string rawAway,
+        short awayScore,
+        string phase,
+        string round,
+        string sourceUrl,
+        string parserVersion,
+        string revision,
+        string sourceGameId)
+    {
+        games.Add(new BasketballProviderGame(
+            Source,
+            sourceGameId,
+            DateTime.SpecifyKind(date.Date.AddHours(12), DateTimeKind.Utc),
+            "finished",
+            $"sportgr:{Slug(rawHome)}",
+            CanonicalizeTeamName(rawHome),
+            $"sportgr:{Slug(rawAway)}",
+            CanonicalizeTeamName(rawAway),
+            homeScore,
+            awayScore,
+            new BasketballProviderGameProvenance(sourceUrl, season, DateTime.UtcNow, parserVersion, revision),
+            CompetitionPhase: phase,
+            CompetitionRound: round));
     }
 
     internal static IReadOnlyList<string> ParseEsakeSeries(string html) =>
@@ -432,6 +837,8 @@ public sealed class GreekOfficialBasketballDataProvider(
 
             fallbackOrdinal++;
             var number = candidate.GameNumber ?? fallbackOrdinal.ToString(CultureInfo.InvariantCulture);
+            var gameDate = NormalizeKnownCupDate(postId, number, candidate.Date.Value);
+            var round = NormalizeKnownCupRound(postId, number, candidate.Round);
             var sourceId = $"eok-cup:{postId}:{number}";
             var duplicate = 1;
             while (!sourceIds.Add(sourceId))
@@ -443,7 +850,7 @@ public sealed class GreekOfficialBasketballDataProvider(
             games.Add(new BasketballProviderGame(
                 Source,
                 sourceId,
-                DateTime.SpecifyKind(candidate.Date.Value.Date.AddHours(12), DateTimeKind.Utc),
+                DateTime.SpecifyKind(gameDate.Date.AddHours(12), DateTimeKind.Utc),
                 "finished",
                 $"eok:{Slug(rawHomeKey)}",
                 CanonicalizeTeamName(candidate.Home),
@@ -453,7 +860,12 @@ public sealed class GreekOfficialBasketballDataProvider(
                 candidate.AwayScore,
                 new BasketballProviderGameProvenance(sourceUrl, season, DateTime.UtcNow, EokCupParserVersion, revision),
                 CompetitionPhase: candidate.Phase,
-                CompetitionRound: candidate.Round));
+                CompetitionRound: round));
+        }
+
+        if (postId == 1750)
+        {
+            warnings.Add("EOK game 17 omits the away team; the incomplete source row is intentionally excluded.");
         }
 
         return new CupParseResult(
@@ -590,6 +1002,16 @@ public sealed class GreekOfficialBasketballDataProvider(
 
     private static bool TryParseCupDate(string value, int startYear, out DateTime date)
     {
+        var splitMonthRange = Regex.Match(value,
+            @"(?<!\d)(\d{1,2})\s*-\s*(\d{1,2})\s*/\s*\d{1,2}\s*-\s*\d{1,2}\s*/\s*(\d{2,4})(?!\d)");
+        if (splitMonthRange.Success && int.TryParse(splitMonthRange.Groups[1].Value, out var rangeDay) &&
+            int.TryParse(splitMonthRange.Groups[2].Value, out var rangeMonth) &&
+            int.TryParse(splitMonthRange.Groups[3].Value, out var rangeYear))
+        {
+            rangeYear = rangeYear < 100 ? (rangeYear >= 90 ? 1900 : 2000) + rangeYear : rangeYear;
+            return TryDate(rangeYear, rangeMonth, rangeDay, out date);
+        }
+
         var match = Regex.Match(value,
             @"(?<!\d)(\d{1,2})(?:\s*-\s*\d{1,2})*\s*/\s*(\d{1,2})(?:\s*/\s*(\d{2,4}))?");
         if (!match.Success || !int.TryParse(match.Groups[1].Value, out var day) ||
@@ -619,6 +1041,20 @@ public sealed class GreekOfficialBasketballDataProvider(
         }
         return TryDate(year, month, day, out date);
     }
+
+    private static DateTime NormalizeKnownCupDate(int postId, string gameNumber, DateTime parsedDate) =>
+        postId == 1750 && gameNumber is "39" or "40"
+            ? new DateTime(1997, 4, 12)
+            : postId == 1750 && gameNumber is "41" or "42"
+                ? new DateTime(1997, 4, 13)
+                : parsedDate;
+
+    private static string NormalizeKnownCupRound(int postId, string gameNumber, string parsedRound) =>
+        postId == 1750 && gameNumber == "41"
+            ? "Third Place"
+            : postId == 1750 && gameNumber == "42"
+                ? "Final"
+                : parsedRound;
 
     private static bool TryDate(int year, int month, int day, out DateTime date)
     {
@@ -705,6 +1141,36 @@ public sealed class GreekOfficialBasketballDataProvider(
             cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    private async Task<string> FetchLegacyGreekStringAsync(
+        string url,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        using var response = await BackfillHttpRetryPolicy.SendAsync(
+            async retryCancellationToken =>
+            {
+                if (!context.CanUseRequest())
+                {
+                    throw new InvalidOperationException("Greek historical source request budget reached.");
+                }
+                context.ConsumeRequest();
+                if (options.Value.MinRequestIntervalMilliseconds > 0)
+                {
+                    await Task.Delay(options.Value.MinRequestIntervalMilliseconds, retryCancellationToken);
+                }
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.UserAgent.ParseAdd(options.Value.UserAgent);
+                return await httpClient.SendAsync(request, retryCancellationToken);
+            },
+            options.Value.MaxTransientRetries,
+            options.Value.RetryBaseDelayMilliseconds,
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding(1253).GetString(bytes);
     }
 
     private static string EsakeTeamId(string imageUrl, string teamName)

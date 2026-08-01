@@ -1010,7 +1010,7 @@ static async Task<int> RunGreeceDryRunAsync(string[] args)
     }
     foreach (var game in printAll ? result.Games : result.Games.Take(12))
     {
-        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} [{game.CompetitionRound}] {game.Provenance?.SourceUrl}");
+        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} [{game.CompetitionRound}] ({game.SourceGameId}) {game.Provenance?.SourceUrl}");
     }
     foreach (var warning in result.Warnings.Take(30))
     {

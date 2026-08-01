@@ -7,7 +7,7 @@ namespace BasketElo.Infrastructure.Tests.Backfill;
 public class BackfillCatalogTests
 {
     [Fact]
-    public void GreekOfficialCatalogStopsAtArchiveGapAndNeverAddsCupWithoutLeague()
+    public void GreekOfficialCatalogFillsLegacyGapAndNeverAddsCupWithoutLeague()
     {
         var catalog = new BackfillCatalog();
         var league = Assert.Single(catalog.GetLeagues(), item =>
@@ -18,11 +18,11 @@ public class BackfillCatalogTests
         var leagueSeasons = catalog.GetSeasonsForLeague(league).ToList();
         var cupSeasons = catalog.GetSeasonsForLeague(cup).ToList();
 
-        Assert.Equal(9, leagueSeasons.Count);
-        Assert.Equal("1999-2000", leagueSeasons[0]);
+        Assert.Equal(12, leagueSeasons.Count);
+        Assert.Equal("1996-1997", leagueSeasons[0]);
         Assert.Equal("2007-2008", leagueSeasons[^1]);
-        Assert.DoesNotContain("1998-1999", leagueSeasons);
-        Assert.Equal(8, cupSeasons.Count);
+        Assert.Contains("1998-1999", leagueSeasons);
+        Assert.Equal(11, cupSeasons.Count);
         Assert.DoesNotContain("2003-2004", cupSeasons);
         Assert.All(cupSeasons, season => Assert.Contains(season, leagueSeasons));
 

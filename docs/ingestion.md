@@ -206,7 +206,7 @@ sources, official LBA traversal, coverage gaps, and newest-first runbook.
 See [`french-ingestion.md`](french-ingestion.md) for the ranked French league and
 cup sources, the explicit historical gap, and the no-cup-only-season rule.
 See [`greek-ingestion.md`](greek-ingestion.md) for the ranked Greek league and
-Cup sources, the 1999-2000 cutoff, and the runtime league-overlap guard.
+Cup sources, the 1996-1997 cutoff, and the runtime league-overlap guard.
 
 ## Competition separation and reconciliation
 

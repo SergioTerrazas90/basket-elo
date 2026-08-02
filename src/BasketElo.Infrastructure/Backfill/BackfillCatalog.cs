@@ -123,6 +123,8 @@ public class BackfillCatalog : IBackfillCatalog
             EndSeason: "2025-2026"),
         new("api-sports", "Belgium", "Belgian Cup", "Belgium: Belgian Cup", "2012", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new("api-sports", "Germany", "BBL", "Germany: BBL", "2008-2009", EndSeason: "2025-2026"),
+        new("german-official", "Germany", "BBL", "Germany: BBL", "1975-1976", EndSeason: "2007-2008"),
+        new("wikipedia-german-cup", "Germany", "German Cup", "Germany: German Cup", "1975-1976", CompetitionType: "domestic_cup", EndSeason: "2007-2008"),
         new("api-sports", "Germany", "German Cup", "Germany: German Cup", "2008-2009", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
         new("api-sports", "Germany", "Super Cup", "Germany: Super Cup", "2011", CompetitionType: "domestic_cup", EndSeason: "2015"),
         new("api-sports", "Israel", "Super League", "Israel: BSL", "2008-2009", EndSeason: "2025-2026"),

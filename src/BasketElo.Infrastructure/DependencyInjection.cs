@@ -28,6 +28,8 @@ public static class DependencyInjection
         services.Configure<ItalianCupWikipediaOptions>(configuration.GetSection(ItalianCupWikipediaOptions.SectionName));
         services.Configure<FrenchHistoricalOptions>(configuration.GetSection(FrenchHistoricalOptions.SectionName));
         services.Configure<GreekOfficialOptions>(configuration.GetSection(GreekOfficialOptions.SectionName));
+        services.Configure<GermanBasketballOptions>(configuration.GetSection(GermanBasketballOptions.SectionName));
+        services.Configure<BackfillOptions>(configuration.GetSection(BackfillOptions.SectionName));
         services.Configure<BasketballReferenceOptions>(configuration.GetSection(BasketballReferenceOptions.SectionName));
         services.Configure<FiveThirtyEightOptions>(configuration.GetSection(FiveThirtyEightOptions.SectionName));
         services.Configure<NbaRefreshOptions>(configuration.GetSection(NbaRefreshOptions.SectionName));
@@ -107,6 +109,10 @@ public static class DependencyInjection
         {
             client.Timeout = TimeSpan.FromSeconds(45);
         });
+        services.AddHttpClient<GermanBasketballDataProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(45);
+        });
         services.AddHttpClient<GlobalSportsArchiveBasketballDataProvider>(client =>
         {
             client.BaseAddress = new Uri("https://globalsportsarchive.com");
@@ -143,10 +149,15 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<WikipediaEuroBasketQualificationDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<ItalianCupWikipediaBasketballDataProvider>());
+        services.AddScoped<GermanCupWikipediaBasketballDataProvider>();
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<GermanCupWikipediaBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<FrenchHistoricalBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<GreekOfficialBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<GermanBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<GlobalSportsArchiveBasketballDataProvider>());
         services.AddSingleton<FiveThirtyEightBasketballDataProvider>();

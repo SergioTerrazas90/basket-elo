@@ -26,7 +26,8 @@ public class NbaFranchiseImportTests
             [provider],
             new IdentityHealthCheckService(dbContext, catalog),
             catalog,
-            NullLogger<BackfillJobProcessor>.Instance);
+            NullLogger<BackfillJobProcessor>.Instance,
+            Microsoft.Extensions.Options.Options.Create(new BackfillOptions()));
 
         var jobs = new[]
         {

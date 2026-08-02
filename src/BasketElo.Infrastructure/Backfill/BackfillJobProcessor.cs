@@ -8,6 +8,7 @@ using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace BasketElo.Infrastructure.Backfill;
 
@@ -16,7 +17,8 @@ public class BackfillJobProcessor(
     IEnumerable<IBasketballDataProvider> providers,
     IIdentityHealthCheckService identityHealthCheckService,
     IBackfillCatalog backfillCatalog,
-    ILogger<BackfillJobProcessor> logger) : IBackfillJobProcessor
+    ILogger<BackfillJobProcessor> logger,
+    IOptions<BackfillOptions> backfillOptions) : IBackfillJobProcessor
 {
     public async Task<bool> TryProcessNextPendingJobAsync(CancellationToken cancellationToken)
     {
@@ -379,7 +381,9 @@ public class BackfillJobProcessor(
             summary);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        if (canQueuePoolRebuild && !string.IsNullOrWhiteSpace(changedPoolKey))
+        if (backfillOptions.Value.QueueEloRebuildsAutomatically &&
+            canQueuePoolRebuild &&
+            !string.IsNullOrWhiteSpace(changedPoolKey))
         {
             await QueuePoolRebuildsIfReadyAsync(changedPoolKey, cancellationToken);
         }

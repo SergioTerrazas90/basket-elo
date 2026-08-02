@@ -27,7 +27,8 @@ public class BackfillJobProcessorTests
             [provider],
             identityService,
             catalog,
-            NullLogger<BackfillJobProcessor>.Instance);
+            NullLogger<BackfillJobProcessor>.Instance,
+            Microsoft.Extensions.Options.Options.Create(new BackfillOptions()));
 
         var firstJob = CreateJob();
         dbContext.BackfillJobs.Add(firstJob);
@@ -88,7 +89,8 @@ public class BackfillJobProcessorTests
             [provider],
             new IdentityHealthCheckService(dbContext, catalog),
             catalog,
-            NullLogger<BackfillJobProcessor>.Instance);
+            NullLogger<BackfillJobProcessor>.Instance,
+            Microsoft.Extensions.Options.Options.Create(new BackfillOptions()));
         var poisonJob = CreateJob("2023-2024", dryRun: true);
         poisonJob.CreatedAtUtc = DateTime.UtcNow.AddMinutes(-1);
         var laterJob = CreateJob("2024-2025", dryRun: true);
@@ -127,7 +129,8 @@ public class BackfillJobProcessorTests
             [provider],
             new IdentityHealthCheckService(dbContext, catalog),
             catalog,
-            NullLogger<BackfillJobProcessor>.Instance);
+            NullLogger<BackfillJobProcessor>.Instance,
+            Microsoft.Extensions.Options.Options.Create(new BackfillOptions()));
 
         var firstJob = CreateJob();
         dbContext.BackfillJobs.Add(firstJob);

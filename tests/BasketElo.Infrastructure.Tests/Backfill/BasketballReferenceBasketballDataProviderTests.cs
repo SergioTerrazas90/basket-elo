@@ -106,7 +106,8 @@ public class BasketballReferenceBasketballDataProviderTests
             [provider],
             new IdentityHealthCheckService(dbContext, catalog),
             catalog,
-            NullLogger<BackfillJobProcessor>.Instance);
+            NullLogger<BackfillJobProcessor>.Instance,
+            Microsoft.Extensions.Options.Options.Create(new BackfillOptions()));
         dbContext.BackfillJobs.Add(new BackfillJob
         {
             Id = Guid.NewGuid(),

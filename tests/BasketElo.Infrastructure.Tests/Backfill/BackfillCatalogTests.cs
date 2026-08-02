@@ -79,6 +79,27 @@ public class BackfillCatalogTests
     }
 
     [Fact]
+    public void GermanOfficialCatalogFillsTheHistoricalBblGapBeforeApiSports()
+    {
+        var catalog = new BackfillCatalog();
+        var historical = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == GermanBasketballDataProvider.Source &&
+            league.Country == "Germany" &&
+            league.LeagueName == "BBL");
+
+        var seasons = catalog.GetSeasonsForLeague(historical).ToList();
+
+        Assert.Equal("Germany: BBL", historical.DisplayName);
+        Assert.Equal("1975-1976", seasons[0]);
+        Assert.Equal("2007-2008", seasons[^1]);
+        Assert.Equal(33, seasons.Count);
+        Assert.DoesNotContain("2008-2009", seasons);
+        Assert.DoesNotContain(catalog.GetLeagues(), league =>
+            league.Provider == GermanBasketballDataProvider.Source &&
+            league.LeagueName == "German Cup");
+    }
+
+    [Fact]
     public void NbaIsOneCanonicalCompetitionFromInauguralSeasonThroughCurrentCatalogEnd()
     {
         var catalog = new BackfillCatalog();
@@ -179,6 +200,25 @@ public class BackfillCatalogTests
             .Where(league => league.Country == "Italy" && league.LeagueName == "Italian Cup")
             .SelectMany(catalog.GetSeasonsForLeague);
         Assert.All(cupSeasons, season => Assert.Contains(season, regularLeagueSeasons));
+    }
+
+    [Fact]
+    public void GermanCupCatalogCoversHistoricalFinalsBeforeApiSports()
+    {
+        var catalog = new BackfillCatalog();
+        var historical = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == GermanCupWikipediaBasketballDataProvider.Source &&
+            league.Country == "Germany" && league.LeagueName == "German Cup");
+        var modern = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == ApiSportsBasketballDataProvider.Source &&
+            league.Country == "Germany" && league.LeagueName == "German Cup");
+
+        var historicalSeasons = catalog.GetSeasonsForLeague(historical).ToList();
+        Assert.Equal("1975-1976", historicalSeasons[0]);
+        Assert.Equal("2007-2008", historicalSeasons[^1]);
+        Assert.Equal(33, historicalSeasons.Count);
+        Assert.Equal("2008-2009", catalog.GetSeasonsForLeague(modern).First());
+        Assert.Equal("domestic_cup", historical.CompetitionType);
     }
 
     [Fact]

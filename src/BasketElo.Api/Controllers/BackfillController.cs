@@ -47,10 +47,12 @@ public class BackfillController(
              !string.Equals(request.Provider, GlobalSportsArchiveBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, LbaOfficialSerieABasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, ItalianCupWikipediaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, GermanCupWikipediaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, FrenchHistoricalBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, GermanBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, WikipediaEuroBasketQualificationDataProvider.Source, StringComparison.OrdinalIgnoreCase)))
         {
-            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba', 'global-sports-archive', 'lba-official', 'wikipedia-italian-cup', 'french-historical' and 'wikipedia'.");
+            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba', 'global-sports-archive', 'lba-official', 'wikipedia-italian-cup', 'wikipedia-german-cup', 'french-historical', 'german-official' and 'wikipedia'.");
         }
 
         var job = BuildJob(request, FindConfiguredLeague(request.Provider, request.Country, request.LeagueName));

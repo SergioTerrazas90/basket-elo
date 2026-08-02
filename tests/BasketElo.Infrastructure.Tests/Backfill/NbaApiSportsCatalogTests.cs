@@ -95,7 +95,8 @@ public class NbaApiSportsCatalogTests
             [new ApiSportsNbaFixtureProvider()],
             new IdentityHealthCheckService(dbContext, catalog),
             catalog,
-            NullLogger<BackfillJobProcessor>.Instance);
+            NullLogger<BackfillJobProcessor>.Instance,
+            Microsoft.Extensions.Options.Options.Create(new BackfillOptions()));
         var job = new BackfillJob
         {
             Id = Guid.NewGuid(),

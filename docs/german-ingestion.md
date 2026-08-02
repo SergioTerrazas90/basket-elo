@@ -104,4 +104,3 @@ the internal backfill range endpoint or the admin backfill page using:
 For the BBL historical range, use provider `german-official`, country
 `Germany`, and league name `BBL`. Inspect job warnings, source provenance,
 season coverage, and team identity findings before rebuilding Elo.
-

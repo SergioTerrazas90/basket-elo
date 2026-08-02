@@ -207,6 +207,9 @@ See [`french-ingestion.md`](french-ingestion.md) for the ranked French league an
 cup sources, the explicit historical gap, and the no-cup-only-season rule.
 See [`greek-ingestion.md`](greek-ingestion.md) for the ranked Greek league and
 Cup sources, the 1996-1997 cutoff, and the runtime league-overlap guard.
+See [`german-ingestion.md`](german-ingestion.md) for the German BBL and German
+Cup source boundaries, the 1975-1976 historical cutoff, repair policy, and
+finals-only historical Cup limitation.
 
 ## Competition separation and reconciliation
 

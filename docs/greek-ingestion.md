@@ -11,6 +11,11 @@ fallback for the seasons in between. The 1986-1987 through 1991-1992 seasons
 come from complete Greek Wikipedia score matrices; their round dates are
 inferred from the late-September start and cadence established by 1992-1993
 because the Olympiacos archive exposes placeholder dates for this period.
+This is a deliberate data-quality limitation: the imported date represents the
+inferred round date, not a published game date or tip-off time. Consumers must
+not use these six seasons for date-level scheduling or tip-off-time analysis.
+The ingestion was validated with 90 games for each 10-team season (1986-87 to
+1988-89) and 132 games for each 12-team season (1989-90 to 1991-92).
 The former 1993-1994 through 1995-1996 gap is now filled from the official ESAKE
 archive and matching official EOK Cup pages. The apparent gap before ESAKE's
 continuous 1999-2000 run was filled from two contemporary Greek archives:

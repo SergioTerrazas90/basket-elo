@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.Configure<FrenchHistoricalOptions>(configuration.GetSection(FrenchHistoricalOptions.SectionName));
         services.Configure<GreekOfficialOptions>(configuration.GetSection(GreekOfficialOptions.SectionName));
         services.Configure<GermanBasketballOptions>(configuration.GetSection(GermanBasketballOptions.SectionName));
+        services.Configure<TurkishBasketballOptions>(configuration.GetSection(TurkishBasketballOptions.SectionName));
         services.Configure<BackfillOptions>(configuration.GetSection(BackfillOptions.SectionName));
         services.Configure<BasketballReferenceOptions>(configuration.GetSection(BasketballReferenceOptions.SectionName));
         services.Configure<FiveThirtyEightOptions>(configuration.GetSection(FiveThirtyEightOptions.SectionName));
@@ -123,6 +124,15 @@ public static class DependencyInjection
         {
             client.Timeout = TimeSpan.FromSeconds(45);
         });
+        services.AddHttpClient<TurkishBasketballDataProvider>((serviceProvider, client) =>
+        {
+            var providerOptions = serviceProvider
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<TurkishBasketballOptions>>()
+                .Value;
+            client.BaseAddress = new Uri(providerOptions.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(providerOptions.UserAgent);
+        });
         services.AddHttpClient<GlobalSportsArchiveBasketballDataProvider>(client =>
         {
             client.BaseAddress = new Uri("https://globalsportsarchive.com");
@@ -170,6 +180,8 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<GreekOfficialBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<GermanBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<TurkishBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<GlobalSportsArchiveBasketballDataProvider>());
         services.AddSingleton<FiveThirtyEightBasketballDataProvider>();

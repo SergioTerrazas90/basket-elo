@@ -201,6 +201,9 @@ Live match page before importing it.
 
 See [`nba-source-policy.md`](nba-source-policy.md) and
 [`nba-refresh-operations.md`](nba-refresh-operations.md) for NBA-specific rules.
+See [`turkish-ingestion.md`](turkish-ingestion.md) for the TBLStat Turkish
+league source, historical Turkish Cup final coverage, and Presidential Cup
+limitations.
 
 ### ABA League and ABA Super Cup
 

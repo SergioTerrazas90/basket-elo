@@ -94,8 +94,11 @@ public class BackfillCatalog : IBackfillCatalog
         new("wikipedia-italian-cup", "Italy", "Italian Cup", "Italy: Italian Cup", "1983-1984", CompetitionType: "domestic_cup", ExplicitSeasons: ItalianCupHistoricalSeasons()),
         new("lba-official", "Italy", "Italian Cup", "Italy: Italian Cup", "2008-2009", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
         new("api-sports", "Italy", "Lega A - Super Cup", "Italy: Lega A Super Cup", "2011-2012", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
+        new("turkish-historical", "Turkey", "Super Ligi", "Turkey: BSL", "1966-1967", EndSeason: "2015-2016"),
         new("api-sports", "Turkey", "Super Ligi", "Turkey: BSL", "2016-2017", EndSeason: "2025-2026"),
-        new("api-sports", "Turkey", "Turkish Cup", "Turkey: Turkish Cup", "2010-2011", EndSeason: "2025-2026"),
+        new("turkish-historical", "Turkey", "Turkish Cup", "Turkey: Turkish Cup", "1966-1967", CompetitionType: "domestic_cup", ExplicitSeasons: TurkishCupHistoricalSeasons()),
+        new("api-sports", "Turkey", "Turkish Cup", "Turkey: Turkish Cup", "2011-2012", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
+        new("turkish-historical", "Turkey", "Super Cup", "Turkey: Super Cup", "1985", CompetitionType: "domestic_cup", ExplicitSeasons: Years(1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010), UsesSingleYearSeasonLabel: true),
         new("api-sports", "Turkey", "Super Cup", "Turkey: Super Cup", "2011", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new(
             "api-sports",
@@ -270,6 +273,12 @@ public class BackfillCatalog : IBackfillCatalog
         => new[] { 1992, 1993, 1994, 1995 }
             .Concat(Enumerable.Range(1996, 12).Where(year => year != 2003))
             .Concat(new[] { 2009, 2015 })
+            .Select(year => $"{year}-{year + 1}")
+            .ToArray();
+
+    private static string[] TurkishCupHistoricalSeasons()
+        => Enumerable.Range(1966, 7)
+            .Concat(Enumerable.Range(1991, 20))
             .Select(year => $"{year}-{year + 1}")
             .ToArray();
 }

@@ -103,6 +103,11 @@ static async Task<int> RunAsync(string[] args)
         return await RunGreeceIngestAsync(args[1..]);
     }
 
+    if (args.Length > 0 && args[0].Equals("turkey-dry-run", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunTurkeyDryRunAsync(args[1..]);
+    }
+
     AuditCommandOptions command;
     try
     {
@@ -1191,6 +1196,56 @@ static async Task<int> RunGreeceDryRunAsync(string[] args)
     return result.Games.Count == 0 || result.HasMorePages ? 2 : 0;
 }
 
+static async Task<int> RunTurkeyDryRunAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var competition = Required(values, "--competition");
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var interval = ParseNonNegative(values, "--interval-ms", 100);
+    var printAll = bool.TryParse(values.GetValueOrDefault("--print-all"), out var parsedPrintAll) && parsedPrintAll;
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Configuration["TurkishBasketball:MinRequestIntervalMilliseconds"] = interval.ToString();
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
+    var configuredLeague = catalog.GetLeagues().SingleOrDefault(candidate =>
+        candidate.Provider == TurkishBasketballDataProvider.Source &&
+        candidate.Country == "Turkey" &&
+        candidate.LeagueName.Equals(competition, StringComparison.OrdinalIgnoreCase) &&
+        catalog.GetSeasonsForLeague(candidate).Contains(season, StringComparer.OrdinalIgnoreCase));
+    if (configuredLeague is null)
+    {
+        Console.Error.WriteLine($"No historical Turkish source is configured for {competition} {season}.");
+        return 1;
+    }
+
+    var provider = scope.ServiceProvider.GetRequiredService<IEnumerable<IBasketballDataProvider>>()
+        .Single(candidate => candidate.SourceKey == TurkishBasketballDataProvider.Source);
+    var context = new BackfillExecutionContext(maxRequests, 0);
+    var league = await provider.ResolveLeagueAsync("Turkey", configuredLeague.LeagueName, context, CancellationToken.None);
+    var result = await provider.GetGamesAsync(league!, season, context, CancellationToken.None);
+
+    Console.WriteLine($"Turkish historical dry-run: {competition} {season}");
+    Console.WriteLine($"Requests: {context.RequestsUsed}/{context.MaxRequests}; games: {result.Games.Count}; warnings: {result.Warnings.Count}; more pages: {result.HasMorePages}");
+    foreach (var phase in result.Games.GroupBy(game => game.CompetitionPhase ?? "Unknown").OrderBy(group => group.Key))
+    {
+        Console.WriteLine($"{phase.Key}: {phase.Count()} games");
+    }
+    foreach (var game in printAll ? result.Games : result.Games.Take(12))
+    {
+        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} [{game.CompetitionRound}] ({game.SourceGameId}) {game.Provenance?.SourceUrl}");
+    }
+    foreach (var warning in result.Warnings.Take(30))
+    {
+        Console.WriteLine($"WARNING: {warning}");
+    }
+    return result.Games.Count == 0 || result.HasMorePages ? 2 : 0;
+}
+
 static async Task<int> RunGreeceIngestAsync(string[] args)
 {
     var values = ParseKeyValueArgs(args);
@@ -1444,6 +1499,12 @@ static void PrintUsage()
         dotnet run --project src/BasketElo.Tools -- greece-ingest \
           --competition "A1" --start 2007-2008 --end 1996-1997 \
           [--max-requests 0] [--interval-ms 100] [--connection-string "..."]
+
+        Historical Turkish league, Cup, or Super Cup dry-run
+
+        dotnet run --project src/BasketElo.Tools -- turkey-dry-run \
+          --competition "Super Ligi" --season 2007-2008 \
+          [--max-requests 0] [--interval-ms 100] [--print-all]
         """);
 }
 

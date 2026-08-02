@@ -35,6 +35,11 @@ $services = @(
         Name = "worker"
         Project = "src/BasketElo.Worker/BasketElo.Worker.csproj"
         Executable = "BasketElo.Worker"
+    },
+    @{
+        Name = "tools"
+        Project = "src/BasketElo.Tools/BasketElo.Tools.csproj"
+        Executable = "BasketElo.Tools"
     }
 )
 
@@ -101,4 +106,3 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Deployment completed. Open http://${Server}:8081/"
-

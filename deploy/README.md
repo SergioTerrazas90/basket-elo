@@ -69,6 +69,9 @@ Do not replace the existing Caddyfile. The Basket ELO snippet listens on `:8081`
 
 The script publishes all three apps as `linux-x64` self-contained builds, uploads them, installs them under `/opt/basket-elo`, and restarts the three systemd services.
 
+It also publishes the one-shot historical-ingestion tools under
+`/opt/basket-elo/releases/tools`; the tools are not started as a service.
+
 ## Health checks
 
 From the VPS:

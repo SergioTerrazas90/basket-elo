@@ -201,6 +201,41 @@ Live match page before importing it.
 
 See [`nba-source-policy.md`](nba-source-policy.md) and
 [`nba-refresh-operations.md`](nba-refresh-operations.md) for NBA-specific rules.
+
+### ABA League and ABA Super Cup
+
+The historical ABA League backfill uses the official [ABA League calendar](https://www.aba-liga.com/)
+for the inaugural seasons 2001-2002 through 2007-2008. The calendar exposes
+regular-season and postseason panels together, so the imported counts include
+playoff and Final Four games:
+
+| Season | Games |
+| --- | ---: |
+| 2001-2002 | 135 |
+| 2002-2003 | 135 |
+| 2003-2004 | 185 |
+| 2004-2005 | 247 |
+| 2005-2006 | 189 |
+| 2006-2007 | 189 |
+| 2007-2008 | 196 |
+
+The official match ID is stored with the source season ID (`aba-{seasonId}-{matchId}`)
+because match IDs restart at one in each season. Omitting the season component
+would overwrite games from earlier seasons during a multi-season import.
+
+The ABA Super Cup is a separate competition and is not part of those historical
+league totals. The catalog currently imports the editions available from
+API-Sports: 2017-2018, 2018-2019, 2019-2020, and 2023-2024. The four editions
+currently contain 7, 7, 7, and 12 games respectively, for 33 Super Cup games
+in total. The Super Cup did not exist during the 2001-2008 historical league
+range, and its games therefore remain separately identifiable as
+`International: ABA Supercup` with competition type `international_cup`.
+
+For both ABA competitions, verify coverage status, game count, warnings,
+identity findings, and service health after production ingestion. Do not combine
+Super Cup games with the historical ABA League season counts when checking the
+official calendar totals.
+
 See [`italian-ingestion.md`](italian-ingestion.md) for the ranked Italian Serie A
 sources, official LBA traversal, coverage gaps, and newest-first runbook.
 See [`french-ingestion.md`](french-ingestion.md) for the ranked French league and

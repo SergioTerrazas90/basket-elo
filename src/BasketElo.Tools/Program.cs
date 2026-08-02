@@ -53,6 +53,16 @@ static async Task<int> RunAsync(string[] args)
         return await RunAcbLigaNacionalIngestAsync(args[1..]);
     }
 
+    if (args.Length > 0 && args[0].Equals("aba-dry-run", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunAbaDryRunAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("aba-ingest", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunAbaIngestAsync(args[1..]);
+    }
+
     if (args.Length > 0 && args[0].Equals("italy-serie-a-dry-run", StringComparison.OrdinalIgnoreCase))
     {
         return await RunItalySerieADryRunAsync(args[1..]);
@@ -515,6 +525,168 @@ static async Task<int> RunAcbLigaNacionalIngestAsync(string[] args)
     while (await processor.TryProcessNextPendingJobAsync(CancellationToken.None)) processed++;
     Console.WriteLine($"ACB Liga Nacional ingest complete: {season}; processed {processed} jobs.");
     return 0;
+}
+
+static async Task<int> RunAbaDryRunAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 1);
+    var interval = ParseNonNegative(values, "--interval-ms", 250);
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Configuration["AbaLeagueOfficial:MinRequestIntervalMilliseconds"] = interval.ToString();
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    var provider = host.Services.GetRequiredService<IEnumerable<IBasketballDataProvider>>()
+        .Single(candidate => candidate.SourceKey == AbaLeagueOfficialBasketballDataProvider.Source);
+    var context = new BackfillExecutionContext(maxRequests, 0);
+    var league = await provider.ResolveLeagueAsync("Europe", "ABA League", context, CancellationToken.None);
+    var result = await provider.GetGamesAsync(league!, season, context, CancellationToken.None);
+
+    Console.WriteLine($"Official ABA League dry-run: Europe: ABA League {season}");
+    Console.WriteLine($"Requests: {context.RequestsUsed}/{context.MaxRequests}; games: {result.Games.Count}; warnings: {result.Warnings.Count}");
+    foreach (var phase in result.Games.GroupBy(game => game.CompetitionPhase).OrderBy(group => group.Key))
+    {
+        Console.WriteLine($"{phase.Key ?? "Unknown phase"}: {phase.Count()} games");
+    }
+    foreach (var game in result.Games.Take(12))
+    {
+        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} [{game.CompetitionRound}] {game.Provenance?.SourceUrl}");
+    }
+    foreach (var warning in result.Warnings.Take(20))
+    {
+        Console.WriteLine($"WARNING: {warning}");
+    }
+
+    return result.Games.Count == 0 ? 2 : 0;
+}
+
+static async Task<int> RunAbaIngestAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var startSeason = Required(values, "--start");
+    var endSeason = values.GetValueOrDefault("--end") ?? startSeason;
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var interval = ParseNonNegative(values, "--interval-ms", 250);
+    var reset = string.Equals(values.GetValueOrDefault("--reset"), "true", StringComparison.OrdinalIgnoreCase);
+    var lowerYear = Math.Min(
+        SeasonLabelNormalizer.ParseStartYear(startSeason),
+        SeasonLabelNormalizer.ParseStartYear(endSeason));
+    var upperYear = Math.Max(
+        SeasonLabelNormalizer.ParseStartYear(startSeason),
+        SeasonLabelNormalizer.ParseStartYear(endSeason));
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Configuration["AbaLeagueOfficial:MinRequestIntervalMilliseconds"] = interval.ToString();
+    if (values.TryGetValue("--connection-string", out var connectionString))
+    {
+        builder.Configuration["ConnectionStrings:Postgres"] = connectionString;
+    }
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
+    await dbContext.Database.MigrateAsync();
+
+    if (reset)
+    {
+        var staleGames = await dbContext.Games
+            .Where(game => game.Source == AbaLeagueOfficialBasketballDataProvider.Source)
+            .ToListAsync();
+        var staleJobs = await dbContext.BackfillJobs
+            .Where(job => job.Provider == AbaLeagueOfficialBasketballDataProvider.Source)
+            .ToListAsync();
+        var staleDecisions = await dbContext.BackfillInspectionDecisions
+            .Where(decision => decision.Provider == AbaLeagueOfficialBasketballDataProvider.Source)
+            .ToListAsync();
+        dbContext.Games.RemoveRange(staleGames);
+        dbContext.BackfillJobs.RemoveRange(staleJobs);
+        dbContext.BackfillInspectionDecisions.RemoveRange(staleDecisions);
+        await dbContext.SaveChangesAsync();
+        Console.WriteLine($"Reset {staleGames.Count} existing ABA official game(s), {staleJobs.Count} job(s), and {staleDecisions.Count} inspection decision(s).");
+    }
+
+    var unrelatedPendingJobs = await dbContext.BackfillJobs
+        .CountAsync(job => job.Status == BackfillJobStatus.Pending &&
+            job.Provider != AbaLeagueOfficialBasketballDataProvider.Source);
+    if (unrelatedPendingJobs > 0)
+    {
+        Console.Error.WriteLine(
+            $"Refusing to start: {unrelatedPendingJobs} unrelated backfill job(s) are pending and would be processed first.");
+        return 2;
+    }
+
+    var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
+    var league = catalog.GetLeagues().Single(candidate =>
+        candidate.Provider == AbaLeagueOfficialBasketballDataProvider.Source &&
+        candidate.Country == "Europe" && candidate.LeagueName == "ABA League");
+    var seasons = catalog.GetSeasonsForLeague(league)
+        .Where(season =>
+        {
+            var year = SeasonLabelNormalizer.ParseStartYear(season);
+            return year >= lowerYear && year <= upperYear;
+        })
+        .OrderByDescending(SeasonLabelNormalizer.ParseStartYear)
+        .ToList();
+    if (seasons.Count == 0)
+    {
+        Console.Error.WriteLine("No official ABA League seasons fall inside the requested range; supported range is 2001-2002 through 2007-2008.");
+        return 1;
+    }
+
+    var completed = await dbContext.BackfillJobs
+        .Where(job => job.Provider == AbaLeagueOfficialBasketballDataProvider.Source &&
+            job.Country == "Europe" && job.LeagueName == "ABA League" &&
+            (job.Status == BackfillJobStatus.Completed || job.Status == BackfillJobStatus.CompletedWithWarnings))
+        .Select(job => job.Season)
+        .ToListAsync();
+    var active = await dbContext.BackfillJobs
+        .Where(job => job.Provider == AbaLeagueOfficialBasketballDataProvider.Source &&
+            job.Country == "Europe" && job.LeagueName == "ABA League" &&
+            (job.Status == BackfillJobStatus.Pending || job.Status == BackfillJobStatus.Running))
+        .Select(job => job.Season)
+        .ToListAsync();
+    var jobs = seasons
+        .Where(season => !completed.Contains(season, StringComparer.OrdinalIgnoreCase) &&
+            !active.Contains(season, StringComparer.OrdinalIgnoreCase))
+        .Select((season, index) => new BackfillJob
+        {
+            Id = Guid.NewGuid(),
+            Provider = AbaLeagueOfficialBasketballDataProvider.Source,
+            Country = "Europe",
+            LeagueName = "ABA League",
+            Season = season,
+            DryRun = false,
+            MaxRequests = maxRequests,
+            Status = BackfillJobStatus.Pending,
+            CreatedAtUtc = DateTime.UtcNow.AddTicks(index),
+            UpdatedAtUtc = DateTime.UtcNow.AddTicks(index)
+        })
+        .ToList();
+    dbContext.BackfillJobs.AddRange(jobs);
+    await dbContext.SaveChangesAsync();
+    Console.WriteLine($"Queued {jobs.Count} official ABA League season(s), newest first; skipped {completed.Count} completed and {active.Count} active season(s).");
+
+    var processor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
+    var processed = 0;
+    while (await processor.TryProcessNextPendingJobAsync(CancellationToken.None))
+    {
+        processed++;
+        Console.WriteLine($"Processed official ABA League job {processed}/{jobs.Count}.");
+    }
+
+    var summary = await dbContext.BackfillJobs
+        .Where(job => job.Provider == AbaLeagueOfficialBasketballDataProvider.Source &&
+            job.Country == "Europe" && job.LeagueName == "ABA League" && seasons.Contains(job.Season))
+        .GroupBy(job => job.Status)
+        .Select(group => new { Status = group.Key, Count = group.Count() })
+        .OrderBy(item => item.Status)
+        .ToListAsync();
+    Console.WriteLine($"Official ABA League ingest processed {processed} jobs. Status: {string.Join(", ", summary.Select(item => $"{item.Status}={item.Count}"))}");
+    return summary.Any(item => item.Status == BackfillJobStatus.Failed) ? 2 : 0;
 }
 
 static async Task<int> RunItalySerieADryRunAsync(string[] args)
@@ -1205,6 +1377,17 @@ static void PrintUsage()
 
         dotnet run --project src/BasketElo.Tools -- acb-ingest \
           --start 2007-2008 --end 2007-2008 \
+          [--max-requests 0] [--interval-ms 250]
+
+        Official ABA League historical dry-run
+
+        dotnet run --project src/BasketElo.Tools -- aba-dry-run \
+          --season 2007-2008 [--max-requests 1] [--interval-ms 250]
+
+        Official ABA League historical ingest (writes local Postgres)
+
+        dotnet run --project src/BasketElo.Tools -- aba-ingest \
+          --start 2007-2008 --end 2001-2002 \
           [--max-requests 0] [--interval-ms 250]
 
         ACB official tournament dry-run

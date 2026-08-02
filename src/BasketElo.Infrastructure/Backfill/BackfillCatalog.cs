@@ -19,8 +19,9 @@ public class BackfillCatalog : IBackfillCatalog
         new("api-sports", "Spain", "Supercopa ACB", "Spain: Supercopa ACB", "2010", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new("api-sports", "Europe", "Euroleague", "International: Euroleague", "2008-2009", EndSeason: "2025-2026", ExcludedSeasons: ["2019-2020"]),
         new("api-sports", "Europe", "Eurocup", "International: EuroCup", "2008-2009", EndSeason: "2025-2026", ExcludedSeasons: ["2019-2020"]),
+        new("aba-official", "Europe", "ABA League", "International: ABA League", "2001-2002", EndSeason: "2007-2008", EloPoolKey: EloPoolKeys.EuropeClubs),
         new("api-sports", "Europe", "ABA League", "International: ABA League", "2008-2009", EndSeason: "2025-2026", ExcludedSeasons: ["2019-2020"]),
-        new("api-sports", "Europe", "ABA Supercup", "International: ABA Supercup", "2017", CompetitionType: "international_cup", EndSeason: "2023"),
+        new("api-sports", "Europe", "ABA Supercup", "International: ABA Supercup", "2017-2018", CompetitionType: "international_cup", ExplicitSeasons: ["2017-2018", "2018-2019", "2019-2020", "2023-2024"]),
         new("api-sports", "Europe", "Alpe Adria Cup", "International: Alpe Adria Cup", "2015", CompetitionType: "international", EndSeason: "2023"),
         new("api-sports", "Europe", "Baltic League", "International: Baltic League", "2009", CompetitionType: "international", EndSeason: "2017"),
         new(

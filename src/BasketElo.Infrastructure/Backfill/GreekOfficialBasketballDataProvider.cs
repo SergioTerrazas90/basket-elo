@@ -21,6 +21,7 @@ public sealed class GreekOfficialBasketballDataProvider(
     public const string EsakeParserVersion = "esake-a1-v1";
     public const string EokCupParserVersion = "eok-cup-v1";
     public const string BasketballReferenceGreekParserVersion = "basketball-reference-greek-a1-v1";
+    public const string WikipediaEarlyLeagueParserVersion = "wikipedia-greek-a1-round-inferred-v1";
     public const string BitzenisParserVersion = "bitzenis-a1-v1";
     public const string SportGrParserVersion = "sportgr-a1-v1";
     public const string WikipediaGapParserVersion = "wikipedia-olympiacos-a1-gap-v1";
@@ -31,6 +32,14 @@ public sealed class GreekOfficialBasketballDataProvider(
     private const int EmptyPlayoffSeriesToStop = 3;
     private const string BasketballReferenceGreekLeague2015Url =
         "https://www.basketball-reference.com/euro/greek-basket-league/2016-schedule.html";
+    private const string GreekWikipediaLeagueTitlePrefix =
+        "Πρωτάθλημα καλαθοσφαίρισης Α1 εθνικής κατηγορίας ανδρών";
+
+    private static readonly int[] InferredRoundDayOffsets =
+    {
+        0, 6, 13, 18, 21, 28, 28, 36, 56, 63, 70, 80, 88,
+        91, 95, 98, 105, 112, 119, 126, 133, 140, 148, 155, 162, 176
+    };
 
     private const string SportGr1997RegularCapture =
         "web/20080528083751id_/http://archive.sport.gr/basket/hellas/a1/";
@@ -215,6 +224,8 @@ public sealed class GreekOfficialBasketballDataProvider(
         var startYear = SeasonLabelNormalizer.ParseStartYear(season);
         return league.SourceLeagueId switch
         {
+            LeagueSourceId when startYear is >= 1986 and <= 1991 =>
+                await GetEarlyWikipediaLeagueGamesAsync(season, startYear, context, cancellationToken),
             LeagueSourceId when startYear is >= 1996 and <= 1998 =>
                 await GetLegacyLeagueGamesAsync(season, startYear, context, cancellationToken),
             LeagueSourceId when startYear == 2015 =>
@@ -229,6 +240,42 @@ public sealed class GreekOfficialBasketballDataProvider(
                 "Complete EOK Cup pages are cataloged for the reviewed seasons; 2003-2004 and the COVID-suspended 2019-2020 edition are excluded.", nameof(season)),
             _ => throw new InvalidOperationException("Greek official provider only supports Greece: A1 and Greek Cup.")
         };
+    }
+
+    private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetEarlyWikipediaLeagueGamesAsync(
+        string season,
+        int startYear,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var sourceUrl = GreekWikipediaLeagueUrl(startYear);
+        var warnings = new List<string>
+        {
+            "Wikipedia supplies the complete score matrix; dates are inferred from the previous era's late-September round cadence because the Olympiacos archive publishes placeholder dates for this period.",
+            "Playoff scores are not imported because the source does not provide trustworthy playoff dates."
+        };
+        if (!context.CanUseRequest())
+        {
+            return (Array.Empty<BasketballProviderGame>(), true, warnings);
+        }
+
+        var html = await FetchStringAsync(sourceUrl, context, cancellationToken);
+        var parsed = ParseWikipediaEarlyLeague(html, season, sourceUrl);
+        var expected = parsed.Count;
+        if (expected == 0)
+        {
+            warnings.Add("Wikipedia exposed no complete regular-season score matrix.");
+            var matrix = ParseWikipediaRegularSeasonMatrix(html);
+            if (matrix.Count > 0)
+            {
+                warnings.Add($"Parsed matrix has {matrix.Count} scores across teams: {string.Join(", ", matrix.SelectMany(game => new[] { game.Home, game.Away }).Distinct(StringComparer.Ordinal))}.");
+            }
+        }
+        else
+        {
+            warnings.Add($"Parsed {expected} regular-season games from the Wikipedia score matrix; round dates are inferred, not source-published.");
+        }
+        return (parsed, false, warnings);
     }
 
     private async Task<(IReadOnlyCollection<BasketballProviderGame>, bool, IReadOnlyCollection<string>)> GetBasketballReferenceGreekLeagueGamesAsync(
@@ -859,6 +906,12 @@ public sealed class GreekOfficialBasketballDataProvider(
     private static string ResolveLegacyUrl(string sourceUrl, string href) =>
         Uri.TryCreate(new Uri(sourceUrl), href, out var resolved) ? resolved.ToString() : sourceUrl;
 
+    private static string GreekWikipediaLeagueUrl(int startYear)
+    {
+        var title = $"{GreekWikipediaLeagueTitlePrefix} {startYear}-{startYear + 1}";
+        return $"https://el.wikipedia.org/wiki/{Uri.EscapeDataString(title.Replace(' ', '_'))}";
+    }
+
     private static void AddLegacyGame(
         ICollection<BasketballProviderGame> games,
         string season,
@@ -923,10 +976,10 @@ public sealed class GreekOfficialBasketballDataProvider(
                 {
                     continue;
                 }
-                var home = CanonicalizeTeamName(cells[0]);
+                var home = CanonicalizeTeamName(CanonicalizeTeamName(cells[0]));
                 for (var column = 1; column <= teamCount; column++)
                 {
-                    var score = Regex.Match(cells[column], @"^(\d{1,3})\s*[-–—]\s*(\d{1,3})$");
+                    var score = Regex.Match(cells[column], @"^(\d{1,3})\s*[-\u2212–—]\s*(\d{1,3})$");
                     if (!score.Success || !short.TryParse(score.Groups[1].Value, out var homeScore) ||
                         !short.TryParse(score.Groups[2].Value, out var awayScore) || homeScore == awayScore)
                     {
@@ -934,7 +987,7 @@ public sealed class GreekOfficialBasketballDataProvider(
                     }
                     parsed.Add(new WikipediaMatrixGame(
                         home,
-                        CanonicalizeTeamName(headers[column]),
+                        CanonicalizeTeamName(CanonicalizeTeamName(headers[column])),
                         homeScore,
                         awayScore));
                 }
@@ -945,6 +998,127 @@ public sealed class GreekOfficialBasketballDataProvider(
             }
         }
         return candidates.OrderByDescending(candidate => candidate.Count).FirstOrDefault() ?? [];
+    }
+
+    internal static IReadOnlyList<BasketballProviderGame> ParseWikipediaEarlyLeague(
+        string html,
+        string season,
+        string sourceUrl)
+    {
+        var matrix = ParseWikipediaRegularSeasonMatrix(html);
+        if (matrix.Count == 0)
+        {
+            return [];
+        }
+
+        var teams = matrix
+            .SelectMany(game => new[] { game.Home, game.Away })
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (teams.Length < 2 || matrix.Count != teams.Length * (teams.Length - 1) || teams.Length % 2 != 0)
+        {
+            return [];
+        }
+
+        var firstHalfRounds = BuildCircleRoundRobin(teams);
+        var pairRounds = firstHalfRounds
+            .SelectMany((round, index) => round.Select(pair =>
+                (Key: UnorderedTeamPairKey(pair.First, pair.Second), Round: index + 1)))
+            .ToDictionary(item => item.Key, item => item.Round, StringComparer.Ordinal);
+        var halfSeasonRounds = teams.Length - 1;
+        var startYearMatch = Regex.Match(season, @"^(\d{4})-");
+        if (!startYearMatch.Success || !int.TryParse(startYearMatch.Groups[1].Value, out var startYear))
+        {
+            return [];
+        }
+
+        var revision = Hash(html);
+        var games = new List<BasketballProviderGame>(matrix.Count);
+        foreach (var group in matrix.GroupBy(game => UnorderedTeamPairKey(game.Home, game.Away), StringComparer.Ordinal))
+        {
+            if (!pairRounds.TryGetValue(group.Key, out var firstRound) || group.Count() != 2)
+            {
+                return [];
+            }
+
+            var directedGames = group
+                .OrderBy(game => NormalizeKey(game.Home), StringComparer.Ordinal)
+                .ThenBy(game => NormalizeKey(game.Away), StringComparer.Ordinal)
+                .ToArray();
+            for (var index = 0; index < directedGames.Length; index++)
+            {
+                var game = directedGames[index];
+                var round = firstRound + (index * halfSeasonRounds);
+                var date = InferEarlyRoundDate(startYear, round);
+                games.Add(new BasketballProviderGame(
+                    Source,
+                    $"wikipedia-a1:{startYear}:{round:D2}:{Slug(game.Home)}:{Slug(game.Away)}",
+                    DateTime.SpecifyKind(date.Date.AddHours(12), DateTimeKind.Utc),
+                    "finished",
+                    $"wikipedia:{Slug(game.Home)}",
+                    game.Home,
+                    $"wikipedia:{Slug(game.Away)}",
+                    game.Away,
+                    game.HomeScore,
+                    game.AwayScore,
+                    new BasketballProviderGameProvenance(
+                        sourceUrl,
+                        season,
+                        DateTime.UtcNow,
+                        WikipediaEarlyLeagueParserVersion,
+                        revision),
+                    CompetitionPhase: "Regular Season",
+                    CompetitionRound: $"Round {round}"));
+            }
+        }
+
+        return games
+            .OrderBy(game => game.GameDateTimeUtc)
+            .ThenBy(game => game.SourceGameId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<IReadOnlyList<(string First, string Second)>> BuildCircleRoundRobin(
+        IReadOnlyList<string> teams)
+    {
+        var rotating = teams.Skip(1).ToList();
+        var rounds = new List<IReadOnlyList<(string First, string Second)>>();
+        for (var round = 0; round < teams.Count - 1; round++)
+        {
+            var line = new List<string> { teams[0] };
+            line.AddRange(rotating);
+            var pairs = new List<(string First, string Second)>();
+            for (var index = 0; index < teams.Count / 2; index++)
+            {
+                pairs.Add((line[index], line[^(index + 1)]));
+            }
+            rounds.Add(pairs);
+
+            var last = rotating[^1];
+            rotating.RemoveAt(rotating.Count - 1);
+            rotating.Insert(0, last);
+        }
+        return rounds;
+    }
+
+    private static DateTime InferEarlyRoundDate(int startYear, int round)
+    {
+        var anchor = new DateTime(startYear, 9, 30);
+        while (anchor.DayOfWeek != DayOfWeek.Saturday)
+        {
+            anchor = anchor.AddDays(-1);
+        }
+        var offsetIndex = Math.Clamp(round - 1, 0, InferredRoundDayOffsets.Length - 1);
+        return anchor.AddDays(InferredRoundDayOffsets[offsetIndex]);
+    }
+
+    private static string UnorderedTeamPairKey(string first, string second)
+    {
+        var firstKey = NormalizeKey(first);
+        var secondKey = NormalizeKey(second);
+        return string.CompareOrdinal(firstKey, secondKey) < 0
+            ? $"{firstKey}|{secondKey}"
+            : $"{secondKey}|{firstKey}";
     }
 
     internal static IReadOnlyDictionary<int, DateTime> ParseOlympiacosRegularSeasonRoundDates(
@@ -1368,6 +1542,25 @@ public sealed class GreekOfficialBasketballDataProvider(
         {
             "aek athens" or "aek" => "AEK Athens",
             "paok thessaloniki" => "PAOK",
+            "pgss" => "Panionios",
+            "pgs" => "Panellinios",
+            "pani" => "Panionios",
+            "hra" => "Iraklis",
+            "ira" => "Iraklis",
+            "pao" => "Panathinaikos",
+            "osfp" => "Olympiacos",
+            "oly" => "Olympiacos",
+            "apol" => "Apollon Patras",
+            "ilys" => "Ilisiakos",
+            "ily" => "Ilisiakos",
+            "ion" or "ionikos n" => "Ionikos NF",
+            "spor" => "Sporting",
+            "fil" => "Filippos Verias",
+            "esp" => "Esperos",
+            "pagk" => "Pagrati",
+            "per" => "Peristeri",
+            "pap" => "Papagou",
+            "daf" => "Dafni",
             "olympiacos piraeus" => "Olympiacos",
             "panathinaikos athens" => "Panathinaikos",
             "aris thessaloniki" => "Aris",

@@ -18,9 +18,15 @@ public class BackfillCatalogTests
         var leagueSeasons = catalog.GetSeasonsForLeague(league).ToList();
         var cupSeasons = catalog.GetSeasonsForLeague(cup).ToList();
 
-        Assert.Equal(17, leagueSeasons.Count);
-        Assert.Equal("1992-1993", leagueSeasons[0]);
+        Assert.Equal(23, leagueSeasons.Count);
+        Assert.Equal("1986-1987", leagueSeasons[0]);
         Assert.Equal("2015-2016", leagueSeasons[^1]);
+        Assert.Contains("1986-1987", leagueSeasons);
+        Assert.Contains("1987-1988", leagueSeasons);
+        Assert.Contains("1988-1989", leagueSeasons);
+        Assert.Contains("1989-1990", leagueSeasons);
+        Assert.Contains("1990-1991", leagueSeasons);
+        Assert.Contains("1991-1992", leagueSeasons);
         Assert.Contains("1993-1994", leagueSeasons);
         Assert.Contains("1994-1995", leagueSeasons);
         Assert.Contains("1995-1996", leagueSeasons);

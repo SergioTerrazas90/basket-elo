@@ -257,7 +257,7 @@ public class BackfillCatalog : IBackfillCatalog
             .ToArray();
 
     private static string[] GreekLeagueHistoricalSeasons()
-        => new[] { 1992, 1993, 1994, 1995 }
+        => Enumerable.Range(1986, 10)
             .Concat(Enumerable.Range(1996, 12))
             .Concat(new[] { 2015 })
             .Select(year => $"{year}-{year + 1}")

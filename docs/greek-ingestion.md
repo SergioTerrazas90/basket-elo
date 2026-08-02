@@ -5,9 +5,12 @@ flight and Greek Cup before modern API-Sports coverage begins in 2008-2009.
 
 ## Coverage decision
 
-The continuous historical catalog starts at 1992-1993 and the reviewed archive
+The continuous historical catalog starts at 1986-1987 and the reviewed archive
 repairs now also include 2015-2016. Modern API-Sports coverage remains the
-fallback for the seasons in between.
+fallback for the seasons in between. The 1986-1987 through 1991-1992 seasons
+come from complete Greek Wikipedia score matrices; their round dates are
+inferred from the late-September start and cadence established by 1992-1993
+because the Olympiacos archive exposes placeholder dates for this period.
 The former 1993-1994 through 1995-1996 gap is now filled from the official ESAKE
 archive and matching official EOK Cup pages. The apparent gap before ESAKE's
 continuous 1999-2000 run was filled from two contemporary Greek archives:
@@ -15,6 +18,7 @@ Bitzenis for 1996-1997 and archived Sport.gr pages for 1997-1998 and 1998-1999.
 
 | Competition | Season span | Provider | Notes |
 | --- | --- | --- | --- |
+| A1 / Greek Basket League | 1986-1987 through 1991-1992 | Greek Wikipedia | Complete regular-season matrices: 90 games per 10-team season (1986-87 through 1988-89), then 132 games per 12-team season (1989-90 through 1991-92). Dates and rounds are inferred; playoffs are excluded. |
 | A1 / Greek Basket League | 1992-1993 | ESAKE, Greek Wikipedia, and Olympiacos BC | ESAKE supplies dated rounds 1-22 (154 games). Greek Wikipedia's complete score matrix supplies the 28 reverse fixtures in rounds 23-26, dated from Olympiacos' official round schedule. All 182 regular-season games are ingested; undated playoffs are excluded. |
 | A1 / Greek Basket League | 1993-1994 through 1995-1996 | ESAKE official results archive | 1993-1994 and 1994-1995 expose 181 regular-season games plus dated playoffs; the 1995-1996 archive exposes only eight regular-season rounds (56 games), with no reliable source rows for the remainder. |
 | A1 / Greek Basket League | 1996-1997 | Bitzenis historical results | All 182 regular-season games. The available playoff summary has no game dates, so those playoff rows are not ingested. |
@@ -31,7 +35,7 @@ Bitzenis for 1996-1997 and archived Sport.gr pages for 1997-1998 and 1998-1999.
 Official 20-0 administrative awards are not treated as played games. Historical
 dates without a trustworthy tip-off time are stored at 12:00 UTC.
 
-The reviewed historical production coverage is 3,362 A1 games across seventeen
+The reviewed historical production coverage is 4,028 A1 games across twenty-three
 seasons and 703 Cup games across seventeen editions (including the 2009-2010
 and 2015-2016 Cup repairs plus the 2015-2016 league repair). The newly ingested
 seasons are intentionally recorded at the source's available game counts:
@@ -41,6 +45,12 @@ filled with guessed scores.
 
 | Season | A1 games | Greek Cup games |
 | --- | ---: | ---: |
+| 1986-1987 | 90 (regular season; inferred dates) | Not ingested: no league-linked Cup source |
+| 1987-1988 | 90 (regular season; inferred dates) | Not ingested: no league-linked Cup source |
+| 1988-1989 | 90 (regular season; inferred dates) | Not ingested: no league-linked Cup source |
+| 1989-1990 | 132 (regular season; inferred dates) | Not ingested: no league-linked Cup source |
+| 1990-1991 | 132 (regular season; inferred dates) | Not ingested: no league-linked Cup source |
+| 1991-1992 | 132 (regular season; inferred dates) | Not ingested: no league-linked Cup source |
 | 1992-1993 | 182 | 39 (two 20-0 administrative awards excluded) |
 | 1993-1994 | 211 (181 regular season, 30 playoffs) | 40 (one 20-0 award excluded) |
 | 1994-1995 | 216 (181 regular season, 35 playoffs) | 42 |
@@ -89,6 +99,10 @@ filled with guessed scores.
 - The 2019-2020 EOK Cup page is not cataloged because it ends at the semifinals; this is treated as a COVID-suspended/incomplete edition rather than a complete Cup season.
 - The provider rejects tied scores and 20-0 administrative awards as unplayed
   or non-competitive records.
+- Early A1 dates (1986-1987 through 1991-1992) are explicitly inferred from
+  the 1992-1993 round cadence. They are stored at 12:00 UTC and are not
+  source-published tip-off times; those seasons contain regular-season matrix
+  games only, with no playoff records imported.
 - The 1996-1997 EOK page's incomplete game 17 is excluded. Its malformed Final
   Four headings are normalized to 12 April 1997 for the semifinals and 13 April
   1997 for the third-place game and final.

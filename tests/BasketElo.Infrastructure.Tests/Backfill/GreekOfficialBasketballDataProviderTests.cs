@@ -175,6 +175,29 @@ public sealed class GreekOfficialBasketballDataProviderTests
     }
 
     [Fact]
+    public void EarlyWikipediaLeagueInfersRoundDatesAndKeepsRegularSeasonOnly()
+    {
+        const string html = """
+            <table><tbody>
+              <tr><th>Home / Away</th><th>Alpha</th><th>Beta</th><th>Gamma</th><th>Delta</th></tr>
+              <tr><th>Alpha</th><td></td><td>80-70</td><td>75-65</td><td>81-70</td></tr>
+              <tr><th>Beta</th><td>72-78</td><td></td><td>69-64</td><td>77-71</td></tr>
+              <tr><th>Gamma</th><td>66-74</td><td>71-68</td><td></td><td>83-80</td></tr>
+              <tr><th>Delta</th><td>70-82</td><td>73-79</td><td>88-76</td><td></td></tr>
+            </tbody></table>
+            """;
+
+        var games = GreekOfficialBasketballDataProvider.ParseWikipediaEarlyLeague(
+            html, "1986-1987", "https://el.wikipedia.org/wiki/example");
+
+        Assert.Equal(12, games.Count);
+        Assert.Equal(6, games.Select(game => game.CompetitionRound).Distinct().Count());
+        Assert.Contains(games, game => game.CompetitionRound == "Round 1" &&
+            game.GameDateTimeUtc == new DateTime(1986, 9, 27, 12, 0, 0, DateTimeKind.Utc));
+        Assert.All(games, game => Assert.Equal("Regular Season", game.CompetitionPhase));
+    }
+
+    [Fact]
     public void OlympiacosScheduleIgnoresOutOfSeasonPlaceholderDates()
     {
         const string html = """

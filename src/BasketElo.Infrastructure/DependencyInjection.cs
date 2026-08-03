@@ -104,6 +104,23 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(45);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
         });
+        services.AddHttpClient<WikipediaEuroleagueHistoricalDataProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://en.wikipedia.org");
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
+        services.AddHttpClient<FlashscoreEuroleagueHistoricalDataProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://www.flashscore.com");
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
+        services.AddHttpClient<EuroleagueRHistoricalDataProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
         services.AddHttpClient<ItalianCupWikipediaBasketballDataProvider>((serviceProvider, client) =>
         {
             var providerOptions = serviceProvider
@@ -179,6 +196,12 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<FibaBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<WikipediaEuroBasketQualificationDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<WikipediaEuroleagueHistoricalDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<FlashscoreEuroleagueHistoricalDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<EuroleagueRHistoricalDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<ItalianCupWikipediaBasketballDataProvider>());
         services.AddScoped<GermanCupWikipediaBasketballDataProvider>();

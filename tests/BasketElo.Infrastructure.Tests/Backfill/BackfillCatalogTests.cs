@@ -355,4 +355,48 @@ public class BackfillCatalogTests
         Assert.Equal(["2021", "2025"], catalog.GetSeasonsForLeague(source));
         Assert.Equal(EloPoolKeys.NationalTeams, source.EloPoolKey);
     }
+
+    [Fact]
+    public void FibaEuropeanChampionsCupUsesTwoYearSeasonsAndEuropeanClubPool()
+    {
+        var catalog = new BackfillCatalog();
+        var source = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Europe" &&
+            league.LeagueName == "FIBA European Champions Cup");
+
+        Assert.Equal(EloPoolKeys.EuropeClubs, source.EloPoolKey);
+        Assert.Equal("1958-1959", source.StartSeason);
+        Assert.Equal("1999-2000", source.EndSeason);
+        Assert.Equal(42, catalog.GetSeasonsForLeague(source).Count);
+        Assert.DoesNotContain("2000-2001", catalog.GetSeasonsForLeague(source));
+    }
+
+    [Fact]
+    public void EuroleagueBridgeUsesFlashscoreFrom2000Through2007()
+    {
+        var catalog = new BackfillCatalog();
+        var source = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == EuroleagueRHistoricalDataProvider.Source &&
+            league.Country == "Europe" &&
+            league.LeagueName == "Euroleague");
+
+        Assert.Equal(EloPoolKeys.EuropeClubs, source.EloPoolKey);
+        Assert.Equal("2000-2001", source.StartSeason);
+        Assert.Equal("2007-2008", source.EndSeason);
+        Assert.Equal(8, catalog.GetSeasonsForLeague(source).Count);
+    }
+
+    [Fact]
+    public void FibaSuproLeagueIsConfiguredAsTheSingle2000Season()
+    {
+        var catalog = new BackfillCatalog();
+        var source = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Europe" &&
+            league.LeagueName == "FIBA SuproLeague");
+
+        Assert.Equal(EloPoolKeys.EuropeClubs, source.EloPoolKey);
+        Assert.Equal(["2000-2001"], catalog.GetSeasonsForLeague(source));
+    }
 }

@@ -14,6 +14,7 @@ public sealed class BasketballReferenceBasketballDataProvider(
 {
     public const string Source = "basketball-reference";
     public const string ParserVersion = "basketball-reference-schedule-v1";
+    public const string EuroleagueParserVersion = "basketball-reference-euroleague-schedules-v1";
 
     public string SourceKey => Source;
 
@@ -26,7 +27,10 @@ public sealed class BasketballReferenceBasketballDataProvider(
         var league = string.Equals(country, "United States", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(leagueName, "NBA", StringComparison.OrdinalIgnoreCase)
                 ? new BasketballProviderLeague(Source, "NBA", "NBA", "USA", "end_year")
-                : null;
+                : string.Equals(country, "Europe", StringComparison.OrdinalIgnoreCase) &&
+                  string.Equals(leagueName, "Euroleague", StringComparison.OrdinalIgnoreCase)
+                    ? new BasketballProviderLeague(Source, "Euroleague", "Euroleague", "EUR", "end_year")
+                    : null;
         return Task.FromResult(league);
     }
 
@@ -36,6 +40,11 @@ public sealed class BasketballReferenceBasketballDataProvider(
         BackfillExecutionContext context,
         CancellationToken cancellationToken)
     {
+        if (string.Equals(league.SourceLeagueId, "Euroleague", StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetEuroleagueGamesAsync(season, context, cancellationToken);
+        }
+
         if (!string.Equals(league.Source, Source, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(league.SourceLeagueId, "NBA", StringComparison.OrdinalIgnoreCase))
         {
@@ -63,6 +72,194 @@ public sealed class BasketballReferenceBasketballDataProvider(
         }
 
         return (games, false, warnings);
+    }
+
+    private async Task<(IReadOnlyCollection<BasketballProviderGame> Games, bool HasMorePages, IReadOnlyCollection<string> Warnings)> GetEuroleagueGamesAsync(
+        string season,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var warnings = new List<string>();
+        var canonicalSeason = SeasonLabelNormalizer.ToFullSeasonLabel(season);
+        var pieces = canonicalSeason.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (pieces.Length != 2 || !int.TryParse(pieces[0], out var startYear) || !int.TryParse(pieces[1], out var endYear))
+        {
+            throw new ArgumentException($"Euroleague season '{season}' must be a full two-year label.", nameof(season));
+        }
+
+        var standingsPage = await LoadPageAsync(
+            new SourcePage($"euro/euroleague/{endYear}.html", true, "Euroleague season standings"),
+            context,
+            warnings,
+            cancellationToken);
+        if (standingsPage is null)
+        {
+            return ([], false, warnings);
+        }
+
+        var teams = ParseEuroleagueTeams(standingsPage.Html);
+        if (teams.Count == 0)
+        {
+            warnings.Add($"No Euroleague team links were found on {standingsPage.SourceUrl} (HTML length {standingsPage.Html.Length}).");
+            return ([], false, warnings);
+        }
+
+        var candidates = new List<EuroleagueGameCandidate>();
+        foreach (var team in teams)
+        {
+            var page = await LoadPageAsync(
+                new SourcePage($"euro/schedules/{team.Slug}/{endYear}.html", false, $"{team.Name} Euroleague schedule"),
+                context,
+                warnings,
+                cancellationToken);
+            if (page is not null)
+            {
+                ParseEuroleagueSchedulePage(page, team, candidates, warnings);
+            }
+        }
+
+        var games = candidates
+            .GroupBy(candidate => candidate.MatchKey, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .Select(candidate =>
+            {
+                var identity = $"{canonicalSeason}|{candidate.MatchKey}";
+                var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))[..24].ToLowerInvariant();
+                return new BasketballProviderGame(
+                    Source,
+                    $"bref-euroleague-{hash}",
+                    DateTime.SpecifyKind(candidate.Date.Date.AddHours(12), DateTimeKind.Utc),
+                    "finished",
+                    candidate.HomeTeamId,
+                    candidate.HomeTeamName,
+                    candidate.AwayTeamId,
+                    candidate.AwayTeamName,
+                    candidate.HomeScore,
+                    candidate.AwayScore,
+                    new BasketballProviderGameProvenance(
+                        candidate.SourceUrl,
+                        endYear.ToString(CultureInfo.InvariantCulture),
+                        candidate.FetchedAtUtc,
+                        EuroleagueParserVersion,
+                        candidate.Revision),
+                    CompetitionPhase: "Euroleague",
+                    CompetitionRound: null);
+            })
+            .OrderBy(game => game.GameDateTimeUtc)
+            .ThenBy(game => game.SourceGameId, StringComparer.Ordinal)
+            .ToArray();
+
+        warnings.Add($"Basketball-Reference parsed {games.Length} distinct Euroleague game(s) for {canonicalSeason} from {teams.Count} team schedule(s).");
+        return (games, false, warnings);
+    }
+
+    private static IReadOnlyCollection<EuroleagueTeam> ParseEuroleagueTeams(string html)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var teams = new Dictionary<string, EuroleagueTeam>(StringComparer.OrdinalIgnoreCase);
+        foreach (var anchor in document.DocumentNode.SelectNodes("//a[@href]") ?? Enumerable.Empty<HtmlNode>())
+        {
+            var href = anchor.GetAttributeValue("href", string.Empty);
+            if (!href.Contains("/euro/teams/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            var match = System.Text.RegularExpressions.Regex.Match(
+                href,
+                @"/euro/teams/(?<slug>[^/]+)/",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var name = CleanText(anchor.InnerText);
+            if (!match.Success || !href.Contains("_euroleague.html", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var slug = match.Groups["slug"].Value;
+            teams[slug] = new EuroleagueTeam(slug, name, $"bref-team:{slug}");
+        }
+
+        if (teams.Count == 0)
+        {
+            foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(
+                         html,
+                         @"<a\b[^>]*href=['""](?<href>[^'""]*/euro/teams/(?<slug>[^/'""]+)/[^'""]*_euroleague\.html)['""][^>]*>(?<name>.*?)</a>",
+                         System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline))
+            {
+                var name = CleanText(System.Text.RegularExpressions.Regex.Replace(match.Groups["name"].Value, "<[^>]+>", " "));
+                var slug = match.Groups["slug"].Value;
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    teams[slug] = new EuroleagueTeam(slug, name, $"bref-team:{slug}");
+                }
+            }
+        }
+
+        return teams.Values.OrderBy(team => team.Slug, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static void ParseEuroleagueSchedulePage(
+        LoadedPage page,
+        EuroleagueTeam team,
+        ICollection<EuroleagueGameCandidate> candidates,
+        ICollection<string> warnings)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(page.Html);
+        var rows = document.DocumentNode.SelectNodes("//tr[.//*[@data-stat='date_game_full']]")?.ToList() ?? [];
+        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+        {
+            var row = rows[rowIndex];
+            var dateText = CleanText(row.SelectSingleNode(".//*[@data-stat='date_game_full']")?.InnerText);
+            if (dateText.Equals("Date", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            if (!DateTime.TryParse(dateText, CultureInfo.GetCultureInfo("en-US"), DateTimeStyles.AllowWhiteSpaces, out var gameDate))
+            {
+                warnings.Add($"Skipped {team.Name} Euroleague row {rowIndex + 1}: invalid date '{dateText}'.");
+                continue;
+            }
+
+            var location = CleanText(row.SelectSingleNode(".//*[@data-stat='game_location']")?.InnerText);
+            var opponentNode = row.SelectSingleNode(".//*[@data-stat='opp_name_link']");
+            var opponentAnchor = opponentNode?.SelectSingleNode(".//a[@href]");
+            var opponentName = CleanText(opponentNode?.InnerText);
+            var opponentHref = opponentAnchor?.GetAttributeValue("href", string.Empty) ?? string.Empty;
+            var opponentMatch = System.Text.RegularExpressions.Regex.Match(opponentHref, @"/euro/teams/(?<slug>[^/]+)/");
+            if (string.IsNullOrWhiteSpace(opponentName) || !opponentMatch.Success)
+            {
+                warnings.Add($"Skipped {team.Name} Euroleague row {rowIndex + 1}: opponent is missing.");
+                continue;
+            }
+
+            var opponentSlug = opponentMatch.Groups["slug"].Value;
+            var teamScore = Score(row.SelectSingleNode(".//*[@data-stat='pts']"));
+            var opponentScore = Score(row.SelectSingleNode(".//*[@data-stat='opp_pts']"));
+            if (!teamScore.HasValue || !opponentScore.HasValue)
+            {
+                warnings.Add($"Skipped {team.Name} Euroleague row {rowIndex + 1}: final score is missing.");
+                continue;
+            }
+
+            var isAway = location.Equals("@", StringComparison.Ordinal);
+            var home = isAway ? new EuroleagueTeam(opponentSlug, opponentName, $"bref-team:{opponentSlug}") : team;
+            var away = isAway ? team : new EuroleagueTeam(opponentSlug, opponentName, $"bref-team:{opponentSlug}");
+            var homeScore = isAway ? opponentScore.Value : teamScore.Value;
+            var awayScore = isAway ? teamScore.Value : opponentScore.Value;
+            candidates.Add(new EuroleagueGameCandidate(
+                gameDate,
+                home.Id,
+                home.Name,
+                away.Id,
+                away.Name,
+                homeScore,
+                awayScore,
+                $"{gameDate:yyyy-MM-dd}|{home.Id}|{away.Id}|{homeScore}|{awayScore}",
+                page.SourceUrl,
+                page.FetchedAtUtc,
+                page.Revision));
+        }
     }
 
     public static string ToSourceSeasonKey(string season) => GetSeasonSource(season).SourceKey;
@@ -342,6 +539,19 @@ public sealed class BasketballReferenceBasketballDataProvider(
         string RelativePath,
         string SourceUrl,
         string Html,
+        DateTime FetchedAtUtc,
+        string Revision);
+    private sealed record EuroleagueTeam(string Slug, string Name, string Id);
+    private sealed record EuroleagueGameCandidate(
+        DateTime Date,
+        string HomeTeamId,
+        string HomeTeamName,
+        string AwayTeamId,
+        string AwayTeamName,
+        short HomeScore,
+        short AwayScore,
+        string MatchKey,
+        string SourceUrl,
         DateTime FetchedAtUtc,
         string Revision);
 }

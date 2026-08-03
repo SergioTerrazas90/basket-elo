@@ -127,6 +127,68 @@ public sealed class FibaBasketballDataProviderTests
         Assert.Equal(1, handler.RequestCount);
     }
 
+    [Fact]
+    public async Task ResolvesEuropeanChampionsCupUsingEndYearEditionAndParsesNumericGameLink()
+    {
+        var handler = new EuropeanFixtureHandler();
+        var provider = new FibaBasketballDataProvider(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "Europe",
+            "FIBA European Champions Cup",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+        var result = await provider.GetGamesAsync(
+            league!,
+            "1958-1959",
+            new BackfillExecutionContext(2, 0),
+            CancellationToken.None);
+
+        var game = Assert.Single(result.Games);
+        Assert.Equal("9001", game.SourceGameId);
+        Assert.Equal("RIGA", game.SourceHomeTeamId);
+        Assert.Equal("ACAD", game.SourceAwayTeamId);
+        Assert.Equal((short)86, game.HomeScore);
+        Assert.Equal((short)73, game.AwayScore);
+        Assert.Equal("1959:/en/history/112-fiba-mens-european-club-competitions-tier-1/9089/games", game.Provenance?.SourceSeasonKey);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task ParsesHistoricEmbeddedGameWhenFibaTeamCodesAreMissing()
+    {
+        var handler = new HistoricEmbeddedFixtureHandler();
+        var provider = new FibaBasketballDataProvider(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "Europe",
+            "FIBA European Champions Cup",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+        var result = await provider.GetGamesAsync(
+            league!,
+            "1995-1996",
+            new BackfillExecutionContext(2, 0),
+            CancellationToken.None);
+
+        var game = Assert.Single(result.Games);
+        Assert.Equal("21213", game.SourceGameId);
+        Assert.Equal("FIBA:29381", game.SourceHomeTeamId);
+        Assert.Equal("Vita", game.HomeTeamName);
+        Assert.Equal("FIBA:28445", game.SourceAwayTeamId);
+        Assert.Equal("BC Zalgiris", game.AwayTeamName);
+        Assert.Equal((short)70, game.HomeScore);
+        Assert.Equal((short)78, game.AwayScore);
+        Assert.Equal("Preliminary Round I", game.CompetitionPhase);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
     private sealed class FixtureHandler : HttpMessageHandler
     {
         public int RequestCount { get; private set; }
@@ -236,6 +298,69 @@ public sealed class FibaBasketballDataProviderTests
             </div></div>
             <script>
             {"gameId":77098,"teamA":{"code":"RWA","officialName":"Rwanda"},"teamB":{"code":"KEN","officialName":"Kenya"},"teamAScore":72,"teamBScore":69,"gameDateTimeUTC":"2017-03-12T12:45:00","round":{"roundCode":"F-QR","roundName":"Zone 5 - Qualifiers"}}
+            </script>
+            """;
+    }
+
+    private sealed class EuropeanFixtureHandler : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            var content = request.RequestUri?.AbsolutePath.EndsWith("/games", StringComparison.Ordinal) == true
+                ? GamesHtml
+                : HistoryHtml;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(content)
+            });
+        }
+
+        private const string HistoryHtml = """
+            <table><tbody>
+              <tr><td>1959</td><td><a href="/en/history/112-fiba-mens-european-club-competitions-tier-1/9089">1959</a></td></tr>
+            </tbody></table>
+            """;
+
+        private const string GamesHtml = """
+            <div class="date"><div>4 November 1958</div></div>
+            <div class="games"><div data-testid="ui-game-card">
+              <a href="/en/history/112-fiba-mens-european-club-competitions-tier-1/9089/games/9001">
+                <div>Final · Finals</div><div>Final</div>
+                <div class="wa01avm"><div class="wa01avq">RIGA</div><div class="wa01avo">86</div></div>
+                <div class="wa01avm"><div class="wa01avq">ACAD</div><div class="wa01avo">73</div></div>
+              </a>
+            </div></div>
+            """;
+    }
+
+    private sealed class HistoricEmbeddedFixtureHandler : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            var content = request.RequestUri?.AbsolutePath.EndsWith("/games", StringComparison.Ordinal) == true
+                ? GamesHtml
+                : HistoryHtml;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(content)
+            });
+        }
+
+        private const string HistoryHtml = """
+            <table><tbody>
+              <tr><td>1996</td><td><a href="/en/history/112-fiba-mens-european-club-competitions-tier-1/2163">1996</a></td></tr>
+            </tbody></table>
+            """;
+
+        private const string GamesHtml = """
+            <script>
+            {"gameId":21213,"teamA":{"teamId":29381,"organisationId":778,"code":null,"officialName":"\"VITA\" TBILISI","shortName":"Vita"},"teamB":{"teamId":28445,"organisationId":668,"code":null,"officialName":"BC ZALGIRIS KAUNAS","shortName":"BC Zalgiris"},"teamAScore":70,"teamBScore":78,"gameDateTimeUTC":"1995-09-07T00:00:00","round":{"roundCode":"PR1","roundName":"Preliminary Round I"}}
             </script>
             """;
     }

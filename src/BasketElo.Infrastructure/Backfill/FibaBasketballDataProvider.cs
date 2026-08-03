@@ -33,6 +33,10 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         new Dictionary<string, (string, string, string?)>(StringComparer.OrdinalIgnoreCase)
         {
             ["Europe:FIBA EuroBasket"] = ("208-fiba-eurobasket", "FIBA EuroBasket", "EUR"),
+            ["Europe:FIBA European Champions Cup"] = ("112-fiba-mens-european-club-competitions-tier-1", "FIBA European Champions Cup / EuroLeague predecessor", "EUR"),
+            // Keep the SuproLeague alias distinct from the Champions Cup alias even
+            // though FIBA publishes both editions in the same history family.
+            ["Europe:FIBA SuproLeague"] = ("112-fiba-mens-european-club-competitions-tier-1|suproleague", "FIBA SuproLeague", "EUR"),
             ["Europe:FIBA EuroBasket Pre-Qualifiers"] = ("204-fiba-eurobasket-pre-qualifiers", "FIBA EuroBasket Pre-Qualifiers", "EUR"),
             ["Europe:FIBA EuroBasket Qualifiers"] = ("205-fiba-eurobasket-qualifiers", "FIBA EuroBasket Qualifiers", "EUR"),
             ["Europe:EuroBasket Qualifiers"] = ("205-fiba-eurobasket-qualifiers", "FIBA EuroBasket Qualifiers", "EUR"),
@@ -83,11 +87,12 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         var warnings = new List<string>();
         var (historyFamily, variant) = ParseFamily(league.SourceLeagueId);
         var historyPath = $"/en/history/{historyFamily}";
+        var archiveYear = IsEuropeanChampionsCup(historyFamily) ? year + 1 : year;
         var editionPaths = KnownEditionPaths(historyFamily, variant, year);
         if (editionPaths is null)
         {
             var history = await GetPageAsync(historyPath, context, cancellationToken);
-            editionPaths = FindEditionPaths(history.Content, historyFamily, year);
+            editionPaths = FindEditionPaths(history.Content, historyFamily, archiveYear);
         }
 
         if (editionPaths.Count == 0)
@@ -109,7 +114,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             try
             {
                 var gamesPage = await GetPageAsync(gamesPath, context, cancellationToken);
-                var parsedGames = ParseGames(gamesPage.Content, gamesPage.FetchedAtUtc, gamesPage.Revision, gamesPath, year, warnings);
+                var parsedGames = ParseGames(gamesPage.Content, gamesPage.FetchedAtUtc, gamesPage.Revision, gamesPath, archiveYear, warnings);
                 if (IsEuroBasket2005Event(editionPath))
                 {
                     parsedGames = parsedGames
@@ -129,7 +134,147 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             }
         }
 
+        // Older Champions Cup editions can expose unresolved cards even when
+        // the archive has a complete serialized game payload. Use Wikipedia or
+        // Todor66 only for genuinely sparse editions; a rich embedded payload
+        // is the authoritative source for the game-level records.
+        var hasUnresolvedTeamCards = warnings.Any(warning =>
+            warning.Contains("unresolved TBD/TBC", StringComparison.OrdinalIgnoreCase));
+        if (IsEuropeanChampionsCup(historyFamily) &&
+            games.Count < 50)
+        {
+            var wikipediaLanguages = year >= 1996 ? new[] { "en", "es" } : new[] { "es" };
+            var wikipediaGames = new List<BasketballProviderGame>();
+            foreach (var language in wikipediaLanguages)
+            {
+                var languageGames = await GetWikipediaGamesAsync(
+                    season,
+                    language,
+                    context,
+                    cancellationToken,
+                    warnings);
+                if (languageGames.Count > wikipediaGames.Count)
+                {
+                    wikipediaGames = languageGames.ToList();
+                }
+            }
+
+            if (year <= 1990)
+            {
+                var todorGames = await GetTodor66GamesAsync(
+                    season,
+                    context,
+                    cancellationToken,
+                    warnings);
+                if (todorGames.Count > wikipediaGames.Count)
+                {
+                    wikipediaGames = todorGames.ToList();
+                }
+            }
+
+            if (wikipediaGames.Count > games.Count)
+            {
+                warnings.Add($"FIBA archive was sparse ({games.Count} games); used the richest external score table ({wikipediaGames.Count} games).");
+                games = wikipediaGames;
+            }
+            else if (wikipediaGames.Count > 0 && hasUnresolvedTeamCards && year >= 1996)
+            {
+                var officialKnockoutGames = games.Where(game => !IsGroupStage(game)).ToList();
+                games = wikipediaGames.Concat(officialKnockoutGames)
+                    .GroupBy(game => game.SourceGameId, StringComparer.Ordinal)
+                    .Select(group => group.First())
+                    .ToList();
+                warnings.Add("FIBA archive had unresolved group-stage cards; combined the external score table with official knockout records.");
+            }
+        }
+
         return (games, false, warnings);
+    }
+
+    private async Task<IReadOnlyCollection<BasketballProviderGame>> GetTodor66GamesAsync(
+        string season,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken,
+        ICollection<string> warnings)
+    {
+        var startYear = ParseStartYear(season);
+        var archiveYear = startYear + 1;
+        var title = $"Men Basketball European Champions Cup {archiveYear}";
+        if (!context.CanUseRequest())
+        {
+            warnings.Add($"Todor66 request budget reached before {title} could be fetched.");
+            return [];
+        }
+
+        context.ConsumeRequest();
+        var pageUrl = $"http://todor66.com/basketball/Eurocups/Men_CC_{archiveYear}.html";
+        try
+        {
+            using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            requestTimeout.CancelAfter(TimeSpan.FromSeconds(30));
+            using var response = await httpClient.GetAsync(pageUrl, requestTimeout.Token);
+            response.EnsureSuccessStatusCode();
+            var html = await response.Content.ReadAsStringAsync(cancellationToken);
+            var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(html)))[..16];
+            return WikipediaFibaEuropeanChampionsCupParser.ParseTodor66Games(html, season, pageUrl, DateTime.UtcNow, revision, warnings);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            warnings.Add($"Todor66 edition page timed out: {title}.");
+        }
+        catch (HttpRequestException exception)
+        {
+            warnings.Add($"Todor66 edition page could not be fetched: {title} ({exception.StatusCode?.ToString() ?? exception.Message}).");
+        }
+        return [];
+    }
+
+    private async Task<IReadOnlyCollection<BasketballProviderGame>> GetWikipediaGamesAsync(
+        string season,
+        string language,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken,
+        ICollection<string> warnings)
+    {
+        var startYear = ParseStartYear(season);
+        var title = language.Equals("en", StringComparison.OrdinalIgnoreCase)
+            ? WikipediaFibaEuropeanChampionsCupParser.EnglishPageTitle(startYear)
+            : WikipediaFibaEuropeanChampionsCupParser.PageTitle(startYear);
+        if (!context.CanUseRequest())
+        {
+            warnings.Add($"Wikipedia request budget reached before {title} could be fetched.");
+            return [];
+        }
+
+        context.ConsumeRequest();
+        var pagePath = $"/w/index.php?title={Uri.EscapeDataString(title)}&action=raw";
+        try
+        {
+            using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            requestTimeout.CancelAfter(TimeSpan.FromSeconds(30));
+            var host = language.Equals("en", StringComparison.OrdinalIgnoreCase) ? "en.wikipedia.org" : "es.wikipedia.org";
+            using var response = await httpClient.GetAsync("https://" + host + pagePath, requestTimeout.Token);
+            response.EnsureSuccessStatusCode();
+            var wikitext = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (wikitext.Contains("#REDIRECT", StringComparison.OrdinalIgnoreCase))
+            {
+                warnings.Add($"Wikipedia page was not found: {title}.");
+                return [];
+            }
+
+            var pageUrl = $"https://{host}/wiki/{Uri.EscapeDataString(title).Replace("%20", "_", StringComparison.Ordinal)}";
+            var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(wikitext)))[..16];
+            return WikipediaFibaEuropeanChampionsCupParser.ParseGames(wikitext, season, pageUrl, DateTime.UtcNow, revision, warnings);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            warnings.Add($"Wikipedia edition page timed out: {title}.");
+        }
+        catch (HttpRequestException exception)
+        {
+            warnings.Add($"Wikipedia edition page could not be fetched: {title} ({exception.StatusCode?.ToString() ?? exception.Message}).");
+        }
+        return [];
     }
 
     private static (string Family, string? Variant) ParseFamily(string sourceLeagueId)
@@ -137,6 +282,9 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         var parts = sourceLeagueId.Split('|', 2, StringSplitOptions.TrimEntries);
         return (parts[0], parts.Length == 2 ? parts[1] : null);
     }
+
+    private static bool IsEuropeanChampionsCup(string family)
+        => family.Equals("112-fiba-mens-european-club-competitions-tier-1", StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyCollection<string>? KnownEditionPaths(string family, string? variant, int year)
     {
@@ -333,6 +481,14 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             "Qualifying Round" or
             "Additional Qualifying Round Games" or
             "Additional Qualifying Tournament";
+
+    private static bool IsGroupStage(BasketballProviderGame game)
+    {
+        var phaseAndRound = $"{game.CompetitionPhase} {game.CompetitionRound}";
+        return phaseAndRound.Contains("preliminary", StringComparison.OrdinalIgnoreCase)
+            || phaseAndRound.Contains("qualification", StringComparison.OrdinalIgnoreCase)
+            || phaseAndRound.Contains("group", StringComparison.OrdinalIgnoreCase);
+    }
 
     private async Task<(string Content, DateTime FetchedAtUtc, string Revision)> GetPageAsync(
         string path,
@@ -533,6 +689,9 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
         var games = new List<BasketballProviderGame>(cards.Count);
         var fallbackDate = FindCompetitionStartDate(html, year);
+        var missingStableLinkCount = 0;
+        var missingTeamIdentityCount = 0;
+        var unresolvedTeamIdentityCount = 0;
 
         foreach (var card in cards)
         {
@@ -541,14 +700,29 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             var slug = gamePath.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
             if (string.IsNullOrWhiteSpace(slug))
             {
-                warnings.Add("Skipped a FIBA game card without a stable game link.");
+                missingStableLinkCount += 1;
                 continue;
             }
 
             var slugParts = slug.Split('-', StringSplitOptions.RemoveEmptyEntries);
-            if (slugParts.Length < 3 || !slugParts[0].All(char.IsDigit))
+            if (slugParts.Length == 0 || !slugParts[0].All(char.IsDigit))
             {
                 warnings.Add($"Skipped FIBA game link with an unexpected slug: {slug}.");
+                continue;
+            }
+
+            var cardTeams = ParseCardTeams(card);
+            if (slugParts.Length < 3 && cardTeams is null)
+            {
+                missingTeamIdentityCount += 1;
+                continue;
+            }
+
+            var homeCode = slugParts.Length >= 3 ? slugParts[1].ToUpperInvariant() : cardTeams![0].Code;
+            var awayCode = slugParts.Length >= 3 ? slugParts[2].ToUpperInvariant() : cardTeams![1].Code;
+            if (IsUnresolvedTeamCode(homeCode) || IsUnresolvedTeamCode(awayCode))
+            {
+                unresolvedTeamIdentityCount += 1;
                 continue;
             }
 
@@ -565,9 +739,9 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 gameDate = fallbackDate;
             }
 
-            var homeCode = slugParts[1].ToUpperInvariant();
-            var awayCode = slugParts[2].ToUpperInvariant();
-            var scores = ParseScores(card);
+            var scores = cardTeams is not null && slugParts.Length < 3
+                ? new short?[] { cardTeams[0].Score, cardTeams[1].Score }
+                : ParseScores(card).ToArray();
             var phaseLabel = FindPhaseLabel(card);
             var phaseParts = phaseLabel?.Split('·', 2, StringSplitOptions.TrimEntries);
             var status = FindStatus(card, scores);
@@ -596,12 +770,28 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 CountryCodeFromTeamId(awayCode)));
         }
 
+        if (missingStableLinkCount > 0)
+        {
+            warnings.Add($"FIBA edition exposed {missingStableLinkCount} game cards without stable game links; those records were not synthesized.");
+        }
+
+        if (missingTeamIdentityCount > 0)
+        {
+            warnings.Add($"FIBA edition exposed {missingTeamIdentityCount} game cards without both team identities; those records were not synthesized.");
+        }
+
+        if (unresolvedTeamIdentityCount > 0)
+        {
+            warnings.Add($"FIBA edition exposed {unresolvedTeamIdentityCount} game cards with unresolved TBD/TBC team identities; those records were skipped.");
+        }
+
         // FIBA's current history pages render only the first selected round as
         // game cards, but often embed every round in the page's serialized data.
         // This is especially important for AfroBasket 2017, where the visible
         // cards are Zone 1 while the embedded payload also contains Zones 2-7,
-        // playoffs and additional qualifiers. Keep card data when both forms
-        // contain the same game, and add the embedded games that are not visible.
+        // playoffs and additional qualifiers. Prefer the embedded record when
+        // both forms contain the same game because it carries stable historic
+        // team IDs and round metadata.
         var embeddedGames = ParseEmbeddedGames(
             html,
             fetchedAtUtc,
@@ -615,7 +805,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             var gamesById = games.ToDictionary(game => game.SourceGameId, StringComparer.Ordinal);
             foreach (var embeddedGame in embeddedGames)
             {
-                gamesById.TryAdd(embeddedGame.SourceGameId, embeddedGame);
+                gamesById[embeddedGame.SourceGameId] = embeddedGame;
             }
 
             games = gamesById.Values.ToList();
@@ -623,11 +813,56 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
         if (games.Count == 0)
         {
-            warnings.Add("FIBA page contained no parseable game cards.");
+            warnings.Add("FIBA page exposed no resolvable game-level records; no games were synthesized.");
         }
 
         return games;
     }
+
+    private static IReadOnlyList<(string Code, short? Score)>? ParseCardTeams(HtmlNode card)
+    {
+        var teamNodes = card.SelectNodes(".//div[contains(@class, 'wa01avm')]")?.ToList() ?? [];
+        var teams = new List<(string Code, short? Score)>();
+        foreach (var teamNode in teamNodes)
+        {
+            var code = teamNode
+                .SelectSingleNode(".//div[contains(@class, 'wa01avq')]") is { } codeNode
+                ? Normalize(codeNode.InnerText).ToUpperInvariant()
+                : string.Empty;
+            var scoreText = teamNode
+                .SelectSingleNode(".//div[contains(@class, 'wa01avo')]") is { } scoreNode
+                ? Normalize(scoreNode.InnerText)
+                : string.Empty;
+
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                var tokens = Normalize(teamNode.InnerText)
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (tokens.Length == 0)
+                {
+                    continue;
+                }
+
+                var repeatedCode = Regex.Match(
+                    string.Concat(tokens),
+                    "^(?<code>[A-Za-z0-9]+)\\k<code>(?<score>\\d+)$",
+                    RegexOptions.IgnoreCase);
+                code = repeatedCode.Success
+                    ? repeatedCode.Groups["code"].Value.ToUpperInvariant()
+                    : tokens[0].ToUpperInvariant();
+                scoreText = repeatedCode.Success ? repeatedCode.Groups["score"].Value : tokens[^1];
+            }
+
+            var score = short.TryParse(scoreText, out var parsedScore) ? (short?)parsedScore : null;
+            teams.Add((code, score));
+        }
+
+        return teams.Count >= 2 ? teams.Take(2).ToArray() : null;
+    }
+
+    private static bool IsUnresolvedTeamCode(string code)
+        => code.Equals("TBD", StringComparison.OrdinalIgnoreCase) ||
+           code.Equals("TBC", StringComparison.OrdinalIgnoreCase);
 
     private IReadOnlyCollection<BasketballProviderGame> ParseEmbeddedGames(
         string html,
@@ -649,12 +884,12 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 ? gameMatches[index + 1].Index
                 : normalizedHtml.Length;
             var record = normalizedHtml[gameMatch.Index..recordEnd];
-            var home = Regex.Match(record, "\"teamA\":\\{.*?\"code\":\"(?<code>[^\"]+)\".*?\"officialName\":\"(?<name>[^\"]*)\"", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-            var away = Regex.Match(record, "\"teamB\":\\{.*?\"code\":\"(?<code>[^\"]+)\".*?\"officialName\":\"(?<name>[^\"]*)\"", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            var home = ParseEmbeddedTeam(record, "teamA");
+            var away = ParseEmbeddedTeam(record, "teamB");
             var scores = Regex.Match(record, "\"teamAScore\":(?<home>-?\\d+|null).*?\"teamBScore\":(?<away>-?\\d+|null)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
             var dateMatch = Regex.Match(record, "\"gameDateTimeUTC\":\"(?<date>[^\"]+)\"", RegexOptions.IgnoreCase);
             var round = Regex.Match(record, "\"round\":\\{.*?\"roundCode\":\"(?<code>[^\"]*)\".*?\"roundName\":\"(?<name>[^\"]*)\"", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-            if (!home.Success || !away.Success || !scores.Success || !dateMatch.Success ||
+            if (home is null || away is null || !scores.Success || !dateMatch.Success ||
                 !DateTime.TryParse(dateMatch.Groups["date"].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date))
             {
                 continue;
@@ -665,18 +900,18 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 gameMatch.Groups["id"].Value,
                 date.ToUniversalTime(),
                 scores.Groups["home"].Value == "null" ? "scheduled" : "final",
-                home.Groups["code"].Value,
-                home.Groups["name"].Value,
-                away.Groups["code"].Value,
-                away.Groups["name"].Value,
+                home.SourceId,
+                home.Name,
+                away.SourceId,
+                away.Name,
                 ParseEmbeddedScore(scores.Groups["home"].Value),
                 ParseEmbeddedScore(scores.Groups["away"].Value),
                 new BasketballProviderGameProvenance(
                     BuildAbsoluteUrl(BuildEmbeddedGamePath(
                         sourcePath,
                         gameMatch.Groups["id"].Value,
-                        home.Groups["code"].Value,
-                        away.Groups["code"].Value)),
+                        home.SourceId,
+                        away.SourceId)),
                     $"{year}:{sourcePath}",
                     fetchedAtUtc,
                     ParserVersion,
@@ -684,8 +919,8 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 null,
                 round.Success ? round.Groups["name"].Value : null,
                 round.Success ? round.Groups["code"].Value : null,
-                CountryCodeFromTeamId(home.Groups["code"].Value),
-                CountryCodeFromTeamId(away.Groups["code"].Value)));
+                CountryCodeFromTeamId(home.SourceId),
+                CountryCodeFromTeamId(away.SourceId)));
         }
 
         if (games.Count == 0 && warnIfEmpty)
@@ -694,6 +929,41 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         }
 
         return games;
+    }
+
+    private static EmbeddedTeam? ParseEmbeddedTeam(string record, string propertyName)
+    {
+        var nextProperty = propertyName.Equals("teamA", StringComparison.OrdinalIgnoreCase)
+            ? "teamB"
+            : "teamAScore";
+        var match = Regex.Match(
+            record,
+            $"\\\"{propertyName}\\\":\\{{(?<body>.*?)(?=\\\"{nextProperty}\\\":(?:\\{{)?)",
+            RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var body = match.Groups["body"].Value;
+        var id = Regex.Match(body, "\\\"teamId\\\":(?<id>\\d+)", RegexOptions.IgnoreCase).Groups["id"].Value;
+        var code = Regex.Match(body, "\\\"code\\\":(?:\\\"(?<code>[^\\\"]*)\\\"|null)", RegexOptions.IgnoreCase).Groups["code"].Value.Trim();
+        var nameMatch = Regex.Match(body, "\\\"shortName\\\":\\\"(?<name>[^\\\"]*)\\\"", RegexOptions.IgnoreCase);
+        if (!nameMatch.Success)
+        {
+            nameMatch = Regex.Match(body, "\\\"officialName\\\":\\\"(?<name>[^\\\"]*)\\\"", RegexOptions.IgnoreCase);
+        }
+
+        var sourceId = string.IsNullOrWhiteSpace(code)
+            ? string.IsNullOrWhiteSpace(id) ? string.Empty : $"FIBA:{id}"
+            : code;
+        var name = nameMatch.Success ? nameMatch.Groups["name"].Value.Trim() : sourceId;
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            return null;
+        }
+
+        return new EmbeddedTeam(sourceId, string.IsNullOrWhiteSpace(name) ? sourceId : name);
     }
 
     private static string BuildEmbeddedGamePath(string sourcePath, string gameId, string homeCode, string awayCode)
@@ -706,6 +976,8 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
     private static short? ParseEmbeddedScore(string value)
         => short.TryParse(value, out var score) ? score : null;
+
+    private sealed record EmbeddedTeam(string SourceId, string Name);
 
     private static DateTime? FindCardDate(HtmlNode card)
     {

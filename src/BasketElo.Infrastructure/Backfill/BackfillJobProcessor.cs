@@ -242,6 +242,72 @@ public class BackfillJobProcessor(
 
             var season = await GetOrCreateSeasonAsync(competition, canonicalSeason, usesSingleYearSeasonLabel, cancellationToken);
 
+            var isRichEuropeanChampionsCupArchive = string.Equals(provider.SourceKey, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+                resolvedLeagues.Any(league => league.SourceLeagueId.StartsWith(
+                    "112-fiba-mens-european-club-competitions-tier-1",
+                    StringComparison.OrdinalIgnoreCase)) &&
+                allGames.Count >= 40 &&
+                allGames.All(game => !string.Equals(
+                    game.Provenance?.ParserVersion,
+                    WikipediaFibaEuropeanChampionsCupParser.ParserVersion,
+                    StringComparison.Ordinal));
+            var replacesSparseFibaArchive = string.Equals(provider.SourceKey, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+                (allGames.Any(game => string.Equals(
+                    game.Provenance?.ParserVersion,
+                    WikipediaFibaEuropeanChampionsCupParser.ParserVersion,
+                    StringComparison.Ordinal)) || isRichEuropeanChampionsCupArchive);
+            var replacesHistoricalWikipediaEuroleague = string.Equals(
+                provider.SourceKey,
+                WikipediaEuroleagueHistoricalDataProvider.Source,
+                StringComparison.OrdinalIgnoreCase) &&
+                allGames.Count > 0;
+            var replacesHistoricalBasketballReferenceEuroleague = string.Equals(
+                provider.SourceKey,
+                BasketballReferenceBasketballDataProvider.Source,
+                StringComparison.OrdinalIgnoreCase) &&
+                resolvedLeagues.Any(league => string.Equals(league.SourceLeagueId, "Euroleague", StringComparison.OrdinalIgnoreCase)) &&
+                allGames.Count > 0;
+            var replacesHistoricalFlashscoreEuroleague = string.Equals(
+                provider.SourceKey,
+                FlashscoreEuroleagueHistoricalDataProvider.Source,
+                StringComparison.OrdinalIgnoreCase) &&
+                allGames.Count > 0;
+            var replacesHistoricalEuroleagueR = string.Equals(
+                provider.SourceKey,
+                EuroleagueRHistoricalDataProvider.Source,
+                StringComparison.OrdinalIgnoreCase) &&
+                allGames.Count > 0;
+            var legacyEuroleagueSources = new[]
+            {
+                BasketballReferenceBasketballDataProvider.Source,
+                WikipediaEuroleagueHistoricalDataProvider.Source,
+                FlashscoreEuroleagueHistoricalDataProvider.Source
+            };
+            if (replacesSparseFibaArchive || replacesHistoricalWikipediaEuroleague || replacesHistoricalBasketballReferenceEuroleague || replacesHistoricalFlashscoreEuroleague || replacesHistoricalEuroleagueR)
+            {
+                var incomingSourceGameIds = allGames
+                    .Select(game => game.SourceGameId)
+                    .ToHashSet(StringComparer.Ordinal);
+                var staleFibaGames = await dbContext.Games
+                    .Where(game =>
+                        game.SeasonId == season.Id &&
+                        ((game.Source == provider.SourceKey &&
+                            !incomingSourceGameIds.Contains(game.SourceGameId)) ||
+                         ((replacesHistoricalFlashscoreEuroleague || replacesHistoricalEuroleagueR) &&
+                            legacyEuroleagueSources.Contains(game.Source))))
+                    .ToListAsync(cancellationToken);
+                if (staleFibaGames.Count > 0)
+                {
+                    dbContext.Games.RemoveRange(staleFibaGames);
+                    // Flush the replacement deletion before looking up incoming
+                    // Wikipedia/Todor66 source IDs. Otherwise EF can return a
+                    // tracked row already marked Deleted, count it as updated,
+                    // and delete it again instead of inserting the replacement.
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    summary.Warnings.Add($"Removed {staleFibaGames.Count} stale FIBA game row(s) before applying the richer season result; this keeps the season replacement deduplicated.");
+                }
+            }
+
             foreach (var providerGame in allGames)
             {
                 var homeCountryCode = providerGame.SourceHomeTeamCountryCode ??

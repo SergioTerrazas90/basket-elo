@@ -44,6 +44,9 @@ public class BackfillController(
              !string.Equals(request.Provider, BasketballReferenceBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, FiveThirtyEightBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, WikipediaEuroleagueHistoricalDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, FlashscoreEuroleagueHistoricalDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, EuroleagueRHistoricalDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, GlobalSportsArchiveBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, LbaOfficialSerieABasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, AbaLeagueOfficialBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
@@ -55,7 +58,7 @@ public class BackfillController(
              !string.Equals(request.Provider, SerbianHistoricalBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, WikipediaEuroBasketQualificationDataProvider.Source, StringComparison.OrdinalIgnoreCase)))
         {
-            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba', 'global-sports-archive', 'lba-official', 'aba-official', 'wikipedia-italian-cup', 'wikipedia-german-cup', 'french-historical', 'german-official', 'turkish-historical', 'serbian-historical' and 'wikipedia'.");
+            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba', 'wikipedia-euroleague', 'global-sports-archive', 'lba-official', 'aba-official', 'wikipedia-italian-cup', 'wikipedia-german-cup', 'french-historical', 'german-official', 'turkish-historical', 'serbian-historical' and 'wikipedia'.");
         }
 
         var job = BuildJob(request, FindConfiguredLeague(request.Provider, request.Country, request.LeagueName));

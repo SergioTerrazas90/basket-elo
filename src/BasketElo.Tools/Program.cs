@@ -23,6 +23,16 @@ static async Task<int> RunAsync(string[] args)
         return await RunFibaIngestAsync(args[1..]);
     }
 
+    if (args.Length > 0 && args[0].Equals("euroleague-historical-dry-run", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunWikipediaEuroleagueHistoricalDryRunAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("euroleague-historical-ingest", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunWikipediaEuroleagueHistoricalIngestAsync(args[1..]);
+    }
+
     if (args.Length > 0 && args[0].Equals("acb-dry-run", StringComparison.OrdinalIgnoreCase))
     {
         return await RunAcbDryRunAsync(args[1..]);
@@ -306,6 +316,113 @@ static async Task<int> RunFibaIngestAsync(string[] args)
         .OrderBy(item => item.Status)
         .ToListAsync();
     Console.WriteLine($"FIBA ingest processed {processed} jobs. Status: {string.Join(", ", summary.Select(item => $"{item.Status}={item.Count}"))}");
+    return 0;
+}
+
+static async Task<int> RunWikipediaEuroleagueHistoricalDryRunAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 45);
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    var provider = host.Services.GetRequiredService<IEnumerable<IBasketballDataProvider>>()
+        .Single(candidate => candidate.SourceKey == EuroleagueRHistoricalDataProvider.Source);
+    var context = new BackfillExecutionContext(maxRequests, 0);
+    var league = await provider.ResolveLeagueAsync("Europe", "Euroleague", context, CancellationToken.None);
+    var result = await provider.GetGamesAsync(league!, season, context, CancellationToken.None);
+
+    Console.WriteLine($"Historical Euroleague dry-run: Europe: Euroleague {season}");
+    Console.WriteLine($"Requests: {context.RequestsUsed}/{context.MaxRequests}; games: {result.Games.Count}; warnings: {result.Warnings.Count}");
+    foreach (var phase in result.Games
+                 .GroupBy(game => game.CompetitionPhase is null ? "(none)" : $"{game.CompetitionPhase} / {game.CompetitionRound}")
+                 .OrderByDescending(group => group.Count()))
+    {
+        Console.WriteLine($"{phase.Key}: {phase.Count()} games");
+    }
+    foreach (var warning in result.Warnings.Take(20))
+    {
+        Console.WriteLine($"WARNING: {warning}");
+    }
+
+    return result.Games.Count == 0 ? 2 : 0;
+}
+
+static async Task<int> RunWikipediaEuroleagueHistoricalIngestAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var maxJobs = ParseNonNegative(values, "--max-jobs", 0);
+    var maxRequests = ParseNonNegative(values, "--max-requests", 45);
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    if (values.TryGetValue("--connection-string", out var connectionString))
+    {
+        builder.Configuration["ConnectionStrings:Postgres"] = connectionString;
+    }
+    builder.Services.AddInfrastructure(builder.Configuration);
+
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
+    await dbContext.Database.MigrateAsync();
+    var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
+    var configuredSeasons = catalog.GetLeagues()
+        .Where(league => string.Equals(league.Provider, EuroleagueRHistoricalDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+            league.Country == "Europe" && league.LeagueName == "Euroleague")
+        .SelectMany(league => catalog.GetSeasonsForLeague(league).Select(season => new { league.Country, league.LeagueName, season }))
+        .ToList();
+
+    var completed = (await dbContext.BackfillJobs
+            .Where(job => job.Provider == EuroleagueRHistoricalDataProvider.Source &&
+                job.Country == "Europe" && job.LeagueName == "Euroleague" &&
+                (job.Status == BackfillJobStatus.Completed || job.Status == BackfillJobStatus.CompletedWithWarnings))
+            .Select(job => new { job.Country, job.LeagueName, job.Season })
+            .ToListAsync())
+        .Select(item => $"{item.Country}\u001f{item.LeagueName}\u001f{item.Season}")
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var active = (await dbContext.BackfillJobs
+            .Where(job => job.Provider == EuroleagueRHistoricalDataProvider.Source &&
+                job.Country == "Europe" && job.LeagueName == "Euroleague" &&
+                (job.Status == BackfillJobStatus.Pending || job.Status == BackfillJobStatus.Running))
+            .Select(job => new { job.Country, job.LeagueName, job.Season })
+            .ToListAsync())
+        .Select(item => $"{item.Country}\u001f{item.LeagueName}\u001f{item.Season}")
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    var jobs = configuredSeasons
+        .Where(item => !completed.Contains($"{item.Country}\u001f{item.LeagueName}\u001f{item.season}") &&
+            !active.Contains($"{item.Country}\u001f{item.LeagueName}\u001f{item.season}"))
+        .OrderBy(item => item.season)
+        .Take(maxJobs > 0 ? maxJobs : int.MaxValue)
+        .Select(item => new BackfillJob
+        {
+            Id = Guid.NewGuid(),
+            Provider = EuroleagueRHistoricalDataProvider.Source,
+            Country = item.Country,
+            LeagueName = item.LeagueName,
+            Season = item.season,
+            DryRun = false,
+            MaxRequests = maxRequests,
+            Status = BackfillJobStatus.Pending,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        })
+        .ToList();
+    dbContext.BackfillJobs.AddRange(jobs);
+    await dbContext.SaveChangesAsync();
+
+    var processor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
+    var processed = 0;
+    while (await processor.TryProcessNextPendingJobAsync(CancellationToken.None))
+    {
+        processed++;
+    }
+
+    Console.WriteLine($"Historical Euroleague ingest processed {processed} jobs; skipped {completed.Count} completed and {active.Count} active keys.");
     return 0;
 }
 
@@ -1581,6 +1698,12 @@ static void PrintUsage()
         dotnet run --project src/BasketElo.Tools -- fiba-dry-run \
           --country Europe --league "FIBA EuroBasket Qualifiers" --season 2022-2023 \
           [--max-requests 2]
+
+        FIBA European Champions Cup / EuroLeague predecessor dry-run (read-only)
+
+        dotnet run --project src/BasketElo.Tools -- fiba-dry-run \
+          --country Europe --league "FIBA European Champions Cup" --season 1999-2000 \
+          [--max-requests 4]
 
         FIBA database ingest (writes local Postgres)
 

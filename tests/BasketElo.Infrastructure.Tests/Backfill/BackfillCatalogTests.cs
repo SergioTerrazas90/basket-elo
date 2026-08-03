@@ -7,6 +7,31 @@ namespace BasketElo.Infrastructure.Tests.Backfill;
 public class BackfillCatalogTests
 {
     [Fact]
+    public void SerbianHistoricalCatalogCoversAgreedHistoricalCutoff()
+    {
+        var catalog = new BackfillCatalog();
+        var league = Assert.Single(catalog.GetLeagues(), item =>
+            item.Provider == SerbianHistoricalBasketballDataProvider.Source &&
+            item.Country == "Serbia" &&
+            item.LeagueName == "First League");
+
+        Assert.Equal("Serbia: Yugoslav / Serbia and Montenegro / Serbia top flight", league.DisplayName);
+        Assert.Equal("1973-1974", league.StartSeason);
+        Assert.Equal("2007-2008", league.EndSeason);
+        Assert.Equal(35, catalog.GetSeasonsForLeague(league).Count);
+
+        var cup = Assert.Single(catalog.GetLeagues(), item =>
+            item.Provider == SerbianHistoricalBasketballDataProvider.Source &&
+            item.Country == "Serbia" &&
+            item.LeagueName == "Yugoslav Cup");
+        Assert.Contains("1991-1992", catalog.GetSeasonsForLeague(cup));
+        Assert.Contains("1992-1993", catalog.GetSeasonsForLeague(cup));
+        Assert.Contains("1973-1974", catalog.GetSeasonsForLeague(cup));
+        Assert.Contains("1999-2000", catalog.GetSeasonsForLeague(cup));
+        Assert.Equal(27, catalog.GetSeasonsForLeague(cup).Count);
+    }
+
+    [Fact]
     public void GreekOfficialCatalogFillsLegacyGapAndNeverAddsCupWithoutLeague()
     {
         var catalog = new BackfillCatalog();

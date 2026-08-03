@@ -163,6 +163,21 @@ public class BackfillCatalog : IBackfillCatalog
                 new("Serbia", "Super League", "end_year")
             ],
             EndSeason: "2025-2026"),
+        new(
+            "serbian-historical",
+            "Serbia",
+            "First League",
+            "Serbia: Yugoslav / Serbia and Montenegro / Serbia top flight",
+            "1973-1974",
+            EndSeason: "2007-2008"),
+        new(
+            "serbian-historical",
+            "Serbia",
+            "Yugoslav Cup",
+            "Serbia: Yugoslav Cup",
+            "1991-1992",
+            CompetitionType: "domestic_cup",
+            ExplicitSeasons: SerbianCupHistoricalSeasons()),
         new("api-sports", "Serbia", "Korac cup", "Serbia: Korac Cup", "2012", CompetitionType: "domestic_cup"),
         new("api-sports", "Croatia", "Premijer liga", "Croatia: Premijer liga", "2008-2009", EndSeason: "2025-2026"),
         new("api-sports", "Croatia", "Croatian Cup", "Croatia: Croatian Cup", "2012-2013", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
@@ -259,6 +274,11 @@ public class BackfillCatalog : IBackfillCatalog
 
     private static string[] FrenchLeagueHistoricalSeasons()
         => Enumerable.Range(1987, 21)
+            .Select(year => $"{year}-{year + 1}")
+            .ToArray();
+
+    private static string[] SerbianCupHistoricalSeasons()
+        => Enumerable.Range(1973, 27)
             .Select(year => $"{year}-{year + 1}")
             .ToArray();
 

@@ -204,6 +204,9 @@ See [`nba-source-policy.md`](nba-source-policy.md) and
 See [`turkish-ingestion.md`](turkish-ingestion.md) for the TBLStat Turkish
 league source, historical Turkish Cup final coverage, and Presidential Cup
 limitations.
+See [`serbian-ingestion.md`](serbian-ingestion.md) for the reviewed
+Yugoslav/Serbia-area top-flight range, club identity normalization, and the
+remaining pre-2000 source gap.
 
 ### ABA League and ABA Super Cup
 

@@ -108,6 +108,16 @@ static async Task<int> RunAsync(string[] args)
         return await RunTurkeyDryRunAsync(args[1..]);
     }
 
+    if (args.Length > 0 && args[0].Equals("serbia-dry-run", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunSerbiaDryRunAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("serbia-ingest", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunSerbiaIngestAsync(args[1..]);
+    }
+
     AuditCommandOptions command;
     try
     {
@@ -1246,6 +1256,160 @@ static async Task<int> RunTurkeyDryRunAsync(string[] args)
     return result.Games.Count == 0 || result.HasMorePages ? 2 : 0;
 }
 
+static async Task<int> RunSerbiaDryRunAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var competition = values.GetValueOrDefault("--competition") ?? "First League";
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var interval = ParseNonNegative(values, "--interval-ms", 250);
+    var printAll = bool.TryParse(values.GetValueOrDefault("--print-all"), out var parsedPrintAll) && parsedPrintAll;
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Configuration["SerbianHistorical:MinRequestIntervalMilliseconds"] = interval.ToString();
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
+    var configuredLeague = catalog.GetLeagues().SingleOrDefault(candidate =>
+        candidate.Provider == SerbianHistoricalBasketballDataProvider.Source &&
+        candidate.Country == "Serbia" &&
+        candidate.LeagueName.Equals(competition, StringComparison.OrdinalIgnoreCase) &&
+        catalog.GetSeasonsForLeague(candidate).Contains(season, StringComparer.OrdinalIgnoreCase));
+    if (configuredLeague is null)
+    {
+        Console.Error.WriteLine($"No Serbian historical source is configured for {competition} {season}.");
+        return 1;
+    }
+
+    var provider = scope.ServiceProvider.GetRequiredService<IEnumerable<IBasketballDataProvider>>()
+        .Single(candidate => candidate.SourceKey == SerbianHistoricalBasketballDataProvider.Source);
+    var context = new BackfillExecutionContext(maxRequests, 0);
+    var league = await provider.ResolveLeagueAsync("Serbia", configuredLeague.LeagueName, context, CancellationToken.None);
+    var result = await provider.GetGamesAsync(league!, season, context, CancellationToken.None);
+
+    Console.WriteLine($"Serbian historical dry-run: {competition} {season}");
+    Console.WriteLine($"Requests: {context.RequestsUsed}/{context.MaxRequests}; games: {result.Games.Count}; warnings: {result.Warnings.Count}; more pages: {result.HasMorePages}");
+    foreach (var phase in result.Games.GroupBy(game => game.CompetitionPhase ?? "Unknown").OrderBy(group => group.Key))
+    {
+        Console.WriteLine($"{phase.Key}: {phase.Count()} games");
+    }
+    foreach (var game in printAll ? result.Games : result.Games.Take(12))
+    {
+        Console.WriteLine($"{game.GameDateTimeUtc:yyyy-MM-dd} {game.HomeTeamName} {game.HomeScore}-{game.AwayScore} {game.AwayTeamName} [{game.CompetitionRound}] ({game.SourceGameId}) {game.Provenance?.SourceUrl}");
+    }
+    foreach (var warning in result.Warnings.Take(30))
+    {
+        Console.WriteLine($"WARNING: {warning}");
+    }
+    return result.Games.Count == 0 || result.HasMorePages ? 2 : 0;
+}
+
+static async Task<int> RunSerbiaIngestAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var competition = values.GetValueOrDefault("--competition") ?? "First League";
+    var startSeason = Required(values, "--start");
+    var endSeason = values.GetValueOrDefault("--end") ?? startSeason;
+    var maxRequests = ParseNonNegative(values, "--max-requests", 0);
+    var interval = ParseNonNegative(values, "--interval-ms", 250);
+    var lowerYear = Math.Min(SeasonLabelNormalizer.ParseStartYear(startSeason), SeasonLabelNormalizer.ParseStartYear(endSeason));
+    var upperYear = Math.Max(SeasonLabelNormalizer.ParseStartYear(startSeason), SeasonLabelNormalizer.ParseStartYear(endSeason));
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Configuration["SerbianHistorical:MinRequestIntervalMilliseconds"] = interval.ToString();
+    if (values.TryGetValue("--connection-string", out var connectionString))
+    {
+        builder.Configuration["ConnectionStrings:Postgres"] = connectionString;
+    }
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
+    await dbContext.Database.MigrateAsync();
+
+    var unrelatedPendingJobs = await dbContext.BackfillJobs.CountAsync(job =>
+        job.Status == BackfillJobStatus.Pending &&
+        !(job.Provider == SerbianHistoricalBasketballDataProvider.Source &&
+          job.Country == "Serbia" && job.LeagueName == competition));
+    if (unrelatedPendingJobs > 0)
+    {
+        Console.Error.WriteLine($"Refusing to start: {unrelatedPendingJobs} unrelated backfill job(s) are pending.");
+        return 2;
+    }
+
+    var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
+    var configuredLeague = catalog.GetLeagues().SingleOrDefault(candidate =>
+        candidate.Provider == SerbianHistoricalBasketballDataProvider.Source &&
+        candidate.Country == "Serbia" &&
+        candidate.LeagueName.Equals(competition, StringComparison.OrdinalIgnoreCase));
+    if (configuredLeague is null)
+    {
+        Console.Error.WriteLine($"No historical Serbian competition named '{competition}' is configured.");
+        return 1;
+    }
+
+    var seasons = catalog.GetSeasonsForLeague(configuredLeague)
+        .Where(season =>
+        {
+            var year = SeasonLabelNormalizer.ParseStartYear(season);
+            return year >= lowerYear && year <= upperYear;
+        })
+        .OrderByDescending(SeasonLabelNormalizer.ParseStartYear)
+        .ToList();
+    if (seasons.Count == 0)
+    {
+        Console.Error.WriteLine($"No {competition} seasons fall inside {startSeason} through {endSeason}.");
+        return 1;
+    }
+
+    var existing = await dbContext.BackfillJobs
+        .Where(job => job.Provider == SerbianHistoricalBasketballDataProvider.Source &&
+            job.Country == "Serbia" && job.LeagueName == configuredLeague.LeagueName &&
+            (job.Status == BackfillJobStatus.Completed || job.Status == BackfillJobStatus.CompletedWithWarnings ||
+             job.Status == BackfillJobStatus.Pending || job.Status == BackfillJobStatus.Running))
+        .Select(job => job.Season)
+        .ToListAsync();
+    var now = DateTime.UtcNow;
+    var jobs = seasons
+        .Where(season => !existing.Contains(season, StringComparer.OrdinalIgnoreCase))
+        .Select((season, index) => new BackfillJob
+        {
+            Id = Guid.NewGuid(), Provider = SerbianHistoricalBasketballDataProvider.Source,
+            Country = "Serbia", LeagueName = configuredLeague.LeagueName, Season = season,
+            DryRun = false, MaxRequests = maxRequests, Status = BackfillJobStatus.Pending,
+            CreatedAtUtc = now.AddTicks(index), UpdatedAtUtc = now.AddTicks(index)
+        })
+        .ToList();
+    dbContext.BackfillJobs.AddRange(jobs);
+    await dbContext.SaveChangesAsync();
+    Console.WriteLine($"Queued {jobs.Count} Serbian historical season(s), newest first; skipped {existing.Count} completed or active season(s).");
+
+    var processor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
+    var processed = 0;
+    while (await processor.TryProcessNextPendingJobAsync(CancellationToken.None))
+    {
+        processed++;
+        Console.WriteLine($"Processed Serbian historical job {processed}/{jobs.Count}.");
+    }
+
+    var attempts = await dbContext.BackfillJobs
+        .Where(job => job.Provider == SerbianHistoricalBasketballDataProvider.Source &&
+            job.Country == "Serbia" && job.LeagueName == configuredLeague.LeagueName && seasons.Contains(job.Season))
+        .ToListAsync();
+    var summary = attempts
+        .GroupBy(job => job.Season, StringComparer.OrdinalIgnoreCase)
+        .Select(group => group.OrderByDescending(job => job.UpdatedAtUtc).First())
+        .GroupBy(job => job.Status)
+        .Select(group => new { Status = group.Key, Count = group.Count() })
+        .OrderBy(item => item.Status)
+        .ToList();
+    Console.WriteLine($"Serbian historical ingest processed {processed} jobs. Status: {string.Join(", ", summary.Select(item => $"{item.Status}={item.Count}"))}");
+    return summary.Any(item => item.Status == BackfillJobStatus.Failed) ? 2 : 0;
+}
+
 static async Task<int> RunGreeceIngestAsync(string[] args)
 {
     var values = ParseKeyValueArgs(args);
@@ -1505,6 +1669,18 @@ static void PrintUsage()
         dotnet run --project src/BasketElo.Tools -- turkey-dry-run \
           --competition "Super Ligi" --season 2007-2008 \
           [--max-requests 0] [--interval-ms 100] [--print-all]
+
+        Historical Serbian-area top-flight dry-run
+
+        dotnet run --project src/BasketElo.Tools -- serbia-dry-run \
+          --competition "First League" --season 2007-2008 \
+          [--max-requests 0] [--interval-ms 250] [--print-all]
+
+        Historical Serbian-area top-flight ingest (writes configured Postgres)
+
+        dotnet run --project src/BasketElo.Tools -- serbia-ingest \
+          --start 2007-2008 --end 2000-2001 \
+          [--max-requests 0] [--interval-ms 250] [--connection-string "..."]
         """);
 }
 

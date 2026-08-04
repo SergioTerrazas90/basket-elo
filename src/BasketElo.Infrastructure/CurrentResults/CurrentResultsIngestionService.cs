@@ -398,11 +398,11 @@ public sealed class CurrentResultsIngestionService(
         "spain" => "ES", "france" => "FR", "lithuania" => "LT", "greece" => "GR", "italy" => "IT", "turkey" => "TR",
         "belgium" => "BE", "germany" => "DE", "israel" => "IL", "poland" => "PL", "czech republic" => "CZ", "czechia" => "CZ",
         "russia" => "RU", "serbia" => "RS", "croatia" => "HR", "slovenia" => "SI", "latvia" => "LV", "estonia" => "EE",
-        "usa" or "united states" => "USA", _ => null
+        "usa" or "united states" => "US", _ => null
     };
 
     private static bool CountryMatches(string? actual, string? expected) =>
-        string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase) || (string.IsNullOrWhiteSpace(actual) && string.IsNullOrWhiteSpace(expected));
+        CountryCodeCatalog.AreEquivalent(actual, expected) || (string.IsNullOrWhiteSpace(actual) && string.IsNullOrWhiteSpace(expected));
 
     private static bool CatalogCountryMatches(string configuredCountry, string sourceCountry) =>
         NormalizeName(configuredCountry) == NormalizeName(sourceCountry) ||

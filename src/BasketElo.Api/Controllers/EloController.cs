@@ -1968,7 +1968,7 @@ public class EloController(
 
     private static bool IsCountryMatch(string? countryCode, string country)
         => string.Equals(DisplayCountryFromCode(countryCode), country, StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(countryCode, country, StringComparison.OrdinalIgnoreCase);
+           CountryCodeCatalog.AreEquivalent(countryCode, country);
 
     private static IQueryable<RatingHistory> ApplySeasonFilter(IQueryable<RatingHistory> query, string season)
     {
@@ -2086,8 +2086,8 @@ public class EloController(
             return string.Empty;
         }
 
-        var normalized = countryCode.Trim().ToUpperInvariant();
-        if (InternationalTeamCatalog.TryGetCanonicalName(normalized, out var internationalCountryName))
+        var normalized = CountryCodeCatalog.Normalize(countryCode)!;
+        if (InternationalTeamCatalog.TryGetCanonicalName(countryCode, out var internationalCountryName))
         {
             return internationalCountryName;
         }

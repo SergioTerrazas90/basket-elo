@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Entities;
+using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -423,48 +424,7 @@ public class BackfillCoverageService(
     }
 
     private static string DisplayCountryFromCode(string? countryCode)
-    {
-        return countryCode?.ToUpperInvariant() switch
-        {
-            "ES" => "Spain",
-            "ESP" => "Spain",
-            "FR" => "France",
-            "FRA" => "France",
-            "LT" => "Lithuania",
-            "LTU" => "Lithuania",
-            "GR" => "Greece",
-            "GRC" => "Greece",
-            "IT" => "Italy",
-            "ITA" => "Italy",
-            "TR" => "Turkey",
-            "TUR" => "Turkey",
-            "BE" => "Belgium",
-            "BEL" => "Belgium",
-            "DE" => "Germany",
-            "DEU" => "Germany",
-            "IL" => "Israel",
-            "ISR" => "Israel",
-            "PL" => "Poland",
-            "POL" => "Poland",
-            "CZ" => "Czech Republic",
-            "CZE" => "Czech Republic",
-            "RU" => "Russia",
-            "RUS" => "Russia",
-            "RS" => "Serbia",
-            "SRB" => "Serbia",
-            "HR" => "Croatia",
-            "HRV" => "Croatia",
-            "SI" => "Slovenia",
-            "SVN" => "Slovenia",
-            "LV" => "Latvia",
-            "LVA" => "Latvia",
-            "EE" => "Estonia",
-            "EST" => "Estonia",
-            "US" => "United States",
-            "USA" => "United States",
-            _ => countryCode ?? string.Empty
-        };
-    }
+        => CountryCodeCatalog.DisplayName(countryCode);
 
     private static string InferCompetitionType(ConfiguredBackfillLeague league)
     {

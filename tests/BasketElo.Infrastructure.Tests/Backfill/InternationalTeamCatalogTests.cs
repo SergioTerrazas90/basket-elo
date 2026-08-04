@@ -6,15 +6,15 @@ namespace BasketElo.Infrastructure.Tests.Backfill;
 public sealed class InternationalTeamCatalogTests
 {
     [Theory]
-    [InlineData("ESP", "Spain", "ESP")]
-    [InlineData("Spain", "Spain", "ESP")]
-    [InlineData("GSA-123", "Spain", "ESP")]
-    [InlineData("TUR", "Turkey", "TUR")]
-    [InlineData("CON", "Republic of the Congo", "CGO")]
+    [InlineData("ESP", "Spain", "ES")]
+    [InlineData("Spain", "Spain", "ES")]
+    [InlineData("GSA-123", "Spain", "ES")]
+    [InlineData("TUR", "Turkey", "TR")]
+    [InlineData("CON", "Republic of the Congo", "CG")]
     [InlineData("SMN", "Serbia and Montenegro", "SCG")]
     [InlineData("FR Yugoslavia", "Serbia and Montenegro", "SCG")]
-    [InlineData("NOR", "Norway", "NOR")]
-    [InlineData("Bolivia", "Bolivia", "BOL")]
+    [InlineData("NOR", "Norway", "NO")]
+    [InlineData("Bolivia", "Bolivia", "BO")]
     public void ResolvesCodesAndFullNamesToOneCanonicalIdentity(
         string sourceTeamId,
         string expectedName,

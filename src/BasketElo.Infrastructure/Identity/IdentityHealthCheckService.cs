@@ -49,7 +49,7 @@ public class IdentityHealthCheckService(
         new("CH", "Switzerland"),
         new("TR", "Turkey"),
         new("UA", "Ukraine"),
-        new("USA", "United States")
+        new("US", "United States")
     ];
 
     public async Task<IdentityHealthCheckRunDto> RunAsync(IdentityHealthCheckRequest request, CancellationToken cancellationToken)
@@ -174,7 +174,9 @@ public class IdentityHealthCheckService(
         var countries = competitionCountries
             .Concat(teamCountries)
             .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => new IdentityCountryOptionDto(x, CountryNameFromCode(x)))
+            .Select(CountryCodeCatalog.Normalize)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => new IdentityCountryOptionDto(x!, CountryNameFromCode(x!)))
             .Concat(backfillCountries)
             .Concat(DefaultCountryOptions)
             .GroupBy(x => x.Code, StringComparer.OrdinalIgnoreCase)
@@ -183,12 +185,15 @@ public class IdentityHealthCheckService(
             .ThenBy(x => x.Code)
             .ToList();
 
-        var competitions = await dbContext.Competitions
+        var competitionRows = await dbContext.Competitions
             .AsNoTracking()
             .OrderBy(x => x.CountryCode)
             .ThenBy(x => x.Name)
-            .Select(x => new IdentityCompetitionOptionDto(x.Id, x.Name, x.CountryCode))
+            .Select(x => new { x.Id, x.Name, x.CountryCode })
             .ToListAsync(cancellationToken);
+        var competitions = competitionRows
+            .Select(x => new IdentityCompetitionOptionDto(x.Id, x.Name, CountryCodeCatalog.Normalize(x.CountryCode)))
+            .ToList();
 
         return new IdentityHealthOptionsDto(sources, seasons, countries, competitions);
     }
@@ -1021,15 +1026,7 @@ public class IdentityHealthCheckService(
     }
 
     private static string? NormalizeCountryCode(string? countryCode)
-    {
-        if (string.IsNullOrWhiteSpace(countryCode))
-        {
-            return null;
-        }
-
-        var normalized = countryCode.Trim().ToUpperInvariant();
-        return normalized.Length <= 3 ? normalized : normalized[..3];
-    }
+        => CountryCodeCatalog.Normalize(countryCode);
 
     private static IdentityCountryOptionDto? NameToCountryOption(string country)
     {
@@ -1058,49 +1055,9 @@ public class IdentityHealthCheckService(
     }
 
     private static string CountryNameFromCode(string countryCode)
-    {
-        return countryCode.Trim().ToUpperInvariant() switch
-        {
-            "BE" or "BEL" => "Belgium",
-            "AZ" or "AZE" => "Azerbaijan",
-            "BA" or "BIH" => "Bosnia and Herzegovina",
-            "BG" or "BGR" => "Bulgaria",
-            "HR" or "HRV" => "Croatia",
-            "CY" or "CYP" => "Cyprus",
-            "CZ" or "CZE" => "Czech Republic",
-            "DK" or "DNK" => "Denmark",
-            "EE" or "EST" => "Estonia",
-            "FI" or "FIN" => "Finland",
-            "FR" or "FRA" => "France",
-            "GE" or "GEO" => "Georgia",
-            "DE" or "GER" or "DEU" => "Germany",
-            "GR" or "GRE" or "GRC" => "Greece",
-            "HU" or "HUN" => "Hungary",
-            "IL" or "ISR" => "Israel",
-            "IT" or "ITA" => "Italy",
-            "LV" or "LVA" => "Latvia",
-            "LT" or "LTU" => "Lithuania",
-            "ME" or "MNE" => "Montenegro",
-            "NL" or "NLD" => "Netherlands",
-            "NO" or "NOR" => "Norway",
-            "PL" or "POL" => "Poland",
-            "PT" or "PRT" => "Portugal",
-            "RO" or "ROU" => "Romania",
-            "RU" or "RUS" => "Russia",
-            "RS" or "SRB" => "Serbia",
-            "XK" or "XKX" => "Kosovo",
-            "SK" or "SVK" => "Slovakia",
-            "SI" or "SVN" => "Slovenia",
-            "ES" or "ESP" => "Spain",
-            "SCT" => "Scotland",
-            "SE" or "SWE" => "Sweden",
-            "CH" or "CHE" => "Switzerland",
-            "TR" or "TUR" => "Turkey",
-            "UA" or "UKR" => "Ukraine",
-            "US" or "USA" => "United States",
-            _ => countryCode
-        };
-    }
+        => InternationalTeamCatalog.TryGetCanonicalName(countryCode, out var internationalName)
+            ? internationalName
+            : CountryCodeCatalog.DisplayName(countryCode);
 
     private static string NormalizeResolutionAction(string action)
     {
@@ -1182,7 +1139,7 @@ public class IdentityHealthCheckService(
             string.IsNullOrWhiteSpace(right) ||
             left == "UNK" ||
             right == "UNK" ||
-            left == right;
+            CountryCodeCatalog.AreEquivalent(left, right);
     }
 
     private static bool HaveCompetitionOverlap(

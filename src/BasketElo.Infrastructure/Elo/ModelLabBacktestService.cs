@@ -1,4 +1,5 @@
 using BasketElo.Domain.Elo;
+using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -475,7 +476,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
     private static decimal RoundPercentage(decimal value) => Math.Round(value * 100m, 1, MidpointRounding.AwayFromZero);
 
     private static string FormatCountryCode(string? countryCode)
-        => string.IsNullOrWhiteSpace(countryCode) ? "INT" : countryCode.Trim().ToUpperInvariant();
+        => CountryCodeCatalog.Normalize(countryCode) ?? "INT";
 
     private sealed record BacktestGame(
         Guid Id,

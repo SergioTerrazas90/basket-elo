@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using BasketElo.Infrastructure.Identity;
 
 namespace BasketElo.Infrastructure.Backfill;
 
@@ -270,12 +271,7 @@ public static class InternationalTeamCatalog
     }
 
     private static string CanonicalCode(string code)
-        => code.ToUpperInvariant() switch
-        {
-            "CON" => "CGO",
-            "SMN" => "SCG",
-            _ => code
-        };
+        => CountryCodeCatalog.Normalize(code) ?? code.ToUpperInvariant();
 
     private static string NormalizeName(string? value)
         => string.Concat((value ?? string.Empty)

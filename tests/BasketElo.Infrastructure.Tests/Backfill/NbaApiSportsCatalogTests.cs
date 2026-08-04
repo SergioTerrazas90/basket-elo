@@ -114,7 +114,7 @@ public class NbaApiSportsCatalogTests
         Assert.True(await processor.TryProcessNextPendingJobAsync(CancellationToken.None));
 
         Assert.Equal(BackfillJobStatus.Completed, job.Status);
-        Assert.Equal("USA", (await dbContext.Competitions.SingleAsync()).CountryCode);
+        Assert.Equal("US", (await dbContext.Competitions.SingleAsync()).CountryCode);
         var persistedGames = await dbContext.Games.ToListAsync();
         Assert.True(
             persistedGames.Count == 2,

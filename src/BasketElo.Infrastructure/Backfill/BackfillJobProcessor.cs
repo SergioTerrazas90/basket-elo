@@ -310,14 +310,14 @@ public class BackfillJobProcessor(
 
             foreach (var providerGame in allGames)
             {
-                var homeCountryCode = providerGame.SourceHomeTeamCountryCode ??
+                var homeCountryCode = NormalizeCountryCode(providerGame.SourceHomeTeamCountryCode ??
                     (string.Equals(providerGame.Source, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase)
                         ? FibaBasketballDataProvider.CountryCodeFromTeamId(providerGame.SourceHomeTeamId)
-                        : competition.CountryCode);
-                var awayCountryCode = providerGame.SourceAwayTeamCountryCode ??
+                        : competition.CountryCode));
+                var awayCountryCode = NormalizeCountryCode(providerGame.SourceAwayTeamCountryCode ??
                     (string.Equals(providerGame.Source, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase)
                         ? FibaBasketballDataProvider.CountryCodeFromTeamId(providerGame.SourceAwayTeamId)
-                        : competition.CountryCode);
+                        : competition.CountryCode));
                 var homeTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceHomeTeamId, providerGame.HomeTeamName, homeCountryCode, canonicalSeason, competition.EloPoolKey, cancellationToken);
                 var awayTeam = await GetOrCreateTeamAsync(providerGame.Source, providerGame.SourceAwayTeamId, providerGame.AwayTeamName, awayCountryCode, canonicalSeason, competition.EloPoolKey, cancellationToken);
 
@@ -684,6 +684,7 @@ public class BackfillJobProcessor(
         string? eloPoolKey,
         CancellationToken cancellationToken)
     {
+        countryCode = NormalizeCountryCode(countryCode);
         sourceTeamId = NormalizeSourceTeamId(sourceTeamId, teamName);
         var isInternational = string.Equals(
             eloPoolKey,
@@ -946,15 +947,7 @@ public class BackfillJobProcessor(
     }
 
     private static string? NormalizeCountryCode(string? providerCountryCode)
-    {
-        if (string.IsNullOrWhiteSpace(providerCountryCode))
-        {
-            return null;
-        }
-
-        var normalized = providerCountryCode.Trim().ToUpperInvariant();
-        return normalized.Length <= 3 ? normalized : normalized[..3];
-    }
+        => CountryCodeCatalog.Normalize(providerCountryCode);
 
     private static string NormalizeInternationalTeamName(string value)
     {
@@ -988,8 +981,8 @@ public class BackfillJobProcessor(
             "Slovenia" => "SI",
             "Latvia" => "LV",
             "Estonia" => "EE",
-            "USA" => "USA",
-            "United States" => "USA",
+            "USA" => "US",
+            "United States" => "US",
             "Europe" => null,
             _ => null
         };

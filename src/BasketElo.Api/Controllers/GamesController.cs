@@ -1,6 +1,7 @@
 using BasketElo.Api.Auth;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Games;
+using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
@@ -397,59 +398,26 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
     }
 
     private static string DisplayCountryFromCode(string? countryCode)
-    {
-        return countryCode?.ToUpperInvariant() switch
-        {
-            "ES" => "Spain",
-            "ESP" => "Spain",
-            "FR" => "France",
-            "FRA" => "France",
-            "LT" => "Lithuania",
-            "LTU" => "Lithuania",
-            "GR" => "Greece",
-            "GRC" => "Greece",
-            "IT" => "Italy",
-            "ITA" => "Italy",
-            "TR" => "Turkey",
-            "TUR" => "Turkey",
-            "LV" => "Latvia",
-            "LVA" => "Latvia",
-            "BE" => "Belgium",
-            "BEL" => "Belgium",
-            "DE" => "Germany",
-            "DEU" => "Germany",
-            "IL" => "Israel",
-            "ISR" => "Israel",
-            "PL" => "Poland",
-            "POL" => "Poland",
-            "CZ" => "Czech Republic",
-            "CZE" => "Czech Republic",
-            "RU" => "Russia",
-            "RUS" => "Russia",
-            "US" => "United States",
-            "USA" => "United States",
-            _ => countryCode ?? string.Empty
-        };
-    }
+        => CountryCodeCatalog.DisplayName(countryCode);
 
     private static IReadOnlyCollection<string> GetCountryCodes(string displayCountry)
     {
         return displayCountry switch
         {
-            "Spain" => ["ES", "ESP"],
-            "France" => ["FR", "FRA"],
-            "Lithuania" => ["LT", "LTU"],
-            "Greece" => ["GR", "GRC"],
-            "Italy" => ["IT", "ITA"],
-            "Turkey" => ["TR", "TUR"],
-            "Latvia" => ["LV", "LVA"],
-            "Belgium" => ["BE", "BEL"],
-            "Germany" => ["DE", "DEU"],
-            "Israel" => ["IL", "ISR"],
-            "Poland" => ["PL", "POL"],
-            "Czech Republic" => ["CZ", "CZE"],
-            "Russia" => ["RU", "RUS"],
-            "United States" => ["US", "USA"],
+            "Spain" => ["ES"],
+            "France" => ["FR"],
+            "Lithuania" => ["LT"],
+            "Greece" => ["GR"],
+            "Italy" => ["IT"],
+            "Turkey" => ["TR"],
+            "Latvia" => ["LV"],
+            "Belgium" => ["BE"],
+            "Germany" => ["DE"],
+            "Israel" => ["IL"],
+            "Poland" => ["PL"],
+            "Czech Republic" => ["CZ"],
+            "Russia" => ["RU"],
+            "United States" => ["US"],
             _ => [displayCountry]
         };
     }

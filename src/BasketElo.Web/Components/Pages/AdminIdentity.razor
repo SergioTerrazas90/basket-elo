@@ -220,7 +220,14 @@ else
                         else
                         {
                             <p class="mb-2">@finding.SuggestedAction</p>
-                            @if (finding.AffectedTeamId.HasValue)
+                            @if (finding.FindingType == "alias_observation")
+                            {
+                                <div class="alert alert-light border py-2 px-3 mb-2">
+                                    <strong>Alias will match canonical team:</strong>
+                                    <span>@CanonicalAliasTarget(finding)</span>
+                                </div>
+                            }
+                            @if (finding.AffectedTeamId.HasValue && finding.FindingType != "alias_observation")
                             {
                                 <div class="metadata-editor">
                                     <input class="form-control form-control-sm" placeholder="Canonical name" @bind="reviewState.CanonicalName" />
@@ -749,6 +756,13 @@ else
         }
 
         return teamId?.ToString() ?? "Unknown team";
+    }
+
+    private static string CanonicalAliasTarget(IdentityHealthCheckFindingDto finding)
+    {
+        return !string.IsNullOrWhiteSpace(finding.AffectedTeamName)
+            ? finding.AffectedTeamName
+            : "No canonical team resolved";
     }
 
     private sealed class FindingReviewState

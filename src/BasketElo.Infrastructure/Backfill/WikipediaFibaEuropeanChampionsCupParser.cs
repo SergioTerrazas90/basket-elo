@@ -16,7 +16,7 @@ namespace BasketElo.Infrastructure.Backfill;
 /// </summary>
 internal static class WikipediaFibaEuropeanChampionsCupParser
 {
-    public const string ParserVersion = "wikipedia-fiba-european-champions-cup-wikitext-v1";
+    public const string ParserVersion = "wikipedia-fiba-european-champions-cup-wikitext-v2-score-matrix-guard";
 
     private static readonly IReadOnlyDictionary<string, string> MonthNumbers =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -478,6 +478,15 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
                     continue;
                 }
 
+                // Group-stage score matrices also have five or more cells, but
+                // their third cell is the first score rather than the second
+                // team. Treating that score as a team creates identities such as
+                // "77-88" and then emits two fabricated two-leg games.
+                if (IsScoreLikeTeamName(cells[0]) || IsScoreLikeTeamName(cells[2]))
+                {
+                    continue;
+                }
+
                 var firstTeam = ParseTeam(cells[0], null);
                 var secondTeam = ParseTeam(cells[2], null);
                 if (firstTeam is null || secondTeam is null ||
@@ -850,7 +859,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
     {
         var link = Regex.Match(raw, @"\[\[(?<target>[^|\]]+)(?:\|(?<display>[^\]]+))?\]\]");
         var name = CleanWikiText(raw).Trim(' ', '*', '\'', '.');
-        if (string.IsNullOrWhiteSpace(name) || name is "-" or "bye" || name.Contains("{{", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(name) || name is "-" or "bye" || name.Contains("{{", StringComparison.Ordinal) || IsScoreLikeTeamName(name))
         {
             return null;
         }
@@ -865,6 +874,12 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         var country = string.IsNullOrWhiteSpace(countryCode) ? null : CleanWikiText(countryCode).ToUpperInvariant();
         return new TeamRef($"wiki-team:{id}", name, country);
     }
+
+    private static bool IsScoreLikeTeamName(string value)
+        => Regex.IsMatch(
+            value.Trim(),
+            @"^\d{1,3}\s*[-\u2013\u2014Ã¢â‚¬â€œÃ¢â‚¬â€]\s*\d{1,3}$",
+            RegexOptions.CultureInvariant);
 
     private static string CleanWikiText(string value)
     {

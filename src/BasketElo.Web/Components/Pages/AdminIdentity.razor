@@ -730,7 +730,7 @@ else
                 CanonicalName = finding.AffectedTeamName,
                 CountryCode = finding.SuggestedCountryCode ?? finding.AffectedTeamCountryCode,
                 IsActive = finding.AffectedTeamIsActive ?? true,
-                MergeTargetTeamId = finding.AffectedTeamId ?? finding.RelatedTeamId
+                MergeTargetTeamId = finding.RelatedTeamId ?? finding.AffectedTeamId
             };
             reviewStates[finding.Id] = state;
         }

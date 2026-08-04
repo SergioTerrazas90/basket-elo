@@ -700,7 +700,23 @@ public class IdentityHealthCheckService(
             ? finding.RelatedTeamId
             : finding.AffectedTeamId;
 
-        if (!sourceTeamId.HasValue || sourceTeamId == targetTeamId)
+        if (!sourceTeamId.HasValue)
+        {
+            var sourceAliasAlreadyOnTarget = await dbContext.TeamAliases.AnyAsync(
+                x =>
+                    x.TeamId == targetTeamId &&
+                    x.Source == finding.Source &&
+                    x.SourceTeamId == finding.SourceTeamId,
+                cancellationToken);
+            if (sourceAliasAlreadyOnTarget)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("The finding does not identify a second team to merge.");
+        }
+
+        if (sourceTeamId == targetTeamId)
         {
             throw new InvalidOperationException("The finding does not identify a second team to merge.");
         }
@@ -851,7 +867,8 @@ public class IdentityHealthCheckService(
                 x.Status != IdentityFindingStatus.Open &&
                 (x.ResolutionAction == "keep_separate" ||
                     x.ResolutionAction == "accept_alias" ||
-                    x.ResolutionAction == "ignore"))
+                    x.ResolutionAction == "ignore" ||
+                    x.ResolutionAction == "merge_duplicate"))
             .Select(x => new
             {
                 x.FindingType,
@@ -884,7 +901,7 @@ public class IdentityHealthCheckService(
         string action,
         CancellationToken cancellationToken)
     {
-        if (action is not ("keep_separate" or "accept_alias" or "ignore"))
+        if (action is not ("keep_separate" or "accept_alias" or "ignore" or "merge_duplicate"))
         {
             return;
         }
@@ -1259,12 +1276,15 @@ public class IdentityHealthCheckService(
 
         var sourceKey = $"{source ?? "*"}:{sourceTeamId ?? "*"}";
         var relatedSourceKey = $"{relatedSource ?? "*"}:{relatedSourceTeamId ?? "*"}";
+        var incompletePairSuffix = affectedTeamId.HasValue && relatedTeamId.HasValue
+            ? string.Empty
+            : $"|source={sourceKey}|related={relatedSourceKey}";
 
         return findingType switch
         {
             IdentityFindingType.PossibleDuplicate or
                 IdentityFindingType.PossibleCrossSourceMatch or
-                IdentityFindingType.PossibleCrossSeasonSplit => $"{findingType}|teams={pairKey}",
+                IdentityFindingType.PossibleCrossSeasonSplit => $"{findingType}|teams={pairKey}{incompletePairSuffix}",
             IdentityFindingType.AliasObservation => $"{findingType}|team={affectedTeamId:N}|source={sourceKey}",
             IdentityFindingType.SourceTeamSplit => $"{findingType}|source={sourceKey}",
             _ => $"{findingType}|team={pairKey}|source={sourceKey}|related={relatedSourceKey}"

@@ -187,6 +187,35 @@ public sealed class FibaBasketballDataProviderTests
     }
 
     [Fact]
+    public async Task ResolvesKoracCupUsingEuroCupChallengeHistoryFamily()
+    {
+        var handler = new KoracFixtureHandler();
+        var provider = new FibaBasketballDataProvider(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "Europe",
+            "FIBA Korac Cup",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+        var result = await provider.GetGamesAsync(
+            league!,
+            "1971-1972",
+            new BackfillExecutionContext(2, 0),
+            CancellationToken.None);
+
+        var game = Assert.Single(result.Games);
+        Assert.Equal("7002", game.SourceGameId);
+        Assert.Equal("LOKO", game.SourceHomeTeamId);
+        Assert.Equal("BEOG", game.SourceAwayTeamId);
+        Assert.Equal((short)83, game.HomeScore);
+        Assert.Equal((short)71, game.AwayScore);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task ParsesHistoricEmbeddedGameWhenFibaTeamCodesAreMissing()
     {
         var handler = new HistoricEmbeddedFixtureHandler();
@@ -423,6 +452,40 @@ public sealed class FibaBasketballDataProviderTests
                 <div>Final Â· Finals</div><div>Final</div>
                 <div class="wa01avm"><div class="wa01avq">VARES</div><div class="wa01avo">77</div></div>
                 <div class="wa01avm"><div class="wa01avq">MACC</div><div class="wa01avo">67</div></div>
+              </a>
+            </div></div>
+            """;
+    }
+
+    private sealed class KoracFixtureHandler : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            var content = request.RequestUri?.AbsolutePath.EndsWith("/games", StringComparison.Ordinal) == true
+                ? GamesHtml
+                : HistoryHtml;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(content)
+            });
+        }
+
+        private const string HistoryHtml = """
+            <table><tbody>
+            <tr><td>1972</td><td><a href="/en/history/164-eurocup-challenge/8600">1972</a></td></tr>
+            </tbody></table>
+            """;
+
+        private const string GamesHtml = """
+            <div class="date"><div>7 March 1972</div></div>
+            <div class="games"><div data-testid="ui-game-card">
+            <a href="/en/history/164-eurocup-challenge/8600/games/7002-LOKO-BEOG">
+                <div>Final · Finals</div><div>Finals</div>
+                <div class="wa01avm"><div class="wa01avq">LOKO</div><div class="wa01avo">83</div></div>
+                <div class="wa01avm"><div class="wa01avq">BEOG</div><div class="wa01avo">71</div></div>
               </a>
             </div></div>
             """;

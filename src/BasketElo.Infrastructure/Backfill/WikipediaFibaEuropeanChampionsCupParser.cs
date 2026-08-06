@@ -74,6 +74,31 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         return $"{suffix} {competition}";
     }
 
+    public static string KoracEnglishPageTitle(int startYear)
+    {
+        var endYear = startYear + 1;
+        return startYear switch
+        {
+            1971 => "1972 FIBA KoraÄ‡ Cup",
+            2001 => "2001â€“02 FIBA KoraÄ‡ Cup",
+            >= 1972 and <= 2000 => $"{startYear}â€“{endYear % 100:00} FIBA KoraÄ‡ Cup",
+            _ => throw new ArgumentOutOfRangeException(nameof(startYear), startYear, "Wikipedia coverage is configured for 1971-2001.")
+        };
+    }
+
+    public static string KoracWikipediaPageTitle(int startYear)
+    {
+        var endYear = startYear + 1;
+        return startYear switch
+        {
+            1971 => "1972 FIBA Kora\u0107 Cup",
+            1972 => "1973 FIBA Kora\u0107 Cup",
+            2001 => "2001\u201302 FIBA Kora\u0107 Cup",
+            >= 1973 and <= 2000 => $"{startYear}\u2013{endYear % 100:00} FIBA Kora\u0107 Cup",
+            _ => throw new ArgumentOutOfRangeException(nameof(startYear), startYear, "Wikipedia coverage is configured for 1971-2001.")
+        };
+    }
+
     public static IReadOnlyCollection<BasketballProviderGame> ParseGames(
         string wikitext,
         string season,
@@ -298,835 +323,13 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
                         phase,
                         round,
                         $"todor66-{tableOrdinal}-{rowOrdinal}-2",
-                        inferredDate: false);
-                }
-            }
-        }
-
-        warnings.Add($"Todor66 parsed {accumulator.Games.Count} distinct game-level result(s) for {season}.");
-        return accumulator.Games
-            .OrderBy(game => game.GameDateTimeUtc)
-            .ThenBy(game => game.SourceGameId, StringComparer.Ordinal)
-            .ToArray();
-    }
-
-    private static void ParseTwoLegTemplates(
-        string wikitext,
-        int startYear,
-        int endYear,
-        GameAccumulator accumulator)
-    {
-        var ordinal = 0;
-        foreach (var match in ExtractTemplates(wikitext, "TwoLegResult"))
-        {
-            ordinal++;
-            var values = SplitTopLevel(match.Body.TrimStart('|'), "|");
-            var teamIndexes = values
-                .Select((value, index) => new { Value = value, Index = index })
-                .Where(item => !item.Value.Contains('=') && item.Value.Contains("[[", StringComparison.Ordinal))
-                .Select(item => item.Index)
-                .Take(2)
-                .ToArray();
-            if (teamIndexes.Length < 2)
-            {
-                continue;
-            }
-
-            var firstTeam = ParseTeam(values[teamIndexes[0]], values.ElementAtOrDefault(teamIndexes[0] + 1));
-            var secondTeam = ParseTeam(values[teamIndexes[1]], values.ElementAtOrDefault(teamIndexes[1] + 1));
-            var legScores = values
-                .Skip(teamIndexes[1] + 1)
-                .Where(value => !value.Contains('=') && TryParseScorePair(value, out _))
-                .Take(2)
-                .Select(value => { TryParseScorePair(value, out var score); return score; })
-                .ToArray();
-            if (firstTeam is null || secondTeam is null || legScores.Length == 0)
-            {
-                continue;
-            }
-
-            var context = FindContext(wikitext, match.Index, startYear, endYear, accumulator.FallbackDate);
-            var firstDate = context.Dates.Count > 0 ? context.Dates[0] : accumulator.NextFallbackDate();
-            accumulator.Add(firstTeam, secondTeam, legScores[0].Home, legScores[0].Away, firstDate, context.Phase, context.Round, $"twoleg-{ordinal}-1", context.Dates.Count == 0);
-            if (legScores.Length > 1)
-            {
-                var secondDate = context.Dates.Count > 1 ? context.Dates[1] : accumulator.NextFallbackDate();
-                accumulator.Add(secondTeam, firstTeam, legScores[1].Away, legScores[1].Home, secondDate, context.Phase, context.Round, $"twoleg-{ordinal}-2", context.Dates.Count < 2);
-            }
-        }
-    }
-
-    private static void ParseThreeLegTemplates(
-        string wikitext,
-        int startYear,
-        int endYear,
-        GameAccumulator accumulator)
-    {
-        var ordinal = 0;
-        foreach (var match in ExtractTemplates(wikitext, "ThreeLegResult"))
-        {
-            ordinal++;
-            var values = SplitTopLevel(match.Body.TrimStart('|'), "|");
-            var teamIndexes = values
-                .Select((value, index) => new { Value = value, Index = index })
-                .Where(item => !item.Value.Contains('=') && item.Value.Contains("[[", StringComparison.Ordinal))
-                .Select(item => item.Index)
-                .Take(2)
-                .ToArray();
-            if (teamIndexes.Length < 2)
-            {
-                continue;
-            }
-
-            var firstTeam = ParseTeam(values[teamIndexes[0]], values.ElementAtOrDefault(teamIndexes[0] + 1));
-            var secondTeam = ParseTeam(values[teamIndexes[1]], values.ElementAtOrDefault(teamIndexes[1] + 1));
-            var scores = values
-                .Skip(teamIndexes[1] + 1)
-                .Where(value => !value.Contains('=') && TryParseScorePair(value, out _))
-                .Take(3)
-                .Select(value => { TryParseScorePair(value, out var score); return score; })
-                .ToArray();
-            if (firstTeam is null || secondTeam is null || scores.Length == 0)
-            {
-                continue;
-            }
-
-            var context = FindContext(wikitext, match.Index, startYear, endYear, accumulator.FallbackDate);
-            for (var scoreIndex = 0; scoreIndex < scores.Length; scoreIndex++)
-            {
-                var date = context.Dates.ElementAtOrDefault(scoreIndex);
-                var inferredDate = date == default;
-                date = inferredDate ? accumulator.NextFallbackDate() : date;
-                var score = scores[scoreIndex];
-                var home = scoreIndex % 2 == 0 ? firstTeam : secondTeam;
-                var away = scoreIndex % 2 == 0 ? secondTeam : firstTeam;
-                var homeScore = scoreIndex % 2 == 0 ? score.Home : score.Away;
-                var awayScore = scoreIndex % 2 == 0 ? score.Away : score.Home;
-                accumulator.Add(home, away, homeScore, awayScore, date, context.Phase, context.Round, $"threeleg-{ordinal}-{scoreIndex + 1}", inferredDate);
-            }
-        }
-    }
-
-    private static void ParseTieBreakNotes(
-        string wikitext,
-        int startYear,
-        int endYear,
-        GameAccumulator accumulator)
-    {
-        var ordinal = 0;
-        foreach (Match match in Regex.Matches(
-            wikitext,
-            @"(?is)(?:partido\s+de\s+desempate|tercer\s+partido).*?(?<home>\[\[[^\]]+\]\])\s*-\s*(?<away>\[\[[^\]]+\]\])\s+(?<score>\d{1,3}\s*[-Ã¢â‚¬â€œÃ¢â‚¬â€]\s*\d{1,3})",
-            RegexOptions.IgnoreCase))
-        {
-            if (!TryParseScorePair(match.Groups["score"].Value, out var score))
-            {
-                continue;
-            }
-
-            var home = ParseTeam(match.Groups["home"].Value, null);
-            var away = ParseTeam(match.Groups["away"].Value, null);
-            if (home is null || away is null)
-            {
-                continue;
-            }
-
-            ordinal++;
-            var context = FindContext(wikitext, match.Index, startYear, endYear, accumulator.FallbackDate);
-            var date = ExtractDates(match.Value, startYear, endYear).FirstOrDefault();
-            var inferredDate = date == default;
-            date = inferredDate ? accumulator.NextFallbackDate() : date;
-            accumulator.Add(home, away, score.Home, score.Away, date, context.Phase, context.Round, $"tiebreak-{ordinal}", inferredDate);
-        }
-    }
-
-    private static void ParseTieBreakNotesReliable(
-        string wikitext,
-        int startYear,
-        int endYear,
-        GameAccumulator accumulator)
-    {
-        var ordinal = 0;
-        const string scorePattern = @"\d{1,3}\s*[^0-9\s]\s*\d{1,3}";
-        var pattern = $@"(?is)\bun\s+partido\s+de\s+desempate.*?(?<home>\[\[[^\]]+\]\])\s*-\s*(?<away>\[\[[^\]]+\]\])\s+(?<score>{scorePattern})";
-        foreach (Match match in Regex.Matches(wikitext, pattern, RegexOptions.IgnoreCase))
-        {
-            if (!TryParseScorePair(match.Groups["score"].Value, out var score))
-            {
-                continue;
-            }
-
-            var home = ParseTeam(match.Groups["home"].Value, null);
-            var away = ParseTeam(match.Groups["away"].Value, null);
-            if (home is null || away is null)
-            {
-                continue;
-            }
-
-            ordinal++;
-            var context = FindContext(wikitext, match.Index, startYear, endYear, accumulator.FallbackDate);
-            var date = ExtractDates(match.Value, startYear, endYear).FirstOrDefault();
-            var inferredDate = date == default;
-            date = inferredDate ? accumulator.NextFallbackDate() : date;
-            accumulator.Add(home, away, score.Home, score.Away, date, context.Phase, context.Round, $"tiebreak-reliable-{ordinal}", inferredDate);
-        }
-    }
-
-    private static void ParseLiteralTables(
-        string wikitext,
-        int startYear,
-        int endYear,
-        GameAccumulator accumulator)
-    {
-        var tableOrdinal = 0;
-        foreach (Match tableMatch in Regex.Matches(wikitext, @"(?ms)^\{\|(?<body>.*?)^\|\}"))
-        {
-            tableOrdinal++;
-            var context = FindContext(wikitext, tableMatch.Index, startYear, endYear, accumulator.FallbackDate);
-            var rowOrdinal = 0;
-            foreach (var cells in ParseTableRows(tableMatch.Groups["body"].Value))
-            {
-                rowOrdinal++;
-                // Historical Wikipedia articles use: team, aggregate, team,
-                // first leg, second leg. Standings and roster tables do not fit.
-                if (cells.Count < 5)
-                {
-                    continue;
-                }
-
-                // Group-stage score matrices also have five or more cells, but
-                // their third cell is the first score rather than the second
-                // team. Treating that score as a team creates identities such as
-                // "77-88" and then emits two fabricated two-leg games.
-                if (IsScoreLikeTeamName(cells[0]) || IsScoreLikeTeamName(cells[2]))
-                {
-                    continue;
-                }
-
-                var firstTeam = ParseTeam(cells[0], null);
-                var secondTeam = ParseTeam(cells[2], null);
-                if (firstTeam is null || secondTeam is null ||
-                    !TryParseScorePair(cells[3], out var firstLeg) ||
-                    !TryParseScorePair(cells[4], out var secondLeg))
-                {
-                    continue;
-                }
-
-                var firstDate = context.Dates.Count > 0 ? context.Dates[0] : accumulator.NextFallbackDate();
-                var secondDate = context.Dates.Count > 1 ? context.Dates[1] : accumulator.NextFallbackDate();
-                accumulator.Add(firstTeam, secondTeam, firstLeg.Home, firstLeg.Away, firstDate, context.Phase, context.Round, $"table-{tableOrdinal}-{rowOrdinal}-1", context.Dates.Count == 0);
-                accumulator.Add(secondTeam, firstTeam, secondLeg.Away, secondLeg.Home, secondDate, context.Phase, context.Round, $"table-{tableOrdinal}-{rowOrdinal}-2", context.Dates.Count < 2);
-            }
-        }
-    }
-
-    private static void ParseFinalTemplates(
-        string wikitext,
-        int startYear,
-        int endYear,
-        GameAccumulator accumulator)
-    {
-        var ordinal = 0;
-        foreach (var match in ExtractTemplates(wikitext, "Partido de baloncesto"))
-        {
-            ordinal++;
-            var values = SplitTopLevel(match.Body.TrimStart('|'), "|")
-                .Select(value =>
-                {
-                    var separator = FindTopLevelDelimiter(value, "=");
-                    return separator < 0
-                        ? (Name: string.Empty, Value: value)
-                        : (Name: value[..separator].Trim(), Value: value[(separator + 1)..].Trim());
-                })
-                .Where(pair => pair.Name.Length > 0)
-                .ToDictionary(pair => pair.Name, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
-
-            if (!values.TryGetValue("team1", out var team1Raw) || !values.TryGetValue("team2", out var team2Raw) ||
-                !values.TryGetValue("score1", out var score1Raw) || !values.TryGetValue("score2", out var score2Raw) ||
-                !TryParseSingleScore(score1Raw, out var score1) || !TryParseSingleScore(score2Raw, out var score2))
-            {
-                continue;
-            }
-
-            var team1 = ParseTeam(team1Raw, null);
-            var team2 = ParseTeam(team2Raw, null);
-            if (team1 is null || team2 is null)
-            {
-                continue;
-            }
-
-            var date = values.TryGetValue("date", out var dateRaw) && TryParseSpanishDate(dateRaw, startYear, endYear, out var parsedDate)
-                ? parsedDate
-                : accumulator.NextFallbackDate();
-            accumulator.Add(team1, team2, score1, score2, date, "Final", "Final", $"final-{ordinal}", !values.ContainsKey("date"));
-        }
-    }
-
-    private static void ParseMatrixTables(
-        string wikitext,
-        int startYear,
-        int endYear,
-        GameAccumulator accumulator)
-    {
-        var tableOrdinal = 0;
-        foreach (Match tableMatch in Regex.Matches(wikitext, @"(?ms)^\{\|(?<body>.*?)^\|\}"))
-        {
-            tableOrdinal++;
-            var rows = ParseTableRows(tableMatch.Groups["body"].Value);
-            var headerIndex = rows
-                .Select((row, index) => new { Row = row, Index = index })
-                .FirstOrDefault(item =>
-                    item.Row.Any(cell => CleanWikiText(cell).Equals("Team", StringComparison.OrdinalIgnoreCase)) &&
-                    item.Row.Any(cell => CleanWikiText(cell).Equals("Qualification", StringComparison.OrdinalIgnoreCase)))
-                ?.Index;
-            if (headerIndex is null)
-            {
-                continue;
-            }
-
-            var header = rows[headerIndex.Value];
-            var teamColumn = header
-                .Select((cell, index) => new { Cell = CleanWikiText(cell), Index = index })
-                .First(item => item.Cell.Equals("Team", StringComparison.OrdinalIgnoreCase))
-                .Index;
-            var qualificationColumn = header
-                .Select((cell, index) => new { Cell = CleanWikiText(cell), Index = index })
-                .First(item => item.Cell.Equals("Qualification", StringComparison.OrdinalIgnoreCase))
-                .Index;
-            var matrixColumns = header
-                .Select((cell, index) => new { Cell = CleanWikiText(cell), Index = index })
-                .Where(item => item.Index > qualificationColumn && !string.IsNullOrWhiteSpace(item.Cell))
-                .ToArray();
-            if (matrixColumns.Length < 3)
-            {
-                continue;
-            }
-
-            var dataRows = rows
-                .Skip(headerIndex.Value + 1)
-                .Select(row => new
-                {
-                    Row = row,
-                    Team = row.Count > teamColumn ? ParseTeam(row[teamColumn], null) : null
-                })
-                .Where(item => item.Team is not null &&
-                    matrixColumns.Count(column => column.Index < item.Row.Count &&
-                        (TryParseScorePair(item.Row[column.Index], out _) || IsMatrixBye(item.Row[column.Index]))) >= 2)
-                .Take(matrixColumns.Length)
-                .ToArray();
-            if (dataRows.Length != matrixColumns.Length)
-            {
-                continue;
-            }
-
-            var context = FindContext(wikitext, tableMatch.Index, startYear, endYear, accumulator.FallbackDate);
-            for (var rowIndex = 0; rowIndex < dataRows.Length; rowIndex++)
-            {
-                for (var columnIndex = rowIndex + 1; columnIndex < matrixColumns.Length; columnIndex++)
-                {
-                    var scoreCell = dataRows[rowIndex].Row[matrixColumns[columnIndex].Index];
-                    if (!TryParseScorePair(scoreCell, out var score))
-                    {
-                        continue;
-                    }
-
-                    accumulator.Add(
-                        dataRows[rowIndex].Team!,
-                        dataRows[columnIndex].Team!,
-                        score.Home,
-                        score.Away,
-                        accumulator.NextFallbackDate(),
-                        context.Phase,
-                        context.Round,
-                        $"matrix-{tableOrdinal}-{rowIndex + 1}-{columnIndex + 1}",
-                        inferredDate: true);
-                }
-            }
-        }
-    }
-
-    private static void ParseSportsTableTemplates(
-        string wikitext,
-        int startYear,
-        int endYear,
-        GameAccumulator accumulator)
-    {
-        var templateOrdinal = 0;
-        foreach (var match in ExtractTemplates(wikitext, "#invoke:Sports table"))
-        {
-            templateOrdinal++;
-            var parameters = SplitTopLevel(match.Body.TrimStart('|'), "|")
-                .Select(value =>
-                {
-                    var separator = FindTopLevelDelimiter(value, "=");
-                    return separator < 0
-                        ? (Name: string.Empty, Value: value)
-                        : (Name: value[..separator].Trim(), Value: value[(separator + 1)..].Trim());
-                })
-                .Where(pair => pair.Name.Length > 0)
-                .ToDictionary(pair => pair.Name, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
-            if (!parameters.TryGetValue("team_order", out var teamOrderRaw))
-            {
-                continue;
-            }
-
-            var teamCodes = teamOrderRaw
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .ToArray();
-            var teams = teamCodes
-                .Select(code => parameters.TryGetValue($"name_{code}", out var raw) ? ParseTeam(raw, null) : null)
-                .ToArray();
-            if (teams.Any(team => team is null))
-            {
-                continue;
-            }
-
-            var context = FindContext(wikitext, match.Index, startYear, endYear, accumulator.FallbackDate);
-            for (var homeIndex = 0; homeIndex < teamCodes.Length; homeIndex++)
-            {
-                for (var awayIndex = homeIndex + 1; awayIndex < teamCodes.Length; awayIndex++)
-                {
-                    if (!parameters.TryGetValue($"match_{teamCodes[homeIndex]}_{teamCodes[awayIndex]}", out var scoreRaw) ||
-                        !TryParseScorePair(scoreRaw, out var score))
-                    {
-                        continue;
-                    }
-
-                    accumulator.Add(
-                        teams[homeIndex]!,
-                        teams[awayIndex]!,
-                        score.Home,
-                        score.Away,
-                        accumulator.NextFallbackDate(),
-                        context.Phase,
-                        context.Round,
-                        $"sports-table-{templateOrdinal}-{homeIndex + 1}-{awayIndex + 1}",
-                        inferredDate: true);
-                }
-            }
-        }
-    }
-
-    private static bool IsMatrixBye(string value)
-    {
-        var cleaned = CleanWikiText(value);
-        return cleaned is "â€”" or "â€“" or "Ã¢â‚¬â€" or "Ã¢â‚¬â€œ" or "-" or "bye" or "BYE";
-    }
-
-    private static IReadOnlyList<HtmlNode> GetHtmlCells(HtmlNode row)
-        => row.SelectNodes("./th|./td")?.ToArray() ?? [];
-
-    private static string CleanHtmlText(HtmlNode cell)
-        => HtmlEntity.DeEntitize(Regex.Replace(cell.InnerText, @"\s+", " ")).Trim();
-
-    private static bool IsTodorScore(string value)
-        => value.Equals("wo", StringComparison.OrdinalIgnoreCase) || TryParseScorePair(value, out _);
-
-    private static bool IsCountryCode(string? value)
-        => !string.IsNullOrWhiteSpace(value) && value.Trim().Length is >= 2 and <= 3 && value.Trim().All(char.IsLetter);
-
-    private static bool TryParseTodorDates(
-        string value,
-        int startYear,
-        ref int? monthHint,
-        out IReadOnlyList<DateTime> dates)
-    {
-        var parsed = new List<DateTime>();
-        var tokens = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        int? firstDay = null;
-        for (var tokenIndex = 0; tokenIndex < tokens.Length; tokenIndex++)
-        {
-            var token = tokens[tokenIndex];
-            var match = Regex.Match(token, @"^(?<day>\d{1,2})(?:\.(?<month>\d{1,2}))?$");
-            if (!match.Success)
-            {
-                dates = [];
-                return false;
-            }
-
-            var day = int.Parse(match.Groups["day"].Value, CultureInfo.InvariantCulture);
-            var month = match.Groups["month"].Success
-                ? int.Parse(match.Groups["month"].Value, CultureInfo.InvariantCulture)
-                : monthHint ?? 9;
-            if (!match.Groups["month"].Success && tokenIndex > 0 && firstDay.HasValue && day < firstDay.Value && month < 12)
-            {
-                month++;
-            }
-
-            var year = month >= 9 ? startYear : startYear + 1;
-            if (month is >= 1 and <= 12 && day <= DateTime.DaysInMonth(year, month))
-            {
-                parsed.Add(new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc));
-            }
-
-            monthHint = month;
-            firstDay ??= day;
-        }
-
-        dates = parsed.Distinct().ToArray();
-        return dates.Count > 0;
-    }
-
-    private static TeamRef? ParseHtmlTeam(HtmlNode cell)
-    {
-        var anchor = cell.SelectNodes(".//a[@href and not(contains(@href, 'File:'))]")
-            ?.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate.InnerText));
-        var name = anchor is null ? CleanHtmlText(cell) : HtmlEntity.DeEntitize(Regex.Replace(anchor.InnerText, @"\s+", " ")).Trim();
-        return string.IsNullOrWhiteSpace(name) ? null : ParseTeam($"[[{name}]]", null);
-    }
-
-    private static IReadOnlyList<IReadOnlyList<string>> ParseTableRows(string body)
-    {
-        var rows = new List<IReadOnlyList<string>>();
-        foreach (var row in Regex.Split(body, @"(?m)^\|-.*$"))
-        {
-            var cells = new List<string>();
-            foreach (var rawLine in row.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
-            {
-                var line = rawLine.Trim();
-                if (line.Length == 0 || (line[0] != '|' && line[0] != '!'))
-                {
-                    continue;
-                }
-
-                var delimiter = line[0] == '!' ? "!!" : "||";
-                var lineBody = line[1..];
-                var values = SplitTopLevel(lineBody, delimiter);
-                if (values.Count == 1 && !lineBody.TrimStart().StartsWith("style", StringComparison.OrdinalIgnoreCase) &&
-                    !lineBody.TrimStart().StartsWith("align", StringComparison.OrdinalIgnoreCase) &&
-                    SplitTopLevel(lineBody, "|").Count > 1)
-                {
-                    values = SplitTopLevel(lineBody, "|");
-                }
-
-                foreach (var value in values)
-                {
-                    cells.Add(StripCellAttributes(value));
-                }
-            }
-
-            if (cells.Count > 0)
-            {
-                rows.Add(cells);
-            }
-        }
-
-        return rows;
-    }
-
-    private static string StripCellAttributes(string value)
-    {
-        var separator = FindTopLevelDelimiter(value.Trim(), "|");
-        if (separator >= 0)
-        {
-            var prefix = value[..separator];
-            if (prefix.Contains('=') || prefix.Contains("style", StringComparison.OrdinalIgnoreCase) || prefix.Contains("align", StringComparison.OrdinalIgnoreCase))
-            {
-                return value[(separator + 1)..].Trim();
-            }
-        }
-
-        return value.Trim();
-    }
-
-    private static PageContext FindContext(string text, int index, int startYear, int endYear, DateTime fallbackDate)
-    {
-        var prefix = text[..Math.Min(index, text.Length)];
-        var headings = Regex.Matches(prefix, @"(?m)^(?<marks>={2,4})\s*(?<text>.*?)\s*\k<marks>$").Cast<Match>().ToList();
-        var phaseHeading = headings.LastOrDefault(match => match.Groups["marks"].Value.Length == 2);
-        var roundHeading = headings.LastOrDefault(match => match.Groups["marks"].Value.Length >= 3) ?? phaseHeading;
-        var phase = phaseHeading is null ? "Final phase" : CleanWikiText(phaseHeading.Groups["text"].Value);
-        var round = roundHeading is null ? "Published results" : CleanWikiText(roundHeading.Groups["text"].Value);
-        var contextStart = roundHeading?.Index ?? phaseHeading?.Index ?? Math.Max(0, index - 500);
-        var dates = ExtractDates(text[contextStart..Math.Min(index, text.Length)], startYear, endYear);
-        return new PageContext(phase, round, dates);
-    }
-
-    private static DateTime? ExtractInfoboxDate(string text, int startYear, int endYear)
-    {
-        var match = Regex.Match(text, @"(?im)^\|\s*duration\s*=\s*(?<value>.+)$");
-        if (!match.Success)
-        {
-            return null;
-        }
-
-        var date = ExtractDates(match.Groups["value"].Value, startYear, endYear).FirstOrDefault();
-        return date == default ? null : date;
-    }
-
-    private static IReadOnlyList<DateTime> ExtractDates(string text, int startYear, int endYear)
-    {
-        var cleaned = CleanWikiText(text);
-        var dates = new List<DateTime>();
-        foreach (Match match in Regex.Matches(cleaned, @"(?<!\d)(?<day>\d{1,2})\s+(?:(?:de)\s+)?(?<month>[A-Za-zÃ¡Ã©Ã­Ã³Ãº]+)(?:\s+(?:(?:de)\s+)?(?<year>(?:19|20)\d{2}))?", RegexOptions.IgnoreCase))
-        {
-            if (!MonthNumbers.TryGetValue(match.Groups["month"].Value, out var month) || !int.TryParse(match.Groups["day"].Value, out var day))
-            {
-                continue;
-            }
-
-            var year = int.TryParse(match.Groups["year"].Value, out var explicitYear)
-                ? explicitYear
-                : month is "06" or "07" or "08" ? endYear : startYear;
-            if (day <= DateTime.DaysInMonth(year, int.Parse(month, CultureInfo.InvariantCulture)))
-            {
-                dates.Add(new DateTime(year, int.Parse(month, CultureInfo.InvariantCulture), day, 0, 0, 0, DateTimeKind.Utc));
-            }
-        }
-
-        return dates.Distinct().ToArray();
-    }
-
-    private static TeamRef? ParseTeam(string raw, string? countryCode)
-    {
-        var link = Regex.Match(raw, @"\[\[(?<target>[^|\]]+)(?:\|(?<display>[^\]]+))?\]\]");
-        var name = CleanWikiText(raw).Trim(' ', '*', '\'', '.');
-        if (string.IsNullOrWhiteSpace(name) || name is "-" or "bye" || name.Contains("{{", StringComparison.Ordinal) || IsScoreLikeTeamName(name))
-        {
-            return null;
-        }
-
-        var canonical = link.Success ? link.Groups["target"].Value : name;
-        var id = Slugify(canonical);
-        if (string.IsNullOrWhiteSpace(id))
-        {
-            return null;
-        }
-
-        var country = string.IsNullOrWhiteSpace(countryCode) ? null : CleanWikiText(countryCode).ToUpperInvariant();
-        return new TeamRef($"wiki-team:{id}", name, country);
-    }
-
-    private static bool IsScoreLikeTeamName(string value)
-        => Regex.IsMatch(
-            value.Trim(),
-            @"^\d{1,3}\s*[-\u2013\u2014ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â]\s*\d{1,3}$",
-            RegexOptions.CultureInvariant);
-
-    private static string CleanWikiText(string value)
-    {
-        var cleaned = Regex.Replace(value, @"<ref\b[^>]*>.*?</ref>|<ref\b[^>]*/>", string.Empty, RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        cleaned = Regex.Replace(cleaned, @"\{\{[^{}]*\}\}", string.Empty);
-        cleaned = Regex.Replace(cleaned, @"\[\[(?<target>[^|\]]+)(?:\|(?<display>[^\]]+))?\]\]", match => match.Groups["display"].Success ? match.Groups["display"].Value : match.Groups["target"].Value);
-        cleaned = Regex.Replace(cleaned, "<[^>]+>", " ");
-        cleaned = cleaned.Replace("'''", string.Empty, StringComparison.Ordinal).Replace("''", string.Empty, StringComparison.Ordinal).Replace("&nbsp;", " ", StringComparison.OrdinalIgnoreCase);
-        return Regex.Replace(cleaned, @"\s+", " ").Trim();
-    }
-
-    private static string Slugify(string value)
-    {
-        var normalized = value.Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(normalized.Length);
-        var dash = false;
-        foreach (var character in normalized)
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(character) == System.Globalization.UnicodeCategory.NonSpacingMark)
-            {
-                continue;
-            }
-
-            if (char.IsLetterOrDigit(character))
-            {
-                builder.Append(char.ToLowerInvariant(character));
-                dash = false;
-            }
-            else if (!dash && builder.Length > 0)
-            {
-                builder.Append('-');
-                dash = true;
-            }
-        }
-
-        return builder.ToString().Trim('-');
-    }
-
-    private static bool TryParseScorePair(string value, out (short Home, short Away) score)
-    {
-        score = default;
-        var cleaned = CleanWikiText(value).Replace("*", string.Empty, StringComparison.Ordinal);
-        var match = Regex.Match(cleaned, @"(?<!\d)(?<home>\d{1,3})\s*[-â€“â€”Ã¢â‚¬â€œÃ¢â‚¬â€]\s*(?<away>\d{1,3})(?!\d)");
-        if (!match.Success || !short.TryParse(match.Groups["home"].Value, out var home) || !short.TryParse(match.Groups["away"].Value, out var away))
-        {
-            return false;
-        }
-
-        score = (home, away);
-        return true;
-    }
-
-    private static bool TryParseSingleScore(string value, out short score)
-    {
-        score = default;
-        var match = Regex.Match(CleanWikiText(value), @"(?<!\d)\d{1,3}(?!\d)");
-        return match.Success && short.TryParse(match.Value, out score);
-    }
-
-    private static bool TryParseSpanishDate(string value, int startYear, int endYear, out DateTime date)
-    {
-        date = default;
-        var parsed = ExtractDates(value, startYear, endYear).FirstOrDefault();
-        if (parsed == default)
-        {
-            return false;
-        }
-
-        date = parsed;
-        return true;
-    }
-
-    private static List<string> SplitTopLevel(string value, string delimiter)
-    {
-        var result = new List<string>();
-        var start = 0;
-        while (start <= value.Length)
-        {
-            var relative = FindTopLevelDelimiter(value[start..], delimiter);
-            if (relative < 0)
-            {
-                result.Add(value[start..].Trim());
-                break;
-            }
-
-            result.Add(value.Substring(start, relative).Trim());
-            start += relative + delimiter.Length;
-        }
-
-        return result;
-    }
-
-    private static int FindTopLevelDelimiter(string value, string delimiter)
-    {
-        var braces = 0;
-        var links = 0;
-        for (var index = 0; index <= value.Length - delimiter.Length; index++)
-        {
-            if (value.AsSpan(index).StartsWith("{{")) { braces++; index++; continue; }
-            if (value.AsSpan(index).StartsWith("}}")) { braces = Math.Max(0, braces - 1); index++; continue; }
-            if (value.AsSpan(index).StartsWith("[[")) { links++; index++; continue; }
-            if (value.AsSpan(index).StartsWith("]]")) { links = Math.Max(0, links - 1); index++; continue; }
-            if (braces == 0 && links == 0 && value.AsSpan(index, delimiter.Length).SequenceEqual(delimiter)) return index;
-        }
-
-        return -1;
-    }
-
-    private static IReadOnlyCollection<TemplateMatch> ExtractTemplates(string text, string templateName)
-    {
-        var matches = new List<TemplateMatch>();
-        var needle = "{{" + templateName;
-        var searchStart = 0;
-        while (searchStart < text.Length)
-        {
-            var start = text.IndexOf(needle, searchStart, StringComparison.OrdinalIgnoreCase);
-            if (start < 0)
-            {
-                break;
-            }
-
-            var depth = 0;
-            var end = -1;
-            for (var index = start; index < text.Length - 1; index++)
-            {
-                if (text.AsSpan(index, 2).SequenceEqual("{{"))
-                {
-                    depth++;
-                    index++;
-                }
-                else if (text.AsSpan(index, 2).SequenceEqual("}}"))
-                {
-                    depth--;
-                    index++;
-                    if (depth == 0)
-                    {
-                        end = index - 1;
-                        break;
-                    }
-                }
-            }
-
-            if (end < 0)
-            {
-                break;
-            }
-
-            matches.Add(new TemplateMatch(start, text[(start + needle.Length)..end]));
-            searchStart = end + 1;
-        }
-
-        return matches;
-    }
-
-    private static int ParseStartYear(string season)
-    {
-        var match = Regex.Match(season, @"\b(19|20)\d{2}\b");
-        return match.Success ? int.Parse(match.Value, CultureInfo.InvariantCulture) : throw new ArgumentException($"Season '{season}' has no four-digit year.", nameof(season));
-    }
-
-    private sealed record PageContext(string Phase, string Round, IReadOnlyList<DateTime> Dates);
-    private sealed record TemplateMatch(int Index, string Body);
-    private sealed record TeamRef(string Id, string Name, string? CountryCode);
-
-    private sealed class GameAccumulator(
-        string season,
-        string pageUrl,
-        DateTime fetchedAtUtc,
-        string revision,
-        DateTime fallbackDate,
-        ICollection<string> warnings,
-        string source,
-        string parserVersion,
-        string sourceGameIdPrefix)
-    {
-        private readonly HashSet<string> semanticKeys = new(StringComparer.Ordinal);
-        private int fallbackOrdinal;
-
-        public List<BasketballProviderGame> Games { get; } = [];
-        public int InferredDateCount { get; private set; }
-        public DateTime FallbackDate { get; } = fallbackDate;
-
-        public DateTime NextFallbackDate()
-            => DateTime.SpecifyKind(FallbackDate.Date.AddDays(fallbackOrdinal++), DateTimeKind.Utc);
-
-        public void Add(TeamRef home, TeamRef away, short homeScore, short awayScore, DateTime date, string phase, string round, string coordinate, bool inferredDate)
-        {
-            if (home.Id.Equals(away.Id, StringComparison.OrdinalIgnoreCase))
-            {
-                warnings.Add($"Skipped {coordinate}: both sides resolved to {home.Name}.");
-                return;
-            }
-
-            var semanticKey = $"{date:yyyy-MM-dd}|{home.Id}|{away.Id}|{homeScore}|{awayScore}|{phase}|{round}";
-            if (!semanticKeys.Add(semanticKey))
-            {
-                return;
-            }
-
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{season}|{coordinate}|{semanticKey}")))[..20].ToLowerInvariant();
-            var exclusionReason = homeScore + awayScore == 2 && (homeScore == 0 || awayScore == 0)
-                ? "Source reports an administrative 2-0 result; excluded from ELO."
-                : null;
-            Games.Add(new BasketballProviderGame(
-                source,
-                $"{sourceGameIdPrefix}-{hash}",
-                DateTime.SpecifyKind(date.Date, DateTimeKind.Utc),
-                "finished",
-                home.Id,
-                home.Name,
-                away.Id,
-                away.Name,
-                homeScore,
-                awayScore,
-                    new BasketballProviderGameProvenance(pageUrl, season, fetchedAtUtc, parserVersion, revision),
-                exclusionReason,
-                phase,
-                round,
-                home.CountryCode,
-                away.CountryCode));
-
-            if (inferredDate)
-            {
-                InferredDateCount++;
-            }
-        }
-    }
-}
+             ëİµ¶‰Ëkºwµç@€€€€€€€€€µ½¹Ñ¡!¥¹Ğ€ôµ½¹Ñ ì4(€€€€€€€€€€€™¥ÉÍÑ…ä€üüô‘…äì4(€€€€€€€ô4(4(€€€€€€€‘…Ñ•Ì€ôÁ…ÉÍ•¹¥ÍÑ¥¹Ğ ¤¹Q½ÉÉ…ä ¤ì4(€€€€€€€É•ÑÕÉ¸‘…Ñ•Ì¹½Õ¹Ğ€ø€Àì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥ŒQ•…µI•˜üA…ÉÍ•!Ñµ±Q•…´¡!Ñµ±9½‘”•±°¤4(€€€ì4(€€€€€€€Ù…È…¹¡½È€ô•±°¹M•±•Ñ9½‘•Ì ˆ¸¼½…m¡É•˜…¹¹½Ğ¡½¹Ñ…¥¹Ì¡¡É•˜°€¥±”èœ¤¥tˆ¤4(€€€€€€€€€€€€ü¹¥ÉÍÑ=É•™…Õ±Ğ¡…¹‘¥‘…Ñ”€ôø€…ÍÑÉ¥¹œ¹%Í9Õ±±=É]¡¥Ñ•MÁ…”¡…¹‘¥‘…Ñ”¹%¹¹•ÉQ•áĞ¤¤ì4(€€€€€€€Ù…È¹…µ”€ô…¹¡½È¥Ì¹Õ±°€ü±•…¹!Ñµ±Q•áĞ¡•±°¤€è!Ñµ±¹Ñ¥Ñä¹•¹Ñ¥Ñ¥é”¡I••à¹I•Á±…”¡…¹¡½È¹%¹¹•ÉQ•áĞ° ‰qÌ¬ˆ°€ˆ€ˆ¤¤¹QÉ¥´ ¤ì4(€€€€€€€É•ÑÕÉ¸ÍÑÉ¥¹œ¹%Í9Õ±±=É]¡¥Ñ•MÁ…”¡¹…µ”¤€ü¹Õ±°€èA…ÉÍ•Q•…´ ‰mmí¹…µ•õutˆ°¹Õ±°¤ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ%I•…‘=¹±å1¥ÍĞñ%I•…‘=¹±å1¥ÍĞñÍÑÉ¥¹œøøA…ÉÍ•Q…‰±•I½İÌ¡ÍÑÉ¥¹œ‰½‘ä¤4(€€€ì4(€€€€€€€Ù…ÈÉ½İÌ€ô¹•Ü1¥ÍĞñ%I•…‘=¹±å1¥ÍĞñÍÑÉ¥¹œøø ¤ì4(€€€€€€€™½É•… €¡Ù…ÈÉ½Ü¥¸I••à¹MÁ±¥Ğ¡‰½‘ä° ˆ ı´¥yqğ´¸¨ˆ¤¤4(€€€€€€€ì4(€€€€€€€€€€€Ù…È•±±Ì€ô¹•Ü1¥ÍĞñÍÑÉ¥¹œø ¤ì4(€€€€€€€€€€€™½É•… €¡Ù…ÈÉ…İ1¥¹”¥¸É½Ü¹I•Á±…” ‰qÉq¸ˆ°€‰q¸ˆ°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…°¤¹MÁ±¥Ğ q¸œ¤¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€Ù…È±¥¹”€ôÉ…İ1¥¹”¹QÉ¥´ ¤ì4(€€€€€€€€€€€€€€€¥˜€¡±¥¹”¹1•¹Ñ €ôô€Àñğ€¡±¥¹•lÁt€„ô€ğœ€˜˜±¥¹•lÁt€„ô€œ„œ¤¤4(€€€€€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€€€€€½¹Ñ¥¹Õ”ì4(€€€€€€€€€€€€€€€ô4(4(€€€€€€€€€€€€€€€Ù…È‘•±¥µ¥Ñ•È€ô±¥¹•lÁt€ôô€œ„œ€ü€ˆ„„ˆ€è€‰ñğˆì4(€€€€€€€€€€€€€€€Ù…È±¥¹•	½‘ä€ô±¥¹•lÄ¸¹tì4(€€€€€€€€€€€€€€€Ù…ÈÙ…±Õ•Ì€ôMÁ±¥ÑQ½Á1•Ù•°¡±¥¹•	½‘ä°‘•±¥µ¥Ñ•È¤ì4(€€€€€€€€€€€€€€€¥˜€¡Ù…±Õ•Ì¹½Õ¹Ğ€ôô€Ä€˜˜€…±¥¹•	½‘ä¹QÉ¥µMÑ…ÉĞ ¤¹MÑ…ÉÑÍ]¥Ñ  ‰ÍÑå±”ˆ°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…±%¹½É•…Í”¤€˜˜4(€€€€€€€€€€€€€€€€€€€€…±¥¹•	½‘ä¹QÉ¥µMÑ…ÉĞ ¤¹MÑ…ÉÑÍ]¥Ñ  ‰…±¥¸ˆ°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…±%¹½É•…Í”¤€˜˜4(€€€€€€€€€€€€€€€€€€€MÁ±¥ÑQ½Á1•Ù•°¡±¥¹•	½‘ä°€‰ğˆ¤¹½Õ¹Ğ€ø€Ä¤4(€€€€€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€€€€€Ù…±Õ•Ì€ôMÁ±¥ÑQ½Á1•Ù•°¡±¥¹•	½‘ä°€‰ğˆ¤ì4(€€€€€€€€€€€€€€€ô4(4(€€€€€€€€€€€€€€€™½É•… €¡Ù…ÈÙ…±Õ”¥¸Ù…±Õ•Ì¤4(€€€€€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€€€€€•±±Ì¹‘¡MÑÉ¥Á•±±ÑÑÉ¥‰ÕÑ•Ì¡Ù…±Õ”¤¤ì4(€€€€€€€€€€€€€€€ô4(€€€€€€€€€€€ô4(4(€€€€€€€€€€€¥˜€¡•±±Ì¹½Õ¹Ğ€ø€À¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€É½İÌ¹‘¡•±±Ì¤ì4(€€€€€€€€€€€ô4(€€€€€€€ô4(4(€€€€€€€É•ÑÕÉ¸É½İÌì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥ŒÍÑÉ¥¹œMÑÉ¥Á•±±ÑÑÉ¥‰ÕÑ•Ì¡ÍÑÉ¥¹œÙ…±Õ”¤4(€€€ì4(€€€€€€€Ù…ÈÍ•Á…É…Ñ½È€ô¥¹‘Q½Á1•Ù•±•±¥µ¥Ñ•È¡Ù…±Õ”¹QÉ¥´ ¤°€‰ğˆ¤ì4(€€€€€€€¥˜€¡Í•Á…É…Ñ½È€øô€À¤4(€€€€€€€ì4(€€€€€€€€€€€Ù…ÈÁÉ•™¥à€ôÙ…±Õ•l¸¹Í•Á…É…Ñ½Étì4(€€€€€€€€€€€¥˜€¡ÁÉ•™¥à¹½¹Ñ…¥¹Ì œôœ¤ñğÁÉ•™¥à¹½¹Ñ…¥¹Ì ‰ÍÑå±”ˆ°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…±%¹½É•…Í”¤ñğÁÉ•™¥à¹½¹Ñ…¥¹Ì ‰…±¥¸ˆ°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…±%¹½É•…Í”¤¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€É•ÑÕÉ¸Ù…±Õ•l¡Í•Á…É…Ñ½È€¬€Ä¤¸¹t¹QÉ¥´ ¤ì4(€€€€€€€€€€€ô4(€€€€€€€ô4(4(€€€€€€€É•ÑÕÉ¸Ù…±Õ”¹QÉ¥´ ¤ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥ŒA…•½¹Ñ•áĞ¥¹‘½¹Ñ•áĞ¡ÍÑÉ¥¹œÑ•áĞ°¥¹Ğ¥¹‘•à°¥¹ĞÍÑ…ÉÑe•…È°¥¹Ğ•¹‘e•…È°…Ñ•Q¥µ”™…±±‰…­…Ñ”¤4(€€€ì4(€€€€€€€Ù…ÈÁÉ•™¥à€ôÑ•áÑl¸¹5…Ñ ¹5¥¸¡¥¹‘•à°Ñ•áĞ¹1•¹Ñ ¥tì4(€€€€€€€Ù…È¡•…‘¥¹Ì€ôI••à¹5…Ñ¡•Ì¡ÁÉ•™¥à° ˆ ı´¥x üñµ…É­ÌøõìÈ°Ñô¥qÌ¨ üñÑ•áĞø¸¨ü¥qÌ©q¬ñµ…É­Ìøˆ¤¹…ÍĞñ5…Ñ ø ¤¹Q½1¥ÍĞ ¤ì4(€€€€€€€Ù…ÈÁ¡…Í•!•…‘¥¹œ€ô¡•…‘¥¹Ì¹1…ÍÑ=É•™…Õ±Ğ¡µ…Ñ €ôøµ…Ñ ¹É½ÕÁÍl‰µ…É­Ì‰t¹Y…±Õ”¹1•¹Ñ €ôô€È¤ì4(€€€€€€€Ù…ÈÉ½Õ¹‘!•…‘¥¹œ€ô¡•…‘¥¹Ì¹1…ÍÑ=É•™…Õ±Ğ¡µ…Ñ €ôøµ…Ñ ¹É½ÕÁÍl‰µ…É­Ì‰t¹Y…±Õ”¹1•¹Ñ €øô€Ì¤€üüÁ¡…Í•!•…‘¥¹œì4(€€€€€€€Ù…ÈÁ¡…Í”€ôÁ¡…Í•!•…‘¥¹œ¥Ì¹Õ±°€ü€‰¥¹…°Á¡…Í”ˆ€è±•…¹]¥­¥Q•áĞ¡Á¡…Í•!•…‘¥¹œ¹É½ÕÁÍl‰Ñ•áĞ‰t¹Y…±Õ”¤ì4(€€€€€€€Ù…ÈÉ½Õ¹€ôÉ½Õ¹‘!•…‘¥¹œ¥Ì¹Õ±°€ü€‰AÕ‰±¥Í¡•É•ÍÕ±ÑÌˆ€è±•…¹]¥­¥Q•áĞ¡É½Õ¹‘!•…‘¥¹œ¹É½ÕÁÍl‰Ñ•áĞ‰t¹Y…±Õ”¤ì4(€€€€€€€Ù…È½¹Ñ•áÑMÑ…ÉĞ€ôÉ½Õ¹‘!•…‘¥¹œü¹%¹‘•à€üüÁ¡…Í•!•…‘¥¹œü¹%¹‘•à€üü5…Ñ ¹5…à À°¥¹‘•à€´€ÔÀÀ¤ì4(€€€€€€€Ù…È‘…Ñ•Ì€ôáÑÉ…Ñ…Ñ•Ì¡Ñ•áÑm½¹Ñ•áÑMÑ…ÉĞ¸¹5…Ñ ¹5¥¸¡¥¹‘•à°Ñ•áĞ¹1•¹Ñ ¥t°ÍÑ…ÉÑe•…È°•¹‘e•…È¤ì4(€€€€€€€É•ÑÕÉ¸¹•ÜA…•½¹Ñ•áĞ¡Á¡…Í”°É½Õ¹°‘…Ñ•Ì¤ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ…Ñ•Q¥µ”üáÑÉ…Ñ%¹™½‰½á…Ñ”¡ÍÑÉ¥¹œÑ•áĞ°¥¹ĞÍÑ…ÉÑe•…È°¥¹Ğ•¹‘e•…È¤4(€€€ì4(€€€€€€€Ù…Èµ…Ñ €ôI••à¹5…Ñ ¡Ñ•áĞ° ˆ ı¥´¥yqñqÌ©‘ÕÉ…Ñ¥½¹qÌ¨õqÌ¨ üñÙ…±Õ”ø¸¬¤ˆ¤ì4(€€€€€€€¥˜€ …µ…Ñ ¹MÕ•ÍÌ¤4(€€€€€€€ì4(€€€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô4(4(€€€€€€€Ù…È‘…Ñ”€ôáÑÉ…Ñ…Ñ•Ì¡µ…Ñ ¹É½ÕÁÍl‰Ù…±Õ”‰t¹Y…±Õ”°ÍÑ…ÉÑe•…È°•¹‘e•…È¤¹¥ÉÍÑ=É•™…Õ±Ğ ¤ì4(€€€€€€€É•ÑÕÉ¸‘…Ñ”€ôô‘•™…Õ±Ğ€ü¹Õ±°€è‘…Ñ”ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ%I•…‘=¹±å1¥ÍĞñ…Ñ•Q¥µ”øáÑÉ…Ñ…Ñ•Ì¡ÍÑÉ¥¹œÑ•áĞ°¥¹ĞÍÑ…ÉÑe•…È°¥¹Ğ•¹‘e•…È¤4(€€€ì4(€€€€€€€Ù…È±•…¹•€ô±•…¹]¥­¥Q•áĞ¡Ñ•áĞ¤ì4(€€€€€€€Ù…È‘…Ñ•Ì€ô¹•Ü1¥ÍĞñ…Ñ•Q¥µ”ø ¤ì4(€€€€€€€™½É•… €¡5…Ñ µ…Ñ ¥¸I••à¹5…Ñ¡•Ì¡±•…¹•° ˆ üğ…q¤ üñ‘…äùq‘ìÄ°Éô¥qÌ¬ üè üé‘”¥qÌ¬¤ü üñµ½¹Ñ ùmµi„µë‡§·Ïét¬¤ üéqÌ¬ üè üé‘”¥qÌ¬¤ü üñå•…Èø üèÄåğÈÀ¥q‘ìÉô¤¤üˆ°I••á=ÁÑ¥½¹Ì¹%¹½É•…Í”¤¤4(€€€€€€€ì4(€€€€€€€€€€€¥˜€ …5½¹Ñ¡9Õµ‰•ÉÌ¹QÉå•ÑY…±Õ”¡µ…Ñ ¹É½ÕÁÍl‰µ½¹Ñ ‰t¹Y…±Õ”°½ÕĞÙ…Èµ½¹Ñ ¤ñğ€…¥¹Ğ¹QÉåA…ÉÍ”¡µ…Ñ ¹É½ÕÁÍl‰‘…ä‰t¹Y…±Õ”°½ÕĞÙ…È‘…ä¤¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€½¹Ñ¥¹Õ”ì4(€€€€€€€€€€€ô4(4(€€€€€€€€€€€Ù…Èå•…È€ô¥¹Ğ¹QÉåA…ÉÍ”¡µ…Ñ ¹É½ÕÁÍl‰å•…È‰t¹Y…±Õ”°½ÕĞÙ…È•áÁ±¥¥Ñe•…È¤4(€€€€€€€€€€€€€€€€ü•áÁ±¥¥Ñe•…È4(€€€€€€€€€€€€€€€€èµ½¹Ñ ¥Ì€ˆÀØˆ½È€ˆÀÜˆ½È€ˆÀàˆ€ü•¹‘e•…È€èÍÑ…ÉÑe•…Èì4(€€€€€€€€€€€¥˜€¡‘…ä€ğô…Ñ•Q¥µ”¹…åÍ%¹5½¹Ñ ¡å•…È°¥¹Ğ¹A…ÉÍ”¡µ½¹Ñ °Õ±ÑÕÉ•%¹™¼¹%¹Ù…É¥…¹ÑÕ±ÑÕÉ”¤¤¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€‘…Ñ•Ì¹‘¡¹•Ü…Ñ•Q¥µ”¡å•…È°¥¹Ğ¹A…ÉÍ”¡µ½¹Ñ °Õ±ÑÕÉ•%¹™¼¹%¹Ù…É¥…¹ÑÕ±ÑÕÉ”¤°‘…ä°€À°€À°€À°…Ñ•Q¥µ•-¥¹¹UÑŒ¤¤ì4(€€€€€€€€€€€ô4(€€€€€€€ô4(4(€€€€€€€É•ÑÕÉ¸‘…Ñ•Ì¹¥ÍÑ¥¹Ğ ¤¹Q½ÉÉ…ä ¤ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥ŒQ•…µI•˜üA…ÉÍ•Q•…´¡ÍÑÉ¥¹œÉ…Ü°ÍÑÉ¥¹œü½Õ¹ÑÉå½‘”¤4(€€€ì4(€€€€€€€Ù…È±¥¹¬€ôI••à¹5…Ñ ¡É…Ü° ‰qmql üñÑ…É•Ğùmyñqut¬¤ üéqğ üñ‘¥ÍÁ±…äùmyqut¬¤¤ıquqtˆ¤ì4(€€€€€€€Ù…È¹…µ”€ô±•…¹]¥­¥Q•áĞ¡É…Ü¤¹QÉ¥´ œ€œ°€œ¨œ°€pœœ°€œ¸œ¤ì4(€€€€€€€¥˜€¡ÍÑÉ¥¹œ¹%Í9Õ±±=É]¡¥Ñ•MÁ…”¡¹…µ”¤ñğ¹…µ”¥Ì€ˆ´ˆ½È€‰‰å”ˆñğ¹…µ”¹½¹Ñ…¥¹Ì ‰íìˆ°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…°¤ñğ%ÍM½É•1¥­•Q•…µ9…µ”¡¹…µ”¤¤4(€€€€€€€ì4(€€€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô4(4(€€€€€€€Ù…È…¹½¹¥…°€ô±¥¹¬¹MÕ•ÍÌ€ü±¥¹¬¹É½ÕÁÍl‰Ñ…É•Ğ‰t¹Y…±Õ”€è¹…µ”ì4(€€€€€€€Ù…È¥€ôM±Õ¥™ä¡…¹½¹¥…°¤ì4(€€€€€€€¥˜€¡ÍÑÉ¥¹œ¹%Í9Õ±±=É]¡¥Ñ•MÁ…”¡¥¤¤4(€€€€€€€ì4(€€€€€€€€€€€É•ÑÕÉ¸¹Õ±°ì4(€€€€€€€ô4(4(€€€€€€€Ù…È½Õ¹ÑÉä€ôÍÑÉ¥¹œ¹%Í9Õ±±=É]¡¥Ñ•MÁ…”¡½Õ¹ÑÉå½‘”¤€ü¹Õ±°€è±•…¹]¥­¥Q•áĞ¡½Õ¹ÑÉå½‘”¤¹Q½UÁÁ•É%¹Ù…É¥…¹Ğ ¤ì4(€€€€€€€É•ÑÕÉ¸¹•ÜQ•…µI•˜ ‰İ¥­¤µÑ•…´éí¥‘ôˆ°¹…µ”°½Õ¹ÑÉä¤ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ‰½½°%ÍM½É•1¥­•Q•…µ9…µ”¡ÍÑÉ¥¹œÙ…±Õ”¤4(€€€€€€€€ôøI••à¹%Í5…Ñ  4(€€€€€€€€€€€Ù…±Õ”¹QÉ¥´ ¤°4(€€€€€€€€€€€ ‰yq‘ìÄ°ÍõqÌ©lµqÔÈÀÄÍqÔÈÀÄÓ
+‹‹Šk
+³‹Š
+³O
+‹‹Šk
+³‹Š
+³
+uuqÌ©q‘ìÄ°Íôˆ°4(€€€€€€€€€€€I••á=ÁÑ¥½¹Ì¹Õ±ÑÕÉ•%¹Ù…É¥…¹Ğ¤ì4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥ŒÍÑÉ¥¹œ±•…¹]¥­¥Q•áĞ¡ÍÑÉ¥¹œÙ…±Õ”¤4(€€€ì4(€€€€€€€Ù…È±•…¹•€ôI••à¹I•Á±…”¡Ù…±Õ”° ˆñÉ•™q‰mxùt¨ø¸¨üğ½É•˜ùğñÉ•™q‰mxùt¨¼øˆ°ÍÑÉ¥¹œ¹µÁÑä°I••á=ÁÑ¥½¹Ì¹%¹½É•…Í”ğI••á=ÁÑ¥½¹Ì¹M¥¹±•±¥¹”¤ì4(€€€€€€€±•…¹•€ôI••à¹I•Á±…”¡±•…¹•° ‰qíqímyíõt©qõqôˆ°ÍÑÉ¥¹œ¹µÁÑä¤ì4(€€€€€€€±•…¹•€ôI••à¹I•Á±…”¡±•…¹•° ‰qmql üñÑ…É•Ğùmyñqut¬¤ üéqğ üñ‘¥ÍÁ±…äùmyqut¬¤¤ıquqtˆ°µ…Ñ €ôøµ…Ñ ¹É½ÕÁÍl‰‘¥ÍÁ±…ä‰t¹MÕ•ÍÌ€üµ…Ñ ¹É½ÕÁÍl‰‘¥ÍÁ±…ä‰t¹Y…±Õ”€èµ…Ñ ¹É½ÕÁÍl‰Ñ…É•Ğ‰t¹Y…±Õ”¤ì4(€€€€€€€±•…¹•€ôI••à¹I•Á±…”¡±•…¹•°€ˆñmxùt¬øˆ°€ˆ€ˆ¤ì4(€€€€€€€±•…¹•€ô±•…¹•¹I•Á±…” ˆœœœˆ°ÍÑÉ¥¹œ¹µÁÑä°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…°¤¹I•Á±…” ˆœœˆ°ÍÑÉ¥¹œ¹µÁÑä°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…°¤¹I•Á±…” ˆ™¹‰ÍÀìˆ°€ˆ€ˆ°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…±%¹½É•…Í”¤ì4(€€€€€€€É•ÑÕÉ¸I••à¹I•Á±…”¡±•…¹•° ‰qÌ¬ˆ°€ˆ€ˆ¤¹QÉ¥´ ¤ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥ŒÍÑÉ¥¹œM±Õ¥™ä¡ÍÑÉ¥¹œÙ…±Õ”¤4(€€€ì4(€€€€€€€Ù…È¹½Éµ…±¥é•€ôÙ…±Õ”¹9½Éµ…±¥é”¡9½Éµ…±¥é…Ñ¥½¹½É´¹½Éµ¤ì4(€€€€€€€Ù…È‰Õ¥±‘•È€ô¹•ÜMÑÉ¥¹	Õ¥±‘•È¡¹½Éµ…±¥é•¹1•¹Ñ ¤ì4(€€€€€€€Ù…È‘…Í €ô™…±Í”ì4(€€€€€€€™½É•… €¡Ù…È¡…É…Ñ•È¥¸¹½Éµ…±¥é•¤4(€€€€€€€ì4(€€€€€€€€€€€¥˜€¡¡…ÉU¹¥½‘•%¹™¼¹•ÑU¹¥½‘•…Ñ•½Éä¡¡…É…Ñ•È¤€ôôMåÍÑ•´¹±½‰…±¥é…Ñ¥½¸¹U¹¥½‘•…Ñ•½Éä¹9½¹MÁ…¥¹5…É¬¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€½¹Ñ¥¹Õ”ì4(€€€€€€€€€€€ô4(4(€€€€€€€€€€€¥˜€¡¡…È¹%Í1•ÑÑ•É=É¥¥Ğ¡¡…É…Ñ•È¤¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€‰Õ¥±‘•È¹ÁÁ•¹¡¡…È¹Q½1½İ•É%¹Ù…É¥…¹Ğ¡¡…É…Ñ•È¤¤ì4(€€€€€€€€€€€€€€€‘…Í €ô™…±Í”ì4(€€€€€€€€€€€ô4(€€€€€€€€€€€•±Í”¥˜€ …‘…Í €˜˜‰Õ¥±‘•È¹1•¹Ñ €ø€À¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€‰Õ¥±‘•È¹ÁÁ•¹ œ´œ¤ì4(€€€€€€€€€€€€€€€‘…Í €ôÑÉÕ”ì4(€€€€€€€€€€€ô4(€€€€€€€ô4(4(€€€€€€€É•ÑÕÉ¸‰Õ¥±‘•È¹Q½MÑÉ¥¹œ ¤¹QÉ¥´ œ´œ¤ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ‰½½°QÉåA…ÉÍ•M½É•A…¥È¡ÍÑÉ¥¹œÙ…±Õ”°½ÕĞ€¡Í¡½ÉĞ!½µ”°Í¡½ÉĞİ…ä¤Í½É”¤4(€€€ì4(€€€€€€€Í½É”€ô‘•™…Õ±Ğì4(€€€€€€€Ù…È±•…¹•€ô±•…¹]¥­¥Q•áĞ¡Ù…±Õ”¤¹I•Á±…” ˆ¨ˆ°ÍÑÉ¥¹œ¹µÁÑä°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…°¤ì4(€€€€€€€Ù…Èµ…Ñ €ôI••à¹5…Ñ ¡±•…¹•° ˆ üğ…q¤ üñ¡½µ”ùq‘ìÄ°Íô¥qÌ©l·ŠOŠS‹Š
+³Šs‹Š
+³ŠuuqÌ¨ üñ…İ…äùq‘ìÄ°Íô¤ ü…q¤ˆ¤ì4(€€€€€€€¥˜€ …µ…Ñ ¹MÕ•ÍÌñğ€…Í¡½ÉĞ¹QÉåA…ÉÍ”¡µ…Ñ ¹É½ÕÁÍl‰¡½µ”‰t¹Y…±Õ”°½ÕĞÙ…È¡½µ”¤ñğ€…Í¡½ÉĞ¹QÉåA…ÉÍ”¡µ…Ñ ¹É½ÕÁÍl‰…İ…ä‰t¹Y…±Õ”°½ÕĞÙ…È…İ…ä¤¤4(€€€€€€€ì4(€€€€€€€€€€€É•ÑÕÉ¸™…±Í”ì4(€€€€€€€ô4(4(€€€€€€€Í½É”€ô€¡¡½µ”°…İ…ä¤ì4(€€€€€€€É•ÑÕÉ¸ÑÉÕ”ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ‰½½°QÉåA…ÉÍ•M¥¹±•M½É”¡ÍÑÉ¥¹œÙ…±Õ”°½ÕĞÍ¡½ÉĞÍ½É”¤4(€€€ì4(€€€€€€€Í½É”€ô‘•™…Õ±Ğì4(€€€€€€€Ù…Èµ…Ñ €ôI••à¹5…Ñ ¡±•…¹]¥­¥Q•áĞ¡Ù…±Õ”¤° ˆ üğ…q¥q‘ìÄ°Íô ü…q¤ˆ¤ì4(€€€€€€€É•ÑÕÉ¸µ…Ñ ¹MÕ•ÍÌ€˜˜Í¡½ÉĞ¹QÉåA…ÉÍ”¡µ…Ñ ¹Y…±Õ”°½ÕĞÍ½É”¤ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ‰½½°QÉåA…ÉÍ•MÁ…¹¥Í¡…Ñ”¡ÍÑÉ¥¹œÙ…±Õ”°¥¹ĞÍÑ…ÉÑe•…È°¥¹Ğ•¹‘e•…È°½ÕĞ…Ñ•Q¥µ”‘…Ñ”¤4(€€€ì4(€€€€€€€‘…Ñ”€ô‘•™…Õ±Ğì4(€€€€€€€Ù…ÈÁ…ÉÍ•€ôáÑÉ…Ñ…Ñ•Ì¡Ù…±Õ”°ÍÑ…ÉÑe•…È°•¹‘e•…È¤¹¥ÉÍÑ=É•™…Õ±Ğ ¤ì4(€€€€€€€¥˜€¡Á…ÉÍ•€ôô‘•™…Õ±Ğ¤4(€€€€€€€ì4(€€€€€€€€€€€É•ÑÕÉ¸™…±Í”ì4(€€€€€€€ô4(4(€€€€€€€‘…Ñ”€ôÁ…ÉÍ•ì4(€€€€€€€É•ÑÕÉ¸ÑÉÕ”ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ1¥ÍĞñÍÑÉ¥¹œøMÁ±¥ÑQ½Á1•Ù•°¡ÍÑÉ¥¹œÙ…±Õ”°ÍÑÉ¥¹œ‘•±¥µ¥Ñ•È¤4(€€€ì4(€€€€€€€Ù…ÈÉ•ÍÕ±Ğ€ô¹•Ü1¥ÍĞñÍÑÉ¥¹œø ¤ì4(€€€€€€€Ù…ÈÍÑ…ÉĞ€ô€Àì4(€€€€€€€İ¡¥±”€¡ÍÑ…ÉĞ€ğôÙ…±Õ”¹1•¹Ñ ¤4(€€€€€€€ì4(€€€€€€€€€€€Ù…ÈÉ•±…Ñ¥Ù”€ô¥¹‘Q½Á1•Ù•±•±¥µ¥Ñ•È¡Ù…±Õ•mÍÑ…ÉĞ¸¹t°‘•±¥µ¥Ñ•È¤ì4(€€€€€€€€€€€¥˜€¡É•±…Ñ¥Ù”€ğ€À¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€É•ÍÕ±Ğ¹‘¡Ù…±Õ•mÍÑ…ÉĞ¸¹t¹QÉ¥´ ¤¤ì4(€€€€€€€€€€€€€€€‰É•…¬ì4(€€€€€€€€€€€ô4(4(€€€€€€€€€€€É•ÍÕ±Ğ¹‘¡Ù…±Õ”¹MÕ‰ÍÑÉ¥¹œ¡ÍÑ…ÉĞ°É•±…Ñ¥Ù”¤¹QÉ¥´ ¤¤ì4(€€€€€€€€€€€ÍÑ…ÉĞ€¬ôÉ•±…Ñ¥Ù”€¬‘•±¥µ¥Ñ•È¹1•¹Ñ ì4(€€€€€€€ô4(4(€€€€€€€É•ÑÕÉ¸É•ÍÕ±Ğì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ¥¹Ğ¥¹‘Q½Á1•Ù•±•±¥µ¥Ñ•È¡ÍÑÉ¥¹œÙ…±Õ”°ÍÑÉ¥¹œ‘•±¥µ¥Ñ•È¤4(€€€ì4(€€€€€€€Ù…È‰É…•Ì€ô€Àì4(€€€€€€€Ù…È±¥¹­Ì€ô€Àì4(€€€€€€€™½È€¡Ù…È¥¹‘•à€ô€Àì¥¹‘•à€ğôÙ…±Õ”¹1•¹Ñ €´‘•±¥µ¥Ñ•È¹1•¹Ñ ì¥¹‘•à¬¬¤4(€€€€€€€ì4(€€€€€€€€€€€¥˜€¡Ù…±Õ”¹ÍMÁ…¸¡¥¹‘•à¤¹MÑ…ÉÑÍ]¥Ñ  ‰íìˆ¤¤ì‰É…•Ì¬¬ì¥¹‘•à¬¬ì½¹Ñ¥¹Õ”ìô4(€€€€€€€€€€€¥˜€¡Ù…±Õ”¹ÍMÁ…¸¡¥¹‘•à¤¹MÑ…ÉÑÍ]¥Ñ  ‰õôˆ¤¤ì‰É…•Ì€ô5…Ñ ¹5…à À°‰É…•Ì€´€Ä¤ì¥¹‘•à¬¬ì½¹Ñ¥¹Õ”ìô4(€€€€€€€€€€€¥˜€¡Ù…±Õ”¹ÍMÁ…¸¡¥¹‘•à¤¹MÑ…ÉÑÍ]¥Ñ  ‰mlˆ¤¤ì±¥¹­Ì¬¬ì¥¹‘•à¬¬ì½¹Ñ¥¹Õ”ìô4(€€€€€€€€€€€¥˜€¡Ù…±Õ”¹ÍMÁ…¸¡¥¹‘•à¤¹MÑ…ÉÑÍ]¥Ñ  ‰utˆ¤¤ì±¥¹­Ì€ô5…Ñ ¹5…à À°±¥¹­Ì€´€Ä¤ì¥¹‘•à¬¬ì½¹Ñ¥¹Õ”ìô4(€€€€€€€€€€€¥˜€¡‰É…•Ì€ôô€À€˜˜±¥¹­Ì€ôô€À€˜˜Ù…±Õ”¹ÍMÁ…¸¡¥¹‘•à°‘•±¥µ¥Ñ•È¹1•¹Ñ ¤¹M•ÅÕ•¹•ÅÕ…°¡‘•±¥µ¥Ñ•È¤¤É•ÑÕÉ¸¥¹‘•àì4(€€€€€€€ô4(4(€€€€€€€É•ÑÕÉ¸€´Äì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ%I•…‘=¹±å½±±•Ñ¥½¸ñQ•µÁ±…Ñ•5…Ñ øáÑÉ…ÑQ•µÁ±…Ñ•Ì¡ÍÑÉ¥¹œÑ•áĞ°ÍÑÉ¥¹œÑ•µÁ±…Ñ•9…µ”¤4(€€€ì4(€€€€€€€Ù…Èµ…Ñ¡•Ì€ô¹•Ü1¥ÍĞñQ•µÁ±…Ñ•5…Ñ ø ¤ì4(€€€€€€€Ù…È¹••‘±”€ô€‰íìˆ€¬Ñ•µÁ±…Ñ•9…µ”ì4(€€€€€€€Ù…ÈÍ•…É¡MÑ…ÉĞ€ô€Àì4(€€€€€€€İ¡¥±”€¡Í•…É¡MÑ…ÉĞ€ğÑ•áĞ¹1•¹Ñ ¤4(€€€€€€€ì4(€€€€€€€€€€€Ù…ÈÍÑ…ÉĞ€ôÑ•áĞ¹%¹‘•á=˜¡¹••‘±”°Í•…É¡MÑ…ÉĞ°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…±%¹½É•…Í”¤ì4(€€€€€€€€€€€¥˜€¡ÍÑ…ÉĞ€ğ€À¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€‰É•…¬ì4(€€€€€€€€€€€ô4(4(€€€€€€€€€€€Ù…È‘•ÁÑ €ô€Àì4(€€€€€€€€€€€Ù…È•¹€ô€´Äì4(€€€€€€€€€€€™½È€¡Ù…È¥¹‘•à€ôÍÑ…ÉĞì¥¹‘•à€ğÑ•áĞ¹1•¹Ñ €´€Äì¥¹‘•à¬¬¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€¥˜€¡Ñ•áĞ¹ÍMÁ…¸¡¥¹‘•à°€È¤¹M•ÅÕ•¹•ÅÕ…° ‰íìˆ¤¤4(€€€€€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€€€€€‘•ÁÑ ¬¬ì4(€€€€€€€€€€€€€€€€€€€¥¹‘•à¬¬ì4(€€€€€€€€€€€€€€€ô4(€€€€€€€€€€€€€€€•±Í”¥˜€¡Ñ•áĞ¹ÍMÁ…¸¡¥¹‘•à°€È¤¹M•ÅÕ•¹•ÅÕ…° ‰õôˆ¤¤4(€€€€€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€€€€€‘•ÁÑ ´´ì4(€€€€€€€€€€€€€€€€€€€¥¹‘•à¬¬ì4(€€€€€€€€€€€€€€€€€€€¥˜€¡‘•ÁÑ €ôô€À¤4(€€€€€€€€€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€€€€€€€€€•¹€ô¥¹‘•à€´€Äì4(€€€€€€€€€€€€€€€€€€€€€€€‰É•…¬ì4(€€€€€€€€€€€€€€€€€€€ô4(€€€€€€€€€€€€€€€ô4(€€€€€€€€€€€ô4(4(€€€€€€€€€€€¥˜€¡•¹€ğ€À¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€‰É•…¬ì4(€€€€€€€€€€€ô4(4(€€€€€€€€€€€µ…Ñ¡•Ì¹‘¡¹•ÜQ•µÁ±…Ñ•5…Ñ ¡ÍÑ…ÉĞ°Ñ•áÑl¡ÍÑ…ÉĞ€¬¹••‘±”¹1•¹Ñ ¤¸¹•¹‘t¤¤ì4(€€€€€€€€€€€Í•…É¡MÑ…ÉĞ€ô•¹€¬€Äì4(€€€€€€€ô4(4(€€€€€€€É•ÑÕÉ¸µ…Ñ¡•Ìì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”ÍÑ…Ñ¥Œ¥¹ĞA…ÉÍ•MÑ…ÉÑe•…È¡ÍÑÉ¥¹œÍ•…Í½¸¤4(€€€ì4(€€€€€€€Ù…Èµ…Ñ €ôI••à¹5…Ñ ¡Í•…Í½¸° ‰qˆ ÄåğÈÀ¥q‘ìÉõqˆˆ¤ì4(€€€€€€€É•ÑÕÉ¸µ…Ñ ¹MÕ•ÍÌ€ü¥¹Ğ¹A…ÉÍ”¡µ…Ñ ¹Y…±Õ”°Õ±ÑÕÉ•%¹™¼¹%¹Ù…É¥…¹ÑÕ±ÑÕÉ”¤€èÑ¡É½Ü¹•ÜÉÕµ•¹Ñá•ÁÑ¥½¸ ‰M•…Í½¸€íÍ•…Í½¹ôœ¡…Ì¹¼™½ÕÈµ‘¥¥Ğå•…È¸ˆ°¹…µ•½˜¡Í•…Í½¸¤¤ì4(€€€ô4(4(€€€ÁÉ¥Ù…Ñ”Í•…±•É•½ÉA…•½¹Ñ•áĞ¡ÍÑÉ¥¹œA¡…Í”°ÍÑÉ¥¹œI½Õ¹°%I•…‘=¹±å1¥ÍĞñ…Ñ•Q¥µ”ø…Ñ•Ì¤ì4(€€€ÁÉ¥Ù…Ñ”Í•…±•É•½ÉQ•µÁ±…Ñ•5…Ñ ¡¥¹Ğ%¹‘•à°ÍÑÉ¥¹œ	½‘ä¤ì4(€€€ÁÉ¥Ù…Ñ”Í•…±•É•½ÉQ•…µI•˜¡ÍÑÉ¥¹œ%°ÍÑÉ¥¹œ9…µ”°ÍÑÉ¥¹œü½Õ¹ÑÉå½‘”¤ì4(4(€€€ÁÉ¥Ù…Ñ”Í•…±•±…ÍÌ…µ•ÕµÕ±…Ñ½È 4(€€€€€€€ÍÑÉ¥¹œÍ•…Í½¸°4(€€€€€€€ÍÑÉ¥¹œÁ…•UÉ°°4(€€€€€€€…Ñ•Q¥µ”™•Ñ¡•‘ÑUÑŒ°4(€€€€€€€ÍÑÉ¥¹œÉ•Ù¥Í¥½¸°4(€€€€€€€…Ñ•Q¥µ”™…±±‰…­…Ñ”°4(€€€€€€€%½±±•Ñ¥½¸ñÍÑÉ¥¹œøİ…É¹¥¹Ì°4(€€€€€€€ÍÑÉ¥¹œÍ½ÕÉ”°4(€€€€€€€ÍÑÉ¥¹œÁ…ÉÍ•ÉY•ÉÍ¥½¸°4(€€€€€€€ÍÑÉ¥¹œÍ½ÕÉ•…µ•%‘AÉ•™¥à¤4(€€€ì4(€€€€€€€ÁÉ¥Ù…Ñ”É•…‘½¹±ä!…Í¡M•ĞñÍÑÉ¥¹œøÍ•µ…¹Ñ¥-•åÌ€ô¹•Ü¡MÑÉ¥¹½µÁ…É•È¹=É‘¥¹…°¤ì4(€€€€€€€ÁÉ¥Ù…Ñ”¥¹Ğ™…±±‰…­=É‘¥¹…°ì4(4(€€€€€€€ÁÕ‰±¥Œ1¥ÍĞñ	…Í­•Ñ‰…±±AÉ½Ù¥‘•É…µ”ø…µ•Ìì•Ğìô€ômtì4(€€€€€€€ÁÕ‰±¥Œ¥¹Ğ%¹™•ÉÉ•‘…Ñ•½Õ¹Ğì•ĞìÁÉ¥Ù…Ñ”Í•Ğìô4(€€€€€€€ÁÕ‰±¥Œ…Ñ•Q¥µ”…±±‰…­…Ñ”ì•Ğìô€ô™…±±‰…­…Ñ”ì4(4(€€€€€€€ÁÕ‰±¥Œ…Ñ•Q¥µ”9•áÑ…±±‰…­…Ñ” ¤4(€€€€€€€€€€€€ôø…Ñ•Q¥µ”¹MÁ•¥™å-¥¹¡…±±‰…­…Ñ”¹…Ñ”¹‘‘…åÌ¡™…±±‰…­=É‘¥¹…°¬¬¤°…Ñ•Q¥µ•-¥¹¹UÑŒ¤ì4(4(€€€€€€€ÁÕ‰±¥ŒÙ½¥‘¡Q•…µI•˜¡½µ”°Q•…µI•˜…İ…ä°Í¡½ÉĞ¡½µ•M½É”°Í¡½ÉĞ…İ…åM½É”°…Ñ•Q¥µ”‘…Ñ”°ÍÑÉ¥¹œÁ¡…Í”°ÍÑÉ¥¹œÉ½Õ¹°ÍÑÉ¥¹œ½½É‘¥¹…Ñ”°‰½½°¥¹™•ÉÉ•‘…Ñ”¤4(€€€€€€€ì4(€€€€€€€€€€€¥˜€¡¡½µ”¹%¹ÅÕ…±Ì¡…İ…ä¹%°MÑÉ¥¹½µÁ…É¥Í½¸¹=É‘¥¹…±%¹½É•…Í”¤¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€İ…É¹¥¹Ì¹‘ ‰M­¥ÁÁ•í½½É‘¥¹…Ñ•ôè‰½Ñ Í¥‘•ÌÉ•Í½±Ù•Ñ¼í¡½µ”¹9…µ•ô¸ˆ¤ì4(€€€€€€€€€€€€€€€É•ÑÕÉ¸ì4(€€€€€€€€€€€ô4(4(€€€€€€€€€€€Ù…ÈÍ•µ…¹Ñ¥-•ä€ô€‰í‘…Ñ”éåååäµ54µ‘‘õñí¡½µ”¹%‘õñí…İ…ä¹%‘õñí¡½µ•M½É•õñí…İ…åM½É•õñíÁ¡…Í•õñíÉ½Õ¹‘ôˆì4(€€€€€€€€€€€¥˜€ …Í•µ…¹Ñ¥-•åÌ¹‘¡Í•µ…¹Ñ¥-•ä¤¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€É•ÑÕÉ¸ì4(€€€€€€€€€€€ô4(4(€€€€€€€€€€€Ù…È¡…Í €ô½¹Ù•ÉĞ¹Q½!•áMÑÉ¥¹œ¡M!ÈÔØ¹!…Í¡…Ñ„¡¹½‘¥¹œ¹UQà¹•Ñ	åÑ•Ì ‰íÍ•…Í½¹õñí½½É‘¥¹…Ñ•õñíÍ•µ…¹Ñ¥-•åôˆ¤¤¥l¸¸ÈÁt¹Q½1½İ•É%¹Ù…É¥…¹Ğ ¤ì4(€€€€€€€€€€€Ù…È•á±ÕÍ¥½¹I•…Í½¸€ô¡½µ•M½É”€¬…İ…åM½É”€ôô€È€˜˜€¡¡½µ•M½É”€ôô€Àñğ…İ…åM½É”€ôô€À¤4(€€€€€€€€€€€€€€€€ü€‰M½ÕÉ”É•Á½ÉÑÌ…¸…‘µ¥¹¥ÍÑÉ…Ñ¥Ù”€È´ÀÉ•ÍÕ±Ğì•á±Õ‘•™É½´1<¸ˆ4(€€€€€€€€€€€€€€€€è¹Õ±°ì4(€€€€€€€€€€€…µ•Ì¹‘¡¹•Ü	…Í­•Ñ‰…±±AÉ½Ù¥‘•É…µ” 4(€€€€€€€€€€€€€€€Í½ÕÉ”°4(€€€€€€€€€€€€€€€€‰íÍ½ÕÉ•…µ•%‘AÉ•™¥áôµí¡…Í¡ôˆ°4(€€€€€€€€€€€€€€€…Ñ•Q¥µ”¹MÁ•¥™å-¥¹¡‘…Ñ”¹…Ñ”°…Ñ•Q¥µ•-¥¹¹UÑŒ¤°4(€€€€€€€€€€€€€€€€‰™¥¹¥Í¡•ˆ°4(€€€€€€€€€€€€€€€¡½µ”¹%°4(€€€€€€€€€€€€€€€¡½µ”¹9…µ”°4(€€€€€€€€€€€€€€€…İ…ä¹%°4(€€€€€€€€€€€€€€€…İ…ä¹9…µ”°4(€€€€€€€€€€€€€€€¡½µ•M½É”°4(€€€€€€€€€€€€€€€…İ…åM½É”°4(€€€€€€€€€€€€€€€€€€€¹•Ü	…Í­•Ñ‰…±±AÉ½Ù¥‘•É…µ•AÉ½Ù•¹…¹”¡Á…•UÉ°°Í•…Í½¸°™•Ñ¡•‘ÑUÑŒ°Á…ÉÍ•ÉY•ÉÍ¥½¸°É•Ù¥Í¥½¸¤°4(€€€€€€€€€€€€€€€•á±ÕÍ¥½¹I•…Í½¸°4(€€€€€€€€€€€€€€€Á¡…Í”°4(€€€€€€€€€€€€€€€É½Õ¹°4(€€€€€€€€€€€€€€€¡½µ”¹½Õ¹ÑÉå½‘”°4(€€€€€€€€€€€€€€€…İ…ä¹½Õ¹ÑÉå½‘”¤¤ì4(4(€€€€€€€€€€€¥˜€¡¥¹™•ÉÉ•‘…Ñ”¤4(€€€€€€€€€€€ì4(€€€€€€€€€€€€€€€%¹™•ÉÉ•‘…Ñ•½Õ¹Ğ¬¬ì4(€€€€€€€€€€€ô4(€€€€€€€ô4(€€€ô4)ô4(

@@ -417,4 +417,23 @@ public class BackfillCatalogTests
         Assert.Equal(35, seasons.Count);
         Assert.Equal(35, seasons.Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
+
+    [Fact]
+    public void FibaKoracCupCoversTheIssueRangeAndUsesEuropeanClubPool()
+    {
+        var catalog = new BackfillCatalog();
+        var source = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Europe" &&
+            league.LeagueName == "FIBA Korac Cup");
+
+        var seasons = catalog.GetSeasonsForLeague(source).ToList();
+
+        Assert.Equal(EloPoolKeys.EuropeClubs, source.EloPoolKey);
+        Assert.Equal("1971-1972", seasons[0]);
+        Assert.Equal("2001-2002", seasons[^1]);
+        Assert.Equal(31, seasons.Count);
+        Assert.Equal(31, seasons.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.NotEqual("FIBA Saporta Cup", source.LeagueName);
+    }
 }

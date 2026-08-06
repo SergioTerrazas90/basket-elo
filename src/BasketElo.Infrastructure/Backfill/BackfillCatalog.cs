@@ -21,6 +21,7 @@ public class BackfillCatalog : IBackfillCatalog
         new("euroleagueR", "Europe", "Euroleague", "International: Euroleague", "2000-2001", EndSeason: "2007-2008", EloPoolKey: EloPoolKeys.EuropeClubs),
         new("fiba", "Europe", "FIBA European Champions Cup", "Europe: FIBA European Champions Cup / EuroLeague predecessor", "1958-1959", EndSeason: "1999-2000", EloPoolKey: EloPoolKeys.EuropeClubs),
         new("fiba", "Europe", "FIBA Saporta Cup", "Europe: FIBA Men's European Club Competitions - Tier 2 / Saporta Cup", "1967-1968", EndSeason: "2001-2002", EloPoolKey: EloPoolKeys.EuropeClubs),
+        new("fiba", "Europe", "FIBA Korac Cup", "Europe: FIBA EuroCup Challenge / Korac Cup", "1971-1972", EndSeason: "2001-2002", EloPoolKey: EloPoolKeys.EuropeClubs),
         new("fiba", "Europe", "FIBA SuproLeague", "Europe: FIBA SuproLeague", "2000-2001", ExplicitSeasons: ["2000-2001"], EloPoolKey: EloPoolKeys.EuropeClubs),
         new("api-sports", "Europe", "Eurocup", "International: EuroCup", "2008-2009", EndSeason: "2025-2026", ExcludedSeasons: ["2019-2020"]),
         new("aba-official", "Europe", "ABA League", "International: ABA League", "2001-2002", EndSeason: "2007-2008", EloPoolKey: EloPoolKeys.EuropeClubs),

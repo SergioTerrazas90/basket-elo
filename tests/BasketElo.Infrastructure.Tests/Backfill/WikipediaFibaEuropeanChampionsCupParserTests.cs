@@ -16,6 +16,22 @@ public sealed class WikipediaFibaEuropeanChampionsCupParserTests
         Assert.Equal(expected, WikipediaFibaEuropeanChampionsCupParser.SaportaEnglishPageTitle(startYear));
     }
 
+    [Theory]
+    [InlineData(1971, "1972 FIBA Korać Cup")]
+    [InlineData(1972, "1972–73 FIBA Korać Cup")]
+    [InlineData(2000, "2000–01 FIBA Korać Cup")]
+    [InlineData(2001, "2001–02 FIBA Korać Cup")]
+    public void BuildsKoracEditionPageTitles(int startYear, string expected)
+    {
+        Assert.Equal(expected, WikipediaFibaEuropeanChampionsCupParser.KoracEnglishPageTitle(startYear));
+    }
+
+    [Fact]
+    public void UsesTheWikipediaSeasonTitleForTheSecondKoracEdition()
+    {
+        Assert.Equal("1973 FIBA Kora\u0107 Cup", WikipediaFibaEuropeanChampionsCupParser.KoracWikipediaPageTitle(1972));
+    }
+
     [Fact]
     public void UsesSeasonStartWhenInfoboxDurationIsNotParseable()
     {

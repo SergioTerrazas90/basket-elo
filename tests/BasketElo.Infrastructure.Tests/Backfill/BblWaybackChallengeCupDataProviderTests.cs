@@ -32,7 +32,7 @@ public sealed class BblWaybackChallengeCupDataProviderTests
             CancellationToken.None);
 
         Assert.Equal(114, result.Games.Count);
-        Assert.Equal(114, handler.RequestCount);
+        Assert.Equal(115, handler.RequestCount);
         Assert.Empty(result.Warnings);
         Assert.False(result.HasMorePages);
         Assert.Equal("bbl-1137", result.Games.First().SourceGameId);
@@ -64,7 +64,7 @@ public sealed class BblWaybackChallengeCupDataProviderTests
             new BackfillExecutionContext(2, 0),
             CancellationToken.None);
 
-        Assert.Equal(2, result.Games.Count);
+        Assert.Equal(1, result.Games.Count);
         Assert.Equal(2, handler.RequestCount);
         Assert.True(result.HasMorePages);
         Assert.Contains("request budget", Assert.Single(result.Warnings), StringComparison.OrdinalIgnoreCase);

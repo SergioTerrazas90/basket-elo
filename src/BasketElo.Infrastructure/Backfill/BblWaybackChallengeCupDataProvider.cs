@@ -13,10 +13,13 @@ namespace BasketElo.Infrastructure.Backfill;
 public sealed class BblWaybackChallengeCupDataProvider(HttpClient httpClient) : IBasketballDataProvider
 {
     public const string Source = "bbl-wayback";
-    public const string ParserVersion = "bbl-wayback-challenge-cup-v1";
+    public const string ParserVersion = "bbl-wayback-challenge-cup-v2";
 
     private const string BaseUrl =
         "https://web.archive.org/web/20090301id_/http://www.bbl.net:80/index.php/";
+
+    private const string ResultsUrl =
+        "https://web.archive.org/web/20090116113802id_/http://www.bbl.net:80/index.php/b19sYW5nPWVuJm9fc2Vhcz0xOSZvX2xlYWc9OSZmdXNlYWN0aW9uPWdhbWVzLnJlc3VsdHM=";
 
     private static readonly IReadOnlyCollection<int> GameIds =
         Enumerable.Range(1137, 110).Concat([1258, 1259, 1260, 1261]).ToArray();
@@ -54,9 +57,32 @@ public sealed class BblWaybackChallengeCupDataProvider(HttpClient httpClient) : 
         var warnings = new List<string>();
         var fetchedAtUtc = DateTime.UtcNow;
         var hasMorePages = false;
+        var parsedGameIds = new HashSet<int>();
+
+        if (context.CanUseRequest())
+        {
+            context.ConsumeRequest();
+            using var resultsResponse = await httpClient.GetAsync(ResultsUrl, cancellationToken);
+            resultsResponse.EnsureSuccessStatusCode();
+            var resultsHtml = await resultsResponse.Content.ReadAsStringAsync(cancellationToken);
+            foreach (var game in ParseResults(resultsHtml, season, fetchedAtUtc, parsedGameIds))
+            {
+                games.Add(game);
+            }
+        }
+        else
+        {
+            hasMorePages = true;
+            warnings.Add("The request budget stopped the archived official BBL Challenge Cup import before the consolidated results page could be fetched.");
+        }
 
         foreach (var gameId in GameIds)
         {
+            if (parsedGameIds.Contains(gameId))
+            {
+                continue;
+            }
+
             if (!context.CanUseRequest())
             {
                 hasMorePages = true;
@@ -80,9 +106,108 @@ public sealed class BblWaybackChallengeCupDataProvider(HttpClient httpClient) : 
             }
 
             games.Add(parsed);
+            parsedGameIds.Add(gameId);
         }
 
         return (games, hasMorePages, warnings);
+    }
+
+    private static IReadOnlyCollection<BasketballProviderGame> ParseResults(
+        string html,
+        string season,
+        DateTime fetchedAtUtc,
+        ISet<int> parsedGameIds)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var teamNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var detail in document.DocumentNode.SelectNodes("//div[contains(@class, 'team_details')]") ?? Enumerable.Empty<HtmlNode>())
+        {
+            var anchor = detail.SelectSingleNode(".//a[@href]");
+            var sourceTeamId = ParseTeamId(anchor?.GetAttributeValue("href", string.Empty));
+            var name = Normalize(anchor?.InnerText ?? detail.InnerText);
+            if (sourceTeamId is not null && !string.IsNullOrWhiteSpace(name))
+            {
+                teamNames[sourceTeamId] = name;
+            }
+        }
+
+        var games = new List<BasketballProviderGame>();
+        foreach (var card in document.DocumentNode.SelectNodes("//div[contains(@class, 'result_card')]") ?? Enumerable.Empty<HtmlNode>())
+        {
+            var dateText = Normalize(card.SelectSingleNode("./div[contains(@class, 'std_header8')]")?.InnerText ?? string.Empty);
+            if (!DateTime.TryParseExact(
+                    dateText,
+                    "yyyy.MM.dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out var gameDateTime))
+            {
+                continue;
+            }
+
+            var resultDivs = card.SelectNodes("./div[contains(@class, 'result')]")?.ToArray() ?? [];
+            if (resultDivs.Length < 2)
+            {
+                continue;
+            }
+
+            var sides = resultDivs.Take(2).Select(result =>
+            {
+                var scoreLink = result.SelectSingleNode("./a[contains(@class, 'number')]");
+                var teamLink = result.SelectSingleNode("./a[not(contains(@class, 'number'))]");
+                var teamId = ParseTeamId(teamLink?.GetAttributeValue("href", string.Empty));
+                var name = teamId is not null && teamNames.TryGetValue(teamId, out var mappedName)
+                    ? mappedName
+                    : Normalize(teamLink?.InnerText ?? string.Empty);
+                return (
+                    GameId: ParseGameId(scoreLink?.GetAttributeValue("href", string.Empty)),
+                    TeamId: teamId,
+                    Name: name,
+                    Score: short.TryParse(Normalize(scoreLink?.InnerText ?? string.Empty), out var score) ? score : (short?)null);
+            }).ToArray();
+
+            var gameId = sides[0].GameId;
+            if (gameId is null || gameId != sides[1].GameId ||
+                sides[0].TeamId is null || sides[1].TeamId is null ||
+                string.IsNullOrWhiteSpace(sides[0].Name) || string.IsNullOrWhiteSpace(sides[1].Name) ||
+                sides[0].Score is null || sides[1].Score is null ||
+                !GameIds.Contains(gameId.Value) || !parsedGameIds.Add(gameId.Value))
+            {
+                continue;
+            }
+
+            var (phase, round) = gameId switch
+            {
+                1258 or 1259 => ("Final Four", "Semifinal"),
+                1260 => ("Final Four", "Third-place game"),
+                1261 => ("Final Four", "Final"),
+                _ => ("Challenge Cup", "Regular season")
+            };
+
+            games.Add(new BasketballProviderGame(
+                Source,
+                $"bbl-{gameId.Value.ToString(CultureInfo.InvariantCulture)}",
+                gameDateTime,
+                "finished",
+                sides[0].TeamId!,
+                sides[0].Name,
+                sides[1].TeamId!,
+                sides[1].Name,
+                sides[0].Score,
+                sides[1].Score,
+                new BasketballProviderGameProvenance(
+                    ResultsUrl,
+                    season,
+                    fetchedAtUtc,
+                    ParserVersion,
+                    gameId.Value.ToString(CultureInfo.InvariantCulture)),
+                CompetitionPhase: phase,
+                CompetitionRound: round));
+        }
+
+        return games;
     }
 
     private static BasketballProviderGame? ParseGame(
@@ -195,6 +320,31 @@ public sealed class BblWaybackChallengeCupDataProvider(HttpClient httpClient) : 
         }
 
         return match.Success ? $"bbl-team-{match.Groups["id"].Value}" : null;
+    }
+
+    private static int? ParseGameId(string? href)
+    {
+        var decoded = DecodeLink(href);
+        var match = Regex.Match(decoded ?? string.Empty, @"[?&]g_id=(?<id>\d+)(?:$|&)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success && int.TryParse(match.Groups["id"].Value, out var gameId) ? gameId : null;
+    }
+
+    private static string? DecodeLink(string? href)
+    {
+        if (string.IsNullOrWhiteSpace(href))
+        {
+            return null;
+        }
+
+        var encodedPath = href[(href.LastIndexOf('/') + 1)..];
+        try
+        {
+            return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(encodedPath));
+        }
+        catch (FormatException)
+        {
+            return href;
+        }
     }
 
     private static string Normalize(string value) =>

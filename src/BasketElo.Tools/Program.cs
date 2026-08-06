@@ -33,6 +33,16 @@ static async Task<int> RunAsync(string[] args)
         return await RunWikipediaEuroleagueHistoricalIngestAsync(args[1..]);
     }
 
+    if (args.Length > 0 && args[0].Equals("uleb-cup-dry-run", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunUlebCupDryRunAsync(args[1..]);
+    }
+
+    if (args.Length > 0 && args[0].Equals("uleb-cup-ingest", StringComparison.OrdinalIgnoreCase))
+    {
+        return await RunUlebCupIngestAsync(args[1..]);
+    }
+
     if (args.Length > 0 && args[0].Equals("acb-dry-run", StringComparison.OrdinalIgnoreCase))
     {
         return await RunAcbDryRunAsync(args[1..]);
@@ -429,6 +439,113 @@ static async Task<int> RunWikipediaEuroleagueHistoricalIngestAsync(string[] args
     }
 
     Console.WriteLine($"Historical Euroleague ingest processed {processed} jobs; skipped {completed.Count} completed and {active.Count} active keys.");
+    return 0;
+}
+
+static async Task<int> RunUlebCupDryRunAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var season = Required(values, "--season");
+    var maxRequests = ParseNonNegative(values, "--max-requests", 4);
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    builder.Services.AddInfrastructure(builder.Configuration);
+    using var host = builder.Build();
+    var provider = host.Services.GetRequiredService<IEnumerable<IBasketballDataProvider>>()
+        .Single(candidate => candidate.SourceKey == WikipediaUlebCupHistoricalDataProvider.Source);
+    var context = new BackfillExecutionContext(maxRequests, 0);
+    var league = await provider.ResolveLeagueAsync("Europe", "ULEB Cup", context, CancellationToken.None);
+    var result = await provider.GetGamesAsync(league!, season, context, CancellationToken.None);
+
+    Console.WriteLine($"ULEB Cup dry-run: Europe: ULEB Cup {season}");
+    Console.WriteLine($"Requests: {context.RequestsUsed}/{context.MaxRequests}; games: {result.Games.Count}; warnings: {result.Warnings.Count}");
+    foreach (var phase in result.Games
+                 .GroupBy(game => game.CompetitionPhase is null ? "(none)" : $"{game.CompetitionPhase} / {game.CompetitionRound}")
+                 .OrderByDescending(group => group.Count()))
+    {
+        Console.WriteLine($"{phase.Key}: {phase.Count()} games");
+    }
+    foreach (var warning in result.Warnings.Take(20))
+    {
+        Console.WriteLine($"WARNING: {warning}");
+    }
+
+    return result.Games.Count == 0 ? 2 : 0;
+}
+
+static async Task<int> RunUlebCupIngestAsync(string[] args)
+{
+    var values = ParseKeyValueArgs(args);
+    var maxJobs = ParseNonNegative(values, "--max-jobs", 0);
+    var maxRequests = ParseNonNegative(values, "--max-requests", 4);
+
+    var builder = Host.CreateApplicationBuilder();
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
+    if (values.TryGetValue("--connection-string", out var connectionString))
+    {
+        builder.Configuration["ConnectionStrings:Postgres"] = connectionString;
+    }
+    builder.Services.AddInfrastructure(builder.Configuration);
+
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
+    await dbContext.Database.MigrateAsync();
+    var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
+    var configuredSeasons = catalog.GetLeagues()
+        .Where(league => string.Equals(league.Provider, WikipediaUlebCupHistoricalDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+            league.Country == "Europe" && league.LeagueName == "ULEB Cup")
+        .SelectMany(league => catalog.GetSeasonsForLeague(league).Select(season => new { league.Country, league.LeagueName, season }))
+        .ToList();
+
+    var completed = (await dbContext.BackfillJobs
+            .Where(job => job.Provider == WikipediaUlebCupHistoricalDataProvider.Source &&
+                job.Country == "Europe" && job.LeagueName == "ULEB Cup" &&
+                (job.Status == BackfillJobStatus.Completed || job.Status == BackfillJobStatus.CompletedWithWarnings))
+            .Select(job => new { job.Country, job.LeagueName, job.Season })
+            .ToListAsync())
+        .Select(item => $"{item.Country}\u001f{item.LeagueName}\u001f{item.Season}")
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var active = (await dbContext.BackfillJobs
+            .Where(job => job.Provider == WikipediaUlebCupHistoricalDataProvider.Source &&
+                job.Country == "Europe" && job.LeagueName == "ULEB Cup" &&
+                (job.Status == BackfillJobStatus.Pending || job.Status == BackfillJobStatus.Running))
+            .Select(job => new { job.Country, job.LeagueName, job.Season })
+            .ToListAsync())
+        .Select(item => $"{item.Country}\u001f{item.LeagueName}\u001f{item.Season}")
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    var jobs = configuredSeasons
+        .Where(item => !completed.Contains($"{item.Country}\u001f{item.LeagueName}\u001f{item.season}") &&
+            !active.Contains($"{item.Country}\u001f{item.LeagueName}\u001f{item.season}"))
+        .OrderBy(item => item.season)
+        .Take(maxJobs > 0 ? maxJobs : int.MaxValue)
+        .Select(item => new BackfillJob
+        {
+            Id = Guid.NewGuid(),
+            Provider = WikipediaUlebCupHistoricalDataProvider.Source,
+            Country = item.Country,
+            LeagueName = item.LeagueName,
+            Season = item.season,
+            DryRun = false,
+            MaxRequests = maxRequests,
+            Status = BackfillJobStatus.Pending,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        })
+        .ToList();
+    dbContext.BackfillJobs.AddRange(jobs);
+    await dbContext.SaveChangesAsync();
+
+    var processor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
+    var processed = 0;
+    while (await processor.TryProcessNextPendingJobAsync(CancellationToken.None))
+    {
+        processed++;
+    }
+
+    Console.WriteLine($"ULEB Cup ingest processed {processed} jobs; skipped {completed.Count} completed and {active.Count} active keys.");
     return 0;
 }
 

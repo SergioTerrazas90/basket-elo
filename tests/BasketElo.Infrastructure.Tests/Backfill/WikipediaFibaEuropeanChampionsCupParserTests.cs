@@ -6,21 +6,21 @@ namespace BasketElo.Infrastructure.Tests.Backfill;
 public sealed class WikipediaFibaEuropeanChampionsCupParserTests
 {
     [Theory]
-    [InlineData(1967, "1967–68 FIBA European Cup Winners' Cup")]
-    [InlineData(1991, "1991–92 FIBA European Cup")]
-    [InlineData(1996, "1996–97 FIBA EuroCup")]
-    [InlineData(1999, "1999–2000 FIBA Saporta Cup")]
-    [InlineData(2001, "2001–02 FIBA Saporta Cup")]
+    [InlineData(1967, "1967â€“68 FIBA European Cup Winners' Cup")]
+    [InlineData(1991, "1991â€“92 FIBA European Cup")]
+    [InlineData(1996, "1996â€“97 FIBA EuroCup")]
+    [InlineData(1999, "1999â€“2000 FIBA Saporta Cup")]
+    [InlineData(2001, "2001â€“02 FIBA Saporta Cup")]
     public void BuildsSaportaEditionPageTitles(int startYear, string expected)
     {
         Assert.Equal(expected, WikipediaFibaEuropeanChampionsCupParser.SaportaEnglishPageTitle(startYear));
     }
 
     [Theory]
-    [InlineData(1971, "1972 FIBA Korać Cup")]
-    [InlineData(1972, "1972–73 FIBA Korać Cup")]
-    [InlineData(2000, "2000–01 FIBA Korać Cup")]
-    [InlineData(2001, "2001–02 FIBA Korać Cup")]
+    [InlineData(1971, "1972 FIBA KoraÄ‡ Cup")]
+    [InlineData(1972, "1972â€“73 FIBA KoraÄ‡ Cup")]
+    [InlineData(2000, "2000â€“01 FIBA KoraÄ‡ Cup")]
+    [InlineData(2001, "2001â€“02 FIBA KoraÄ‡ Cup")]
     public void BuildsKoracEditionPageTitles(int startYear, string expected)
     {
         Assert.Equal(expected, WikipediaFibaEuropeanChampionsCupParser.KoracEnglishPageTitle(startYear));
@@ -142,7 +142,7 @@ public sealed class WikipediaFibaEuropeanChampionsCupParserTests
             == Primera ronda ==
             {{TwoLegResult|[[Team Alpha]]|MAR|60-110|[[Team Beta]]|ITA|60-110||ganador=2}}
             == Cuartos de final ==
-            *Un partido de desempate se celebró el 2 de abril de 1963: [[Team Gamma]] - [[Team Delta]] 77–65.
+            *Un partido de desempate se celebrÃ³ el 2 de abril de 1963: [[Team Gamma]] - [[Team Delta]] 77â€“65.
             == Final ==
             {{ThreeLegResult|[[Team Alpha]]|ESP|240-259|[[Team Beta]]|URS|86-69|74-91|80-99*|ganador=2}}
             """,
@@ -164,17 +164,17 @@ public sealed class WikipediaFibaEuropeanChampionsCupParserTests
         var warnings = new List<string>();
         var games = WikipediaFibaEuropeanChampionsCupParser.ParseGames(
             """
-            | duration = 18 September 1996 – 24 April 1997
+            | duration = 18 September 1996 â€“ 24 April 1997
             == Preliminary round ==
             === Group A ===
             {|
             ! Pos !! Team !! Pld !! W !! L !! PF !! PA !! PD !! Pts !! Qualification !!  !! AAA !! BBB !! CCC
             |-
-            | 1 || [[Team Alpha]] || 4 || 3 || 1 || 300 || 280 || +20 || 7 || Advance ||  || — || 80–70 || 75–68
+            | 1 || [[Team Alpha]] || 4 || 3 || 1 || 300 || 280 || +20 || 7 || Advance ||  || â€” || 80â€“70 || 75â€“68
             |-
-            | 2 || [[Team Beta]] || 4 || 2 || 2 || 280 || 290 || -10 || 6 ||  ||  || 72–74 || — || 81–79
+            | 2 || [[Team Beta]] || 4 || 2 || 2 || 280 || 290 || -10 || 6 ||  ||  || 72â€“74 || â€” || 81â€“79
             |-
-            | 3 || [[Team Gamma]] || 4 || 1 || 3 || 270 || 280 || -10 || 5 ||  ||  || 65–70 || 77–73 || —
+            | 3 || [[Team Gamma]] || 4 || 1 || 3 || 270 || 280 || -10 || 5 ||  ||  || 65â€“70 || 77â€“73 || â€”
             |}
             """,
             "1996-1997",
@@ -190,6 +190,77 @@ public sealed class WikipediaFibaEuropeanChampionsCupParserTests
     }
 
     [Fact]
+    public void ParsesGermanCompactRoundRobinScoreMatrixWithColonScores()
+    {
+        var warnings = new List<string>();
+        var games = WikipediaFibaEuropeanChampionsCupParser.ParseGames(
+            """
+            | dauer = 11. November 2003 â€“ 13. April 2004
+            == Gruppenphase ==
+            === Gruppe A ===
+            {|
+            ! &nbsp; !! Alpha !! Beta !! Gamma
+            |-
+            | Alpha || * || 80:70 || 75:68
+            |-
+            | Beta || 72:74 || * || 81:79
+            |-
+            | Gamma || 65:70 || 77:73 || *
+            |}
+            """,
+            "2003-2004",
+            "https://de.wikipedia.org/wiki/ULEB_Cup_2003/04",
+            DateTime.UtcNow,
+            "123",
+            warnings,
+            sourceGameIdPrefix: "wiki-uleb",
+            preserveRoundRobinMatrixHomeAway: true);
+
+        Assert.Equal(6, games.Count);
+        Assert.Contains(games, game => game.SourceHomeTeamId == "wiki-team:alpha" && game.SourceAwayTeamId == "wiki-team:beta" && game.HomeScore == 80 && game.AwayScore == 70);
+        Assert.Contains(games, game => game.SourceHomeTeamId == "wiki-team:beta" && game.SourceAwayTeamId == "wiki-team:alpha" && game.HomeScore == 72 && game.AwayScore == 74);
+    }
+
+    [Fact]
+    public void ParsesGermanWikipediaMatrixRowsWithCellAttributes()
+    {
+        var warnings = new List<string>();
+        var games = WikipediaFibaEuropeanChampionsCupParser.ParseGames(
+            """
+            == Gruppenphase ==
+            === Gruppe A ===
+            {| style="border-collapse:collapse"
+            !width=130|&nbsp;
+            !width=80| Alpha
+            !width=80| Beta
+            !width=80| Gamma
+            !width=80| Delta
+            |- align=center
+            |align=left| Alpha
+            |*||80:70||75:68||77:66
+            |- align=center
+            |align=left| Beta
+            |72:74||*||81:79||70:69
+            |- align=center
+            |align=left| Gamma
+            |65:70||77:73||*||88:80
+            |- align=center
+            |align=left| Delta
+            |66:77||69:70||80:88||*
+            |}
+            """,
+            "2003-2004",
+            "https://de.wikipedia.org/wiki/test",
+            DateTime.UtcNow,
+            "123",
+            warnings,
+            sourceGameIdPrefix: "wiki-uleb",
+            preserveRoundRobinMatrixHomeAway: true);
+
+        Assert.Equal(12, games.Count);
+    }
+
+    [Fact]
     public void ParsesRenderedEnglishSportsTableMatrix()
     {
         var warnings = new List<string>();
@@ -198,9 +269,9 @@ public sealed class WikipediaFibaEuropeanChampionsCupParserTests
             <html><body>
             <table>
               <tr><th>Pos</th><th>Team</th><th>Pld</th><th>Qualification</th><th></th><th>AAA</th><th>BBB</th><th>CCC</th></tr>
-              <tr><td>1</td><td><a href="/wiki/Team_Alpha">Team Alpha</a></td><td>4</td><td>Advance</td><td></td><td>—</td><td>80–70</td><td>75–68</td></tr>
-              <tr><td>2</td><td><a href="/wiki/Team_Beta">Team Beta</a></td><td>4</td><td></td><td></td><td>72–74</td><td>—</td><td>81–79</td></tr>
-              <tr><td>3</td><td><a href="/wiki/Team_Gamma">Team Gamma</a></td><td>4</td><td></td><td></td><td>65–70</td><td>77–73</td><td>—</td></tr>
+              <tr><td>1</td><td><a href="/wiki/Team_Alpha">Team Alpha</a></td><td>4</td><td>Advance</td><td></td><td>â€”</td><td>80â€“70</td><td>75â€“68</td></tr>
+              <tr><td>2</td><td><a href="/wiki/Team_Beta">Team Beta</a></td><td>4</td><td></td><td></td><td>72â€“74</td><td>â€”</td><td>81â€“79</td></tr>
+              <tr><td>3</td><td><a href="/wiki/Team_Gamma">Team Gamma</a></td><td>4</td><td></td><td></td><td>65â€“70</td><td>77â€“73</td><td>â€”</td></tr>
             </table>
             </body></html>
             """,
@@ -220,7 +291,7 @@ public sealed class WikipediaFibaEuropeanChampionsCupParserTests
         var warnings = new List<string>();
         var games = WikipediaFibaEuropeanChampionsCupParser.ParseGames(
             """
-            | duration = 18 September 1996 – 24 April 1997
+            | duration = 18 September 1996 â€“ 24 April 1997
             == Preliminary round ==
             === Group A ===
             {{#invoke:Sports table|main|style=WL|section=Group A|show_matches=true

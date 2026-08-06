@@ -79,9 +79,9 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         var endYear = startYear + 1;
         return startYear switch
         {
-            1971 => "1972 FIBA Korać Cup",
-            2001 => "2001–02 FIBA Korać Cup",
-            >= 1972 and <= 2000 => $"{startYear}–{endYear % 100:00} FIBA Korać Cup",
+            1971 => "1972 FIBA KoraÄ‡ Cup",
+            2001 => "2001â€“02 FIBA KoraÄ‡ Cup",
+            >= 1972 and <= 2000 => $"{startYear}â€“{endYear % 100:00} FIBA KoraÄ‡ Cup",
             _ => throw new ArgumentOutOfRangeException(nameof(startYear), startYear, "Wikipedia coverage is configured for 1971-2001.")
         };
     }
@@ -108,7 +108,9 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         ICollection<string> warnings,
         string source = FibaBasketballDataProvider.Source,
         string parserVersion = ParserVersion,
-        string sourceGameIdPrefix = "wiki-fiba")
+        string sourceGameIdPrefix = "wiki-fiba",
+        bool preserveRoundRobinMatrixHomeAway = false,
+        bool parseUlebFinalFormats = false)
     {
         var startYear = ParseStartYear(season);
         var endYear = startYear + 1;
@@ -118,7 +120,12 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
 
         ParseTwoLegTemplates(wikitext, startYear, endYear, accumulator);
         ParseLiteralTables(wikitext, startYear, endYear, accumulator);
-        ParseMatrixTables(wikitext, startYear, endYear, accumulator);
+        ParseMatrixTables(wikitext, startYear, endYear, accumulator, preserveRoundRobinMatrixHomeAway);
+        if (parseUlebFinalFormats)
+        {
+            ParseUlebFinalTables(wikitext, startYear, endYear, accumulator);
+            ParseUlebBracketTemplates(wikitext, startYear, endYear, accumulator);
+        }
         ParseSportsTableTemplates(wikitext, startYear, endYear, accumulator);
         ParseThreeLegTemplates(wikitext, startYear, endYear, accumulator);
         ParseTieBreakNotesReliable(wikitext, startYear, endYear, accumulator);
@@ -145,7 +152,8 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         ICollection<string> warnings,
         string source = FibaBasketballDataProvider.Source,
         string parserVersion = ParserVersion,
-        string sourceGameIdPrefix = "wiki-fiba")
+        string sourceGameIdPrefix = "wiki-fiba",
+        bool preserveRoundRobinMatrixHomeAway = false)
     {
         var startYear = ParseStartYear(season);
         var endYear = startYear + 1;
@@ -203,8 +211,13 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
 
             for (var rowIndex = 0; rowIndex < dataRows.Length; rowIndex++)
             {
-                for (var columnIndex = rowIndex + 1; columnIndex < matrixColumns.Length; columnIndex++)
+                for (var columnIndex = preserveRoundRobinMatrixHomeAway ? 0 : rowIndex + 1; columnIndex < matrixColumns.Length; columnIndex++)
                 {
+                    if (!preserveRoundRobinMatrixHomeAway && columnIndex <= rowIndex)
+                    {
+                        continue;
+                    }
+
                     var scoreCell = CleanHtmlText(dataRows[rowIndex].ScoreCells[columnIndex]);
                     if (!TryParseScorePair(scoreCell, out var score))
                     {
@@ -441,7 +454,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         var ordinal = 0;
         foreach (Match match in Regex.Matches(
             wikitext,
-            @"(?is)(?:partido\s+de\s+desempate|tercer\s+partido).*?(?<home>\[\[[^\]]+\]\])\s*-\s*(?<away>\[\[[^\]]+\]\])\s+(?<score>\d{1,3}\s*[-â€“â€”]\s*\d{1,3})",
+            @"(?is)(?:partido\s+de\s+desempate|tercer\s+partido).*?(?<home>\[\[[^\]]+\]\])\s*-\s*(?<away>\[\[[^\]]+\]\])\s+(?<score>\d{1,3}\s*[-Ã¢â‚¬â€œÃ¢â‚¬â€]\s*\d{1,3})",
             RegexOptions.IgnoreCase))
         {
             if (!TryParseScorePair(match.Groups["score"].Value, out var score))
@@ -591,7 +604,8 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         string wikitext,
         int startYear,
         int endYear,
-        GameAccumulator accumulator)
+        GameAccumulator accumulator,
+        bool preserveRoundRobinMatrixHomeAway)
     {
         var tableOrdinal = 0;
         foreach (Match tableMatch in Regex.Matches(wikitext, @"(?ms)^\{\|(?<body>.*?)^\|\}"))
@@ -601,26 +615,29 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
             var headerIndex = rows
                 .Select((row, index) => new { Row = row, Index = index })
                 .FirstOrDefault(item =>
-                    item.Row.Any(cell => CleanWikiText(cell).Equals("Team", StringComparison.OrdinalIgnoreCase)) &&
-                    item.Row.Any(cell => CleanWikiText(cell).Equals("Qualification", StringComparison.OrdinalIgnoreCase)))
+                    (item.Row.Any(cell => CleanWikiText(cell).Equals("Team", StringComparison.OrdinalIgnoreCase)) &&
+                        item.Row.Any(cell => CleanWikiText(cell).Equals("Qualification", StringComparison.OrdinalIgnoreCase))) ||
+                    IsCompactScoreMatrixHeader(item.Row))
                 ?.Index;
             if (headerIndex is null)
             {
                 continue;
             }
 
-            var header = rows[headerIndex.Value];
-            var teamColumn = header
-                .Select((cell, index) => new { Cell = CleanWikiText(cell), Index = index })
-                .First(item => item.Cell.Equals("Team", StringComparison.OrdinalIgnoreCase))
-                .Index;
-            var qualificationColumn = header
-                .Select((cell, index) => new { Cell = CleanWikiText(cell), Index = index })
-                .First(item => item.Cell.Equals("Qualification", StringComparison.OrdinalIgnoreCase))
-                .Index;
+            var header = rows[headerIndex.Value]
+                .Where(cell => !CleanWikiText(cell).StartsWith("width=", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            var standardMatrix = header.Any(cell => CleanWikiText(cell).Equals("Team", StringComparison.OrdinalIgnoreCase)) &&
+                header.Any(cell => CleanWikiText(cell).Equals("Qualification", StringComparison.OrdinalIgnoreCase));
+            var teamColumn = standardMatrix
+                ? Array.FindIndex(header, cell => CleanWikiText(cell).Equals("Team", StringComparison.OrdinalIgnoreCase))
+                : 0;
+            var qualificationColumn = standardMatrix
+                ? Array.FindIndex(header, cell => CleanWikiText(cell).Equals("Qualification", StringComparison.OrdinalIgnoreCase))
+                : 0;
             var matrixColumns = header
-                .Select((cell, index) => new { Cell = CleanWikiText(cell), Index = index })
-                .Where(item => item.Index > qualificationColumn && !string.IsNullOrWhiteSpace(item.Cell))
+                .Select((cell, index) => new { Cell = cell, Index = index })
+                .Where(item => item.Index > (standardMatrix ? qualificationColumn : teamColumn) && !string.IsNullOrWhiteSpace(CleanWikiText(item.Cell)))
                 .ToArray();
             if (matrixColumns.Length < 3)
             {
@@ -647,8 +664,13 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
             var context = FindContext(wikitext, tableMatch.Index, startYear, endYear, accumulator.FallbackDate);
             for (var rowIndex = 0; rowIndex < dataRows.Length; rowIndex++)
             {
-                for (var columnIndex = rowIndex + 1; columnIndex < matrixColumns.Length; columnIndex++)
+                for (var columnIndex = preserveRoundRobinMatrixHomeAway ? 0 : rowIndex + 1; columnIndex < matrixColumns.Length; columnIndex++)
                 {
+                    if (!preserveRoundRobinMatrixHomeAway && columnIndex <= rowIndex)
+                    {
+                        continue;
+                    }
+
                     var scoreCell = dataRows[rowIndex].Row[matrixColumns[columnIndex].Index];
                     if (!TryParseScorePair(scoreCell, out var score))
                     {
@@ -667,6 +689,116 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
                         inferredDate: true);
                 }
             }
+        }
+    }
+
+    private static bool IsCompactScoreMatrixHeader(IReadOnlyList<string> row)
+    {
+        var cells = row
+            .Where(cell => !CleanWikiText(cell).StartsWith("width=", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return cells.Length >= 4 &&
+            string.IsNullOrWhiteSpace(CleanWikiText(cells[0])) &&
+            cells.Skip(1).All(cell => !string.IsNullOrWhiteSpace(CleanWikiText(cell)));
+    }
+
+    private static void ParseUlebFinalTables(
+        string wikitext,
+        int startYear,
+        int endYear,
+        GameAccumulator accumulator)
+    {
+        var tableOrdinal = 0;
+        foreach (Match tableMatch in Regex.Matches(wikitext, @"(?ms)^\{\|(?<body>.*?)^\|\}"))
+        {
+            tableOrdinal++;
+            var context = FindContext(wikitext, tableMatch.Index, startYear, endYear, accumulator.FallbackDate);
+            if (!context.Phase.Contains("final", StringComparison.OrdinalIgnoreCase) &&
+                !context.Round.Contains("final", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var rowOrdinal = 0;
+            foreach (var cells in ParseTableRows(tableMatch.Groups["body"].Value))
+            {
+                rowOrdinal++;
+                if (cells.Count < 5 || !TryParseScorePair(cells[^1], out var score))
+                {
+                    continue;
+                }
+
+                var home = ParseTeam(cells[2], null);
+                var away = ParseTeam(cells[3], null);
+                if (home is null || away is null)
+                {
+                    continue;
+                }
+
+                var date = ExtractDates(cells[1], startYear, endYear).FirstOrDefault();
+                var inferredDate = date == default;
+                date = inferredDate ? accumulator.NextFallbackDate() : date;
+                accumulator.Add(home, away, score.Home, score.Away, date, context.Phase, context.Round, $"uleb-final-table-{tableOrdinal}-{rowOrdinal}", inferredDate);
+            }
+        }
+    }
+
+    private static void ParseUlebBracketTemplates(
+        string wikitext,
+        int startYear,
+        int endYear,
+        GameAccumulator accumulator)
+    {
+        var ordinal = 0;
+        foreach (var template in ExtractTemplates(wikitext, "Turnierplan8"))
+        {
+            ordinal++;
+            var parameters = SplitTopLevel(template.Body.TrimStart('|'), "|")
+                .Select(value =>
+                {
+                    var separator = FindTopLevelDelimiter(value, "=");
+                    return separator < 0
+                        ? (Name: string.Empty, Value: string.Empty)
+                        : (Name: value[..separator].Trim(), Value: value[(separator + 1)..].Trim());
+                })
+                .Where(pair => pair.Name.Length > 0)
+                .ToDictionary(pair => pair.Name, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+            AddUlebBracketRound(parameters, "RD1", "Quarterfinals", [1, 3, 5, 7], accumulator, ordinal);
+            AddUlebBracketRound(parameters, "RD2", "Semifinals", [1, 3], accumulator, ordinal);
+            AddUlebBracketRound(parameters, "RD3", "Final", [1], accumulator, ordinal);
+            AddUlebBracketRound(parameters, "RD3", "Third-place game", [3], accumulator, ordinal);
+        }
+    }
+
+    private static void AddUlebBracketRound(
+        IReadOnlyDictionary<string, string> parameters,
+        string prefix,
+        string round,
+        IReadOnlyList<int> pairStarts,
+        GameAccumulator accumulator,
+        int ordinal)
+    {
+        foreach (var pairStart in pairStarts)
+        {
+            if (!parameters.TryGetValue($"{prefix}-team{pairStart}", out var homeRaw) ||
+                !parameters.TryGetValue($"{prefix}-team{pairStart + 1}", out var awayRaw) ||
+                !parameters.TryGetValue($"{prefix}-score{pairStart}", out var homeScoreRaw) ||
+                !parameters.TryGetValue($"{prefix}-score{pairStart + 1}", out var awayScoreRaw) ||
+                !TryParseSingleScore(homeScoreRaw, out var homeScore) ||
+                !TryParseSingleScore(awayScoreRaw, out var awayScore))
+            {
+                continue;
+            }
+
+            var home = ParseTeam(homeRaw, null);
+            var away = ParseTeam(awayRaw, null);
+            if (home is null || away is null)
+            {
+                continue;
+            }
+
+            accumulator.Add(home, away, homeScore, awayScore, accumulator.NextFallbackDate(), "Final 8 tournament", round, $"uleb-bracket-{ordinal}-{prefix}-{pairStart}", inferredDate: true);
         }
     }
 
@@ -735,7 +867,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
     private static bool IsMatrixBye(string value)
     {
         var cleaned = CleanWikiText(value);
-        return cleaned is "—" or "–" or "â€”" or "â€“" or "-" or "bye" or "BYE";
+        return cleaned is "â€”" or "â€“" or "Ã¢â‚¬â€" or "Ã¢â‚¬â€œ" or "-" or "bye" or "BYE";
     }
 
     private static IReadOnlyList<HtmlNode> GetHtmlCells(HtmlNode row)
@@ -883,7 +1015,18 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
     {
         var cleaned = CleanWikiText(text);
         var dates = new List<DateTime>();
-        foreach (Match match in Regex.Matches(cleaned, @"(?<!\d)(?<day>\d{1,2})\s+(?:(?:de)\s+)?(?<month>[A-Za-záéíóú]+)(?:\s+(?:(?:de)\s+)?(?<year>(?:19|20)\d{2}))?", RegexOptions.IgnoreCase))
+        foreach (Match match in Regex.Matches(cleaned, @"(?<!\d)(?<day>\d{1,2})[./-](?<month>\d{1,2})[./-](?<year>(?:19|20)\d{2})(?!\d)"))
+        {
+            if (int.TryParse(match.Groups["day"].Value, out var day) &&
+                int.TryParse(match.Groups["month"].Value, out var month) &&
+                int.TryParse(match.Groups["year"].Value, out var year) &&
+                month is >= 1 and <= 12 &&
+                day <= DateTime.DaysInMonth(year, month))
+            {
+                dates.Add(new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc));
+            }
+        }
+        foreach (Match match in Regex.Matches(cleaned, @"(?<!\d)(?<day>\d{1,2})\s+(?:(?:de)\s+)?(?<month>[A-Za-zÃ¡Ã©Ã­Ã³Ãº]+)(?:\s+(?:(?:de)\s+)?(?<year>(?:19|20)\d{2}))?", RegexOptions.IgnoreCase))
         {
             if (!MonthNumbers.TryGetValue(match.Groups["month"].Value, out var month) || !int.TryParse(match.Groups["day"].Value, out var day))
             {
@@ -925,7 +1068,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
     private static bool IsScoreLikeTeamName(string value)
         => Regex.IsMatch(
             value.Trim(),
-            @"^\d{1,3}\s*[-\u2013\u2014Ã¢â‚¬â€œÃ¢â‚¬â€]\s*\d{1,3}$",
+            @"^\d{1,3}\s*[^0-9\s]\s*\d{1,3}$",
             RegexOptions.CultureInvariant);
 
     private static string CleanWikiText(string value)
@@ -969,7 +1112,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
     {
         score = default;
         var cleaned = CleanWikiText(value).Replace("*", string.Empty, StringComparison.Ordinal);
-        var match = Regex.Match(cleaned, @"(?<!\d)(?<home>\d{1,3})\s*[-–—â€“â€”]\s*(?<away>\d{1,3})(?!\d)");
+        var match = Regex.Match(cleaned, @"(?<!\d)(?<home>\d{1,3})\s*[^0-9\s]\s*(?<away>\d{1,3})(?!\d)");
         if (!match.Success || !short.TryParse(match.Groups["home"].Value, out var home) || !short.TryParse(match.Groups["away"].Value, out var away))
         {
             return false;

@@ -271,6 +271,11 @@ public class BackfillJobProcessor(
                 WikipediaEuroleagueHistoricalDataProvider.Source,
                 StringComparison.OrdinalIgnoreCase) &&
                 allGames.Count > 0;
+            var replacesHistoricalWikipediaUlebCup = string.Equals(
+                provider.SourceKey,
+                WikipediaUlebCupHistoricalDataProvider.Source,
+                StringComparison.OrdinalIgnoreCase) &&
+                allGames.Count > 0;
             var replacesHistoricalBasketballReferenceEuroleague = string.Equals(
                 provider.SourceKey,
                 BasketballReferenceBasketballDataProvider.Source,
@@ -293,7 +298,7 @@ public class BackfillJobProcessor(
                 WikipediaEuroleagueHistoricalDataProvider.Source,
                 FlashscoreEuroleagueHistoricalDataProvider.Source
             };
-            if (replacesSparseFibaArchive || replacesHistoricalWikipediaEuroleague || replacesHistoricalBasketballReferenceEuroleague || replacesHistoricalFlashscoreEuroleague || replacesHistoricalEuroleagueR)
+            if (replacesSparseFibaArchive || replacesHistoricalWikipediaEuroleague || replacesHistoricalWikipediaUlebCup || replacesHistoricalBasketballReferenceEuroleague || replacesHistoricalFlashscoreEuroleague || replacesHistoricalEuroleagueR)
             {
                 var incomingSourceGameIds = allGames
                     .Select(game => game.SourceGameId)

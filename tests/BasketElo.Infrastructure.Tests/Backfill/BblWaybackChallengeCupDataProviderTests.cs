@@ -12,8 +12,8 @@ public sealed class BblWaybackChallengeCupDataProviderTests
     {
         var handler = new FixtureHandler("""
             <html><body>
-            <a href="/index.php/teams.main&t=48"><b style="font-size:13px;">Home Club</b></a>
-            <a href="/index.php/teams.main&t=77"><b style="font-size:13px;">Away Club</b></a>
+            <a href="http://www.bbl.net/index.php/b19sYW5nPWVuJm9fc2Vhcz0xOSZvX2xlYWc9OSZmdXNlYWN0aW9uPXRlYW1zLm1haW4mdD00OA=="><b style="font-size:13px;">Home Club</b></a>
+            <a href="http://www.bbl.net/index.php/b19sYW5nPWVuJm9fc2Vhcz0xOSZvX2xlYWc9OSZmdXNlYWN0aW9uPXRlYW1zLm1haW4mdD03Nw=="><b style="font-size:13px;">Away Club</b></a>
             <strong>2007-10-02 | 18:30</strong>
             <div style="font-size:22px;">84 : 75</div>
             </body></html>
@@ -45,8 +45,8 @@ public sealed class BblWaybackChallengeCupDataProviderTests
     {
         var handler = new FixtureHandler("""
             <html><body>
-            <a href="/index.php/teams.main&t=48"><b style="font-size:13px;">Home Club</b></a>
-            <a href="/index.php/teams.main&t=77"><b style="font-size:13px;">Away Club</b></a>
+            <a href="http://www.bbl.net/index.php/b19sYW5nPWVuJm9fc2Vhcz0xOSZvX2xlYWc9OSZmdXNlYWN0aW9uPXRlYW1zLm1haW4mdD00OA=="><b style="font-size:13px;">Home Club</b></a>
+            <a href="http://www.bbl.net/index.php/b19sYW5nPWVuJm9fc2Vhcz0xOSZvX2xlYWc9OSZmdXNlYWN0aW9uPXRlYW1zLm1haW4mdD03Nw=="><b style="font-size:13px;">Away Club</b></a>
             <strong>2007-10-02 | 18:30</strong>
             <div style="font-size:22px;">84 : 75</div>
             </body></html>

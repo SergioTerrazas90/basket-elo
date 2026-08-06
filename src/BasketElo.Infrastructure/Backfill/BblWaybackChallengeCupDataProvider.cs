@@ -179,7 +179,21 @@ public sealed class BblWaybackChallengeCupDataProvider(HttpClient httpClient) : 
             return null;
         }
 
-        var match = Regex.Match(href, @"(?:[?&]|&)t=(?<id>\d+)(?:$|&)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var match = Regex.Match(href, @"[?&]t=(?<id>\d+)(?:$|&)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success)
+        {
+            var encodedPath = href[(href.LastIndexOf('/') + 1)..];
+            try
+            {
+                var decodedPath = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(encodedPath));
+                match = Regex.Match(decodedPath, @"[?&]t=(?<id>\d+)(?:$|&)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            }
+            catch (FormatException)
+            {
+                // Some archived pages retain a normal query-string link.
+            }
+        }
+
         return match.Success ? $"bbl-team-{match.Groups["id"].Value}" : null;
     }
 

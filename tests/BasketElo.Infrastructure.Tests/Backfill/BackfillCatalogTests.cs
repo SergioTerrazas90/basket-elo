@@ -438,6 +438,27 @@ public class BackfillCatalogTests
     }
 
     [Fact]
+    public void FibaEuropeanTierTwoCoversThePostSaportaLineage()
+    {
+        var catalog = new BackfillCatalog();
+        var source = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Europe" &&
+            league.LeagueName == "FIBA European Tier 2");
+
+        var seasons = catalog.GetSeasonsForLeague(source).ToList();
+
+        Assert.Equal(EloPoolKeys.EuropeClubs, source.EloPoolKey);
+        Assert.Equal("2002-2003", seasons[0]);
+        Assert.Equal("2007-2008", seasons[^1]);
+        Assert.Equal(6, seasons.Count);
+        Assert.DoesNotContain(catalog.GetLeagues(), league =>
+            league.LeagueName == "FIBA Saporta Cup" &&
+            league.Provider == source.Provider &&
+            league.DisplayName == source.DisplayName);
+    }
+
+    [Fact]
     public void UlebCupIsConfiguredSeparatelyForItsSixHistoricalSeasons()
     {
         var catalog = new BackfillCatalog();

@@ -187,6 +187,26 @@ public sealed class FibaBasketballDataProviderTests
     }
 
     [Fact]
+    public async Task ResolvesPostSaportaTierTwoUsingASeparateHistoryVariant()
+    {
+        var provider = new FibaBasketballDataProvider(new HttpClient
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "Europe",
+            "FIBA European Tier 2",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+
+        Assert.NotNull(league);
+        Assert.Equal(
+            "212-fiba-mens-european-club-competitions-tier-2|post-saporta",
+            league.SourceLeagueId);
+    }
+
+    [Fact]
     public async Task ResolvesKoracCupUsingEuroCupChallengeHistoryFamily()
     {
         var handler = new KoracFixtureHandler();
@@ -386,7 +406,7 @@ public sealed class FibaBasketballDataProviderTests
             <div class="date"><div>4 November 1958</div></div>
             <div class="games"><div data-testid="ui-game-card">
               <a href="/en/history/112-fiba-mens-european-club-competitions-tier-1/9089/games/9001">
-                <div>Final · Finals</div><div>Final</div>
+                <div>Final Â· Finals</div><div>Final</div>
                 <div class="wa01avm"><div class="wa01avq">RIGA</div><div class="wa01avo">86</div></div>
                 <div class="wa01avm"><div class="wa01avq">ACAD</div><div class="wa01avo">73</div></div>
               </a>
@@ -449,7 +469,7 @@ public sealed class FibaBasketballDataProviderTests
             <div class="date"><div>4 April 1968</div></div>
             <div class="games"><div data-testid="ui-game-card">
             <a href="/en/history/212-fiba-mens-european-club-competitions-tier-2/8795/games/7001-VARES-MACC">
-                <div>Final Â· Finals</div><div>Final</div>
+                <div>Final Ã‚Â· Finals</div><div>Final</div>
                 <div class="wa01avm"><div class="wa01avq">VARES</div><div class="wa01avo">77</div></div>
                 <div class="wa01avm"><div class="wa01avq">MACC</div><div class="wa01avo">67</div></div>
               </a>
@@ -483,7 +503,7 @@ public sealed class FibaBasketballDataProviderTests
             <div class="date"><div>7 March 1972</div></div>
             <div class="games"><div data-testid="ui-game-card">
             <a href="/en/history/164-eurocup-challenge/8600/games/7002-LOKO-BEOG">
-                <div>Final · Finals</div><div>Finals</div>
+                <div>Final Â· Finals</div><div>Finals</div>
                 <div class="wa01avm"><div class="wa01avq">LOKO</div><div class="wa01avo">83</div></div>
                 <div class="wa01avm"><div class="wa01avq">BEOG</div><div class="wa01avo">71</div></div>
               </a>

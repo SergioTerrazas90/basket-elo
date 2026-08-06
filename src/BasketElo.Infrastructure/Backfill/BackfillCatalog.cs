@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.4 seconds
+Output:
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Elo;
 
@@ -13,7 +16,7 @@ public class BackfillCatalog : IBackfillCatalog
         new("acb-dbasket", "Spain", "ACB", "Spain: ACB", "1983-1984", EndSeason: "2007-2008"),
         new("acb-official-liga-nacional", "Spain", "Liga Nacional", "Spain: Liga Nacional", "1956-1957", ExplicitSeasons: ["1956-1957", "1957-1958", "1958-1959", "1959-1960", "1960-1961", "1961-1962", "1962-1963", "1963-1964", "1964-1965", "1965-1966", "1966-1967", "1967-1968", "1968-1969", "1969-1970", "1970-1971", "1971-1972", "1972-1973", "1973-1974", "1974-1975", "1975-1976", "1976-1977", "1977-1978", "1978-1979", "1979-1980", "1980-1981", "1981-1982", "1982-1983"]),
         new("acb-official-tournaments", "Spain", "Spanish Cup", "Spain: Copa del Rey", "1983-1984", CompetitionType: "domestic_cup", EndSeason: "2007-2008"),
-        new("acb-official-tournaments", "Spain", "Copa del GeneralÃƒÂ­simo", "Spain: Copa del GeneralÃƒÂ­simo", "1939-1940", CompetitionType: "domestic_cup", ExplicitSeasons: ["1939-1940", "1940-1941", "1941-1942", "1942-1943", "1943-1944", "1944-1945", "1945-1946", "1946-1947", "1947-1948", "1948-1949", "1949-1950", "1950-1951", "1951-1952", "1952-1953", "1953-1954", "1954-1955", "1955-1956", "1956-1957", "1957-1958", "1958-1959", "1959-1960", "1960-1961", "1961-1962", "1962-1963", "1963-1964", "1964-1965", "1965-1966", "1966-1967", "1967-1968", "1968-1969", "1969-1970", "1970-1971", "1971-1972", "1972-1973", "1973-1974", "1974-1975", "1975-1976"]),
+        new("acb-official-tournaments", "Spain", "Copa del GeneralÃƒÆ’Ã‚Â­simo", "Spain: Copa del GeneralÃƒÆ’Ã‚Â­simo", "1939-1940", CompetitionType: "domestic_cup", ExplicitSeasons: ["1939-1940", "1940-1941", "1941-1942", "1942-1943", "1943-1944", "1944-1945", "1945-1946", "1946-1947", "1947-1948", "1948-1949", "1949-1950", "1950-1951", "1951-1952", "1952-1953", "1953-1954", "1954-1955", "1955-1956", "1956-1957", "1957-1958", "1958-1959", "1959-1960", "1960-1961", "1961-1962", "1962-1963", "1963-1964", "1964-1965", "1965-1966", "1966-1967", "1967-1968", "1968-1969", "1969-1970", "1970-1971", "1971-1972", "1972-1973", "1973-1974", "1974-1975", "1975-1976"]),
         new("acb-official-tournaments", "Spain", "Supercopa ACB", "Spain: Supercopa ACB", "1984-1985", CompetitionType: "domestic_cup", ExplicitSeasons: ["1984-1985", "1985-1986", "1986-1987", "1987-1988", "2004-2005", "2005-2006", "2006-2007", "2007-2008"]),
         new("api-sports", "Spain", "Spanish Cup", "Spain: Copa del Rey", "2008", CompetitionType: "domestic_cup"),
         new("api-sports", "Spain", "Supercopa ACB", "Spain: Supercopa ACB", "2010", CompetitionType: "domestic_cup", EndSeason: "2025"),
@@ -31,6 +34,7 @@ public class BackfillCatalog : IBackfillCatalog
         new("api-sports", "Europe", "ABA Supercup", "International: ABA Supercup", "2017-2018", CompetitionType: "international_cup", ExplicitSeasons: ["2017-2018", "2018-2019", "2019-2020", "2023-2024"]),
         new("api-sports", "Europe", "Alpe Adria Cup", "International: Alpe Adria Cup", "2015", CompetitionType: "international", EndSeason: "2023"),
         new("api-sports", "Europe", "Baltic League", "International: Baltic League", "2009", CompetitionType: "international", EndSeason: "2017"),
+        new("basketball-database", "Europe", "Baltic League", "International: Baltic League", "2004-2005", CompetitionType: "international", EndSeason: "2007-2008"),
         new(
             "api-sports",
             "Europe",
@@ -309,3 +313,4 @@ public class BackfillCatalog : IBackfillCatalog
             .Select(year => $"{year}-{year + 1}")
             .ToArray();
 }
+

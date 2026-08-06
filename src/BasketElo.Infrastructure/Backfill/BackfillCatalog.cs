@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.4 seconds
-Output:
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Elo;
 
@@ -35,6 +32,7 @@ public class BackfillCatalog : IBackfillCatalog
         new("api-sports", "Europe", "Alpe Adria Cup", "International: Alpe Adria Cup", "2015", CompetitionType: "international", EndSeason: "2023"),
         new("api-sports", "Europe", "Baltic League", "International: Baltic League", "2009", CompetitionType: "international", EndSeason: "2017"),
         new("basketball-database", "Europe", "Baltic League", "International: Baltic League", "2004-2005", CompetitionType: "international", EndSeason: "2007-2008"),
+        new("bbl-wayback", "Europe", "Baltic League Challenge Cup", "International: Baltic League Challenge Cup", "2007-2008", CompetitionType: "international", ExplicitSeasons: ["2007-2008"], EloPoolKey: EloPoolKeys.EuropeClubs),
         new(
             "api-sports",
             "Europe",

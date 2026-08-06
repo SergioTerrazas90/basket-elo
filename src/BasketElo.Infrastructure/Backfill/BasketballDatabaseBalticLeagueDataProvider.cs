@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.4 seconds
-Output:
 using System.Globalization;
 using System.Text.RegularExpressions;
 using BasketElo.Domain.Backfill;

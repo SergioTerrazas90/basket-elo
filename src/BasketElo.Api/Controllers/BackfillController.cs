@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.4 seconds
-Output:
 using BasketElo.Api.Auth;
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Entities;
@@ -61,9 +58,10 @@ public class BackfillController(
              !string.Equals(request.Provider, TurkishBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, SerbianHistoricalBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, BasketballDatabaseBalticLeagueDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, BblWaybackChallengeCupDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, WikipediaEuroBasketQualificationDataProvider.Source, StringComparison.OrdinalIgnoreCase)))
         {
-            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba', 'wikipedia-euroleague', 'wikipedia-uleb-cup', 'global-sports-archive', 'basketball-database', 'lba-official', 'aba-official', 'wikipedia-italian-cup', 'wikipedia-german-cup', 'french-historical', 'german-official', 'turkish-historical', 'serbian-historical' and 'wikipedia'.");
+            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba', 'wikipedia-euroleague', 'wikipedia-uleb-cup', 'global-sports-archive', 'basketball-database', 'bbl-wayback', 'lba-official', 'aba-official', 'wikipedia-italian-cup', 'wikipedia-german-cup', 'french-historical', 'german-official', 'turkish-historical', 'serbian-historical' and 'wikipedia'.");
         }
 
         var job = BuildJob(request, FindConfiguredLeague(request.Provider, request.Country, request.LeagueName));

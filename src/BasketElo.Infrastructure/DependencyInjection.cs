@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.4 seconds
-Output:
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Elo;
 using BasketElo.Infrastructure.Backfill;
@@ -180,6 +177,11 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(45);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
         });
+        services.AddHttpClient<BblWaybackChallengeCupDataProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
         services.AddHttpClient<LiveScoreDailyResultsProvider>((serviceProvider, client) =>
         {
             var providerOptions = serviceProvider
@@ -237,6 +239,8 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<GlobalSportsArchiveBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<BasketballDatabaseBalticLeagueDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<BblWaybackChallengeCupDataProvider>());
         services.AddSingleton<FiveThirtyEightBasketballDataProvider>();
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<FiveThirtyEightBasketballDataProvider>());

@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.4 seconds
-Output:
 using System.Net;
 using System.Net.Http;
 using BasketElo.Domain.Backfill;

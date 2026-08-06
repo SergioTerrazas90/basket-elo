@@ -1,7 +1,3 @@
-Exit code: 0
-Wall time: 0.4 seconds
-Total output lines: 1127
-Output:
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -148,10 +144,9 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         var hasUnresolvedTeamCards = warnings.Any(warning =>
             warning.Contains("unresolved TBD/TBC", StringComparison.OrdinalIgnoreCase));
         if (IsEuropeanClubCompetition(historyFamily) &&
-            !IsEuropeanPostSaportaTierTwo(historyFamily, variant) &&
-            (games.Count < 50 || IsEuropeanSaportaCup(historyFamily, variant) && hasUnresolvedTeamCards))
+            (games.Count < 50 || IsEuropeanSaportaCup(historyFamily) && hasUnresolvedTeamCards))
         {
-            var wikipediaLanguages = IsEuropeanSaportaCup(historyFamily, variant) || IsEuropeanKoracCup(historyFamily)
+            var wikipediaLanguages = IsEuropeanSaportaCup(historyFamily) || IsEuropeanKoracCup(historyFamily)
                 ? new[] { "en" }
                 : year >= 1996 ? new[] { "en", "es" } : new[] { "es" };
             var wikipediaGames = new List<BasketballProviderGame>();
@@ -160,7 +155,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 var languageGames = await GetWikipediaGamesAsync(
                     season,
                     language,
-                    IsEuropeanSaportaCup(historyFamily, variant),
+                    IsEuropeanSaportaCup(historyFamily),
                     IsEuropeanKoracCup(historyFamily),
                     context,
                     cancellationToken,
@@ -171,7 +166,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 }
             }
 
-            if (year <= 1990 && !IsEuropeanSaportaCup(historyFamily, variant) && !IsEuropeanKoracCup(historyFamily))
+            if (year <= 1990 && !IsEuropeanSaportaCup(historyFamily) && !IsEuropeanKoracCup(historyFamily))
             {
                 var todorGames = await GetTodor66GamesAsync(
                     season,
@@ -306,13 +301,8 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
            family.Equals("212-fiba-mens-european-club-competitions-tier-2", StringComparison.OrdinalIgnoreCase) ||
            family.Equals("164-eurocup-challenge", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsEuropeanSaportaCup(string family, string? variant)
-        => family.Equals("212-fiba-mens-european-club-competitions-tier-2", StringComparison.OrdinalIgnoreCase) &&
-           string.IsNullOrWhiteSpace(variant);
-
-    private static bool IsEuropeanPostSaportaTierTwo(string family, string? variant)
-        => family.Equals("212-fiba-mens-european-club-competitions-tier-2", StringComparison.OrdinalIgnoreCase) &&
-           string.Equals(variant, "post-saporta", StringComparison.OrdinalIgnoreCase);
+    private static bool IsEuropeanSaportaCup(string family)
+        => family.Equals("212-fiba-mens-european-club-competitions-tier-2", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsEuropeanKoracCup(string family)
         => family.Equals("164-eurocup-challenge", StringComparison.OrdinalIgnoreCase);
@@ -373,7 +363,291 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 ],
                 2013 => ["/en/history/205-fiba-eurobasket-qualifiers/6773"],
                 2011 => ["/en/history/205-fiba-eurobasket-qualifiers/5937"],
-                2009 => ["/en…3072 tokens truncated…       foreach (Match match in Regex.Matches(html, historyLinkPattern, RegexOptions.IgnoreCase))
+                2009 => ["/en/history/205-fiba-eurobasket-qualifiers/5132"],
+                2007 => ["/en/history/205-fiba-eurobasket-qualifiers/4127"],
+                2003 => ["/en/history/205-fiba-eurobasket-qualifiers/2878"],
+                2001 => ["/en/history/205-fiba-eurobasket-qualifiers/228"],
+                1999 => ["/en/history/205-fiba-eurobasket-qualifiers/1784"],
+                1997 => ["/en/history/205-fiba-eurobasket-qualifiers/1502"],
+                1995 =>
+                [
+                    "/en/history/205-fiba-eurobasket-qualifiers/1286",
+                    "/en/history/205-fiba-eurobasket-qualifiers/1284"
+                ],
+                // 2005 is listed under the EuroBasket event family rather than
+                // the qualifiers family. Its event page contains both the
+                // tournament and qualifying games, so GetGamesAsync filters it
+                // to QR/AQG/AQT below. 1993 still has no usable edition here.
+                2005 => ["/en/history/208-fiba-eurobasket/2725"],
+                1993 => [],
+                _ => null
+            };
+        }
+
+        if (family.Equals("206-fiba-eurobasket-division-b", StringComparison.OrdinalIgnoreCase))
+        {
+            return year switch
+            {
+                2007 => ["/en/history/206-fiba-eurobasket-division-b/4128"],
+                2009 => ["/en/history/206-fiba-eurobasket-division-b/5133"],
+                2011 => ["/en/history/206-fiba-eurobasket-division-b/5938"],
+                _ => null
+            };
+        }
+
+        if (family.Equals("219-fiba-olympic-qualifying-tournament", StringComparison.OrdinalIgnoreCase) && year == 2024)
+        {
+            return
+            [
+                "/en/events/fiba-olympic-qualifying-tournament-2024-valencia-spain",
+                "/en/events/fiba-olympic-qualifying-tournament-2024-riga-latvia",
+                "/en/events/fiba-olympic-qualifying-tournament-2024-piraeus-greece",
+                "/en/events/fiba-olympic-qualifying-tournament-2024-san-juan-puerto-rico"
+            ];
+        }
+
+        if (family.Equals("178-fiba-afrobasket-qualifiers", StringComparison.OrdinalIgnoreCase))
+        {
+            if (variant?.Equals("pre-qualifiers", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return year switch
+                {
+                    2021 => ["/en/history/178-fiba-afrobasket-qualifiers/208167"],
+                    _ => null
+                };
+            }
+
+            return year switch
+            {
+                2020 => ["/en/history/178-fiba-afrobasket-qualifiers/208167"],
+                2021 => ["/en/history/178-fiba-afrobasket-qualifiers/208166"],
+                2024 => ["/en/history/178-fiba-afrobasket-qualifiers/208806"],
+                2025 => ["/en/events/fiba-afrobasket-2025-qualifiers"],
+                _ => null
+            };
+        }
+
+        if (family.Equals("192-fiba-asia-cup-qualifiers", StringComparison.OrdinalIgnoreCase))
+        {
+            return year switch
+            {
+                2019 => ["/en/history/192-fiba-asia-cup-qualifiers/208018"],
+                2021 => ["/en/history/192-fiba-asia-cup-qualifiers/208126"],
+                2023 => ["/en/history/192-fiba-asia-cup-qualifiers/208462"],
+                2025 => ["/en/events/fiba-asiacup-2025-qualifiers"],
+                _ => null
+            };
+        }
+
+        if (family.Equals("182-fiba-americup-pre-qualifiers", StringComparison.OrdinalIgnoreCase))
+        {
+            return year switch
+            {
+                2018 =>
+                [
+                    "/en/history/182-fiba-americup-pre-qualifiers/208040",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208039",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208038"
+                ],
+                2019 => ["/en/history/182-fiba-americup-pre-qualifiers/208060"],
+                2023 =>
+                [
+                    "/en/history/182-fiba-americup-pre-qualifiers/208517",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208516",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208515",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208518"
+                ],
+                2026 =>
+                [
+                    "/en/events/fiba-americup-2029-caribbean-pre-qualifiers",
+                    "/en/events/fiba-americup-2029-central-american-pre-qualifiers"
+                ],
+                _ => null
+            };
+        }
+
+        if (family.Equals("113-cbc-championship", StringComparison.OrdinalIgnoreCase))
+        {
+            if (variant?.Equals("cocaba", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return year switch
+                {
+                    2003 => ["/en/history/113-cbc-championship/3046"],
+                    2004 => ["/en/history/113-cbc-championship/3204"],
+                    2006 => ["/en/history/113-cbc-championship/4184"],
+                    2007 => ["/en/history/113-cbc-championship/4828"],
+                    2009 => ["/en/history/113-cbc-championship/5349"],
+                    2011 => ["/en/history/113-cbc-championship/6604"],
+                    2013 => ["/en/history/113-cbc-championship/7162"],
+                    2015 => ["/en/history/113-cbc-championship/9363"],
+                    _ => null
+                };
+            }
+
+            if (variant?.Equals("caribbean", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return year switch
+                {
+                    2004 => ["/en/history/113-cbc-championship/3205"],
+                    2006 => ["/en/history/113-cbc-championship/4219"],
+                    2007 => ["/en/history/113-cbc-championship/4702"],
+                    2009 => ["/en/history/113-cbc-championship/5347"],
+                    2011 => ["/en/history/113-cbc-championship/6554"],
+                    2014 => ["/en/history/113-cbc-championship/7761"],
+                    2015 => ["/en/history/113-cbc-championship/9302"],
+                    _ => null
+                };
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsEuroBasket2005Event(string editionPath)
+        => editionPath.Contains(
+            "/en/history/208-fiba-eurobasket/2725",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEuroBasket2005QualificationGame(BasketballProviderGame game)
+        => game.CompetitionPhase?.Trim() is
+            "Qualifying Round" or
+            "Additional Qualifying Round Games" or
+            "Additional Qualifying Tournament";
+
+    private static bool IsGroupStage(BasketballProviderGame game)
+    {
+        var phaseAndRound = $"{game.CompetitionPhase} {game.CompetitionRound}";
+        return phaseAndRound.Contains("preliminary", StringComparison.OrdinalIgnoreCase)
+            || phaseAndRound.Contains("qualification", StringComparison.OrdinalIgnoreCase)
+            || phaseAndRound.Contains("group", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<(string Content, DateTime FetchedAtUtc, string Revision)> GetPageAsync(
+        string path,
+        BackfillExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!context.CanUseRequest())
+        {
+            throw new InvalidOperationException("FIBA backfill request budget reached before the archive page could be fetched.");
+        }
+
+        context.ConsumeRequest();
+        using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        requestTimeout.CancelAfter(TimeSpan.FromSeconds(30));
+        using var response = await httpClient.GetAsync(path, requestTimeout.Token);
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsStringAsync(cancellationToken);
+        return (content, DateTime.UtcNow, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)))[..16]);
+    }
+
+    private static IReadOnlyCollection<string> FindEditionPaths(string html, string family, int year)
+    {
+        var document = new HtmlDocument();
+        document.LoadHtml(html);
+        var prefix = $"/en/history/{family}/";
+        var paths = new List<string>();
+
+        void AddPath(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            var normalized = NormalizePath(value);
+            if (normalized.StartsWith("/en/events/", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!paths.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+                {
+                    paths.Add(normalized);
+                }
+
+                return;
+            }
+
+            if (!normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var editionId = normalized[prefix.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            if (editionId is null || !editionId.All(char.IsDigit))
+            {
+                return;
+            }
+
+            var historyPath = $"/en/history/{family}/{editionId}";
+            if (!paths.Contains(historyPath, StringComparer.OrdinalIgnoreCase))
+            {
+                paths.Add(historyPath);
+            }
+        }
+
+        // The current FIBA archive contains malformed/nested table markup. HtmlAgilityPack
+        // can consequently make a 1978 row inherit the later /1993 link. Parse literal
+        // table rows first so a legacy link is only considered when its own row is for the
+        // requested year; this is important because AfroBasket has two distinct 1993 rows.
+        foreach (Match rowMatch in Regex.Matches(html, @"<tr\b[^>]*>(?<row>.*?)</tr>", RegexOptions.Singleline | RegexOptions.IgnoreCase))
+        {
+            var rowHtml = rowMatch.Groups["row"].Value;
+            if (!Regex.IsMatch(Normalize(Regex.Replace(rowHtml, "<[^>]+>", " ")), $@"\b{year}\b"))
+            {
+                continue;
+            }
+
+            foreach (Match anchorMatch in Regex.Matches(rowHtml, "href\\s*=\\s*[\"'](?<href>[^\"']+)", RegexOptions.IgnoreCase))
+            {
+                AddPath(anchorMatch.Groups["href"].Value);
+            }
+        }
+
+        if (paths.Count > 0)
+        {
+            return paths;
+        }
+
+        var rows = document.DocumentNode.SelectNodes("//tr")?.ToList() ?? [];
+        foreach (var row in rows)
+        {
+            var yearMatch = Regex.Match(Normalize(row.InnerText), $@"\b{year}\b");
+            if (!yearMatch.Success)
+            {
+                continue;
+            }
+
+            foreach (var anchor in row.SelectNodes(".//a[@href]") ?? Enumerable.Empty<HtmlNode>())
+            {
+                AddPath(anchor.GetAttributeValue("href", string.Empty));
+            }
+        }
+
+        if (paths.Count > 0)
+        {
+            return paths;
+        }
+
+        var eventPattern = @"(?:https://www\.fiba\.basketball)?/en/events/[^"" ]+";
+        foreach (Match match in Regex.Matches(html, eventPattern, RegexOptions.IgnoreCase))
+        {
+            var eventPath = NormalizePath(match.Value);
+            var rowStart = html.LastIndexOf("<tr", match.Index, StringComparison.OrdinalIgnoreCase);
+            var rowEnd = html.IndexOf("</tr>", match.Index, StringComparison.OrdinalIgnoreCase);
+            var isMatchingRow = rowStart >= 0 && rowEnd > rowStart &&
+                Regex.IsMatch(html.Substring(rowStart, rowEnd - rowStart), $@"\b{year}\b");
+            if (eventPath.Contains(year.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase) || isMatchingRow)
+            {
+                AddPath(eventPath);
+            }
+        }
+
+        if (paths.Count > 0)
+        {
+            return paths;
+        }
+
+        var historyLinkPattern = $@"(?:https://www\.fiba\.basketball)?/en/history/{Regex.Escape(family)}/(?<id>\d+)";
+        foreach (Match match in Regex.Matches(html, historyLinkPattern, RegexOptions.IgnoreCase))
         {
             var rowStart = html.LastIndexOf("<tr", match.Index, StringComparison.OrdinalIgnoreCase);
             var rowEnd = html.IndexOf("</tr>", match.Index, StringComparison.OrdinalIgnoreCase);
@@ -504,7 +778,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 ? new short?[] { cardTeams[0].Score, cardTeams[1].Score }
                 : ParseScores(card).ToArray();
             var phaseLabel = FindPhaseLabel(card);
-            var phaseParts = phaseLabel?.Split('Â·', 2, StringSplitOptions.TrimEntries);
+            var phaseParts = phaseLabel?.Split('·', 2, StringSplitOptions.TrimEntries);
             var status = FindStatus(card, scores);
 
             games.Add(new BasketballProviderGame(
@@ -624,7 +898,6 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
     private static bool IsUnresolvedTeamCode(string code)
         => code.Equals("TBD", StringComparison.OrdinalIgnoreCase) ||
            code.Equals("TBC", StringComparison.OrdinalIgnoreCase);
-
     private IReadOnlyCollection<BasketballProviderGame> ParseEmbeddedGames(
         string html,
         DateTime fetchedAtUtc,
@@ -724,7 +997,6 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         {
             return null;
         }
-
         return new EmbeddedTeam(sourceId, string.IsNullOrWhiteSpace(name) ? sourceId : name);
     }
 
@@ -824,7 +1096,6 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
     private string BuildAbsoluteUrl(string path)
         => httpClient.BaseAddress is null ? path : new Uri(httpClient.BaseAddress, path).ToString();
-
     private static string NormalizePath(string value)
     {
         if (Uri.TryCreate(value, UriKind.Absolute, out var absolute))
@@ -844,4 +1115,3 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         return match.Success && int.TryParse(match.Value, out var year) ? year : throw new ArgumentException($"FIBA season '{season}' has no four-digit year.", nameof(season));
     }
 }
-

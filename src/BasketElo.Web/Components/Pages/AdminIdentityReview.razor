@@ -1,0 +1,521 @@
+@page "/admin/identity-review"
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@using BasketElo.Domain.Teams
+@inject HttpClient Http
+
+<PageTitle>Identity Review</PageTitle>
+
+<div class="admin-identity-review-page">
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+        <div>
+            <h1>Identity review</h1>
+            <p class="text-muted mb-0">Review one team pair at a time. Findings for duplicate, cross-source, and cross-season checks are grouped together so a decision applies to the whole pair.</p>
+        </div>
+        <NavLink class="btn btn-outline-secondary" href="admin/identity">Identity diagnostics</NavLink>
+    </div>
+
+    <section class="identity-review-toolbar card mb-4">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-sm-3 col-lg-2">
+                    <label class="form-label" for="review-country">Country</label>
+                    <select id="review-country" class="form-select" @bind="countryCode">
+                        <option value="">All countries</option>
+                        <option value="UNK">Unknown country [UNK]</option>
+                        @foreach (var country in options?.Countries ?? [])
+                        {
+                            <option value="@country.Code">@country.Name [@country.Code]</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-sm-5 col-lg-4">
+                    <label class="form-label" for="review-run">Identity run</label>
+                    <select id="review-run" class="form-select" @bind="selectedRunId">
+                        <option value="">Latest available run</option>
+                        @foreach (var run in runs ?? [])
+                        {
+                            <option value="@run.Id">@RunLabel(run)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-sm-3 col-lg-2">
+                    <label class="form-label" for="review-status">Review status</label>
+                    <select id="review-status" class="form-select" @bind="statusFilter">
+                        <option value="open">Needs review</option>
+                        <option value="deferred">Deferred</option>
+                        <option value="completed">Completed</option>
+                        <option value="all">All</option>
+                    </select>
+                </div>
+                <div class="col-sm-4 col-lg-2">
+                    <label class="form-label" for="review-type">Finding type</label>
+                    <select id="review-type" class="form-select" @bind="findingTypeFilter">
+                        <option value="">All types</option>
+                        <option value="possible_duplicate">Possible duplicate</option>
+                        <option value="possible_cross_source_match">Cross-source match</option>
+                        <option value="possible_cross_season_split">Cross-season split</option>
+                    </select>
+                </div>
+                <div class="col-sm-8 col-lg-2">
+                    <label class="form-label" for="review-search">Search teams</label>
+                    <input id="review-search" class="form-control" placeholder="Name contains..." @bind="searchText" @bind:event="oninput" />
+                </div>
+                <div class="col-12 d-flex gap-2">
+                    <button class="btn btn-primary" @onclick="LoadAsync" disabled="@isBusy">@(isBusy ? "Loading..." : "Refresh review queue")</button>
+                    <span class="align-self-center text-muted small">Actions are stored in the identity review history.</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="alert @messageCss" role="alert">@message</div>
+    }
+
+    @if (selectedRun is not null)
+    {
+        <div class="identity-review-summary mb-3">
+            <div><strong>@VisibleCandidates.Count</strong><span>candidate pairs</span></div>
+            <div><strong>@VisibleCandidates.Count(x => x.Severity == "blocker")</strong><span>blocker pairs</span></div>
+            <div><strong>@VisibleCandidates.Sum(x => x.LeftTeam.GameCount + x.RightTeam.GameCount)</strong><span>games represented</span></div>
+            <div><strong>@selectedRun.OpenFindingsCount</strong><span>open findings in run</span></div>
+        </div>
+    }
+
+    @if (candidates is null)
+    {
+        <p><em>Loading review queue...</em></p>
+    }
+    else if (VisibleCandidates.Count == 0)
+    {
+        <div class="alert alert-success">No candidate pairs match the current filters.</div>
+    }
+    else
+    {
+        <div class="identity-review-list">
+            @foreach (var candidate in VisibleCandidates)
+            {
+                var state = GetState(candidate);
+                <article class="identity-review-card card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                            <div>
+                                <span class="@SeverityBadge(candidate.Severity)">@candidate.Severity</span>
+                                <span class="@StatusBadge(candidate.Status)">@StatusLabel(candidate.Status)</span>
+                                @foreach (var type in candidate.FindingTypes)
+                                {
+                                    <span class="badge bg-light text-dark border ms-1">@FindingTypeLabel(type)</span>
+                                }
+                            </div>
+                            <span class="text-muted small">@candidate.TotalFindingCount finding@(candidate.TotalFindingCount == 1 ? "" : "s") in this pair</span>
+                        </div>
+
+                        <div class="identity-review-teams">
+                            @ReviewTeam(candidate.LeftTeam)
+                            <div class="identity-review-versus">vs</div>
+                            @ReviewTeam(candidate.RightTeam)
+                        </div>
+
+                        <div class="identity-review-evidence">
+                            <strong>Why it was flagged</strong>
+                            @foreach (var evidence in candidate.Evidence)
+                            {
+                                <p class="mb-1">@evidence</p>
+                            }
+                        </div>
+
+                        @if (candidate.Status != "completed")
+                        {
+                            <div class="identity-review-actions">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-5">
+                                        <label class="form-label" for="target-@candidate.PrimaryFindingId">Merge onto (team to keep)</label>
+                                        <select id="target-@candidate.PrimaryFindingId" class="form-select" @bind="state.MergeTargetTeamId">
+                                            <option value="@candidate.LeftTeam.Id">@candidate.LeftTeam.Name</option>
+                                            <option value="@candidate.RightTeam.Id">@candidate.RightTeam.Name</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-7 d-flex flex-wrap gap-2 align-items-center">
+                                        <label class="form-check me-2">
+                                            <input class="form-check-input" type="checkbox" @bind="state.ConfirmMergeWithRatings" />
+                                            <span class="form-check-label">I understand this changes historical ownership</span>
+                                        </label>
+                                        <button class="btn btn-sm btn-primary" @onclick="() => MergeCandidateAsync(candidate)" disabled="@(isBusy || !state.ConfirmMergeWithRatings)">Merge pair</button>
+                                        <button class="btn btn-sm btn-outline-success" @onclick="() => KeepSeparateCandidateAsync(candidate)" disabled="@isBusy">Different clubs</button>
+                                        <button class="btn btn-sm btn-outline-warning" @onclick="() => DeferCandidateAsync(candidate)" disabled="@isBusy">Defer</button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => IgnoreCandidateAsync(candidate)" disabled="@isBusy">Ignore</button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="identity-review-completed">This pair has already been resolved. Use the diagnostics page to inspect the resolution history.</div>
+                        }
+
+                        <div class="identity-review-footer">
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadEvidenceAsync(candidate)" disabled="@(isBusy || evidenceLoading)">
+                                @(evidenceLoading ? "Loading games..." : "Show 12 evidence games per team")
+                            </button>
+                            <span class="text-muted small">Primary finding: @candidate.PrimaryFindingId</span>
+                        </div>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@if (evidenceResponse is not null)
+{
+    <div class="identity-review-modal-backdrop" role="presentation" @onclick="CloseEvidence">
+        <section class="identity-review-modal" role="dialog" aria-modal="true" aria-labelledby="review-evidence-title" @onclick:stopPropagation="true">
+            <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
+                <h2 id="review-evidence-title" class="h4 mb-0">Evidence games</h2>
+                <button class="btn-close" aria-label="Close" @onclick="CloseEvidence"></button>
+            </div>
+            <div class="row g-3">
+                @foreach (var team in EvidenceTeams(evidenceResponse))
+                {
+                    <div class="col-lg-6">
+                        <h3 class="h6">@team.DisplayName <span class="text-muted">(@team.Games.Count)</span></h3>
+                        @if (team.Games.Count == 0)
+                        {
+                            <p class="text-muted small">No games found in this scope.</p>
+                        }
+                        else
+                        {
+                            <div class="identity-review-games">
+                                @foreach (var game in team.Games)
+                                {
+                                    <div class="identity-review-game">
+                                        <strong>@game.HomeTeamName <span class="text-muted">vs</span> @game.AwayTeamName</strong>
+                                        <span>@game.GameDateTimeUtc.ToLocalTime().ToString("d") · @FormatScore(game)</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="text-end mt-3">
+                <button class="btn btn-secondary" @onclick="CloseEvidence">Close</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "country")]
+    public string? Country { get; set; }
+
+    private IdentityHealthOptionsDto? options;
+    private IReadOnlyList<IdentityHealthCheckRunDto>? runs;
+    private IReadOnlyList<IdentityReviewCandidateDto>? candidates;
+    private IdentityEvidenceGamesResponseDto? evidenceResponse;
+    private bool evidenceLoading;
+    private Guid? selectedRunId;
+    private string? countryCode;
+    private string statusFilter = "open";
+    private string findingTypeFilter = string.Empty;
+    private string searchText = string.Empty;
+    private bool isBusy;
+    private string? message;
+    private string messageCss = "alert-info";
+    private readonly Dictionary<string, ReviewState> reviewStates = [];
+    private readonly Dictionary<Guid, string> countrySelections = [];
+
+    private IdentityHealthCheckRunDto? selectedRun => runs?.FirstOrDefault(x => x.Id == selectedRunId);
+    private IReadOnlyList<IdentityReviewCandidateDto> VisibleCandidates => (candidates ?? [])
+        .Where(x => string.IsNullOrWhiteSpace(findingTypeFilter) || x.FindingTypes.Contains(findingTypeFilter, StringComparer.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrWhiteSpace(searchText) ||
+            x.LeftTeam.Name.Contains(searchText.Trim(), StringComparison.OrdinalIgnoreCase) ||
+            x.RightTeam.Name.Contains(searchText.Trim(), StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        countryCode = Country;
+        options = await Http.GetFromJsonAsync<IdentityHealthOptionsDto>("api/identity-health/options");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isBusy = true;
+        message = null;
+        evidenceResponse = null;
+        evidenceLoading = false;
+
+        try
+        {
+            var query = new List<string> { "limit=1000" };
+            Append(query, "countryCode", countryCode == "UNK" ? null : countryCode);
+            runs = await Http.GetFromJsonAsync<IReadOnlyList<IdentityHealthCheckRunDto>>($"api/identity-health/checks?{string.Join("&", query)}") ?? [];
+            if (selectedRunId.HasValue && !runs.Any(x => x.Id == selectedRunId))
+            {
+                selectedRunId = null;
+            }
+
+            selectedRunId = countryCode == "UNK"
+                ? runs.FirstOrDefault(x => string.IsNullOrWhiteSpace(x.CountryCode))?.Id ?? runs.FirstOrDefault()?.Id
+                : selectedRunId ?? runs.FirstOrDefault()?.Id;
+            reviewStates.Clear();
+            if (selectedRunId.HasValue)
+            {
+                var candidateQuery = new List<string>
+                {
+                    $"runId={selectedRunId}",
+                    "status=all",
+                    "limit=1000"
+                };
+                Append(candidateQuery, "teamCountryCode", countryCode);
+                candidates = await Http.GetFromJsonAsync<IReadOnlyList<IdentityReviewCandidateDto>>($"api/identity-health/review-candidates?{string.Join("&", candidateQuery)}") ?? [];
+            }
+            else
+            {
+                candidates = [];
+            }
+        }
+        catch (Exception ex)
+        {
+            candidates = [];
+            message = $"Could not load the review queue: {ex.Message}";
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task ResolveCandidateAsync(IdentityReviewCandidateDto candidate, string action)
+    {
+        var state = GetState(candidate);
+        if (action == "merge_duplicate" && !state.ConfirmMergeWithRatings)
+        {
+            message = "Confirm the historical ownership change before merging.";
+            messageCss = "alert-warning";
+            return;
+        }
+
+        isBusy = true;
+        message = null;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/identity-health/review-candidates/resolve", new ResolveIdentityPairRequest
+            {
+                RunId = candidate.RunId,
+                LeftTeamId = candidate.LeftTeam.Id,
+                RightTeamId = candidate.RightTeam.Id,
+                Action = action,
+                TargetTeamId = action == "merge_duplicate" ? state.MergeTargetTeamId : null,
+                ConfirmMergeWithRatings = state.ConfirmMergeWithRatings,
+                ResolvedBy = "admin-ui",
+                Note = action switch
+                {
+                    "keep_separate" => "Confirmed as different clubs from the Identity Review page.",
+                    "defer_review" => "Deferred for later review from the Identity Review page.",
+                    "ignore" => "Ignored from the Identity Review page.",
+                    _ => "Merged from the Identity Review page."
+                }
+            });
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(response));
+            }
+
+            message = action switch
+            {
+                "keep_separate" => "Pair marked as different clubs.",
+                "defer_review" => "Pair deferred; it will return in a future identity run.",
+                "ignore" => "Pair ignored.",
+                _ => "Team pair merged."
+            };
+            messageCss = "alert-success";
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private Task MergeCandidateAsync(IdentityReviewCandidateDto candidate) => ResolveCandidateAsync(candidate, "merge_duplicate");
+    private Task KeepSeparateCandidateAsync(IdentityReviewCandidateDto candidate) => ResolveCandidateAsync(candidate, "keep_separate");
+    private Task DeferCandidateAsync(IdentityReviewCandidateDto candidate) => ResolveCandidateAsync(candidate, "defer_review");
+    private Task IgnoreCandidateAsync(IdentityReviewCandidateDto candidate) => ResolveCandidateAsync(candidate, "ignore");
+
+    private string GetCountrySelection(IdentityReviewTeamDto team)
+        => countrySelections.TryGetValue(team.Id, out var selection) ? selection : string.Empty;
+
+    private void SetCountrySelection(Guid teamId, ChangeEventArgs args)
+        => countrySelections[teamId] = args.Value?.ToString() ?? string.Empty;
+
+    private async Task SaveTeamCountryAsync(IdentityReviewTeamDto team)
+    {
+        var selectedCountry = GetCountrySelection(team);
+        if (string.IsNullOrWhiteSpace(selectedCountry) || selectedCountry == "UNK")
+        {
+            message = "Choose a known country before saving.";
+            messageCss = "alert-warning";
+            return;
+        }
+
+        isBusy = true;
+        message = null;
+        try
+        {
+            var detail = await Http.GetFromJsonAsync<TeamAdminDetail>($"api/admin/teams/{team.Id}")
+                ?? throw new InvalidOperationException("Team details could not be loaded.");
+            var response = await Http.PatchAsJsonAsync($"api/admin/teams/{team.Id}", new UpdateTeamAdminRequest(
+                detail.CanonicalName,
+                selectedCountry,
+                detail.IsActive,
+                detail.Description,
+                detail.Predecessor?.Id,
+                detail.Successor?.Id));
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(response));
+            }
+
+            countrySelections.Remove(team.Id);
+            message = $"Country set to {selectedCountry} for {team.Name}.";
+            messageCss = "alert-success";
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task LoadEvidenceAsync(IdentityReviewCandidateDto candidate)
+    {
+        evidenceLoading = true;
+        try
+        {
+            evidenceResponse = await Http.GetFromJsonAsync<IdentityEvidenceGamesResponseDto>(
+                $"api/identity-health/findings/{candidate.PrimaryFindingId}/games?limit=12");
+        }
+        catch (Exception ex)
+        {
+            message = $"Could not load evidence games: {ex.Message}";
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            evidenceLoading = false;
+        }
+    }
+
+    private void CloseEvidence() => evidenceResponse = null;
+
+    private ReviewState GetState(IdentityReviewCandidateDto candidate)
+    {
+        var key = $"{candidate.LeftTeam.Id:N}:{candidate.RightTeam.Id:N}";
+        if (!reviewStates.TryGetValue(key, out var state))
+        {
+            state = new ReviewState { MergeTargetTeamId = candidate.RightTeam.Id };
+            reviewStates[key] = state;
+        }
+
+        return state;
+    }
+
+    private static IEnumerable<IdentityEvidenceTeamGamesDto> EvidenceTeams(IdentityEvidenceGamesResponseDto response)
+        => new[] { response.AffectedTeam, response.RelatedTeam }.Where(x => x is not null).Select(x => x!);
+
+    private static string RunLabel(IdentityHealthCheckRunDto run)
+        => $"{run.CheckedAtUtc.ToLocalTime():g} · {run.OpenFindingsCount} open · {run.ScopeKey}";
+
+    private static string FindingTypeLabel(string type) => type switch
+    {
+        "possible_duplicate" => "Possible duplicate",
+        "possible_cross_source_match" => "Cross-source match",
+        "possible_cross_season_split" => "Cross-season split",
+        _ => type.Replace('_', ' ')
+    };
+
+    private static string StatusLabel(string status) => status switch
+    {
+        "open" => "Needs review",
+        "deferred" => "Deferred",
+        "completed" => "Completed",
+        _ => status
+    };
+
+    private static string SeverityBadge(string severity) => severity == "blocker" ? "badge bg-danger" : "badge bg-warning text-dark";
+    private static string StatusBadge(string status) => status switch
+    {
+        "open" => "badge bg-info text-dark ms-1",
+        "deferred" => "badge bg-warning text-dark ms-1",
+        _ => "badge bg-success ms-1"
+    };
+
+    private static string FormatScore(IdentityEvidenceGameDto game)
+        => game.HomeScore.HasValue && game.AwayScore.HasValue ? $"{game.HomeScore}-{game.AwayScore}" : "Score pending";
+
+    private static void Append(List<string> query, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            query.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
+        }
+    }
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase ?? "Request failed." : body;
+    }
+
+    private sealed class ReviewState
+    {
+        public Guid? MergeTargetTeamId { get; set; }
+        public bool ConfirmMergeWithRatings { get; set; }
+    }
+
+    private RenderFragment<IdentityReviewTeamDto> ReviewTeam => team => @<div class="identity-review-team">
+        <div class="identity-review-team-heading">
+            <h2>@team.Name</h2>
+            <a href="admin/teams?search=@Uri.EscapeDataString(team.Name)">Open team record</a>
+        </div>
+        <div class="identity-review-team-id">@team.Id</div>
+        <div class="identity-review-team-stats">
+            <span><strong>@team.GameCount</strong> games</span>
+            <span><strong>@team.AliasCount</strong> aliases</span>
+            <span>@(team.LastGameUtc.HasValue ? $"Last {team.LastGameUtc.Value.ToLocalTime():d}" : "No games")</span>
+        </div>
+        <div class="small text-muted">@team.CountryCode · @(team.IsActive ? "Active" : "Inactive")</div>
+        @if (string.IsNullOrWhiteSpace(team.CountryCode) || team.CountryCode == "UNK")
+        {
+            <div class="identity-review-metadata-action mt-2">
+                <label class="form-label small mb-1" for="country-@team.Id">Set country</label>
+                <div class="d-flex gap-2">
+                    <select id="country-@team.Id" class="form-select form-select-sm" value="@GetCountrySelection(team)" @onchange="args => SetCountrySelection(team.Id, args)">
+                        <option value="">Choose country...</option>
+                        @foreach (var country in options?.Countries ?? [])
+                        {
+                            <option value="@country.Code">@country.Name [@country.Code]</option>
+                        }
+                    </select>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="() => SaveTeamCountryAsync(team)" disabled="@isBusy">Save</button>
+                </div>
+            </div>
+        }
+    </div>;
+}

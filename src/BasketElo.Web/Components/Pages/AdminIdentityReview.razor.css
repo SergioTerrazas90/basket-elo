@@ -1,0 +1,193 @@
+.admin-identity-review-page {
+    max-width: 1500px;
+}
+
+.identity-review-toolbar {
+    background: var(--bs-light, #f8f9fa);
+}
+
+.identity-review-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .75rem;
+}
+
+.identity-review-summary > div {
+    background: var(--bs-light, #f8f9fa);
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: .5rem;
+    padding: .8rem 1rem;
+}
+
+.identity-review-summary strong,
+.identity-review-summary span {
+    display: block;
+}
+
+.identity-review-summary strong {
+    font-size: 1.35rem;
+}
+
+.identity-review-summary span {
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: .8rem;
+}
+
+.identity-review-list {
+    display: grid;
+    gap: 1rem;
+}
+
+.identity-review-card {
+    border-left: 4px solid var(--bs-danger, #dc3545);
+}
+
+.identity-review-card:has(.bg-warning) {
+    border-left-color: var(--bs-warning, #ffc107);
+}
+
+.identity-review-teams {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 1rem;
+    align-items: stretch;
+}
+
+.identity-review-team {
+    min-width: 0;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: .5rem;
+    padding: .9rem;
+    background: #fff;
+}
+
+.identity-review-team-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: .75rem;
+}
+
+.identity-review-team-heading h2 {
+    font-size: 1.15rem;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.identity-review-team-heading a {
+    white-space: nowrap;
+    font-size: .8rem;
+}
+
+.identity-review-team-id {
+    color: var(--bs-secondary-color, #6c757d);
+    font-family: var(--bs-font-monospace, monospace);
+    font-size: .72rem;
+    margin-top: .35rem;
+    overflow-wrap: anywhere;
+}
+
+.identity-review-team-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    margin-top: .8rem;
+    font-size: .82rem;
+}
+
+.identity-review-team-stats strong {
+    font-size: 1rem;
+}
+
+.identity-review-versus {
+    align-self: center;
+    color: var(--bs-secondary-color, #6c757d);
+    font-weight: 600;
+}
+
+.identity-review-evidence {
+    margin-top: 1rem;
+    padding: .75rem .9rem;
+    background: var(--bs-light, #f8f9fa);
+    border-radius: .4rem;
+    font-size: .88rem;
+}
+
+.identity-review-actions {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+.identity-review-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.identity-review-completed {
+    margin-top: 1rem;
+    color: var(--bs-success-text-emphasis, #146c43);
+    font-size: .88rem;
+}
+
+.identity-review-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, .55);
+}
+
+.identity-review-modal {
+    width: min(1100px, 100%);
+    max-height: 90vh;
+    overflow: auto;
+    padding: 1.25rem;
+    background: #fff;
+    border-radius: .6rem;
+    box-shadow: 0 .5rem 2rem rgba(0, 0, 0, .25);
+}
+
+.identity-review-games {
+    display: grid;
+    gap: .45rem;
+}
+
+.identity-review-game {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    padding: .55rem .65rem;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: .35rem;
+    font-size: .8rem;
+}
+
+.identity-review-game span {
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+@media (max-width: 800px) {
+    .identity-review-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .identity-review-teams {
+        grid-template-columns: 1fr;
+    }
+
+    .identity-review-versus {
+        text-align: center;
+    }
+
+    .identity-review-footer {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

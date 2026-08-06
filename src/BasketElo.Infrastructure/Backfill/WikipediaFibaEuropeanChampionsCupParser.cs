@@ -58,6 +58,22 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         };
     }
 
+    public static string SaportaEnglishPageTitle(int startYear)
+    {
+        var endYear = (startYear + 1) % 100;
+        var suffix = startYear == 1999
+            ? $"{startYear}\u20132000"
+            : $"{startYear}\u2013{endYear:00}";
+        var competition = startYear switch
+        {
+            <= 1990 => "FIBA European Cup Winners' Cup",
+            <= 1995 => "FIBA European Cup",
+            <= 1997 => "FIBA EuroCup",
+            _ => "FIBA Saporta Cup"
+        };
+        return $"{suffix} {competition}";
+    }
+
     public static IReadOnlyCollection<BasketballProviderGame> ParseGames(
         string wikitext,
         string season,
@@ -829,7 +845,13 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
     private static DateTime? ExtractInfoboxDate(string text, int startYear, int endYear)
     {
         var match = Regex.Match(text, @"(?im)^\|\s*duration\s*=\s*(?<value>.+)$");
-        return match.Success ? ExtractDates(match.Groups["value"].Value, startYear, endYear).FirstOrDefault() : null;
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var date = ExtractDates(match.Groups["value"].Value, startYear, endYear).FirstOrDefault();
+        return date == default ? null : date;
     }
 
     private static IReadOnlyList<DateTime> ExtractDates(string text, int startYear, int endYear)

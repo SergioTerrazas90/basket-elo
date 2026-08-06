@@ -349,6 +349,9 @@
     [SupplyParameterFromQuery(Name = "team")]
     public string? Team { get; set; }
 
+    [SupplyParameterFromQuery(Name = "teamId")]
+    public Guid? TeamId { get; set; }
+
     [SupplyParameterFromQuery(Name = "search")]
     public string? Search { get; set; }
 
@@ -380,6 +383,7 @@
     private DateTime? toDate;
     private int page = 1;
     private int pageSize = 50;
+    private Guid? teamId;
     private int requestedPage = 1;
     private string? lastLoadedUri;
     private Guid? selectedExplanationGameId;
@@ -406,6 +410,7 @@
         selectedStatus = Status;
         selectedReview = Review;
         team = Team;
+        teamId = TeamId;
         search = Search;
         fromDate = From;
         toDate = To;
@@ -461,6 +466,7 @@
         selectedSeason = null;
         selectedStatus = null;
         selectedReview = null;
+        teamId = null;
         team = null;
         search = null;
         fromDate = null;
@@ -510,6 +516,7 @@
             ["season"] = selectedSeason,
             ["status"] = selectedStatus,
             ["review"] = selectedReview,
+            ["teamId"] = teamId,
             ["team"] = team,
             ["search"] = search,
             ["from"] = fromDate?.ToString("yyyy-MM-dd"),
@@ -535,6 +542,7 @@
         Append(query, "season", selectedSeason);
         Append(query, "status", selectedStatus);
         Append(query, "review", selectedReview);
+        Append(query, "teamId", teamId?.ToString());
         Append(query, "team", team);
         Append(query, "search", search);
         Append(query, "fromUtc", NormalizeDate(fromDate)?.ToString("O"));

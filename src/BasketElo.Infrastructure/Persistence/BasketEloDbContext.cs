@@ -340,9 +340,20 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.ToTable("teams");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.CanonicalName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(4000);
             entity.Property(x => x.CountryCode).HasMaxLength(3).IsRequired();
             entity.Property(x => x.IsActive).IsRequired();
             entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasOne(x => x.PredecessorTeam)
+                .WithMany()
+                .HasForeignKey(x => x.PredecessorTeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.SuccessorTeam)
+                .WithMany()
+                .HasForeignKey(x => x.SuccessorTeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(x => x.PredecessorTeamId);
+            entity.HasIndex(x => x.SuccessorTeamId);
             entity.HasIndex(x => x.CanonicalName);
         });
 

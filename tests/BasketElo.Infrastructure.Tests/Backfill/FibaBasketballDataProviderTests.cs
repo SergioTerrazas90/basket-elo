@@ -158,6 +158,35 @@ public sealed class FibaBasketballDataProviderTests
     }
 
     [Fact]
+    public async Task ResolvesSaportaCupUsingTierTwoHistoryFamily()
+    {
+        var handler = new SaportaFixtureHandler();
+        var provider = new FibaBasketballDataProvider(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "Europe",
+            "FIBA Saporta Cup",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+        var result = await provider.GetGamesAsync(
+            league!,
+            "1967-1968",
+            new BackfillExecutionContext(2, 0),
+            CancellationToken.None);
+
+        var game = Assert.Single(result.Games);
+        Assert.Equal("7001", game.SourceGameId);
+        Assert.Equal("VARES", game.SourceHomeTeamId);
+        Assert.Equal("MACC", game.SourceAwayTeamId);
+        Assert.Equal((short)77, game.HomeScore);
+        Assert.Equal((short)67, game.AwayScore);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task ParsesHistoricEmbeddedGameWhenFibaTeamCodesAreMissing()
     {
         var handler = new HistoricEmbeddedFixtureHandler();
@@ -362,6 +391,40 @@ public sealed class FibaBasketballDataProviderTests
             <script>
             {"gameId":21213,"teamA":{"teamId":29381,"organisationId":778,"code":null,"officialName":"\"VITA\" TBILISI","shortName":"Vita"},"teamB":{"teamId":28445,"organisationId":668,"code":null,"officialName":"BC ZALGIRIS KAUNAS","shortName":"BC Zalgiris"},"teamAScore":70,"teamBScore":78,"gameDateTimeUTC":"1995-09-07T00:00:00","round":{"roundCode":"PR1","roundName":"Preliminary Round I"}}
             </script>
+            """;
+    }
+
+    private sealed class SaportaFixtureHandler : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            var content = request.RequestUri?.AbsolutePath.EndsWith("/games", StringComparison.Ordinal) == true
+                ? GamesHtml
+                : HistoryHtml;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(content)
+            });
+        }
+
+        private const string HistoryHtml = """
+            <table><tbody>
+            <tr><td>1968</td><td><a href="/en/history/212-fiba-mens-european-club-competitions-tier-2/8795">1968</a></td></tr>
+            </tbody></table>
+            """;
+
+        private const string GamesHtml = """
+            <div class="date"><div>4 April 1968</div></div>
+            <div class="games"><div data-testid="ui-game-card">
+            <a href="/en/history/212-fiba-mens-european-club-competitions-tier-2/8795/games/7001-VARES-MACC">
+                <div>Final Â· Finals</div><div>Final</div>
+                <div class="wa01avm"><div class="wa01avq">VARES</div><div class="wa01avo">77</div></div>
+                <div class="wa01avm"><div class="wa01avq">MACC</div><div class="wa01avo">67</div></div>
+              </a>
+            </div></div>
             """;
     }
 }

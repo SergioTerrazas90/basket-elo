@@ -251,8 +251,13 @@ public class BackfillJobProcessor(
                     game.Provenance?.ParserVersion,
                     WikipediaFibaEuropeanChampionsCupParser.ParserVersion,
                     StringComparison.Ordinal));
+            var isSaportaArchive = string.Equals(provider.SourceKey, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+                resolvedLeagues.Any(league => league.SourceLeagueId.StartsWith(
+                    "212-fiba-mens-european-club-competitions-tier-2",
+                    StringComparison.OrdinalIgnoreCase)) &&
+                allGames.Count > 0;
             var replacesSparseFibaArchive = string.Equals(provider.SourceKey, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
-                (allGames.Any(game => string.Equals(
+                (isSaportaArchive || allGames.Any(game => string.Equals(
                     game.Provenance?.ParserVersion,
                     WikipediaFibaEuropeanChampionsCupParser.ParserVersion,
                     StringComparison.Ordinal)) || isRichEuropeanChampionsCupArchive);

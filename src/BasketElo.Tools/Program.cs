@@ -219,6 +219,8 @@ static async Task<int> RunFibaIngestAsync(string[] args)
     var values = ParseKeyValueArgs(args);
     var maxJobs = ParseNonNegative(values, "--max-jobs", 0);
     var maxRequests = ParseNonNegative(values, "--max-requests", 2);
+    var countryFilter = values.GetValueOrDefault("--country");
+    var leagueFilter = values.GetValueOrDefault("--league");
 
     var builder = Host.CreateApplicationBuilder();
     builder.Logging.SetMinimumLevel(LogLevel.Warning);
@@ -244,6 +246,10 @@ static async Task<int> RunFibaIngestAsync(string[] args)
     var catalog = scope.ServiceProvider.GetRequiredService<IBackfillCatalog>();
     var fibaSeasons = catalog.GetLeagues()
         .Where(league => string.Equals(league.Provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase))
+        .Where(league => string.IsNullOrWhiteSpace(countryFilter) ||
+            string.Equals(league.Country, countryFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(league => string.IsNullOrWhiteSpace(leagueFilter) ||
+            string.Equals(league.LeagueName, leagueFilter, StringComparison.OrdinalIgnoreCase))
         .SelectMany(league => catalog.GetSeasonsForLeague(league).Select(season => new
         {
             league.Country,

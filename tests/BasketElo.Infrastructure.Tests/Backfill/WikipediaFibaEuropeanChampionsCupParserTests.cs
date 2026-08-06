@@ -5,6 +5,63 @@ namespace BasketElo.Infrastructure.Tests.Backfill;
 
 public sealed class WikipediaFibaEuropeanChampionsCupParserTests
 {
+    [Theory]
+    [InlineData(1967, "1967–68 FIBA European Cup Winners' Cup")]
+    [InlineData(1991, "1991–92 FIBA European Cup")]
+    [InlineData(1996, "1996–97 FIBA EuroCup")]
+    [InlineData(1999, "1999–2000 FIBA Saporta Cup")]
+    [InlineData(2001, "2001–02 FIBA Saporta Cup")]
+    public void BuildsSaportaEditionPageTitles(int startYear, string expected)
+    {
+        Assert.Equal(expected, WikipediaFibaEuropeanChampionsCupParser.SaportaEnglishPageTitle(startYear));
+    }
+
+    [Fact]
+    public void UsesSeasonStartWhenInfoboxDurationIsNotParseable()
+    {
+        var warnings = new List<string>();
+        var games = WikipediaFibaEuropeanChampionsCupParser.ParseGames(
+            """
+            | duration = September 1999 - April 2000
+            == Final ==
+            {{TwoLegResult|[[Team Alpha]]|ITA|83-76|[[Team Beta]]|ESP|0-0}}
+            """,
+            "1999-2000",
+            "https://en.wikipedia.org/wiki/test",
+            DateTime.UtcNow,
+            "123",
+            warnings);
+
+        Assert.NotEmpty(games);
+        Assert.All(games, game => Assert.NotEqual(DateTime.MinValue, game.GameDateTimeUtc));
+    }
+
+    [Fact]
+    public void DoesNotTreatScoreMatrixCellsAsTeams()
+    {
+        var warnings = new List<string>();
+        var games = WikipediaFibaEuropeanChampionsCupParser.ParseGames(
+            """
+            {| class="wikitable"
+            |-
+            | [[Team Alpha]]
+            |
+            | 77-88
+            | 76-77
+            | 73-78
+            |}
+            """,
+            "2001-2002",
+            "https://en.wikipedia.org/wiki/test",
+            DateTime.UtcNow,
+            "123",
+            warnings);
+
+        Assert.DoesNotContain(games, game =>
+            game.HomeTeamName is "77-88" or "76-77" or "73-78" ||
+            game.AwayTeamName is "77-88" or "76-77" or "73-78");
+    }
+
     [Fact]
     public void ParsesTwoLegResultWithReversedReturnLegAndDatedFinal()
     {

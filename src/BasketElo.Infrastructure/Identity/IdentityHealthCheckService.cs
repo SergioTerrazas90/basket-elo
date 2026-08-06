@@ -11,6 +11,7 @@ public class IdentityHealthCheckService(
     IBackfillCatalog backfillCatalog) : IIdentityHealthCheckService
 {
     private const double SimilarNameThreshold = 0.86;
+    private const string DistinctTeamsDecisionPrefix = "distinct_teams|teams=";
     private static readonly IReadOnlyCollection<IdentityCountryOptionDto> DefaultCountryOptions =
     [
         new("AZ", "Azerbaijan"),
@@ -286,12 +287,466 @@ public class IdentityHealthCheckService(
             findings = findings.Where(x => x.CompetitionId == query.CompetitionId);
         }
 
-        return await findings
+        var findingRows = await findings
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip((Math.Max(query.Page, 1) - 1) * Math.Clamp(query.Limit, 1, 5000))
             .Take(Math.Clamp(query.Limit, 1, 5000))
-            .Select(x => ToDto(x))
             .ToListAsync(cancellationToken);
+
+        var missingTeamKeys = new HashSet<SourceTeamKey>();
+        foreach (var row in findingRows)
+        {
+            if (!row.AffectedTeamId.HasValue &&
+                !string.IsNullOrWhiteSpace(row.Source) &&
+                !string.IsNullOrWhiteSpace(row.SourceTeamId))
+            {
+                missingTeamKeys.Add(new SourceTeamKey(row.Source!, row.SourceTeamId!));
+            }
+
+            if (!row.RelatedTeamId.HasValue &&
+                !string.IsNullOrWhiteSpace(row.RelatedSource) &&
+                !string.IsNullOrWhiteSpace(row.RelatedSourceTeamId))
+            {
+                missingTeamKeys.Add(new SourceTeamKey(row.RelatedSource!, row.RelatedSourceTeamId!));
+            }
+        }
+
+        var inferredAliasTeams = new Dictionary<SourceTeamKey, Team>();
+        if (missingTeamKeys.Count > 0)
+        {
+            var sourceValues = missingTeamKeys.Select(x => x.Source).Distinct().ToList();
+            var sourceTeamIdValues = missingTeamKeys.Select(x => x.SourceTeamId).Distinct().ToList();
+            var sourceAliases = await dbContext.TeamAliases
+                .AsNoTracking()
+                .Include(x => x.Team)
+                .Where(x => sourceValues.Contains(x.Source) && sourceTeamIdValues.Contains(x.SourceTeamId))
+                .ToListAsync(cancellationToken);
+
+            inferredAliasTeams = sourceAliases
+                .Where(x => missingTeamKeys.Contains(new SourceTeamKey(x.Source, x.SourceTeamId)))
+                .GroupBy(x => new SourceTeamKey(x.Source, x.SourceTeamId))
+                .Where(x => x.Select(alias => alias.TeamId).Distinct().Count() == 1)
+                .ToDictionary(x => x.Key, x => x.First().Team);
+        }
+
+        var missingMetadataNames = findingRows
+            .Where(x => x.FindingType == IdentityFindingType.MissingMetadata && !x.AffectedTeamId.HasValue)
+            .Select(x => ExtractMissingMetadataTeamName(x.Evidence))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var inferredMetadataTeams = missingMetadataNames.Count == 0
+            ? []
+            : await dbContext.Teams
+                .AsNoTracking()
+                .Where(x => missingMetadataNames.Contains(x.CanonicalName))
+                .ToListAsync(cancellationToken);
+
+        return findingRows
+            .Select(x =>
+            {
+                var affectedKey = !string.IsNullOrWhiteSpace(x.Source) && !string.IsNullOrWhiteSpace(x.SourceTeamId)
+                    ? new SourceTeamKey(x.Source, x.SourceTeamId)
+                    : null;
+                var relatedKey = !string.IsNullOrWhiteSpace(x.RelatedSource) && !string.IsNullOrWhiteSpace(x.RelatedSourceTeamId)
+                    ? new SourceTeamKey(x.RelatedSource, x.RelatedSourceTeamId)
+                    : null;
+                var inferredAffectedTeam = affectedKey is not null && inferredAliasTeams.TryGetValue(affectedKey, out var affectedTeam)
+                    ? affectedTeam
+                    : inferredMetadataTeams.FirstOrDefault(team => team.CanonicalName == ExtractMissingMetadataTeamName(x.Evidence));
+                var inferredRelatedTeam = relatedKey is not null && inferredAliasTeams.TryGetValue(relatedKey, out var relatedTeam)
+                    ? relatedTeam
+                    : null;
+                return ToDto(x, inferredAffectedTeam, inferredRelatedTeam);
+            })
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<IdentityReviewCandidateDto>> GetReviewCandidatesAsync(
+        IdentityReviewQuery query,
+        CancellationToken cancellationToken)
+    {
+        var runId = query.RunId;
+        if (!runId.HasValue)
+        {
+            var runs = dbContext.IdentityHealthCheckRuns.AsNoTracking().AsQueryable();
+            if (!string.IsNullOrWhiteSpace(query.CountryCode))
+            {
+                var countryCode = NormalizeCountryCode(query.CountryCode);
+                runs = runs.Where(x => x.CountryCode == countryCode);
+            }
+
+            runId = await runs
+                .OrderByDescending(x => x.CheckedAtUtc)
+                .Select(x => (Guid?)x.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        if (!runId.HasValue)
+        {
+            return [];
+        }
+
+        var findings = await GetFindingsAsync(new IdentityFindingQuery
+        {
+            RunId = runId,
+            CountryCode = query.CountryCode,
+            Limit = 5000
+        }, cancellationToken);
+
+        var pairFindings = findings
+            .Where(x => x.AffectedTeamId.HasValue && x.RelatedTeamId.HasValue &&
+                x.FindingType is IdentityFindingType.PossibleDuplicate or
+                    IdentityFindingType.PossibleCrossSourceMatch or
+                    IdentityFindingType.PossibleCrossSeasonSplit)
+            .GroupBy(x => OrderedPairKey(x.AffectedTeamId!.Value, x.RelatedTeamId!.Value))
+            .ToList();
+
+        if (pairFindings.Count == 0)
+        {
+            return [];
+        }
+
+        var teamIds = pairFindings
+            .SelectMany(x => x.SelectMany(f => new[] { f.AffectedTeamId!.Value, f.RelatedTeamId!.Value }))
+            .Distinct()
+            .ToList();
+        var teamRows = await dbContext.Teams
+            .AsNoTracking()
+            .Where(x => teamIds.Contains(x.Id))
+            .Select(x => new
+            {
+                x.Id,
+                x.CanonicalName,
+                x.CountryCode,
+                x.IsActive,
+                AliasCount = dbContext.TeamAliases.Count(alias => alias.TeamId == x.Id),
+                GameCount = dbContext.Games.Count(game => game.HomeTeamId == x.Id || game.AwayTeamId == x.Id),
+                LastGameUtc = dbContext.Games
+                    .Where(game => game.HomeTeamId == x.Id || game.AwayTeamId == x.Id)
+                    .Select(game => (DateTime?)game.GameDateTimeUtc)
+                    .Max()
+            })
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+
+        var candidates = new List<IdentityReviewCandidateDto>();
+        var teamCountryCode = NormalizeCountryCode(query.TeamCountryCode);
+        foreach (var group in pairFindings)
+        {
+            var ids = group
+                .SelectMany(x => new[] { x.AffectedTeamId!.Value, x.RelatedTeamId!.Value })
+                .Distinct()
+                .OrderBy(x => x.ToString("N"), StringComparer.Ordinal)
+                .ToArray();
+            if (ids.Length != 2 || !teamRows.TryGetValue(ids[0], out var left) || !teamRows.TryGetValue(ids[1], out var right))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(teamCountryCode) &&
+                !CountryMatchesTeam(left.CountryCode, teamCountryCode) &&
+                !CountryMatchesTeam(right.CountryCode, teamCountryCode))
+            {
+                continue;
+            }
+
+            var status = group.Any(x => x.Status == IdentityFindingStatus.Open)
+                ? "open"
+                : group.Any(x => x.ResolutionAction == "defer_review")
+                    ? "deferred"
+                    : "completed";
+            if (!string.IsNullOrWhiteSpace(query.Status) &&
+                !string.Equals(query.Status, "all", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(query.Status, status, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var primary = group
+                .OrderBy(x => x.Status == IdentityFindingStatus.Open ? 0 : 1)
+                .ThenByDescending(x => x.Severity == IdentityFindingSeverity.Blocker)
+                .ThenByDescending(x => x.CreatedAtUtc)
+                .First();
+            candidates.Add(new IdentityReviewCandidateDto(
+                runId.Value,
+                status,
+                group.Any(x => x.Severity == IdentityFindingSeverity.Blocker)
+                    ? IdentityFindingSeverity.Blocker
+                    : IdentityFindingSeverity.Warning,
+                new IdentityReviewTeamDto(left.Id, left.CanonicalName, left.CountryCode, left.IsActive, left.GameCount, left.AliasCount, left.LastGameUtc),
+                new IdentityReviewTeamDto(right.Id, right.CanonicalName, right.CountryCode, right.IsActive, right.GameCount, right.AliasCount, right.LastGameUtc),
+                group.Select(x => x.FindingType).Distinct().OrderBy(x => x).ToList(),
+                group.Count(),
+                group.Count(x => x.Status == IdentityFindingStatus.Open),
+                primary.Id,
+                group.Select(x => x.Id).ToList(),
+                group.Select(x => x.Evidence).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().Take(5).ToList()));
+        }
+
+        return candidates
+            .OrderBy(x => x.Status == "open" ? 0 : x.Status == "deferred" ? 1 : 2)
+            .ThenBy(x => x.Severity == IdentityFindingSeverity.Blocker ? 0 : 1)
+            .ThenByDescending(x => x.LeftTeam.GameCount + x.RightTeam.GameCount)
+            .ThenBy(x => x.LeftTeam.Name)
+            .Take(Math.Clamp(query.Limit, 1, 1000))
+            .ToList();
+    }
+
+    public async Task<IdentityReviewCandidateDto> ResolveReviewCandidateAsync(
+        ResolveIdentityPairRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.LeftTeamId == request.RightTeamId)
+        {
+            throw new InvalidOperationException("The two teams must be different.");
+        }
+
+        var action = NormalizeResolutionAction(request.Action);
+        if (action is not ("merge_duplicate" or "keep_separate" or "defer_review" or "ignore"))
+        {
+            throw new InvalidOperationException("This review action is not supported for a team pair.");
+        }
+
+        var findings = await dbContext.IdentityHealthCheckFindings
+            .Include(x => x.AffectedTeam)
+            .Include(x => x.RelatedTeam)
+            .Where(x => x.RunId == request.RunId &&
+                x.Status == IdentityFindingStatus.Open &&
+                x.AffectedTeamId.HasValue && x.RelatedTeamId.HasValue &&
+                ((x.AffectedTeamId == request.LeftTeamId && x.RelatedTeamId == request.RightTeamId) ||
+                    (x.AffectedTeamId == request.RightTeamId && x.RelatedTeamId == request.LeftTeamId)))
+            .OrderByDescending(x => x.Severity == IdentityFindingSeverity.Blocker)
+            .ThenBy(x => x.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+        if (findings.Count == 0)
+        {
+            throw new InvalidOperationException("No open identity findings remain for this team pair.");
+        }
+
+        var candidateBeforeResolution = (await GetReviewCandidatesAsync(new IdentityReviewQuery
+        {
+            RunId = request.RunId,
+            Status = "all",
+            Limit = 1000
+        }, cancellationToken)).FirstOrDefault(x =>
+            (x.LeftTeam.Id == request.LeftTeamId && x.RightTeam.Id == request.RightTeamId) ||
+            (x.LeftTeam.Id == request.RightTeamId && x.RightTeam.Id == request.LeftTeamId));
+
+        if (action == "merge_duplicate")
+        {
+            if (!request.TargetTeamId.HasValue ||
+                (request.TargetTeamId != request.LeftTeamId && request.TargetTeamId != request.RightTeamId))
+            {
+                throw new InvalidOperationException("Choose one of the two teams as the merge target.");
+            }
+
+            if (!request.ConfirmMergeWithRatings)
+            {
+                throw new InvalidOperationException("Confirm that the merge changes historical game and rating ownership.");
+            }
+
+            await MergeFindingTeamsAsync(findings[0], new ResolveIdentityFindingRequest
+            {
+                Action = action,
+                TargetTeamId = request.TargetTeamId,
+                ConfirmMergeWithRatings = true,
+                ResolvedBy = request.ResolvedBy,
+                Note = request.Note
+            }, cancellationToken);
+        }
+        else if (action == "keep_separate")
+        {
+            await PopulateFindingTeamIdsAsync(findings[0], cancellationToken);
+        }
+
+        foreach (var finding in findings)
+        {
+            finding.Status = action == "ignore" ? IdentityFindingStatus.Ignored : IdentityFindingStatus.Resolved;
+            finding.ResolutionAction = action;
+            finding.ResolvedBy = string.IsNullOrWhiteSpace(request.ResolvedBy) ? "admin" : request.ResolvedBy.Trim();
+            finding.ResolvedAtUtc = DateTime.UtcNow;
+            finding.ResolutionNote = request.Note?.Trim();
+            await SaveReviewDecisionAsync(finding, action, cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await RefreshRunCountsAsync(request.RunId, cancellationToken);
+
+        return (await GetReviewCandidatesAsync(new IdentityReviewQuery
+        {
+            RunId = request.RunId,
+            Status = "all",
+            Limit = 1000
+        }, cancellationToken)).FirstOrDefault(x =>
+            (x.LeftTeam.Id == request.LeftTeamId && x.RightTeam.Id == request.RightTeamId) ||
+            (x.LeftTeam.Id == request.RightTeamId && x.RightTeam.Id == request.LeftTeamId))
+            ?? (candidateBeforeResolution is null
+                ? null
+                : candidateBeforeResolution with
+                {
+                    Status = action == "defer_review" ? "deferred" : "completed",
+                    OpenFindingCount = 0
+                })
+            ?? throw new InvalidOperationException("The review candidate no longer exists.");
+    }
+
+    public async Task<IdentityEvidenceGamesResponseDto> GetEvidenceGamesAsync(
+        Guid findingId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var finding = await dbContext.IdentityHealthCheckFindings
+            .AsNoTracking()
+            .Include(x => x.Run)
+            .Include(x => x.AffectedTeam)
+            .Include(x => x.RelatedTeam)
+            .FirstOrDefaultAsync(x => x.Id == findingId, cancellationToken)
+            ?? throw new InvalidOperationException("Identity finding was not found.");
+
+        var season = finding.Season ?? finding.Run.Season;
+        var countryCode = finding.CountryCode ?? finding.Run.CountryCode;
+        var competitionId = finding.CompetitionId ?? finding.Run.CompetitionId;
+
+        var affectedTeamId = finding.AffectedTeamId ?? await ResolveEvidenceTeamIdAsync(
+            finding.Source,
+            finding.SourceTeamId,
+            cancellationToken);
+        var relatedTeamId = finding.RelatedTeamId ?? await ResolveEvidenceTeamIdAsync(
+            finding.RelatedSource,
+            finding.RelatedSourceTeamId,
+            cancellationToken);
+
+        var teamIds = new[] { affectedTeamId, relatedTeamId }
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToList();
+        var teamNames = teamIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await dbContext.Teams
+                .AsNoTracking()
+                .Where(x => teamIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.CanonicalName, cancellationToken);
+
+        var affectedGames = await BuildEvidenceTeamGamesAsync(
+            affectedTeamId,
+            finding.AffectedTeam?.CanonicalName,
+            finding.Source,
+            finding.SourceTeamId,
+            teamNames,
+            season,
+            countryCode,
+            competitionId,
+            limit,
+            cancellationToken);
+        var relatedGames = await BuildEvidenceTeamGamesAsync(
+            relatedTeamId,
+            finding.RelatedTeam?.CanonicalName,
+            finding.RelatedSource,
+            finding.RelatedSourceTeamId,
+            teamNames,
+            season,
+            countryCode,
+            competitionId,
+            limit,
+            cancellationToken);
+
+        return new IdentityEvidenceGamesResponseDto(
+            finding.FindingType,
+            affectedGames,
+            relatedGames);
+    }
+
+    private async Task<Guid?> ResolveEvidenceTeamIdAsync(
+        string? source,
+        string? sourceTeamId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(sourceTeamId))
+        {
+            return null;
+        }
+
+        var teamIds = await dbContext.TeamAliases
+            .AsNoTracking()
+            .Where(x => x.Source == source && x.SourceTeamId == sourceTeamId)
+            .Select(x => x.TeamId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return teamIds.Count == 1 ? teamIds[0] : null;
+    }
+
+    private async Task<IdentityEvidenceTeamGamesDto?> BuildEvidenceTeamGamesAsync(
+        Guid? teamId,
+        string? displayName,
+        string? source,
+        string? sourceTeamId,
+        IReadOnlyDictionary<Guid, string> teamNames,
+        string? season,
+        string? countryCode,
+        Guid? competitionId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        if (!teamId.HasValue)
+        {
+            return null;
+        }
+
+        var games = dbContext.Games
+            .AsNoTracking()
+            .Where(x => x.HomeTeamId == teamId.Value || x.AwayTeamId == teamId.Value);
+
+        if (!string.IsNullOrWhiteSpace(season))
+        {
+            games = games.Where(x => x.Season.Label == season);
+        }
+
+        if (!string.IsNullOrWhiteSpace(countryCode))
+        {
+            games = games.Where(x => x.Competition.CountryCode == countryCode);
+        }
+
+        if (competitionId.HasValue)
+        {
+            games = games.Where(x => x.CompetitionId == competitionId.Value);
+        }
+
+        var gameRows = await games
+            .OrderByDescending(x => x.GameDateTimeUtc)
+            .ThenByDescending(x => x.Id)
+            .Take(Math.Clamp(limit, 1, 100))
+            .Select(x => new IdentityEvidenceGameDto(
+                x.Id,
+                x.Source,
+                x.SourceGameId,
+                x.SourceUrl,
+                x.GameDateTimeUtc,
+                x.Competition.CountryCode,
+                x.Competition.Name,
+                x.Season.Label,
+                x.HomeTeam.CanonicalName,
+                x.AwayTeam.CanonicalName,
+                x.HomeScore,
+                x.AwayScore,
+                x.Status))
+            .ToListAsync(cancellationToken);
+
+        var resolvedDisplayName = !string.IsNullOrWhiteSpace(displayName)
+            ? displayName
+            : teamNames.TryGetValue(teamId.Value, out var canonicalName)
+                ? canonicalName
+                : "Unknown team";
+
+        return new IdentityEvidenceTeamGamesDto(
+            teamId.Value,
+            resolvedDisplayName,
+            source,
+            sourceTeamId,
+            gameRows);
     }
 
     public async Task<IdentityHealthCheckFindingDto> ResolveFindingAsync(
@@ -311,9 +766,19 @@ public class IdentityHealthCheckService(
         }
 
         var action = NormalizeResolutionAction(request.Action);
+        if (action == "edit_metadata" && finding.FindingType != IdentityFindingType.MissingMetadata)
+        {
+            throw new InvalidOperationException("Only missing metadata findings can be resolved by editing team metadata.");
+        }
+
+        if (action == "keep_separate")
+        {
+            await PopulateFindingTeamIdsAsync(finding, cancellationToken);
+        }
+
         if (action == "merge_duplicate")
         {
-            await MergeTeamsAsync(finding, request, cancellationToken);
+            await MergeFindingTeamsAsync(finding, request, cancellationToken);
         }
         else if (action == "edit_metadata")
         {
@@ -332,6 +797,76 @@ public class IdentityHealthCheckService(
         await RefreshRunCountsAsync(finding.RunId, cancellationToken);
 
         return ToDto(finding);
+    }
+
+    public async Task<IReadOnlyList<IdentityDistinctTeamsDecisionDto>> GetDistinctTeamDecisionsAsync(
+        CancellationToken cancellationToken)
+    {
+        var decisions = await dbContext.IdentityReviewDecisions
+            .AsNoTracking()
+            .Include(x => x.AffectedTeam)
+            .Include(x => x.RelatedTeam)
+            .Where(x =>
+                x.ResolutionAction == "keep_separate" &&
+                x.AffectedTeamId.HasValue &&
+                x.RelatedTeamId.HasValue &&
+                x.AffectedTeam != null &&
+                x.RelatedTeam != null)
+            .ToListAsync(cancellationToken);
+
+        return decisions
+            .GroupBy(x => CreateDistinctTeamsDecisionKey(x.AffectedTeamId!.Value, x.RelatedTeamId!.Value), StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var decision = group.OrderByDescending(x => x.CreatedAtUtc).First();
+                var leftId = decision.AffectedTeamId!.Value;
+                var rightId = decision.RelatedTeamId!.Value;
+                var left = decision.AffectedTeam!;
+                var right = decision.RelatedTeam!;
+                if (string.CompareOrdinal(leftId.ToString("N"), rightId.ToString("N")) > 0)
+                {
+                    (leftId, rightId) = (rightId, leftId);
+                    (left, right) = (right, left);
+                }
+
+                return new IdentityDistinctTeamsDecisionDto(
+                    leftId,
+                    left.CanonicalName,
+                    rightId,
+                    right.CanonicalName,
+                    decision.Note,
+                    decision.CreatedBy,
+                    decision.CreatedAtUtc);
+            })
+            .OrderBy(x => x.LeftTeamName)
+            .ThenBy(x => x.RightTeamName)
+            .ToList();
+    }
+
+    public async Task RemoveDistinctTeamDecisionAsync(
+        Guid leftTeamId,
+        Guid rightTeamId,
+        CancellationToken cancellationToken)
+    {
+        if (leftTeamId == rightTeamId)
+        {
+            throw new InvalidOperationException("The two teams must be different.");
+        }
+
+        var decisions = await dbContext.IdentityReviewDecisions
+            .Where(x =>
+                x.ResolutionAction == "keep_separate" &&
+                ((x.AffectedTeamId == leftTeamId && x.RelatedTeamId == rightTeamId) ||
+                    (x.AffectedTeamId == rightTeamId && x.RelatedTeamId == leftTeamId)))
+            .ToListAsync(cancellationToken);
+
+        if (decisions.Count == 0)
+        {
+            throw new InvalidOperationException("The distinct-team decision was not found.");
+        }
+
+        dbContext.IdentityReviewDecisions.RemoveRange(decisions);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task DeleteRunAsync(Guid runId, CancellationToken cancellationToken)
@@ -528,7 +1063,7 @@ public class IdentityHealthCheckService(
                     null,
                     null,
                     $"Source team '{first.Source}:{first.SourceTeamId}' has multiple observed names: {names}.",
-                    "Accept the alias observation under the existing canonical team or edit team metadata.",
+                    "Accept the alias observation under the existing canonical team.",
                     now);
             });
     }
@@ -688,47 +1223,88 @@ public class IdentityHealthCheckService(
         return findings;
     }
 
-    private async Task MergeTeamsAsync(
+    public async Task<IdentityTeamMergeResultDto> MergeTeamsAsync(
+        Guid sourceTeamId,
+        Guid targetTeamId,
+        bool confirmMergeWithRatings,
+        CancellationToken cancellationToken)
+    {
+        await MergeTeamsCoreAsync(sourceTeamId, targetTeamId, confirmMergeWithRatings, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await InvalidateChangedScopeAsync(new IdentityChangedScope(), cancellationToken);
+
+        var targetTeam = await dbContext.Teams
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == targetTeamId, cancellationToken)
+            ?? throw new InvalidOperationException("Target team was not found after the merge.");
+
+        return new IdentityTeamMergeResultDto(targetTeam.Id, sourceTeamId, targetTeam.CanonicalName);
+    }
+
+    private async Task MergeFindingTeamsAsync(
         IdentityHealthCheckFinding finding,
         ResolveIdentityFindingRequest request,
         CancellationToken cancellationToken)
     {
-        var targetTeamId = request.TargetTeamId
-            ?? finding.AffectedTeamId
-            ?? throw new InvalidOperationException("targetTeamId is required to merge teams.");
-        var sourceTeamId = finding.AffectedTeamId == targetTeamId
-            ? finding.RelatedTeamId
-            : finding.AffectedTeamId;
+        var affectedTeamId = finding.AffectedTeamId ?? await ResolveSourceAliasTeamIdAsync(
+            finding.Source,
+            finding.SourceTeamId,
+            cancellationToken);
+        var targetTeamId = request.TargetTeamId ?? affectedTeamId;
+        var relatedTeamId = finding.RelatedTeamId;
+        if (affectedTeamId == targetTeamId && !relatedTeamId.HasValue)
+        {
+            relatedTeamId = await ResolveSourceAliasTeamIdAsync(
+                finding.RelatedSource,
+                finding.RelatedSourceTeamId,
+                cancellationToken);
+        }
+
+        var sourceTeamId = affectedTeamId == targetTeamId
+            ? relatedTeamId
+            : affectedTeamId;
 
         if (!sourceTeamId.HasValue)
         {
-            var sourceAliasAlreadyOnTarget = await dbContext.TeamAliases.AnyAsync(
-                x =>
-                    x.TeamId == targetTeamId &&
-                    x.Source == finding.Source &&
-                    x.SourceTeamId == finding.SourceTeamId,
-                cancellationToken);
-            if (sourceAliasAlreadyOnTarget)
-            {
-                return;
-            }
-
             throw new InvalidOperationException("The finding does not identify a second team to merge.");
         }
 
+        await MergeTeamsCoreAsync(sourceTeamId.Value, targetTeamId, request.ConfirmMergeWithRatings, cancellationToken);
+    }
+
+    private async Task PopulateFindingTeamIdsAsync(
+        IdentityHealthCheckFinding finding,
+        CancellationToken cancellationToken)
+    {
+        finding.AffectedTeamId ??= await ResolveSourceAliasTeamIdAsync(
+            finding.Source,
+            finding.SourceTeamId,
+            cancellationToken);
+        finding.RelatedTeamId ??= await ResolveSourceAliasTeamIdAsync(
+            finding.RelatedSource,
+            finding.RelatedSourceTeamId,
+            cancellationToken);
+    }
+
+    private async Task MergeTeamsCoreAsync(
+        Guid sourceTeamId,
+        Guid targetTeamId,
+        bool confirmMergeWithRatings,
+        CancellationToken cancellationToken)
+    {
         if (sourceTeamId == targetTeamId)
         {
-            throw new InvalidOperationException("The finding does not identify a second team to merge.");
+            throw new InvalidOperationException("Source and target teams must be different.");
         }
 
         var targetTeam = await dbContext.Teams.FindAsync([targetTeamId], cancellationToken)
             ?? throw new InvalidOperationException("Target team was not found.");
-        var sourceTeam = await dbContext.Teams.FindAsync([sourceTeamId.Value], cancellationToken)
+        var sourceTeam = await dbContext.Teams.FindAsync([sourceTeamId], cancellationToken)
             ?? throw new InvalidOperationException("Source team was not found.");
 
         var targetHasDerivedData = await TeamHasDerivedDataAsync(targetTeam.Id, cancellationToken);
         var sourceHasDerivedData = await TeamHasDerivedDataAsync(sourceTeam.Id, cancellationToken);
-        if (targetHasDerivedData && sourceHasDerivedData && !request.ConfirmMergeWithRatings)
+        if (targetHasDerivedData && sourceHasDerivedData && !confirmMergeWithRatings)
         {
             throw new InvalidOperationException("Both teams have games or rating history. Resubmit with confirmMergeWithRatings=true to merge.");
         }
@@ -814,6 +1390,27 @@ public class IdentityHealthCheckService(
         dbContext.Teams.Remove(sourceTeam);
     }
 
+    private async Task<Guid> ResolveSourceAliasTeamIdAsync(
+        string? source,
+        string? sourceTeamId,
+        CancellationToken cancellationToken)
+    {
+        var sourceTeamIds = await dbContext.TeamAliases
+            .Where(x =>
+                x.Source == source &&
+                x.SourceTeamId == sourceTeamId)
+            .Select(x => x.TeamId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return sourceTeamIds.Count switch
+        {
+            1 => sourceTeamIds[0],
+            0 => throw new InvalidOperationException("The finding does not identify a second team or source alias to merge."),
+            _ => throw new InvalidOperationException("The source alias is mapped to multiple teams; resolve the source-team split first.")
+        };
+    }
+
     private async Task EditMetadataAsync(
         IdentityHealthCheckFinding finding,
         ResolveIdentityFindingRequest request,
@@ -857,10 +1454,19 @@ public class IdentityHealthCheckService(
             return findings;
         }
 
-        var storedDecisionKeys = await dbContext.IdentityReviewDecisions
+        var storedDecisions = await dbContext.IdentityReviewDecisions
             .AsNoTracking()
-            .Select(x => x.DecisionKey)
             .ToListAsync(cancellationToken);
+        var storedDecisionKeys = storedDecisions
+            .Select(x => x.DecisionKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var distinctTeamDecisionKeys = storedDecisions
+            .Where(x =>
+                x.ResolutionAction == "keep_separate" &&
+                x.AffectedTeamId.HasValue &&
+                x.RelatedTeamId.HasValue)
+            .Select(x => CreateDistinctTeamsDecisionKey(x.AffectedTeamId!.Value, x.RelatedTeamId!.Value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var resolvedFindingKeys = await dbContext.IdentityHealthCheckFindings
             .AsNoTracking()
             .Where(x =>
@@ -892,7 +1498,9 @@ public class IdentityHealthCheckService(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return findings
-            .Where(x => !reviewedKeys.Contains(CreateDecisionKey(x)))
+            .Where(x =>
+                !IsDistinctTeamPairSuppressed(x, distinctTeamDecisionKeys) &&
+                !reviewedKeys.Contains(CreateDecisionKey(x)))
             .ToList();
     }
 
@@ -906,10 +1514,16 @@ public class IdentityHealthCheckService(
             return;
         }
 
-        var decisionKey = CreateDecisionKey(finding);
+        var decisionKey = action == "keep_separate" && finding.AffectedTeamId.HasValue && finding.RelatedTeamId.HasValue
+            ? CreateDistinctTeamsDecisionKey(finding.AffectedTeamId.Value, finding.RelatedTeamId.Value)
+            : CreateDecisionKey(finding);
         var exists = await dbContext.IdentityReviewDecisions
             .AnyAsync(x => x.DecisionKey == decisionKey, cancellationToken);
-        if (exists)
+        var alreadyPending = dbContext.ChangeTracker
+            .Entries<IdentityReviewDecision>()
+            .Any(x => x.State != EntityState.Deleted &&
+                string.Equals(x.Entity.DecisionKey, decisionKey, StringComparison.OrdinalIgnoreCase));
+        if (exists || alreadyPending)
         {
             return;
         }
@@ -1045,6 +1659,14 @@ public class IdentityHealthCheckService(
     private static string? NormalizeCountryCode(string? countryCode)
         => CountryCodeCatalog.Normalize(countryCode);
 
+    private static bool CountryMatchesTeam(string? teamCountryCode, string requestedCountryCode)
+    {
+        var normalizedTeamCountryCode = NormalizeCountryCode(teamCountryCode);
+        return requestedCountryCode == "UNK"
+            ? string.IsNullOrWhiteSpace(normalizedTeamCountryCode) || normalizedTeamCountryCode == "UNK"
+            : normalizedTeamCountryCode == requestedCountryCode;
+    }
+
     private static IdentityCountryOptionDto? NameToCountryOption(string country)
     {
         return country.Trim() switch
@@ -1079,9 +1701,23 @@ public class IdentityHealthCheckService(
     private static string NormalizeResolutionAction(string action)
     {
         var normalized = action.Trim().ToLowerInvariant();
-        return normalized is "accept_alias" or "merge_duplicate" or "keep_separate" or "edit_metadata" or "ignore" or "resolve"
+        return normalized is "accept_alias" or "merge_duplicate" or "keep_separate" or "edit_metadata" or "ignore" or "defer_review" or "resolve"
             ? normalized
             : throw new InvalidOperationException("Unsupported identity finding resolution action.");
+    }
+
+    private static string? ExtractMissingMetadataTeamName(string evidence)
+    {
+        const string prefix = "Team '";
+        const string suffix = "' is missing trusted country metadata.";
+
+        if (!evidence.StartsWith(prefix, StringComparison.Ordinal) ||
+            !evidence.EndsWith(suffix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return evidence[prefix.Length..^suffix.Length];
     }
 
     private static string NormalizeDisplayName(string value)
@@ -1291,6 +1927,26 @@ public class IdentityHealthCheckService(
         };
     }
 
+    private static bool IsDistinctTeamPairSuppressed(
+        IdentityHealthCheckFinding finding,
+        IReadOnlySet<string> distinctTeamDecisionKeys)
+    {
+        return (finding.FindingType is
+                IdentityFindingType.PossibleDuplicate or
+                IdentityFindingType.PossibleCrossSourceMatch or
+                IdentityFindingType.PossibleCrossSeasonSplit) &&
+            finding.AffectedTeamId.HasValue &&
+            finding.RelatedTeamId.HasValue &&
+            distinctTeamDecisionKeys.Contains(CreateDistinctTeamsDecisionKey(
+                finding.AffectedTeamId.Value,
+                finding.RelatedTeamId.Value));
+    }
+
+    private static string CreateDistinctTeamsDecisionKey(Guid leftTeamId, Guid rightTeamId)
+    {
+        return $"{DistinctTeamsDecisionPrefix}{OrderedPairKey(leftTeamId, rightTeamId)}";
+    }
+
     private static IdentityHealthCheckRunDto ToDto(IdentityHealthCheckRun run)
     {
         var findings = run.Findings ?? [];
@@ -1327,8 +1983,14 @@ public class IdentityHealthCheckService(
             run.InvalidatedAtUtc);
     }
 
-    private static IdentityHealthCheckFindingDto ToDto(IdentityHealthCheckFinding finding)
+    private static IdentityHealthCheckFindingDto ToDto(
+        IdentityHealthCheckFinding finding,
+        Team? inferredAffectedTeam = null,
+        Team? inferredRelatedTeam = null)
     {
+        var affectedTeam = finding.AffectedTeam ?? inferredAffectedTeam;
+        var relatedTeam = finding.RelatedTeam ?? inferredRelatedTeam;
+
         return new IdentityHealthCheckFindingDto(
             finding.Id,
             finding.RunId,
@@ -1337,14 +1999,14 @@ public class IdentityHealthCheckService(
             finding.Status,
             finding.Source,
             finding.SourceTeamId,
-            finding.AffectedTeamId,
-            finding.AffectedTeam?.CanonicalName,
-            finding.AffectedTeam?.CountryCode,
-            finding.AffectedTeam?.IsActive,
+            affectedTeam?.Id,
+            affectedTeam?.CanonicalName,
+            affectedTeam?.CountryCode,
+            affectedTeam?.IsActive,
             finding.RelatedSource,
             finding.RelatedSourceTeamId,
-            finding.RelatedTeamId,
-            finding.RelatedTeam?.CanonicalName,
+            relatedTeam?.Id,
+            relatedTeam?.CanonicalName,
             finding.Season,
             finding.CountryCode,
             finding.CompetitionId,
@@ -1373,4 +2035,6 @@ public class IdentityHealthCheckService(
         string Season,
         DateTime SeasonStartUtc,
         DateTime SeasonEndUtc);
+
+    private sealed record SourceTeamKey(string Source, string SourceTeamId);
 }

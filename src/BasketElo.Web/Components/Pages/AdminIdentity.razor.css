@@ -6,12 +6,208 @@
     margin-bottom: 0.5rem;
 }
 
+.metadata-field,
+.merge-field {
+    min-width: 0;
+}
+
+.metadata-field .form-label,
+.merge-field .form-label {
+    display: block;
+    font-size: 0.75rem;
+    margin-bottom: 0.15rem;
+    color: var(--bs-secondary-color);
+}
+
 .metadata-active {
     display: inline-flex;
     gap: 0.35rem;
     align-items: center;
     margin: 0;
     white-space: nowrap;
+}
+
+.merge-review-panel {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.65rem;
+    padding: 0.65rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.35rem;
+    background: var(--bs-tertiary-bg);
+}
+
+.merge-preview {
+    display: grid;
+    gap: 0.15rem;
+    font-size: 0.85rem;
+}
+
+.merge-preview span {
+    color: var(--bs-secondary-color);
+}
+
+.merge-actions {
+    display: flex;
+    gap: 0.65rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.merge-confirmation {
+    display: inline-flex;
+    gap: 0.35rem;
+    align-items: center;
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.identity-evidence {
+    margin-top: 0.45rem;
+}
+
+.identity-evidence-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.45rem;
+}
+
+.identity-evidence-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.58);
+}
+
+.identity-evidence-modal {
+    width: min(1100px, 100%);
+    max-height: min(90vh, 900px);
+    overflow: auto;
+    padding: 1rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.6rem;
+    background: var(--bs-body-bg);
+    box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.25);
+}
+
+.identity-evidence-modal-header,
+.identity-evidence-modal-footer,
+.identity-evidence-option-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.identity-evidence-modal-header {
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.identity-evidence-modal-header h2,
+.identity-evidence-option-header h3 {
+    margin: 0;
+}
+
+.identity-evidence-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.identity-evidence-option {
+    min-width: 0;
+    padding: 0.75rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.45rem;
+    background: var(--bs-tertiary-bg);
+}
+
+.identity-evidence-option-header {
+    align-items: baseline;
+    padding-bottom: 0.55rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.identity-evidence-option-header h3 {
+    font-size: 1rem;
+}
+
+.identity-evidence-option-header small {
+    color: var(--bs-secondary-color);
+}
+
+.identity-evidence-modal-footer {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--bs-border-color);
+}
+
+.identity-evidence-empty {
+    margin-top: 0.4rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.8rem;
+}
+
+.identity-evidence-list {
+    display: grid;
+    gap: 0.35rem;
+    margin-top: 0.45rem;
+    min-width: min(46rem, 100%);
+}
+
+.identity-evidence-game {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.3rem;
+    background: var(--bs-tertiary-bg);
+    font-size: 0.8rem;
+}
+
+.identity-evidence-game-main,
+.identity-evidence-game-meta {
+    display: flex;
+    gap: 0.35rem 0.65rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.identity-evidence-game-main {
+    flex: 1 1 auto;
+}
+
+.identity-evidence-game-meta {
+    justify-content: flex-end;
+    color: var(--bs-secondary-color);
+    text-align: right;
+}
+
+.identity-evidence-vs {
+    color: var(--bs-secondary-color);
+    font-weight: 400;
+}
+
+@media (max-width: 900px) {
+    .identity-evidence-options {
+        grid-template-columns: 1fr;
+    }
+
+    .identity-evidence-game {
+        display: grid;
+    }
+
+    .identity-evidence-game-meta {
+        justify-content: flex-start;
+        text-align: left;
+    }
 }
 
 @media (max-width: 900px) {

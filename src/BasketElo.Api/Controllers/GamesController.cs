@@ -94,6 +94,7 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         [FromQuery] string? leagueName,
         [FromQuery] string? season,
         [FromQuery] string? status,
+        [FromQuery] Guid? teamId,
         [FromQuery] string? team,
         [FromQuery] string? search,
         [FromQuery] string? review,
@@ -144,7 +145,11 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             query = query.Where(x => x.Status == status);
         }
 
-        if (!string.IsNullOrWhiteSpace(team))
+        if (teamId.HasValue)
+        {
+            query = query.Where(x => x.HomeTeamId == teamId.Value || x.AwayTeamId == teamId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(team))
         {
             query = query.Where(x =>
                 EF.Functions.ILike(x.HomeTeam.CanonicalName, $"%{team}%") ||

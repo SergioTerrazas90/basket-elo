@@ -6,7 +6,10 @@
 
 <PageTitle>Identity Health</PageTitle>
 
-<h1>Identity Health</h1>
+<div class="d-flex justify-content-between align-items-start gap-3">
+    <h1>Identity Health</h1>
+    <NavLink class="btn btn-outline-primary" href="admin/identity-review">Open Identity Review</NavLink>
+</div>
 
 <div class="mb-4">
     <div class="row g-2 align-items-end">
@@ -120,6 +123,46 @@ else
     </table>
 }
 
+<h2>Confirmed separate teams</h2>
+
+@if (distinctTeams is null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (distinctTeams.Count == 0)
+{
+    <p>No persistent separate-team decisions have been recorded.</p>
+}
+else
+{
+    <p class="text-muted">These pairs are excluded from duplicate, cross-source, and cross-season identity findings. Remove a decision if the teams should be reconsidered.</p>
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr>
+                <th>Team</th>
+                <th>Different team</th>
+                <th>Note</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var decision in distinctTeams)
+            {
+                <tr>
+                    <td><a href="@($"/teams/{decision.LeftTeamId}")">@decision.LeftTeamName</a></td>
+                    <td><a href="@($"/teams/{decision.RightTeamId}")">@decision.RightTeamName</a></td>
+                    <td>@decision.Note</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveDistinctTeamsAsync(decision)" disabled="@isBusy">
+                            Remove decision
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
 <h2>Findings</h2>
 
 @if (SelectedRun is not null)
@@ -198,6 +241,7 @@ else
             @foreach (var finding in findings)
             {
                 var reviewState = GetReviewState(finding);
+                var evidenceState = GetEvidenceState(finding);
                 <tr>
                     <td><span class="@SeverityBadge(finding.Severity)">@finding.Severity</span></td>
                     <td>@finding.FindingType</td>
@@ -208,7 +252,18 @@ else
                             <div>@TeamLabel(finding.RelatedTeamName, finding.RelatedTeamId, finding.RelatedSource, finding.RelatedSourceTeamId)</div>
                         }
                     </td>
-                    <td>@finding.Evidence</td>
+                    <td>
+                        <div>@finding.Evidence</div>
+                        <div class="identity-evidence-trigger">
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => LoadEvidenceGamesAsync(finding.Id)" disabled="@(isBusy || evidenceState?.IsLoading == true)">
+                                @(evidenceState is null ? "Show evidence games" : evidenceState.IsLoading ? "Loading games..." : "Show evidence games")
+                            </button>
+                            @if (evidenceState?.IsLoaded == true)
+                            {
+                                <span class="text-muted small">Loaded</span>
+                            }
+                        </div>
+                    </td>
                     <td>
                         @if (finding.Status != "open")
                         {
@@ -227,18 +282,24 @@ else
                                     <span>@CanonicalAliasTarget(finding)</span>
                                 </div>
                             }
-                            @if (finding.AffectedTeamId.HasValue && finding.FindingType != "alias_observation")
+                            @if (finding.AffectedTeamId.HasValue && finding.FindingType == "missing_metadata")
                             {
                                 <div class="metadata-editor">
-                                    <input class="form-control form-control-sm" placeholder="Canonical name" @bind="reviewState.CanonicalName" />
-                                    <select class="form-select form-select-sm" @bind="reviewState.CountryCode">
-                                        <option value="">Country</option>
-                                        @foreach (var country in options?.Countries ?? [])
-                                        {
-                                            <option value="@country.Code">@CountryLabel(country)</option>
-                                        }
-                                    </select>
-                                    <label class="form-check metadata-active">
+                                    <div class="metadata-field">
+                                        <label class="form-label" for="canonical-@finding.Id">Canonical name</label>
+                                        <input id="canonical-@finding.Id" class="form-control form-control-sm" @bind="reviewState.CanonicalName" />
+                                    </div>
+                                    <div class="metadata-field">
+                                        <label class="form-label" for="country-@finding.Id">Country</label>
+                                        <select id="country-@finding.Id" class="form-select form-select-sm" @bind="reviewState.CountryCode">
+                                            <option value="">Country</option>
+                                            @foreach (var country in options?.Countries ?? [])
+                                            {
+                                                <option value="@country.Code">@CountryLabel(country)</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <label class="form-check metadata-active" title="Active teams are included in current rankings; historical games remain even when a team is inactive.">
                                         <input class="form-check-input" type="checkbox" @bind="reviewState.IsActive" />
                                         <span class="form-check-label">Active</span>
                                     </label>
@@ -255,26 +316,31 @@ else
                             }
                             else if (finding.RelatedTeamId.HasValue)
                             {
-                                <div class="row g-2 align-items-center">
-                                    <div class="col-sm-5">
-                                        <select class="form-select form-select-sm" @bind="reviewState.MergeTargetTeamId">
+                                <div class="merge-review-panel">
+                                    <div class="merge-field">
+                                        <label class="form-label" for="merge-target-@finding.Id">Merge onto (team to keep)</label>
+                                        <select id="merge-target-@finding.Id" class="form-select form-select-sm" @bind="reviewState.MergeTargetTeamId">
                                             @if (finding.AffectedTeamId.HasValue)
                                             {
-                                                <option value="@finding.AffectedTeamId">@DisplayName(finding.AffectedTeamName, finding.AffectedTeamId)</option>
+                                                <option value="@finding.AffectedTeamId">@TeamLabel(finding.AffectedTeamName, finding.AffectedTeamId, finding.Source, finding.SourceTeamId)</option>
                                             }
-                                            <option value="@finding.RelatedTeamId">@DisplayName(finding.RelatedTeamName, finding.RelatedTeamId)</option>
+                                            <option value="@finding.RelatedTeamId">@TeamLabel(finding.RelatedTeamName, finding.RelatedTeamId, finding.RelatedSource, finding.RelatedSourceTeamId)</option>
                                         </select>
                                     </div>
-                                    <div class="col-sm-3 form-check">
-                                        <input class="form-check-input" type="checkbox" @bind="reviewState.ConfirmMergeWithRatings" />
-                                        <label class="form-check-label">Confirm merge</label>
+                                    <div class="merge-preview">
+                                        <strong>What will happen</strong>
+                                        <span>@MergePreview(finding, reviewState)</span>
                                     </div>
-                                    <div class="col-sm-4 text-nowrap">
-                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => MergeAsync(finding, reviewState)" disabled="@isBusy || !reviewState.ConfirmMergeWithRatings">
-                                            Merge
+                                    <div class="merge-actions">
+                                        <label class="form-check merge-confirmation">
+                                            <input id="confirm-merge-@finding.Id" class="form-check-input" type="checkbox" @bind="reviewState.ConfirmMergeWithRatings" />
+                                            <span class="form-check-label">I understand this merge changes historical game and rating ownership.</span>
+                                        </label>
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => MergeAsync(finding, reviewState)" disabled="@isBusy">
+                                            Confirm &amp; merge
                                         </button>
                                         <button class="btn btn-sm btn-outline-secondary" @onclick="() => MarkReviewedAsync(finding.Id)" disabled="@isBusy">
-                                            Keep separate
+                                            Confirm different teams
                                         </button>
                                     </div>
                                 </div>
@@ -297,6 +363,87 @@ else
     </table>
 }
 
+@if (activeEvidenceState is not null)
+{
+    <div class="identity-evidence-backdrop" role="presentation" @onclick="CloseEvidenceGames">
+        <section class="identity-evidence-modal" role="dialog" aria-modal="true" aria-labelledby="identity-evidence-title" @onclick:stopPropagation="true">
+            <div class="identity-evidence-modal-header">
+                <div>
+                    <p class="eyebrow mb-1">Identity evidence</p>
+                    <h2 id="identity-evidence-title">Games behind this finding</h2>
+                </div>
+                <button type="button" class="btn-close" aria-label="Close evidence games" @onclick="CloseEvidenceGames"></button>
+            </div>
+
+            @if (activeEvidenceState.IsLoading)
+            {
+                <p><em>Loading evidence games...</em></p>
+            }
+            else if (!string.IsNullOrWhiteSpace(activeEvidenceState.ErrorMessage))
+            {
+                <div class="alert alert-danger mb-0">@activeEvidenceState.ErrorMessage</div>
+            }
+            else if (activeEvidenceState.Response is not null)
+            {
+                <div class="identity-evidence-options">
+                    @foreach (var option in EvidenceOptions(activeEvidenceState.Response))
+                    {
+                        <section class="identity-evidence-option">
+                            <div class="identity-evidence-option-header">
+                                <div>
+                                    <h3>@option.DisplayName</h3>
+                                    @if (!string.IsNullOrWhiteSpace(option.Source) && !string.IsNullOrWhiteSpace(option.SourceTeamId))
+                                    {
+                                        <small>@option.Source:@option.SourceTeamId</small>
+                                    }
+                                </div>
+                                <span class="text-muted small">@option.Games.Count game@(option.Games.Count == 1 ? string.Empty : "s")</span>
+                            </div>
+
+                            @if (option.Games.Count == 0)
+                            {
+                                <p class="identity-evidence-empty">No games found in this finding's scope.</p>
+                            }
+                            else
+                            {
+                                <div class="identity-evidence-list">
+                                    @foreach (var game in option.Games)
+                                    {
+                                        <div class="identity-evidence-game">
+                                            <div class="identity-evidence-game-main">
+                                                <strong>@game.HomeTeamName <span class="identity-evidence-vs">vs</span> @game.AwayTeamName</strong>
+                                                <span>@game.GameDateTimeUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                                                <span>@game.CompetitionName · @game.Season</span>
+                                            </div>
+                                            <div class="identity-evidence-game-meta">
+                                                <span>@FormatEvidenceScore(game)</span>
+                                                <span>@game.Status</span>
+                                                @if (!string.IsNullOrWhiteSpace(game.SourceUrl))
+                                                {
+                                                    <a href="@game.SourceUrl" target="_blank" rel="noopener noreferrer">@game.Source</a>
+                                                }
+                                                else
+                                                {
+                                                    <span>@game.Source</span>
+                                                }
+                                                <small>@game.SourceGameId</small>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </section>
+                    }
+                </div>
+            }
+
+            <div class="identity-evidence-modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="CloseEvidenceGames">Close</button>
+            </div>
+        </section>
+    </div>
+}
+
 @code {
     [SupplyParameterFromQuery(Name = "source")]
     public string? Source { get; set; }
@@ -309,7 +456,10 @@ else
     private IdentityHealthOptionsDto? options;
     private IReadOnlyList<IdentityHealthCheckRunDto>? runs;
     private IReadOnlyList<IdentityHealthCheckFindingDto>? findings;
+    private IReadOnlyList<IdentityDistinctTeamsDecisionDto>? distinctTeams;
     private readonly Dictionary<Guid, FindingReviewState> reviewStates = [];
+    private readonly Dictionary<Guid, EvidenceGamesState> evidenceGames = [];
+    private Guid? activeEvidenceFindingId;
     private Guid? selectedRunId;
     private string? findingStatus = "open";
     private string? findingSeverity;
@@ -385,8 +535,36 @@ else
         {
             Action = "keep_separate",
             ResolvedBy = "admin-ui",
-            Note = "Confirmed as separate identities from internal identity health page."
+            Note = "Confirmed as different clubs; suppress future duplicate, cross-source, and cross-season identity findings for this pair."
         });
+    }
+
+    private async Task RemoveDistinctTeamsAsync(IdentityDistinctTeamsDecisionDto decision)
+    {
+        isBusy = true;
+        message = null;
+
+        try
+        {
+            var response = await Http.DeleteAsync($"api/identity-health/distinct-teams/{decision.LeftTeamId}/{decision.RightTeamId}");
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(response));
+            }
+
+            message = "Separate-team decision removed.";
+            messageCss = "alert-success";
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
     }
 
     private async Task IgnoreAsync(Guid findingId)
@@ -436,6 +614,13 @@ else
         {
             message = "Choose a target team before merging.";
             messageCss = "alert-danger";
+            return;
+        }
+
+        if (!reviewState.ConfirmMergeWithRatings)
+        {
+            message = "Tick the confirmation box before merging teams.";
+            messageCss = "alert-warning";
             return;
         }
 
@@ -517,6 +702,9 @@ else
 
     private async Task RefreshAsync()
     {
+        evidenceGames.Clear();
+        activeEvidenceFindingId = null;
+        distinctTeams = await Http.GetFromJsonAsync<IReadOnlyList<IdentityDistinctTeamsDecisionDto>>("api/identity-health/distinct-teams") ?? [];
         checkRequest.CompetitionId = ParseCompetitionId();
         runs = await Http.GetFromJsonAsync<IReadOnlyList<IdentityHealthCheckRunDto>>($"api/identity-health/checks?{BuildScopeQuery(10)}") ?? [];
         if (selectedRunId.HasValue && !runs.Any(x => x.Id == selectedRunId))
@@ -738,6 +926,77 @@ else
         return state;
     }
 
+    private EvidenceGamesState? GetEvidenceState(IdentityHealthCheckFindingDto finding)
+        => evidenceGames.TryGetValue(finding.Id, out var state) ? state : null;
+
+    private async Task LoadEvidenceGamesAsync(Guid findingId)
+    {
+        if (!evidenceGames.TryGetValue(findingId, out var state))
+        {
+            state = new EvidenceGamesState();
+            evidenceGames[findingId] = state;
+        }
+
+        activeEvidenceFindingId = findingId;
+        state.IsLoading = true;
+        state.IsLoaded = false;
+        state.ErrorMessage = null;
+
+        try
+        {
+            state.Response = await Http.GetFromJsonAsync<IdentityEvidenceGamesResponseDto>(
+                $"api/identity-health/findings/{findingId}/games?limit=12")
+                ?? throw new InvalidOperationException("The API returned an empty evidence-games response.");
+            state.IsLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            state.ErrorMessage = $"Could not load evidence games: {ex.Message}";
+        }
+        finally
+        {
+            state.IsLoading = false;
+        }
+    }
+
+    private EvidenceGamesState? activeEvidenceState
+        => activeEvidenceFindingId.HasValue && evidenceGames.TryGetValue(activeEvidenceFindingId.Value, out var state)
+            ? state
+            : null;
+
+    private static IEnumerable<IdentityEvidenceTeamGamesDto> EvidenceOptions(IdentityEvidenceGamesResponseDto response)
+        => new[] { response.AffectedTeam, response.RelatedTeam }
+            .Where(x => x is not null)
+            .Select(x => x!);
+
+    private void CloseEvidenceGames()
+    {
+        activeEvidenceFindingId = null;
+    }
+
+    private static string FormatEvidenceScore(IdentityEvidenceGameDto game)
+        => game.HomeScore.HasValue && game.AwayScore.HasValue
+            ? $"{game.HomeScore}-{game.AwayScore}"
+            : "Score pending";
+
+    private static string MergePreview(IdentityHealthCheckFindingDto finding, FindingReviewState state)
+    {
+        if (!state.MergeTargetTeamId.HasValue)
+        {
+            return "Choose the team that should remain.";
+        }
+
+        var targetIsAffected = state.MergeTargetTeamId == finding.AffectedTeamId;
+        var target = targetIsAffected
+            ? TeamLabel(finding.AffectedTeamName, finding.AffectedTeamId, finding.Source, finding.SourceTeamId)
+            : TeamLabel(finding.RelatedTeamName, finding.RelatedTeamId, finding.RelatedSource, finding.RelatedSourceTeamId);
+        var source = targetIsAffected
+            ? TeamLabel(finding.RelatedTeamName, finding.RelatedTeamId, finding.RelatedSource, finding.RelatedSourceTeamId)
+            : TeamLabel(finding.AffectedTeamName, finding.AffectedTeamId, finding.Source, finding.SourceTeamId);
+
+        return $"{source} will be removed as a separate team; its games, aliases, rating history, and ratings will be assigned to {target}.";
+    }
+
     private static string TeamLabel(string? name, Guid? teamId, string? source, string? sourceTeamId)
     {
         var displayName = DisplayName(name, teamId);
@@ -772,5 +1031,13 @@ else
         public bool IsActive { get; set; } = true;
         public Guid? MergeTargetTeamId { get; set; }
         public bool ConfirmMergeWithRatings { get; set; }
+    }
+
+    private sealed class EvidenceGamesState
+    {
+        public IdentityEvidenceGamesResponseDto? Response { get; set; }
+        public bool IsLoading { get; set; }
+        public bool IsLoaded { get; set; }
+        public string? ErrorMessage { get; set; }
     }
 }

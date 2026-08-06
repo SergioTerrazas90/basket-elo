@@ -1,0 +1,817 @@
+@page "/admin/teams"
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@using BasketElo.Domain.Teams
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Teams Admin</PageTitle>
+
+<div class="admin-teams-page">
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Operations</p>
+            <h1>Teams</h1>
+            <p class="intro">Review canonical identities, edit team metadata, manage provider aliases, and merge duplicate team records.</p>
+        </div>
+        <div class="header-actions">
+            <button type="button" class="btn btn-outline-secondary" @onclick="RefreshAsync" disabled="@isBusy">Refresh</button>
+            <button type="button"
+                    class="btn btn-primary"
+                    title="Select exactly two teams to merge"
+                    @onclick="OpenMergeDialog"
+                    disabled="@(!CanMergeSelected)">
+                Merge selected (@selectedForMerge.Count/2)
+            </button>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="alert @messageCss" role="alert">@message</div>
+    }
+
+    <section class="team-admin-filters">
+        <div class="filter-field wide">
+            <label for="team-search">Search</label>
+            <input id="team-search"
+                   class="form-control"
+                   @bind="search"
+                   @bind:event="oninput"
+                   @onblur="ApplySearchAsync"
+                   @onkeydown="HandleSearchKeyDown"
+                   placeholder="Canonical name, alias, provider ID..." />
+        </div>
+        <div class="filter-field">
+            <label for="team-country">Country</label>
+            <select id="team-country" class="form-select" @bind="selectedCountry">
+                <option value="">All countries</option>
+                @foreach (var country in response?.Countries ?? [])
+                {
+                    <option value="@country.Code">@country.Name (@country.TeamCount)</option>
+                }
+            </select>
+        </div>
+        <div class="filter-field compact-input">
+            <label for="team-page-size">Rows</label>
+            <select id="team-page-size" class="form-select" @bind="pageSize">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+            </select>
+        </div>
+        <div class="filter-field actions">
+            <button type="button" class="btn btn-primary" @onclick="ApplyFiltersAsync" disabled="@isBusy">Apply filters</button>
+        </div>
+    </section>
+
+    @if (isBusy && response is null)
+    {
+        <p><em>Loading teams...</em></p>
+    }
+    else if (response is not null)
+    {
+        <div class="team-admin-summary">
+            <span>Showing @response.Teams.Count of @response.TotalCount teams</span>
+            <span>@selectedForMerge.Count selected for merge</span>
+            <div class="team-admin-pager">
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || response.Page <= 1)">Previous</button>
+                <span>Page @response.Page of @response.TotalPages</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || response.Page >= response.TotalPages)">Next</button>
+            </div>
+        </div>
+
+        <div class="team-admin-layout">
+            <section class="team-admin-table-panel">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle team-admin-table">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>Team</th>
+                                <th>Country</th>
+                                <th>Status</th>
+                                <th>Aliases</th>
+                                <th>Games</th>
+                                <th>Ratings</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (response.Teams.Count == 0)
+                            {
+                                <tr><td colspan="8" class="empty-state">No teams match the current filters.</td></tr>
+                            }
+                            else
+                            {
+                                @foreach (var team in response.Teams)
+                                {
+                                    <tr class="@(team.Id == selectedTeamId ? "table-primary" : string.Empty)">
+                                        <td>
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   checked="@selectedForMerge.Contains(team.Id)"
+                                                   @onclick:preventDefault="true"
+                                                   @onclick="() => ToggleMergeSelection(team.Id)"
+                                                   aria-label="Select @team.CanonicalName for merge" />
+                                        </td>
+                                        <td>
+                                            <strong>@team.CanonicalName</strong>
+                                            <small class="team-id">@team.Id</small>
+                                        </td>
+                                        <td>@CountryLabel(team.CountryCode)</td>
+                                        <td><span class="team-status @(team.IsActive ? "active" : "inactive")">@(team.IsActive ? "Active" : "Inactive")</span></td>
+                                        <td>@team.AliasCount</td>
+                                        <td>@team.GameCount</td>
+                                        <td>@team.RatingCount / @team.RatingHistoryCount</td>
+                                        <td class="text-end">
+                                            <div class="team-row-actions">
+                                                <a class="btn btn-sm btn-outline-secondary" href="@GamesHref(team.Id)" title="Open games filtered by this team">Games</a>
+                                                <button type="button"
+                                                        class="btn btn-sm @(team.Id == selectedTeamId ? "btn-primary" : "btn-outline-primary")"
+                                                        @onclick="() => SelectTeamAsync(team.Id)"
+                                                        aria-pressed="@(team.Id == selectedTeamId)"
+                                                        disabled="@isBusy">
+                                                    @(team.Id == selectedTeamId ? "Editing" : "Edit")
+                                                </button>
+                                                @if (CanRemoveTeam(team))
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn-sm btn-outline-danger"
+                                                            @onclick="() => RemoveTeamAsync(team.Id)"
+                                                            title="Remove this team and its aliases"
+                                                            disabled="@isBusy">
+                                                        @(confirmingRemoveTeamId == team.Id ? "Confirm remove" : "Remove")
+                                                    </button>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="team-editor" class="team-admin-detail-panel">
+                @if (teamDetail is null)
+                {
+                    <div class="empty-state">Select a team to edit its metadata and aliases.</div>
+                }
+                else
+                {
+                    <div class="team-detail-header">
+                        <div>
+                            <p class="eyebrow">Editing selected team</p>
+                            <h2>@teamDetail.CanonicalName</h2>
+                            <small class="team-id">@teamDetail.Id</small>
+                        </div>
+                        <div class="team-detail-actions">
+                            <a class="btn btn-sm btn-outline-secondary" href="@GamesHref(teamDetail.Id)">Games</a>
+                            <a class="btn btn-sm btn-outline-secondary" href="/teams/@teamDetail.Id">View profile</a>
+                        </div>
+                    </div>
+
+                    <div class="team-metric-grid">
+                        <div><span>Games</span><strong>@teamDetail.GameCount</strong></div>
+                        <div><span>Rating history</span><strong>@teamDetail.RatingHistoryCount</strong></div>
+                        <div><span>Current ratings</span><strong>@teamDetail.RatingCount</strong></div>
+                    </div>
+
+                    <h3>Metadata</h3>
+                    <div class="team-metadata-form">
+                        <label>
+                            Canonical name
+                            <input class="form-control" @bind="editCanonicalName" />
+                        </label>
+                        <label>
+                            Country
+                            <select class="form-select" @bind="editCountryCode">
+                                @foreach (var country in response?.Countries ?? [])
+                                {
+                                    <option value="@country.Code">@country.Name</option>
+                                }
+                                @if (!(response?.Countries ?? []).Any(x => x.Code == "UNK"))
+                                {
+                                    <option value="UNK">Unknown</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="form-check team-active-field">
+                            <input class="form-check-input" type="checkbox" @bind="editIsActive" />
+                            <span class="form-check-label">Active</span>
+                        </label>
+                        <button type="button" class="btn btn-primary" @onclick="SaveMetadataAsync" disabled="@isBusy">Save metadata</button>
+                    </div>
+                    <label class="team-description-field">
+                        Description
+                        <textarea class="form-control" rows="3" @bind="editDescription" placeholder="Historical context, identity notes, or continuity explanation..."></textarea>
+                    </label>
+
+                    <h3>Team lineage</h3>
+                    <div class="team-lineage-form">
+                        <label>
+                            Predecessor
+                            <select class="form-select" @bind="editPredecessorTeamId">
+                                <option value="">None</option>
+                                @foreach (var option in teamOptions.Where(x => x.Id != selectedTeamId))
+                                {
+                                    <option value="@option.Id">@option.CanonicalName (@CountryLabel(option.CountryCode))</option>
+                                }
+                            </select>
+                        </label>
+                        <label>
+                            Successor
+                            <select class="form-select" @bind="editSuccessorTeamId">
+                                <option value="">None</option>
+                                @foreach (var option in teamOptions.Where(x => x.Id != selectedTeamId))
+                                {
+                                    <option value="@option.Id">@option.CanonicalName (@CountryLabel(option.CountryCode))</option>
+                                }
+                            </select>
+                        </label>
+                    </div>
+                    <div class="team-lineage-links">
+                        @if (teamDetail.Predecessor is not null)
+                        {
+                            <span>Predecessor: <a href="@TeamProfileHref(teamDetail.Predecessor.Id)">@teamDetail.Predecessor.CanonicalName</a></span>
+                        }
+                        @if (teamDetail.Successor is not null)
+                        {
+                            <span>Successor: <a href="@TeamProfileHref(teamDetail.Successor.Id)">@teamDetail.Successor.CanonicalName</a></span>
+                        }
+                        @if (teamDetail.Predecessor is null && teamDetail.Successor is null)
+                        {
+                            <span class="text-muted">No predecessor or successor linked.</span>
+                        }
+                    </div>
+
+                    <div class="aliases-heading">
+                        <h3>Provider aliases</h3>
+                        <span>@teamDetail.Aliases.Count alias@(teamDetail.Aliases.Count == 1 ? string.Empty : "es")</span>
+                    </div>
+                    <p class="text-muted small mb-2">Usage is based on games from the alias provider and its historical validity dates. Existing game records do not retain the exact observed alias text.</p>
+                    <p class="text-muted small mb-2">Extracting a provider ID creates a new team and moves all observed names for that provider ID. Existing historical games stay with this team because they do not retain the provider team ID.</p>
+                    <div class="alias-add-form">
+                        <input class="form-control" @bind="newAliasSource" placeholder="Source" />
+                        <input class="form-control" @bind="newAliasSourceTeamId" placeholder="Provider team ID" />
+                        <input class="form-control" @bind="newAliasName" placeholder="Observed name" />
+                        <button type="button" class="btn btn-outline-primary" @onclick="AddAliasAsync" disabled="@isBusy">Add alias</button>
+                    </div>
+
+                    @if (teamDetail.Aliases.Count == 0)
+                    {
+                        <p class="text-muted small">No provider aliases are attached to this team.</p>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle alias-table">
+                                <thead><tr><th>Source</th><th>Provider ID</th><th>Observed name</th><th>Usage</th><th>First used</th><th>Last used</th><th></th></tr></thead>
+                                <tbody>
+                                    @foreach (var alias in teamDetail.Aliases)
+                                    {
+                                        <tr>
+                                            <td>@alias.Source</td>
+                                            <td><code>@alias.SourceTeamId</code></td>
+                                            <td>@alias.AliasName</td>
+                                            <td title="@AliasUsageTitle(alias)">@alias.GameCount game@(alias.GameCount == 1 ? string.Empty : "s")<br /><span class="text-muted small">@alias.SeasonCount season@(alias.SeasonCount == 1 ? string.Empty : "s")</span></td>
+                                            <td>@FormatAliasDate(alias.FirstUsedUtc)</td>
+                                            <td>@FormatAliasDate(alias.LastUsedUtc)</td>
+                                            <td class="text-end">
+                                                <div class="team-row-actions">
+                                                    <button type="button" class="btn btn-sm btn-outline-warning" @onclick="() => ExtractAliasAsync(alias.Id)" disabled="@isBusy">@(confirmingExtractAliasId == alias.Id ? "Confirm extract" : "Extract team")</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAliasAsync(alias.Id)" disabled="@isBusy">Remove</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@if (mergeDialogOpen)
+{
+    <div class="team-merge-backdrop" role="presentation" @onclick="CloseMergeDialog">
+        <section class="team-merge-dialog" role="dialog" aria-modal="true" aria-labelledby="merge-team-title" @onclick:stopPropagation="true">
+            <div class="team-merge-dialog-header">
+                <div>
+                    <p class="eyebrow mb-1">Identity change</p>
+                    <h2 id="merge-team-title">Merge two teams</h2>
+                </div>
+                <button type="button" class="btn-close" aria-label="Close merge dialog" @onclick="CloseMergeDialog"></button>
+            </div>
+
+            <p class="text-muted">Choose which team remains. The other team’s games, aliases, rating history, and ratings will be assigned to it.</p>
+            <label>
+                Team to remove
+                <select class="form-select" @bind="mergeSourceId" @bind:after="EnsureMergeTargetSelection">
+                    @foreach (var team in SelectedMergeTeams)
+                    {
+                        <option value="@team.Id">@team.CanonicalName (@team.Id)</option>
+                    }
+                </select>
+            </label>
+            <label class="mt-3">
+                Team to keep
+                <select class="form-select" @bind="mergeTargetId">
+                    @foreach (var team in SelectedMergeTeams.Where(x => x.Id != mergeSourceId))
+                    {
+                        <option value="@team.Id">@team.CanonicalName (@team.Id)</option>
+                    }
+                </select>
+            </label>
+
+            <div class="alert alert-warning mt-3 mb-3">
+                This changes historical game and rating ownership. Both teams’ data will become part of the team you keep.
+            </div>
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" @bind="mergeConfirm" />
+                <span class="form-check-label">I understand this merge changes historical ownership.</span>
+            </label>
+            @if (!string.IsNullOrWhiteSpace(mergeError))
+            {
+                <div class="alert alert-danger mt-3">@mergeError</div>
+            }
+            <div class="team-merge-actions">
+                <button type="button" class="btn btn-secondary" @onclick="CloseMergeDialog" disabled="@isBusy">Cancel</button>
+                <button type="button" class="btn btn-danger" @onclick="MergeTeamsAsync" disabled="@(isBusy || !mergeConfirm || !mergeSourceId.HasValue || !mergeTargetId.HasValue)">Merge teams</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private TeamAdminListResponse? response;
+    private IReadOnlyList<TeamAdminOption> teamOptions = [];
+    private TeamAdminDetail? teamDetail;
+    private Guid? selectedTeamId;
+    private readonly HashSet<Guid> selectedForMerge = [];
+    private string? search;
+    private string? selectedCountry;
+    private int page = 1;
+    private int pageSize = 50;
+    private string? lastAppliedSearch;
+    private bool isBusy;
+    private bool CanMergeSelected => !isBusy && selectedForMerge.Count == 2;
+    private string? message;
+    private string messageCss = "alert-info";
+    private string editCanonicalName = string.Empty;
+    private string editDescription = string.Empty;
+    private string editCountryCode = "UNK";
+    private bool editIsActive = true;
+    private Guid? editPredecessorTeamId;
+    private Guid? editSuccessorTeamId;
+    private string newAliasSource = string.Empty;
+    private string newAliasSourceTeamId = string.Empty;
+    private string newAliasName = string.Empty;
+    private bool mergeDialogOpen;
+    private Guid? mergeSourceId;
+    private Guid? mergeTargetId;
+    private bool mergeConfirm;
+    private string? mergeError;
+    private Guid? confirmingRemoveTeamId;
+    private Guid? confirmingExtractAliasId;
+
+    private IReadOnlyList<TeamAdminOption> SelectedMergeTeams
+        => teamOptions.Where(x => selectedForMerge.Contains(x.Id)).ToList();
+
+    private static bool CanRemoveTeam(TeamAdminListItem team)
+        => team.GameCount == 0 && team.RatingHistoryCount == 0 && team.RatingCount == 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        teamOptions = await Http.GetFromJsonAsync<IReadOnlyList<TeamAdminOption>>("api/admin/teams/options") ?? [];
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        isBusy = true;
+        try
+        {
+            response = await Http.GetFromJsonAsync<TeamAdminListResponse>(BuildListUri());
+            if (response is not null)
+            {
+                page = response.Page;
+            }
+
+            if (selectedTeamId.HasValue)
+            {
+                await LoadTeamDetailAsync(selectedTeamId.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Could not load teams: {ex.Message}";
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task ApplySearchAsync()
+    {
+        if (string.Equals(search, lastAppliedSearch, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        page = 1;
+        lastAppliedSearch = search;
+        await RefreshAsync();
+    }
+
+    private async Task HandleSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await ApplySearchAsync();
+        }
+    }
+
+    private Task ApplyFiltersAsync()
+    {
+        page = 1;
+        lastAppliedSearch = search;
+        return RefreshAsync();
+    }
+
+    private Task PreviousPageAsync()
+    {
+        page = Math.Max(1, page - 1);
+        return RefreshAsync();
+    }
+
+    private Task NextPageAsync()
+    {
+        if (response is not null)
+        {
+            page = Math.Min(response.TotalPages, page + 1);
+        }
+
+        return RefreshAsync();
+    }
+
+    private async Task SelectTeamAsync(Guid teamId)
+    {
+        selectedTeamId = teamId;
+        teamDetail = null;
+        isBusy = true;
+        message = "Loading team editor...";
+        messageCss = "alert-info";
+        try
+        {
+            await LoadTeamDetailAsync(teamId);
+            if (teamDetail is not null)
+            {
+                message = $"Editing {teamDetail.CanonicalName}.";
+            }
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task LoadTeamDetailAsync(Guid teamId)
+    {
+        try
+        {
+            teamDetail = await Http.GetFromJsonAsync<TeamAdminDetail>($"api/admin/teams/{teamId}");
+            if (teamDetail is not null)
+            {
+                editCanonicalName = teamDetail.CanonicalName;
+                editDescription = teamDetail.Description ?? string.Empty;
+                editCountryCode = teamDetail.CountryCode;
+                editIsActive = teamDetail.IsActive;
+                editPredecessorTeamId = teamDetail.Predecessor?.Id;
+                editSuccessorTeamId = teamDetail.Successor?.Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Could not load team: {ex.Message}";
+            messageCss = "alert-danger";
+        }
+    }
+
+    private async Task SaveMetadataAsync()
+    {
+        if (!selectedTeamId.HasValue)
+        {
+            return;
+        }
+
+        await SendTeamRequestAsync(
+            HttpMethod.Patch,
+            $"api/admin/teams/{selectedTeamId.Value}",
+            new UpdateTeamAdminRequest(
+                editCanonicalName,
+                editCountryCode,
+                editIsActive,
+                editDescription,
+                editPredecessorTeamId,
+                editSuccessorTeamId),
+            "Team metadata saved.");
+    }
+
+    private async Task AddAliasAsync()
+    {
+        if (!selectedTeamId.HasValue)
+        {
+            return;
+        }
+
+        await SendTeamRequestAsync(
+            HttpMethod.Post,
+            $"api/admin/teams/{selectedTeamId.Value}/aliases",
+            new AddTeamAdminAliasRequest(newAliasSource, newAliasSourceTeamId, newAliasName, null, null),
+            "Alias added.");
+
+        newAliasSource = string.Empty;
+        newAliasSourceTeamId = string.Empty;
+        newAliasName = string.Empty;
+    }
+
+    private async Task DeleteAliasAsync(Guid aliasId)
+    {
+        if (!selectedTeamId.HasValue)
+        {
+            return;
+        }
+
+        await SendTeamRequestAsync(
+            HttpMethod.Delete,
+            $"api/admin/teams/{selectedTeamId.Value}/aliases/{aliasId}",
+            null,
+            "Alias removed.");
+    }
+
+    private async Task ExtractAliasAsync(Guid aliasId)
+    {
+        if (!selectedTeamId.HasValue)
+        {
+            return;
+        }
+
+        if (confirmingExtractAliasId != aliasId)
+        {
+            confirmingExtractAliasId = aliasId;
+            message = "Click Confirm extract again to create a new team for this provider ID. Existing games will stay with the current team.";
+            messageCss = "alert-warning";
+            return;
+        }
+
+        confirmingExtractAliasId = null;
+        isBusy = true;
+        message = null;
+        try
+        {
+            using var responseMessage = await Http.PostAsync(
+                $"api/admin/teams/{selectedTeamId.Value}/aliases/{aliasId}/extract",
+                content: null);
+            if (!responseMessage.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(responseMessage));
+            }
+
+            var result = await responseMessage.Content.ReadFromJsonAsync<TeamAdminExtractAliasResponse>();
+            selectedForMerge.Clear();
+            selectedTeamId = result?.NewTeamId;
+            message = result is null
+                ? "Provider alias extracted into a new team."
+                : $"Extracted {result.ExtractedAliasCount} provider alias(es) into {result.NewTeamName}.";
+            messageCss = "alert-success";
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void ToggleMergeSelection(Guid teamId)
+    {
+        if (selectedForMerge.Remove(teamId))
+        {
+            return;
+        }
+
+        if (selectedForMerge.Count >= 2)
+        {
+            message = "Select only two teams to merge.";
+            messageCss = "alert-warning";
+            return;
+        }
+
+        selectedForMerge.Add(teamId);
+    }
+
+    private void OpenMergeDialog()
+    {
+        if (selectedForMerge.Count != 2)
+        {
+            return;
+        }
+
+        var selected = SelectedMergeTeams;
+        mergeSourceId = selected[0].Id;
+        mergeTargetId = selected[1].Id;
+        mergeConfirm = false;
+        mergeError = null;
+        mergeDialogOpen = true;
+    }
+
+    private void EnsureMergeTargetSelection()
+    {
+        if (mergeSourceId.HasValue && mergeTargetId == mergeSourceId)
+        {
+            mergeTargetId = SelectedMergeTeams
+                .FirstOrDefault(team => team.Id != mergeSourceId.Value)?.Id;
+        }
+    }
+
+    private void CloseMergeDialog()
+    {
+        if (isBusy)
+        {
+            return;
+        }
+
+        mergeDialogOpen = false;
+        mergeError = null;
+    }
+
+    private async Task MergeTeamsAsync()
+    {
+        if (!mergeSourceId.HasValue || !mergeTargetId.HasValue)
+        {
+            return;
+        }
+
+        isBusy = true;
+        mergeError = null;
+        try
+        {
+            using var responseMessage = await Http.PostAsJsonAsync(
+                $"api/admin/teams/{mergeSourceId.Value}/merge",
+                new MergeTeamAdminRequest(mergeTargetId.Value, mergeConfirm));
+            if (!responseMessage.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(responseMessage));
+            }
+
+            var result = await responseMessage.Content.ReadFromJsonAsync<TeamAdminMergeResponse>();
+            selectedForMerge.Clear();
+            mergeDialogOpen = false;
+            selectedTeamId = result?.TargetTeamId;
+            message = "Teams merged. Identity health runs were invalidated and should be rerun.";
+            messageCss = "alert-success";
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            mergeError = ex.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task RemoveTeamAsync(Guid teamId)
+    {
+        if (confirmingRemoveTeamId != teamId)
+        {
+            confirmingRemoveTeamId = teamId;
+            message = "Click Confirm remove again to delete this zero-game team and its aliases.";
+            messageCss = "alert-warning";
+            return;
+        }
+
+        confirmingRemoveTeamId = null;
+        isBusy = true;
+        message = null;
+        try
+        {
+            using var responseMessage = await Http.DeleteAsync($"api/admin/teams/{teamId}");
+            if (!responseMessage.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(responseMessage));
+            }
+
+            selectedForMerge.Remove(teamId);
+            if (selectedTeamId == teamId)
+            {
+                selectedTeamId = null;
+                teamDetail = null;
+            }
+
+            message = "Zero-game team removed.";
+            messageCss = "alert-success";
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SendTeamRequestAsync(HttpMethod method, string uri, object? body, string successMessage)
+    {
+        isBusy = true;
+        message = null;
+        try
+        {
+            using var request = new HttpRequestMessage(method, uri);
+            if (body is not null)
+            {
+                request.Content = JsonContent.Create(body);
+            }
+
+            using var responseMessage = await Http.SendAsync(request);
+            if (!responseMessage.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(responseMessage));
+            }
+
+            teamDetail = await responseMessage.Content.ReadFromJsonAsync<TeamAdminDetail>();
+            message = successMessage;
+            messageCss = "alert-success";
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private string BuildListUri()
+    {
+        var query = new List<string> { $"page={page}", $"pageSize={pageSize}" };
+        Append(query, "country", selectedCountry);
+        Append(query, "search", search);
+        return $"api/admin/teams?{string.Join("&", query)}";
+    }
+
+    private static void Append(List<string> query, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            query.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
+        }
+    }
+
+    private string CountryLabel(string code)
+        => response?.Countries.FirstOrDefault(x => x.Code == code)?.Name ?? code;
+
+    private static string FormatAliasDate(DateTime? dateUtc)
+        => dateUtc?.ToLocalTime().ToString("d") ?? "-";
+
+    private static string AliasUsageTitle(TeamAdminAlias alias)
+        => alias.GameCount == 0
+            ? "No games matched this alias's provider usage window."
+            : $"{alias.GameCount} games across {alias.SeasonCount} seasons.";
+
+    private string GamesHref(Guid teamId)
+        => Navigation.GetUriWithQueryParameters("/games", new Dictionary<string, object?>
+        {
+            ["teamId"] = teamId
+        });
+
+    private static string TeamProfileHref(Guid teamId)
+        => $"/teams/{teamId}";
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase ?? "Request failed." : body;
+    }
+}

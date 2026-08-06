@@ -554,7 +554,13 @@ public class EloRebuildControllerTests
         public Task<IdentityHealthOptionsDto> GetOptionsAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<IdentityHealthCheckRunDto>> GetRunsAsync(IdentityHealthCheckQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<IdentityHealthCheckFindingDto>> GetFindingsAsync(IdentityFindingQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IReadOnlyList<IdentityReviewCandidateDto>> GetReviewCandidatesAsync(IdentityReviewQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IdentityReviewCandidateDto> ResolveReviewCandidateAsync(ResolveIdentityPairRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IReadOnlyList<IdentityDistinctTeamsDecisionDto>> GetDistinctTeamDecisionsAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IdentityEvidenceGamesResponseDto> GetEvidenceGamesAsync(Guid findingId, int limit, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IdentityTeamMergeResultDto> MergeTeamsAsync(Guid sourceTeamId, Guid targetTeamId, bool confirmMergeWithRatings, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IdentityHealthCheckFindingDto> ResolveFindingAsync(Guid findingId, ResolveIdentityFindingRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveDistinctTeamDecisionAsync(Guid leftTeamId, Guid rightTeamId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task DeleteRunAsync(Guid runId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InvalidateChangedScopeAsync(IdentityChangedScope changedScope, CancellationToken cancellationToken) => throw new NotSupportedException();
     }

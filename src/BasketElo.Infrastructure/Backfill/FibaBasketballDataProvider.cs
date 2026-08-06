@@ -34,6 +34,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         {
             ["Europe:FIBA EuroBasket"] = ("208-fiba-eurobasket", "FIBA EuroBasket", "EUR"),
             ["Europe:FIBA European Champions Cup"] = ("112-fiba-mens-european-club-competitions-tier-1", "FIBA European Champions Cup / EuroLeague predecessor", "EUR"),
+            ["Europe:FIBA Saporta Cup"] = ("212-fiba-mens-european-club-competitions-tier-2", "FIBA Saporta Cup / European Cup Winners' Cup predecessor", "EUR"),
             // Keep the SuproLeague alias distinct from the Champions Cup alias even
             // though FIBA publishes both editions in the same history family.
             ["Europe:FIBA SuproLeague"] = ("112-fiba-mens-european-club-competitions-tier-1|suproleague", "FIBA SuproLeague", "EUR"),
@@ -87,7 +88,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         var warnings = new List<string>();
         var (historyFamily, variant) = ParseFamily(league.SourceLeagueId);
         var historyPath = $"/en/history/{historyFamily}";
-        var archiveYear = IsEuropeanChampionsCup(historyFamily) ? year + 1 : year;
+        var archiveYear = IsEuropeanClubCompetition(historyFamily) ? year + 1 : year;
         var editionPaths = KnownEditionPaths(historyFamily, variant, year);
         if (editionPaths is null)
         {
@@ -140,16 +141,19 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         // is the authoritative source for the game-level records.
         var hasUnresolvedTeamCards = warnings.Any(warning =>
             warning.Contains("unresolved TBD/TBC", StringComparison.OrdinalIgnoreCase));
-        if (IsEuropeanChampionsCup(historyFamily) &&
-            games.Count < 50)
+        if (IsEuropeanClubCompetition(historyFamily) &&
+            (games.Count < 50 || IsEuropeanSaportaCup(historyFamily) && hasUnresolvedTeamCards))
         {
-            var wikipediaLanguages = year >= 1996 ? new[] { "en", "es" } : new[] { "es" };
+            var wikipediaLanguages = IsEuropeanSaportaCup(historyFamily)
+                ? new[] { "en" }
+                : year >= 1996 ? new[] { "en", "es" } : new[] { "es" };
             var wikipediaGames = new List<BasketballProviderGame>();
             foreach (var language in wikipediaLanguages)
             {
                 var languageGames = await GetWikipediaGamesAsync(
                     season,
                     language,
+                    IsEuropeanSaportaCup(historyFamily),
                     context,
                     cancellationToken,
                     warnings);
@@ -159,7 +163,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 }
             }
 
-            if (year <= 1990)
+            if (year <= 1990 && !IsEuropeanSaportaCup(historyFamily))
             {
                 var todorGames = await GetTodor66GamesAsync(
                     season,
@@ -174,7 +178,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
             if (wikipediaGames.Count > games.Count)
             {
-                warnings.Add($"FIBA archive was sparse ({games.Count} games); used the richest external score table ({wikipediaGames.Count} games).");
+                warnings.Add($"FIBA archive was sparse or incomplete ({games.Count} games); used the richest external score table ({wikipediaGames.Count} games).");
                 games = wikipediaGames;
             }
             else if (wikipediaGames.Count > 0 && hasUnresolvedTeamCards && year >= 1996)
@@ -232,13 +236,16 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
     private async Task<IReadOnlyCollection<BasketballProviderGame>> GetWikipediaGamesAsync(
         string season,
         string language,
+        bool saportaCup,
         BackfillExecutionContext context,
         CancellationToken cancellationToken,
         ICollection<string> warnings)
     {
         var startYear = ParseStartYear(season);
         var title = language.Equals("en", StringComparison.OrdinalIgnoreCase)
-            ? WikipediaFibaEuropeanChampionsCupParser.EnglishPageTitle(startYear)
+            ? saportaCup
+                ? WikipediaFibaEuropeanChampionsCupParser.SaportaEnglishPageTitle(startYear)
+                : WikipediaFibaEuropeanChampionsCupParser.EnglishPageTitle(startYear)
             : WikipediaFibaEuropeanChampionsCupParser.PageTitle(startYear);
         if (!context.CanUseRequest())
         {
@@ -283,11 +290,26 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         return (parts[0], parts.Length == 2 ? parts[1] : null);
     }
 
-    private static bool IsEuropeanChampionsCup(string family)
-        => family.Equals("112-fiba-mens-european-club-competitions-tier-1", StringComparison.OrdinalIgnoreCase);
+    private static bool IsEuropeanClubCompetition(string family)
+        => family.Equals("112-fiba-mens-european-club-competitions-tier-1", StringComparison.OrdinalIgnoreCase) ||
+           family.Equals("212-fiba-mens-european-club-competitions-tier-2", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEuropeanSaportaCup(string family)
+        => family.Equals("212-fiba-mens-european-club-competitions-tier-2", StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyCollection<string>? KnownEditionPaths(string family, string? variant, int year)
     {
+        if (family.Equals("212-fiba-mens-european-club-competitions-tier-2", StringComparison.OrdinalIgnoreCase))
+        {
+            // The archive's 2002 row also contains the post-Saporta FIBA Europe
+            // Champions Cup. The Siena-winning edition is the second 2002 row.
+            return year switch
+            {
+                2001 => ["/en/history/212-fiba-mens-european-club-competitions-tier-2/2175"],
+                _ => null
+            };
+        }
+
         if (family.Equals("204-fiba-eurobasket-pre-qualifiers", StringComparison.OrdinalIgnoreCase))
         {
             return year switch
@@ -689,6 +711,10 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
         var games = new List<BasketballProviderGame>(cards.Count);
         var fallbackDate = FindCompetitionStartDate(html, year);
+        if (fallbackDate is null || fallbackDate.Value.Year < 1900)
+        {
+            fallbackDate = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        }
         var missingStableLinkCount = 0;
         var missingTeamIdentityCount = 0;
         var unresolvedTeamIdentityCount = 0;
@@ -729,14 +755,13 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             var gameDate = FindCardDate(card);
             if (gameDate is null)
             {
-                if (fallbackDate is null)
-                {
-                    warnings.Add($"Skipped FIBA game {slugParts[0]} because its date heading was not found.");
-                    continue;
-                }
-
                 warnings.Add($"FIBA game {slugParts[0]} had no game date; used the edition start date {fallbackDate:yyyy-MM-dd}.");
-                gameDate = fallbackDate;
+                gameDate = fallbackDate.Value;
+            }
+            else if (gameDate.Value.Year < 1900)
+            {
+                warnings.Add($"FIBA game {slugParts[0]} exposed an invalid pre-1900 date; used the edition start date {fallbackDate:yyyy-MM-dd}.");
+                gameDate = fallbackDate.Value;
             }
 
             var scores = cardTeams is not null && slugParts.Length < 3
@@ -890,7 +915,8 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             var dateMatch = Regex.Match(record, "\"gameDateTimeUTC\":\"(?<date>[^\"]+)\"", RegexOptions.IgnoreCase);
             var round = Regex.Match(record, "\"round\":\\{.*?\"roundCode\":\"(?<code>[^\"]*)\".*?\"roundName\":\"(?<name>[^\"]*)\"", RegexOptions.Singleline | RegexOptions.IgnoreCase);
             if (home is null || away is null || !scores.Success || !dateMatch.Success ||
-                !DateTime.TryParse(dateMatch.Groups["date"].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date))
+                !DateTime.TryParse(dateMatch.Groups["date"].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date) ||
+                date.Year < 1900)
             {
                 continue;
             }
@@ -996,7 +1022,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                     "d MMMM yyyy",
                     CultureInfo.InvariantCulture,
                     DateTimeStyles.None,
-                    out var date))
+                    out var date) && date.Year >= 1900)
                 {
                     return DateTime.SpecifyKind(date, DateTimeKind.Utc);
                 }
@@ -1015,7 +1041,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             "yyyy-MM-dd",
             CultureInfo.InvariantCulture,
             DateTimeStyles.None,
-            out var startDate))
+            out var startDate) && startDate.Year >= 1900)
         {
             return DateTime.SpecifyKind(startDate, DateTimeKind.Utc);
         }

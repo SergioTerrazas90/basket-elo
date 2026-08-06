@@ -8,7 +8,13 @@ public interface IIdentityHealthCheckService
     Task<IdentityHealthOptionsDto> GetOptionsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<IdentityHealthCheckRunDto>> GetRunsAsync(IdentityHealthCheckQuery query, CancellationToken cancellationToken);
     Task<IReadOnlyList<IdentityHealthCheckFindingDto>> GetFindingsAsync(IdentityFindingQuery query, CancellationToken cancellationToken);
+    Task<IReadOnlyList<IdentityReviewCandidateDto>> GetReviewCandidatesAsync(IdentityReviewQuery query, CancellationToken cancellationToken);
+    Task<IdentityReviewCandidateDto> ResolveReviewCandidateAsync(ResolveIdentityPairRequest request, CancellationToken cancellationToken);
+    Task<IReadOnlyList<IdentityDistinctTeamsDecisionDto>> GetDistinctTeamDecisionsAsync(CancellationToken cancellationToken);
+    Task<IdentityEvidenceGamesResponseDto> GetEvidenceGamesAsync(Guid findingId, int limit, CancellationToken cancellationToken);
+    Task<IdentityTeamMergeResultDto> MergeTeamsAsync(Guid sourceTeamId, Guid targetTeamId, bool confirmMergeWithRatings, CancellationToken cancellationToken);
     Task<IdentityHealthCheckFindingDto> ResolveFindingAsync(Guid findingId, ResolveIdentityFindingRequest request, CancellationToken cancellationToken);
+    Task RemoveDistinctTeamDecisionAsync(Guid leftTeamId, Guid rightTeamId, CancellationToken cancellationToken);
     Task DeleteRunAsync(Guid runId, CancellationToken cancellationToken);
     Task InvalidateChangedScopeAsync(IdentityChangedScope changedScope, CancellationToken cancellationToken);
 }
@@ -45,6 +51,15 @@ public class IdentityFindingQuery
     public int Limit { get; set; } = 100;
 }
 
+public class IdentityReviewQuery
+{
+    public Guid? RunId { get; set; }
+    public string? CountryCode { get; set; }
+    public string? TeamCountryCode { get; set; }
+    public string? Status { get; set; } = "open";
+    public int Limit { get; set; } = 250;
+}
+
 public class ResolveIdentityFindingRequest
 {
     public string Action { get; set; } = "resolve";
@@ -52,6 +67,18 @@ public class ResolveIdentityFindingRequest
     public string? CanonicalName { get; set; }
     public string? CountryCode { get; set; }
     public bool? IsActive { get; set; }
+    public bool ConfirmMergeWithRatings { get; set; }
+    public string? ResolvedBy { get; set; }
+    public string? Note { get; set; }
+}
+
+public class ResolveIdentityPairRequest
+{
+    public Guid RunId { get; set; }
+    public Guid LeftTeamId { get; set; }
+    public Guid RightTeamId { get; set; }
+    public string Action { get; set; } = "defer_review";
+    public Guid? TargetTeamId { get; set; }
     public bool ConfirmMergeWithRatings { get; set; }
     public string? ResolvedBy { get; set; }
     public string? Note { get; set; }
@@ -134,3 +161,66 @@ public sealed record IdentityHealthCheckFindingDto(
     string? ResolutionNote,
     DateTime CreatedAtUtc,
     DateTime? ResolvedAtUtc);
+
+public sealed record IdentityEvidenceGameDto(
+    Guid Id,
+    string Source,
+    string SourceGameId,
+    string? SourceUrl,
+    DateTime GameDateTimeUtc,
+    string? CountryCode,
+    string CompetitionName,
+    string Season,
+    string HomeTeamName,
+    string AwayTeamName,
+    short? HomeScore,
+    short? AwayScore,
+    string Status);
+
+public sealed record IdentityEvidenceGamesResponseDto(
+    string FindingType,
+    IdentityEvidenceTeamGamesDto? AffectedTeam,
+    IdentityEvidenceTeamGamesDto? RelatedTeam);
+
+public sealed record IdentityEvidenceTeamGamesDto(
+    Guid TeamId,
+    string DisplayName,
+    string? Source,
+    string? SourceTeamId,
+    IReadOnlyList<IdentityEvidenceGameDto> Games);
+
+public sealed record IdentityTeamMergeResultDto(
+    Guid TargetTeamId,
+    Guid RemovedTeamId,
+    string TargetTeamName);
+
+public sealed record IdentityDistinctTeamsDecisionDto(
+    Guid LeftTeamId,
+    string LeftTeamName,
+    Guid RightTeamId,
+    string RightTeamName,
+    string? Note,
+    string? CreatedBy,
+    DateTime CreatedAtUtc);
+
+public sealed record IdentityReviewTeamDto(
+    Guid Id,
+    string Name,
+    string? CountryCode,
+    bool IsActive,
+    int GameCount,
+    int AliasCount,
+    DateTime? LastGameUtc);
+
+public sealed record IdentityReviewCandidateDto(
+    Guid RunId,
+    string Status,
+    string Severity,
+    IdentityReviewTeamDto LeftTeam,
+    IdentityReviewTeamDto RightTeam,
+    IReadOnlyList<string> FindingTypes,
+    int TotalFindingCount,
+    int OpenFindingCount,
+    Guid PrimaryFindingId,
+    IReadOnlyList<Guid> FindingIds,
+    IReadOnlyList<string> Evidence);

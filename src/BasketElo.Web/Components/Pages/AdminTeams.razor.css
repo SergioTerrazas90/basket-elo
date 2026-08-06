@@ -1,0 +1,263 @@
+.admin-teams-page {
+    display: grid;
+    gap: 1rem;
+}
+
+.team-admin-filters {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) minmax(180px, 0.55fr) 100px auto;
+    gap: 0.75rem;
+    align-items: end;
+    padding: 0.9rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    background: var(--bs-tertiary-bg);
+}
+
+.filter-field {
+    min-width: 0;
+}
+
+.filter-field label {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.8rem;
+}
+
+.team-admin-summary,
+.team-admin-pager,
+.team-merge-actions,
+.team-detail-header,
+.aliases-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.team-admin-summary {
+    color: var(--bs-secondary-color);
+    font-size: 0.85rem;
+}
+
+.team-admin-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.team-admin-table-panel,
+.team-admin-detail-panel {
+    min-width: 0;
+    padding: 0.75rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    background: var(--bs-body-bg);
+}
+
+.team-admin-detail-panel {
+    scroll-margin-top: 1rem;
+}
+
+.team-row-actions,
+.team-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.team-admin-table th,
+.alias-table th {
+    color: var(--bs-secondary-color);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.team-id {
+    display: block;
+    color: var(--bs-secondary-color);
+    font-size: 0.7rem;
+    overflow-wrap: anywhere;
+}
+
+.team-status {
+    display: inline-block;
+    padding: 0.15rem 0.4rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+}
+
+.team-status.active {
+    color: #146c43;
+    background: #d1e7dd;
+}
+
+.team-status.inactive {
+    color: #842029;
+    background: #f8d7da;
+}
+
+.team-detail-header h2 {
+    margin: 0;
+    font-size: 1.35rem;
+}
+
+.team-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    margin: 1rem 0;
+}
+
+.team-metric-grid > div {
+    display: grid;
+    gap: 0.1rem;
+    padding: 0.55rem;
+    border-radius: 0.35rem;
+    background: var(--bs-tertiary-bg);
+}
+
+.team-metric-grid span,
+.team-metric-grid strong {
+    font-size: 0.8rem;
+}
+
+.team-metric-grid span {
+    color: var(--bs-secondary-color);
+}
+
+.team-admin-detail-panel h3 {
+    margin: 1rem 0 0.5rem;
+    font-size: 1rem;
+}
+
+.team-metadata-form {
+    display: grid;
+    grid-template-columns: 1fr 0.7fr auto auto;
+    gap: 0.5rem;
+    align-items: end;
+}
+
+.team-description-field {
+    display: grid;
+    gap: 0.25rem;
+    margin-top: 0.65rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.8rem;
+}
+
+.team-lineage-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+
+.team-lineage-form label {
+    display: grid;
+    gap: 0.25rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.8rem;
+}
+
+.team-lineage-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-top: 0.5rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.8rem;
+}
+
+.team-metadata-form label,
+.team-merge-dialog label {
+    display: grid;
+    gap: 0.25rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.8rem;
+}
+
+.team-active-field {
+    display: flex !important;
+    align-items: center;
+    padding-bottom: 0.45rem;
+    white-space: nowrap;
+}
+
+.aliases-heading {
+    margin-top: 1rem;
+}
+
+.aliases-heading h3 {
+    margin: 0;
+}
+
+.aliases-heading span {
+    color: var(--bs-secondary-color);
+    font-size: 0.8rem;
+}
+
+.alias-add-form {
+    display: grid;
+    grid-template-columns: 0.8fr 1fr 1.2fr auto;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+}
+
+.alias-table {
+    font-size: 0.8rem;
+}
+
+.team-merge-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.58);
+}
+
+.team-merge-dialog {
+    width: min(620px, 100%);
+    padding: 1rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.6rem;
+    background: var(--bs-body-bg);
+    box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.25);
+}
+
+.team-merge-dialog-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.team-merge-dialog-header h2 {
+    margin: 0;
+}
+
+@media (max-width: 1100px) {
+    .team-admin-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 800px) {
+    .team-admin-filters,
+    .team-metadata-form,
+    .team-lineage-form,
+    .alias-add-form {
+        grid-template-columns: 1fr;
+    }
+
+    .team-admin-summary {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

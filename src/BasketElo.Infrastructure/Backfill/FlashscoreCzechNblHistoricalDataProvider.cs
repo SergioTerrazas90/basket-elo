@@ -147,7 +147,6 @@ public sealed class FlashscoreCzechNblHistoricalDataProvider(HttpClient httpClie
             warnings.Add($"Flashscore exposed {games.Count} of {initial.Value.AllEventsCount} listed Czech NBL games for {season}.");
         }
 
-        warnings.Add($"Flashscore parsed {games.Count} distinct Czech NBL game(s) for {season}.");
         return (games.Values
             .OrderBy(game => game.GameDateTimeUtc)
             .ThenBy(game => game.SourceGameId, StringComparer.Ordinal)

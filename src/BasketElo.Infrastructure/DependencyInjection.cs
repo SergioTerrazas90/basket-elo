@@ -182,6 +182,16 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(45);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
         });
+        services.AddHttpClient<EurobasketLithuaniaBasketballDataProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
+        services.AddHttpClient<WikipediaLithuanianCupBasketballDataProvider>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
         services.AddHttpClient<LiveScoreDailyResultsProvider>((serviceProvider, client) =>
         {
             var providerOptions = serviceProvider
@@ -241,6 +251,10 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<BasketballDatabaseBalticLeagueDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<BblWaybackChallengeCupDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<EurobasketLithuaniaBasketballDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<WikipediaLithuanianCupBasketballDataProvider>());
         services.AddSingleton<FiveThirtyEightBasketballDataProvider>();
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<FiveThirtyEightBasketballDataProvider>());

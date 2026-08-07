@@ -91,6 +91,8 @@ public class BackfillCatalog : IBackfillCatalog
         new("api-sports", "France", "LNB Super Cup", "France: LNB Super Cup", "2011", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new("api-sports", "France", "Semaine Des As", "France: Leaders Cup / Semaine des As", "2011", CompetitionType: "domestic_cup"),
         new("api-sports", "Lithuania", "LKL", "Lithuania: LKL", "2011-2012", EndSeason: "2025-2026"),
+        new("eurobasket-lithuania", "Lithuania", "LKL", "Lithuania: LKL", "2008-2009", EndSeason: "2025-2026"),
+        new("wikipedia-lithuanian-cup", "Lithuania", "LKF Cup", "Lithuania: LKF Cup", "2006-2007", CompetitionType: "domestic_cup", EndSeason: "2014-2015"),
         new("api-sports", "Lithuania", "King Mindaugas Cup", "Lithuania: King Mindaugas Cup", "2020-2021", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
         new("api-sports", "Lithuania", "LKF Cup", "Lithuania: LKF Cup", "2018", CompetitionType: "domestic_cup", EndSeason: "2019"),
         new("greek-official", "Greece", "A1", "Greece: A1 / Greek Basket League", "1992-1993", ExplicitSeasons: GreekLeagueHistoricalSeasons()),

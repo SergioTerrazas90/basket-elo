@@ -122,6 +122,12 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(45);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
         });
+        services.AddHttpClient<FlashscoreCzechNblHistoricalDataProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://www.flashscore.com");
+            client.Timeout = TimeSpan.FromSeconds(90);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
         services.AddHttpClient<EuroleagueRHistoricalDataProvider>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(60);
@@ -228,6 +234,8 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<WikipediaUlebCupHistoricalDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<FlashscoreEuroleagueHistoricalDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<FlashscoreCzechNblHistoricalDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<EuroleagueRHistoricalDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>

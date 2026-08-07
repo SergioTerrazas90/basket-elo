@@ -158,6 +158,7 @@ public class BackfillCatalog : IBackfillCatalog
         new("api-sports", "Poland", "PBA Cup", "Poland: PBA Cup", "2015", CompetitionType: "domestic_cup", EndSeason: "2017"),
         new("api-sports", "Poland", "Super Cup", "Poland: Super Cup", "2011", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new("api-sports", "Czech Republic", "NBL", "Czech Republic: NBL", "2008-2009", EndSeason: "2025-2026"),
+        new("flashscore-czech-nbl", "Czech Republic", "NBL", "Czech Republic: NBL", "2000-2001", EndSeason: "2007-2008"),
         new("api-sports", "Czech Republic", "Czech Cup", "Czech Republic: Czech Cup", "2010-2011", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
         new("api-sports", "Russia", "VTB United League Promo-Cup", "Russia: Top Tier", "2010-2011", EndSeason: "2025-2026"),
         new("api-sports", "Russia", "Russian Cup", "Russia: Russian Cup", "2008-2009", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),

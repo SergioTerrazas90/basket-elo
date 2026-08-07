@@ -14,7 +14,7 @@ competition runbook states otherwise. These imports do not rebuild ELOs.
 | --- | --- | --- | --- | ---: |
 | Czech NBL | `flashscore-czech-nbl`; Flashscore results feed with repeated “Show more matches” pagination | 2000-2001 | 2000-2001 through 2007-2008; API-Sports from 2008-2009 | 1,930 |
 | Lithuanian LKL | `eurobasket-lithuania`; Eurobasket team game pages | 2008-2009 | 2008-2009 through 2010-2011; API-Sports from 2011-2012 | 468 |
-| Israeli Super League | `official-israel-basket`; official basket.co.il season and Board selectors | 1953-1954 | 1953-1954 through 2007-2008; API-Sports from 2008-2009 | pending VPS ingestion |
+| Israeli Super League | `official-israel-basket`; official basket.co.il season and Board selectors | 1953-1954 | 1953-1954 through 2007-2008; API-Sports from 2008-2009 | 7,725 league + 16 Winner Cup |
 | Polish PLK / Tauron Basket Liga | `flashscore-poland-plk`; Flashscore results feed with repeated “Show more matches” pagination | 2001-2002 | 2001-2002 through 2007-2008; API-Sports from 2008-2009 | 1,506 |
 | Baltic Basketball League | `basketball-database`; archived league schedules | 2004-2005 | 2004-2005 through 2007-2008; API-Sports from 2009 | catalog-complete historical segment |
 

@@ -146,6 +146,7 @@ public class BackfillCatalog : IBackfillCatalog
         new("api-sports", "Israel", "Israel Cup", "Israel: Israel Cup", "2008-2009", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
         new("api-sports", "Israel", "League Cup", "Israel: League Cup", "2010", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new("api-sports", "Poland", "Tauron Basket Liga", "Poland: PLK", "2008-2009", EndSeason: "2025-2026"),
+        new("flashscore-poland-plk", "Poland", "Tauron Basket Liga", "Poland: PLK", "2001-2002", EndSeason: "2007-2008"),
         new(
             "api-sports",
             "Poland",

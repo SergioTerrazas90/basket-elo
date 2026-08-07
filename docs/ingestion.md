@@ -251,6 +251,10 @@ Cup sources, the 1996-1997 cutoff, and the runtime league-overlap guard.
 See [`german-ingestion.md`](german-ingestion.md) for the German BBL and German
 Cup source boundaries, the 1975-1976 historical cutoff, repair policy, and
 finals-only historical Cup limitation.
+See [`european-historical-ingestion-coverage.md`](european-historical-ingestion-coverage.md)
+for the consolidated Czech NBL, Polish PLK, Lithuanian LKL and Cup, Baltic
+League, and European second-tier historical coverage matrix and verified
+cutoffs.
 
 ## Competition separation and reconciliation
 

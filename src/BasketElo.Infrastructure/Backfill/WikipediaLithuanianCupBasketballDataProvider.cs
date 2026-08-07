@@ -101,13 +101,15 @@ public sealed class WikipediaLithuanianCupBasketballDataProvider(HttpClient http
         }
 
         var cells = row.SelectNodes("./td");
-        if (cells is null || cells.Count < 9)
+        var mergedThirdPlace = cells?.Any(cell => cell.GetAttributeValue("colspan", string.Empty) == "3") == true;
+        if (cells is null || (mergedThirdPlace ? cells.Count < 7 : cells.Count < 9))
         {
             warnings = [$"Wikipedia exposed an incomplete LKF Cup result row for {season}."];
             return games;
         }
 
-        var dates = ParseDateRange(Normalize(cells[8].InnerText), startYear);
+        var dateCell = cells[^1];
+        var dates = ParseDateRange(Normalize(dateCell.InnerText), startYear);
         var finalScores = ParseScores(cells[3].InnerText);
         var champion = NormalizeTeam(cells[2].InnerText);
         var finalist = NormalizeTeam(cells[4].InnerText);
@@ -134,9 +136,9 @@ public sealed class WikipediaLithuanianCupBasketballDataProvider(HttpClient http
             }
         }
 
-        var thirdScores = ParseScores(cells[6].InnerText);
-        var third = NormalizeTeam(cells[5].InnerText);
-        var fourth = NormalizeTeam(cells[7].InnerText);
+        var thirdScores = mergedThirdPlace ? [] : ParseScores(cells[6].InnerText);
+        var third = mergedThirdPlace ? string.Empty : NormalizeTeam(cells[5].InnerText);
+        var fourth = mergedThirdPlace ? string.Empty : NormalizeTeam(cells[7].InnerText);
         if (thirdScores.Count > 0 && !string.IsNullOrWhiteSpace(third) && !string.IsNullOrWhiteSpace(fourth) &&
             !third.Contains("No 3rd", StringComparison.OrdinalIgnoreCase))
         {
@@ -193,7 +195,17 @@ public sealed class WikipediaLithuanianCupBasketballDataProvider(HttpClient http
         var years = Regex.Matches(Normalize(label ?? string.Empty), @"\d{4}")
             .Select(match => int.Parse(match.Value, CultureInfo.InvariantCulture))
             .ToArray();
-        return years.Length > 0 && years[0] == (startYear <= 2009 ? startYear + 1 : startYear);
+        var expectedSourceYear = startYear switch
+        {
+            <= 2009 => startYear + 1,
+            2010 => 2010,
+            2011 => 2011,
+            2012 => 2012,
+            2013 => 2013,
+            2014 => 2015,
+            _ => startYear
+        };
+        return years.Length > 0 && years[0] == expectedSourceYear;
     }
 
     private static List<(short Home, short Away)> ParseScores(string value)

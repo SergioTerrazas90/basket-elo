@@ -109,3 +109,10 @@ archive's later-season median; they are not parser failures.
 
 The Winner Cup contributes 8 games in both 2006-2007 and 2007-2008. No
 pre-2008 Supercup board was exposed by the official selector.
+
+The provider preserves the official date text verbatim. A small number of
+early archive rows have dates that do not align with their selected season
+(for example, several 1957-1958 records are dated May 1968 on the official
+page). Those records are imported with their source dates and should be
+reviewed before any future historical ELO rebuild; they are source-quality
+findings, not silently corrected values.

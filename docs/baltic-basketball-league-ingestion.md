@@ -12,8 +12,9 @@ historical and modern coverage as separate provider segments:
 The historical provider reads the Basketball Database season pages for the
 four pre-2008 editions. It imports scored schedule rows and preserves the
 archive's phase labels where exposed. The 2007-2008 Challenge Cup is a
-separate division, so its complete 110-game regular season and four-game
-Final Four are recovered from the archived official BBL game pages.
+separate division. The archived official BBL pages yielded 28 complete games;
+the remaining archived pages were incomplete and were retained as provider
+warnings rather than invented or counted as finished results.
 
 Source archive: [Basketball Database Baltic Basketball League](https://basketball-database.com.court-side.com/csgc/leagues/0/2369).
 

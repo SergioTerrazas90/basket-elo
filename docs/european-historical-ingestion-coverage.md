@@ -14,7 +14,7 @@ competition runbook states otherwise. These imports do not rebuild ELOs.
 | --- | --- | --- | --- | ---: |
 | Czech NBL | `flashscore-czech-nbl`; Flashscore results feed with repeated “Show more matches” pagination | 2000-2001 | 2000-2001 through 2007-2008; API-Sports from 2008-2009 | 1,930 |
 | Lithuanian LKL | `eurobasket-lithuania`; Eurobasket team game pages | 2008-2009 | 2008-2009 through 2010-2011; API-Sports from 2011-2012 | 468 |
-| Polish PLK / Tauron Basket Liga | `flashscore-poland-plk`; Flashscore results feed with repeated “Show more matches” pagination | 2001-2002 | 2001-2002 through 2007-2008; API-Sports from 2008-2009 | pending final VPS verification |
+| Polish PLK / Tauron Basket Liga | `flashscore-poland-plk`; Flashscore results feed with repeated “Show more matches” pagination | 2001-2002 | 2001-2002 through 2007-2008; API-Sports from 2008-2009 | 1,506 |
 | Baltic Basketball League | `basketball-database`; archived league schedules | 2004-2005 | 2004-2005 through 2007-2008; API-Sports from 2009 | catalog-complete historical segment |
 
 “Clean source cutoff” means the earliest season for which the configured
@@ -36,6 +36,25 @@ The Czech NBL season-level verification is:
 | 2006-2007 | 289 | 2006-10-09 | 2007-06-09 | completed, no warnings |
 | 2007-2008 | 293 | 2007-10-03 | 2008-06-07 | completed, no warnings |
 
+The Polish PLK season-level verification is:
+
+| Season | Games | First game date | Last game date | Status |
+| --- | ---: | --- | --- | --- |
+| 2001-2002 | 249 | 2001-09-19 | 2002-05-22 | completed, no warnings |
+| 2002-2003 | 233 | 2002-09-20 | 2003-06-14 | completed, no warnings |
+| 2003-2004 | 186 | 2003-10-10 | 2004-05-18 | completed, no warnings |
+| 2004-2005 | 171 | 2004-10-15 | 2005-06-01 | completed, no warnings |
+| 2005-2006 | 217 | 2005-10-14 | 2006-05-19 | completed, no warnings |
+| 2006-2007 | 246 | 2006-10-13 | 2007-05-31 | completed, no warnings |
+| 2007-2008 | 204 | 2007-10-12 | 2008-06-04 | completed, no warnings |
+
+For Poland, 2001-2002 is the clean cutoff because it is the earliest
+Flashscore season page requested and it exposed 249/249 listed results after
+the additional batches were loaded. No earlier PLK season is claimed by this
+source segment. The later API-Sports segment begins at 2008-2009, so the
+documented historical/modern join is explicit rather than inferred from a
+catalog start-date label.
+
 The LKL historical provider was used only where the Eurobasket team pages
 were the cleanest available pre-API-Sports source. The existing LKL result is
 127 games in 2008-2009, 175 in 2009-2010, and 166 in 2010-2011. The Lithuanian
@@ -43,7 +62,9 @@ Cup provider is a separate finals-focused historical competition and must not
 be added to LKL season totals.
 
 For Baltic coverage, the 2007-2008 Challenge Cup is a separate competition
-and is recovered from the archived official BBL pages. See
+and was recovered from the archived official BBL pages as 28 complete games.
+The last run completed with warnings because many archived game pages were
+incomplete; it is not documented as a complete 110-game regular season. See
 [`baltic-basketball-league-ingestion.md`](baltic-basketball-league-ingestion.md).
 
 ## Lithuanian Cup
@@ -79,4 +100,3 @@ the actual import. A clean job means the provider reached the source's own
 listed result count; it does not mean the source has coverage before the
 documented cutoff. Keep the source URL and parser version on every imported
 game so that a later repair can be limited to the affected provider.
-

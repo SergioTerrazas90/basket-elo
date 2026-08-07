@@ -19,7 +19,7 @@ public sealed class FlashscorePolandBasketLigaHistoricalDataProvider(HttpClient 
     private const int FirstSeason = 2001;
     private const int LastSeason = 2007;
     private static readonly Regex InitialResultsPattern = new(
-        """cjs\.initialFeeds\[(?:['"]results['"]|['"]summary-results['"] )\]\s*=\s*\{\s*data:\s*`(?<data>[\s\S]*?)`,\s*allEventsCount:\s*(?<count>\d+),\s*seasonId:\s*(?<season>\d+)""".Replace("['\"]summary-results['\"] )", "['\"]summary-results['\"])") ,
+        """cjs\.initialFeeds\[(?:['"]results['"]|['"]summary-results['"])\]\s*=\s*\{\s*data:\s*`(?<data>[\s\S]*?)`,\s*allEventsCount:\s*(?<count>\d+),\s*seasonId:\s*(?<season>\d+)""",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex FeedSignPattern = new(
         """(?:feed_sign|feed-sign)\s*["']?\s*[:=]\s*["'](?<sign>[A-Za-z0-9_-]+)["']""",

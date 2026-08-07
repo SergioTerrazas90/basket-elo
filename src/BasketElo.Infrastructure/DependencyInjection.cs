@@ -134,6 +134,12 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(90);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
         });
+        services.AddHttpClient<OfficialIsraelBasketballDataProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://basket.co.il");
+            client.Timeout = TimeSpan.FromSeconds(90);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BasketElo historical-ingest/1.0");
+        });
         services.AddHttpClient<EuroleagueRHistoricalDataProvider>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(60);
@@ -244,6 +250,8 @@ public static class DependencyInjection
             serviceProvider.GetRequiredService<FlashscoreCzechNblHistoricalDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<FlashscorePolandBasketLigaHistoricalDataProvider>());
+        services.AddScoped<IBasketballDataProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<OfficialIsraelBasketballDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<EuroleagueRHistoricalDataProvider>());
         services.AddScoped<IBasketballDataProvider>(serviceProvider =>

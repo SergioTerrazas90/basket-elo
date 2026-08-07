@@ -49,6 +49,7 @@ public class BackfillController(
              !string.Equals(request.Provider, FlashscoreEuroleagueHistoricalDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, FlashscoreCzechNblHistoricalDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, FlashscorePolandBasketLigaHistoricalDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(request.Provider, OfficialIsraelBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, EuroleagueRHistoricalDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, GlobalSportsArchiveBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, LbaOfficialSerieABasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
@@ -65,7 +66,7 @@ public class BackfillController(
              !string.Equals(request.Provider, WikipediaLithuanianCupBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
              !string.Equals(request.Provider, WikipediaEuroBasketQualificationDataProvider.Source, StringComparison.OrdinalIgnoreCase)))
         {
-            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba', 'wikipedia-euroleague', 'wikipedia-uleb-cup', 'flashscore-czech-nbl', 'flashscore-poland-plk', 'global-sports-archive', 'basketball-database', 'bbl-wayback', 'eurobasket-lithuania', 'wikipedia-lithuanian-cup', 'lba-official', 'aba-official', 'wikipedia-italian-cup', 'wikipedia-german-cup', 'french-historical', 'german-official', 'turkish-historical', 'serbian-historical' and 'wikipedia'.");
+            return BadRequest("Supported providers are 'api-sports', 'basketball-reference', 'fivethirtyeight', 'fiba', 'wikipedia-euroleague', 'wikipedia-uleb-cup', 'flashscore-czech-nbl', 'flashscore-poland-plk', 'official-israel-basket', 'global-sports-archive', 'basketball-database', 'bbl-wayback', 'eurobasket-lithuania', 'wikipedia-lithuanian-cup', 'lba-official', 'aba-official', 'wikipedia-italian-cup', 'wikipedia-german-cup', 'french-historical', 'german-official', 'turkish-historical', 'serbian-historical' and 'wikipedia'.");
         }
 
         var job = BuildJob(request, FindConfiguredLeague(request.Provider, request.Country, request.LeagueName));

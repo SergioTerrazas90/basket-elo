@@ -255,6 +255,8 @@ See [`european-historical-ingestion-coverage.md`](european-historical-ingestion-
 for the consolidated Czech NBL, Polish PLK, Lithuanian LKL and Cup, Baltic
 League, and European second-tier historical coverage matrix and verified
 cutoffs.
+See [`israel-ingestion.md`](israel-ingestion.md) for the official Israeli
+season/stage selector mapping, 1953-1954 cutoff, and source gaps.
 
 ## Competition separation and reconciliation
 

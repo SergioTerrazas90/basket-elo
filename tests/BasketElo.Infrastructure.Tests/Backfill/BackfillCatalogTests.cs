@@ -326,7 +326,7 @@ public class BackfillCatalogTests
     }
 
     [Fact]
-    public void GlobalSportsArchiveAfroBasketIsThePrimaryInternationalSource()
+    public void AfroBasketFibaMappingsIncludeTheValidated2021And2025Editions()
     {
         var catalog = new BackfillCatalog();
         var source = Assert.Single(catalog.GetLeagues(), league =>
@@ -336,10 +336,62 @@ public class BackfillCatalogTests
 
         Assert.Contains("2003", catalog.GetSeasonsForLeague(source));
         Assert.Contains("2025", catalog.GetSeasonsForLeague(source));
-        Assert.DoesNotContain(catalog.GetLeagues(), league =>
+        var fibaSource = Assert.Single(catalog.GetLeagues(), league =>
             league.Provider == FibaBasketballDataProvider.Source &&
             league.Country == "Africa" &&
             league.LeagueName == "FIBA AfroBasket");
+        Assert.Equal(["1962", "1964", "1965", "1968", "1970", "1972", "1974", "1975", "1978", "1980", "1981", "1983", "1985", "1987", "1989", "1993", "1995", "1997", "1999", "2001", "2005", "2007", "2009", "2011", "2013", "2015", "2017", "2021", "2025"], catalog.GetSeasonsForLeague(fibaSource));
+
+        var fibaQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Africa" &&
+            league.LeagueName == "FIBA AfroBasket Qualifiers");
+        Assert.Equal(["2005", "2007", "2009", "2011", "2013", "2015", "2017", "2021", "2025"], catalog.GetSeasonsForLeague(fibaQualifiers));
+
+        var fibaPreQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Africa" &&
+            league.LeagueName == "FIBA AfroBasket Pre-Qualifiers");
+        Assert.Equal(["2021", "2025"], catalog.GetSeasonsForLeague(fibaPreQualifiers));
+    }
+
+    [Fact]
+    public void AsiaCupFibaCatalogSeparatesFinalsQualifiersAndPreQualifiers()
+    {
+        var catalog = new BackfillCatalog();
+        var finals = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Asia" &&
+            league.LeagueName == "FIBA Asia Cup");
+        var qualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Asia" &&
+            league.LeagueName == "FIBA Asia Cup Qualifiers");
+        var preQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Asia" &&
+            league.LeagueName == "FIBA Asia Cup Pre-Qualifiers");
+
+        Assert.Contains("2025", catalog.GetSeasonsForLeague(finals));
+        Assert.Contains("2002", catalog.GetSeasonsForLeague(finals));
+        Assert.Equal(["2021", "2025"], catalog.GetSeasonsForLeague(qualifiers));
+        Assert.Equal(["2021", "2025"], catalog.GetSeasonsForLeague(preQualifiers));
+        Assert.Equal(EloPoolKeys.NationalTeams, finals.EloPoolKey);
+        Assert.True(finals.UsesSingleYearSeasonLabel);
+    }
+
+    [Fact]
+    public void WorldCupFibaCatalogIncludesPreQualifierCycles()
+    {
+        var catalog = new BackfillCatalog();
+        var preQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "World" &&
+            league.LeagueName == "FIBA Basketball World Cup Pre-Qualifiers");
+
+        Assert.True(preQualifiers.UsesSingleYearSeasonLabel);
+        Assert.Equal(["2019", "2023", "2027"], catalog.GetSeasonsForLeague(preQualifiers));
+        Assert.Equal(EloPoolKeys.NationalTeams, preQualifiers.EloPoolKey);
     }
 
     [Fact]
@@ -354,6 +406,128 @@ public class BackfillCatalogTests
         Assert.True(source.UsesSingleYearSeasonLabel);
         Assert.Equal(["2021", "2025"], catalog.GetSeasonsForLeague(source));
         Assert.Equal(EloPoolKeys.NationalTeams, source.EloPoolKey);
+    }
+
+    [Fact]
+    public void AmeriCupCatalogSeparatesFibaAndGsaStages()
+    {
+        var catalog = new BackfillCatalog();
+        var fibaFinals = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Americas" &&
+            league.LeagueName == "FIBA AmeriCup");
+        var fibaQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Americas" &&
+            league.LeagueName == "FIBA AmeriCup Qualifiers");
+        var fibaPreQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Americas" &&
+            league.LeagueName == "FIBA AmeriCup Pre-Qualifiers");
+        var gsaPreQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == GlobalSportsArchiveBasketballDataProvider.Source &&
+            league.Country == "Americas" &&
+            league.LeagueName == "FIBA AmeriCup Pre-Qualifiers");
+
+        Assert.Contains("2025", catalog.GetSeasonsForLeague(fibaFinals));
+        Assert.Equal(["2022", "2025"], catalog.GetSeasonsForLeague(fibaQualifiers));
+        Assert.Equal(["2022", "2025", "2029"], catalog.GetSeasonsForLeague(fibaPreQualifiers));
+        Assert.Equal(["2022", "2025"], catalog.GetSeasonsForLeague(gsaPreQualifiers));
+        Assert.Equal(EloPoolKeys.NationalTeams, fibaFinals.EloPoolKey);
+        Assert.True(fibaFinals.UsesSingleYearSeasonLabel);
+    }
+
+    [Fact]
+    public void OlympicsCatalogSeparatesFinalsQualifiersAndPreQualifiers()
+    {
+        var catalog = new BackfillCatalog();
+        var fibaFinals = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "World" &&
+            league.LeagueName == "Summer Olympics");
+        var fibaQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "World" &&
+            league.LeagueName == "Olympics Qualification");
+        var fibaPreQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "World" &&
+            league.LeagueName == "Olympics Pre-Qualification");
+        var gsaPreQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == GlobalSportsArchiveBasketballDataProvider.Source &&
+            league.Country == "World" &&
+            league.LeagueName == "Olympics Pre-Qualification");
+
+        Assert.Contains("1948", catalog.GetSeasonsForLeague(fibaFinals));
+        Assert.Contains("2024", catalog.GetSeasonsForLeague(fibaFinals));
+        Assert.Contains("2020", catalog.GetSeasonsForLeague(fibaQualifiers));
+        Assert.Contains("2024", catalog.GetSeasonsForLeague(fibaQualifiers));
+        Assert.Contains("2024", catalog.GetSeasonsForLeague(fibaPreQualifiers));
+        Assert.Equal(["2024"], catalog.GetSeasonsForLeague(gsaPreQualifiers));
+        Assert.Equal(EloPoolKeys.NationalTeams, fibaFinals.EloPoolKey);
+        Assert.True(fibaFinals.UsesSingleYearSeasonLabel);
+    }
+
+    [Fact]
+    public void WorldCupCatalogSeparatesFibaFinalsAndQualifiers()
+    {
+        var catalog = new BackfillCatalog();
+        var fibaFinals = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "World" &&
+            league.LeagueName == "FIBA Basketball World Cup");
+        var fibaQualifiers = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "World" &&
+            league.LeagueName == "FIBA Basketball World Cup Qualifiers");
+
+        Assert.Equal(["1950", "1954", "1959", "1963", "1967", "1970", "1974", "1978", "1982", "1986", "1990", "1994", "1998", "2002", "2006", "2010", "2014", "2019", "2023"], catalog.GetSeasonsForLeague(fibaFinals));
+        Assert.Equal(["2019", "2023", "2027"], catalog.GetSeasonsForLeague(fibaQualifiers));
+        Assert.Equal(EloPoolKeys.NationalTeams, fibaFinals.EloPoolKey);
+        Assert.Equal(EloPoolKeys.NationalTeams, fibaQualifiers.EloPoolKey);
+        Assert.True(fibaFinals.UsesSingleYearSeasonLabel);
+        Assert.True(fibaQualifiers.UsesSingleYearSeasonLabel);
+    }
+
+    [Fact]
+    public void OceaniaCatalogCoversOfficialMenSeniorEditionsAsOneFibaFamily()
+    {
+        var catalog = new BackfillCatalog();
+        var oceania = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source &&
+            league.Country == "Oceania" &&
+            league.LeagueName == "FIBA Oceania Championship");
+
+        Assert.Equal(
+            ["1971", "1975", "1978", "1979", "1981", "1983", "1985", "1987", "1989", "1991", "1993", "1995", "1997", "1999", "2001", "2003", "2005", "2007", "2009", "2011", "2013", "2015"],
+            catalog.GetSeasonsForLeague(oceania));
+        Assert.Equal(EloPoolKeys.NationalTeams, oceania.EloPoolKey);
+        Assert.True(oceania.UsesSingleYearSeasonLabel);
+    }
+
+    [Fact]
+    public void AmericasRegionalCatalogKeepsEachFibaFamilySeparate()
+    {
+        var catalog = new BackfillCatalog();
+        var centrobasket = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source && league.LeagueName == "Centrobasket Championship");
+        var cocaba = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source && league.LeagueName == "COCABA Championship");
+        var southAmerican = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source && league.LeagueName == "South American Championship");
+        var caribbean = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FibaBasketballDataProvider.Source && league.LeagueName == "Caribbean Basketball Championship");
+
+        Assert.Equal(["1965", "1967", "1969", "1971", "1973", "1975", "1977", "1981", "1985", "1987", "1989", "1991", "1993", "1995", "1997", "1998", "1999", "2001", "2002", "2003", "2004", "2006", "2008", "2010", "2012", "2014", "2016"], catalog.GetSeasonsForLeague(centrobasket));
+        Assert.Equal(["2003", "2004", "2006", "2007", "2009", "2011", "2013", "2015"], catalog.GetSeasonsForLeague(cocaba));
+        Assert.Equal(["1932", "1942", "1943", "1987", "1989", "1991", "1993", "1995", "1997", "1999", "2001", "2003", "2004", "2006", "2008", "2010", "2011", "2012", "2014", "2015", "2016"], catalog.GetSeasonsForLeague(southAmerican));
+        Assert.Equal(["2004", "2006", "2007", "2009", "2011", "2014", "2015"], catalog.GetSeasonsForLeague(caribbean));
+        Assert.All(new[] { centrobasket, cocaba, southAmerican, caribbean }, league =>
+        {
+            Assert.Equal("Americas", league.Country);
+            Assert.Equal(EloPoolKeys.NationalTeams, league.EloPoolKey);
+            Assert.True(league.UsesSingleYearSeasonLabel);
+        });
     }
 
     [Fact]

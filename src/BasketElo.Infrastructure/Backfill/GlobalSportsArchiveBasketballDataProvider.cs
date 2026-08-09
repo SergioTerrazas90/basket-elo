@@ -81,8 +81,10 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
                 }),
             ["summer-olympics"] = new(SummerOlympicsSeedPath, "summer-olympics"),
             ["olympics-qualification"] = new(OlympicsQualificationSeedPath, "olympics-qualification"),
+            ["olympics-pre-qualification"] = new(OlympicsQualificationSeedPath, "olympics-qualification"),
             ["fiba-americup"] = new(AmeriCupSeedPath, "fiba-americup|fiba-americas-championship|tournament-of-the-americas"),
             ["fiba-americup-qualification"] = new(AmeriCupQualificationSeedPath, "fiba-americup-qualification"),
+            ["fiba-americup-pre-qualifiers"] = new(AmeriCupQualificationSeedPath, "fiba-americup-qualification"),
             ["fiba-basketball-world-cup"] = new("/competition/basketball/fiba-basketball-world-cup-2023-philippines-japan-indonesia/group-stage/75848/", "fiba-basketball-world-cup|fiba-world-championship")
         };
 
@@ -103,8 +105,13 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
             ["World|FIBA Basketball World Cup"] = "fiba-basketball-world-cup",
             ["World|Summer Olympics"] = "summer-olympics",
             ["World|Olympics Qualification"] = "olympics-qualification",
+            ["World|Olympics Pre-Qualification"] = "olympics-pre-qualification",
             ["World|FIBA AmeriCup"] = "fiba-americup",
-            ["World|FIBA AmeriCup Qualification"] = "fiba-americup-qualification"
+            ["World|FIBA AmeriCup Qualification"] = "fiba-americup-qualification",
+            ["Americas|FIBA AmeriCup"] = "fiba-americup",
+            ["Americas|FIBA AmeriCup Qualification"] = "fiba-americup-qualification",
+            ["Americas|FIBA AmeriCup Qualifiers"] = "fiba-americup-qualification",
+            ["Americas|FIBA AmeriCup Pre-Qualifiers"] = "fiba-americup-pre-qualifiers"
         };
 
     private static readonly IReadOnlyDictionary<string, TeamIdentity> TeamIdentities =
@@ -309,6 +316,12 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
             }
         }
 
+        var isAmeriCupQualification = league.SourceLeagueId.Equals("fiba-americup-qualification", StringComparison.OrdinalIgnoreCase);
+        var isAmeriCupPreQualification = league.SourceLeagueId.Equals("fiba-americup-pre-qualifiers", StringComparison.OrdinalIgnoreCase);
+        var isOlympicsQualification = league.SourceLeagueId.Equals("olympics-qualification", StringComparison.OrdinalIgnoreCase) &&
+            league.Name.Equals("Olympics Qualification", StringComparison.OrdinalIgnoreCase);
+        var isOlympicsPreQualification = league.SourceLeagueId.Equals("olympics-qualification", StringComparison.OrdinalIgnoreCase) &&
+            league.Name.Equals("Olympics Pre-Qualification", StringComparison.OrdinalIgnoreCase);
         var games = new Dictionary<string, BasketballProviderGame>(StringComparer.Ordinal);
         foreach (var stagePath in stagePaths.OrderBy(StageOrder).ThenBy(path => path, StringComparer.OrdinalIgnoreCase))
         {
@@ -390,6 +403,14 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
                 {
                     foreach (var game in ParseGames(pagedDocument.Content, pagedDocument.FetchedAtUtc, pagedDocument.Revision, stagePath, year, warnings))
                     {
+                        if (isAmeriCupQualification && !IsAmeriCupQualifierGame(game) ||
+                            isAmeriCupPreQualification && !IsAmeriCupPreQualifierGame(game) ||
+                            isOlympicsQualification && IsOlympicPreQualifierGame(game) ||
+                            isOlympicsPreQualification && !IsOlympicPreQualifierGame(game))
+                        {
+                            continue;
+                        }
+
                         games[game.SourceGameId] = game;
                     }
                 }
@@ -684,6 +705,27 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
             name,
             tla.Length == 3 ? tla.ToUpperInvariant() : null);
     }
+
+    private static bool IsAmeriCupPreQualifierGame(BasketballProviderGame game)
+    {
+        var round = $"{game.CompetitionPhase} {game.CompetitionRound}".ToLowerInvariant();
+        return round.Contains("pre-qual", StringComparison.Ordinal) ||
+            round.Contains("prequal", StringComparison.Ordinal) ||
+            round.Contains("caribbean", StringComparison.Ordinal) ||
+            round.Contains("central-america", StringComparison.Ordinal) ||
+            round.Contains("south-america", StringComparison.Ordinal);
+    }
+
+    private static bool IsAmeriCupQualifierGame(BasketballProviderGame game)
+        => !IsAmeriCupPreQualifierGame(game) &&
+            $"{game.CompetitionPhase} {game.CompetitionRound}"
+                .Contains("qualif", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsOlympicPreQualifierGame(BasketballProviderGame game)
+        => $"{game.CompetitionPhase} {game.CompetitionRound}"
+            .Contains("pre-qual", StringComparison.OrdinalIgnoreCase) ||
+           $"{game.CompetitionPhase} {game.CompetitionRound}"
+            .Contains("prequal", StringComparison.OrdinalIgnoreCase);
 
     private static (string Phase, string Round) StageFromPath(string path)
     {

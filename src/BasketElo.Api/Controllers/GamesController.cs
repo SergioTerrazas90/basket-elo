@@ -93,6 +93,8 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         [FromQuery] string? source,
         [FromQuery] string? leagueName,
         [FromQuery] string? season,
+        [FromQuery] string? tournamentCycle,
+        [FromQuery] int? playedYear,
         [FromQuery] string? status,
         [FromQuery] Guid? teamId,
         [FromQuery] string? team,
@@ -111,6 +113,9 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             .AsNoTracking()
             .Include(x => x.Competition)
             .Include(x => x.Season)
+            .Include(x => x.TournamentCycle)
+            .Include(x => x.TournamentCycleLinks)
+                .ThenInclude(x => x.TournamentCycle)
             .Include(x => x.HomeTeam)
             .Include(x => x.AwayTeam)
             .AsQueryable();
@@ -132,12 +137,37 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(leagueName))
         {
-            query = query.Where(x => x.Competition.Name == leagueName);
+            var requestedLeague = leagueName.Trim();
+            var isWorldCupQualifierAlias = requestedLeague.Equals(
+                "FIBA Basketball World Cup Qualifiers",
+                StringComparison.OrdinalIgnoreCase);
+            query = isWorldCupQualifierAlias
+                ? query.Where(x =>
+                    x.Competition.Name == requestedLeague ||
+                    x.TournamentCycleLinks.Any(link =>
+                        link.Stage == "qualifier" &&
+                        link.TournamentCycle.Family == "FIBA Basketball World Cup"))
+                : query.Where(x => x.Competition.Name == requestedLeague);
         }
 
         if (!string.IsNullOrWhiteSpace(season))
         {
             query = ApplySeasonFilter(query, season);
+        }
+
+        if (!string.IsNullOrWhiteSpace(tournamentCycle))
+        {
+            var cycleKey = tournamentCycle.Trim();
+            query = query.Where(x =>
+                (x.TournamentCycle != null && x.TournamentCycle.Key == cycleKey) ||
+                x.TournamentCycleLinks.Any(link => link.TournamentCycle.Key == cycleKey));
+        }
+
+        if (playedYear is >= 1 and <= 9999)
+        {
+            var startUtc = new DateTime(playedYear.Value, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var endUtc = startUtc.AddYears(1);
+            query = query.Where(x => x.GameDateTimeUtc >= startUtc && x.GameDateTimeUtc < endUtc);
         }
 
         if (!string.IsNullOrWhiteSpace(status))
@@ -201,6 +231,12 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
                 x.Competition.CountryCode,
                 LeagueName = x.Competition.Name,
                 Season = x.Season.Label,
+                TournamentCycle = x.TournamentCycleLinks
+                    .OrderBy(link => link.TournamentCycle.DisplayName)
+                    .Select(link => link.TournamentCycle.DisplayName)
+                    .FirstOrDefault() ?? (x.TournamentCycle == null ? null : x.TournamentCycle.DisplayName),
+                x.CompetitionPhase,
+                x.CompetitionRound,
                 HomeTeam = x.HomeTeam.CanonicalName,
                 AwayTeam = x.AwayTeam.CanonicalName,
                 x.HomeScore,
@@ -221,6 +257,9 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
                 DisplayCountryFromCode(x.CountryCode),
                 x.LeagueName,
                 x.Season,
+                x.TournamentCycle,
+                x.CompetitionPhase,
+                x.CompetitionRound,
                 x.HomeTeam,
                 x.AwayTeam,
                 x.HomeScore,
@@ -322,13 +361,46 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             .Distinct()
             .OrderBy(x => x)
             .ToListAsync(cancellationToken);
+        var hasHistoricalWorldCupQualifierLinks = await baseQuery
+            .AnyAsync(x => x.TournamentCycleLinks.Any(link =>
+                link.Stage == "qualifier" &&
+                link.TournamentCycle.Family == "FIBA Basketball World Cup"), cancellationToken);
+        if (hasHistoricalWorldCupQualifierLinks &&
+            !leagues.Contains("FIBA Basketball World Cup Qualifiers", StringComparer.OrdinalIgnoreCase))
+        {
+            leagues.Add("FIBA Basketball World Cup Qualifiers");
+            leagues.Sort(StringComparer.Ordinal);
+        }
 
         var seasons = await baseQuery
-            .Select(x => new
+            .Select(x => x.Season.Label)
+            .ToListAsync(cancellationToken);
+
+        var primaryTournamentCycleRows = baseQuery
+            .Where(x => x.TournamentCycle != null)
+            .Select(x => new { x.TournamentCycle!.Key, x.TournamentCycle.DisplayName })
+            .Distinct();
+        var linkedTournamentCycleRows = baseQuery
+            .SelectMany(x => x.TournamentCycleLinks.Select(link => new
             {
-                x.Season.Label,
-                x.GameDateTimeUtc
-            })
+                link.TournamentCycle.Key,
+                link.TournamentCycle.DisplayName
+            }));
+        var tournamentCycleRows = await primaryTournamentCycleRows
+            .Concat(linkedTournamentCycleRows)
+            .Distinct()
+            .OrderBy(x => x.DisplayName)
+            .ToListAsync(cancellationToken);
+
+        var tournamentCycles = tournamentCycleRows
+            .Select(x => new TournamentCycleOption(x.Key, x.DisplayName))
+            .ToList();
+
+        var playedYears = await baseQuery
+            .Where(x => x.GameDateTimeUtc != DateTime.MinValue && x.GameDateTimeUtc != DateTime.MaxValue)
+            .Select(x => x.GameDateTimeUtc.Year)
+            .Distinct()
+            .OrderByDescending(x => x)
             .ToListAsync(cancellationToken);
 
         var statuses = await baseQuery
@@ -340,9 +412,11 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         return new GameFilterOptions(
             countries.Select(DisplayCountryFromCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x).ToList(),
             leagues,
-            seasons.Select(x => NormalizeSeasonLabel(x.Label, x.GameDateTimeUtc)).Distinct().OrderByDescending(x => x).ToList(),
+            seasons.Distinct().OrderByDescending(x => x).ToList(),
             statuses,
-            await baseQuery.Select(x => x.Source).Distinct().OrderBy(x => x).ToListAsync(cancellationToken));
+            await baseQuery.Select(x => x.Source).Distinct().OrderBy(x => x).ToListAsync(cancellationToken),
+            tournamentCycles,
+            playedYears);
     }
 
     private static IQueryable<Domain.Entities.Game> ApplyReviewFilter(
@@ -428,21 +502,7 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
     }
 
     private static IQueryable<Domain.Entities.Game> ApplySeasonFilter(IQueryable<Domain.Entities.Game> query, string season)
-    {
-        var normalized = NormalizeSeasonLabel(season);
-        if (!TryGetSeasonWindow(normalized, out var seasonStartUtc, out var seasonEndUtc))
-        {
-            return query.Where(x => x.Season.Label == normalized);
-        }
-
-        SetSingleYearSeasonLabels(normalized, out var previousSingleYearSeasonLabel, out var currentSingleYearSeasonLabel);
-        return query.Where(x =>
-            x.Season.Label == normalized ||
-            x.Season.Label == currentSingleYearSeasonLabel ||
-            (x.GameDateTimeUtc >= seasonStartUtc &&
-             x.GameDateTimeUtc <= seasonEndUtc &&
-             x.Season.Label != previousSingleYearSeasonLabel));
-    }
+        => query.Where(x => x.Season.Label == season.Trim());
 
     private static string NormalizeSeasonLabel(string season, DateTime? gameDateTimeUtc = null)
     {

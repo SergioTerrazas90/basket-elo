@@ -18,6 +18,9 @@ public record GameListItem(
     string Country,
     string LeagueName,
     string Season,
+    string? TournamentCycle,
+    string? CompetitionPhase,
+    string? CompetitionRound,
     string HomeTeam,
     string AwayTeam,
     short? HomeScore,
@@ -33,7 +36,11 @@ public record GameFilterOptions(
     IReadOnlyCollection<string> Leagues,
     IReadOnlyCollection<string> Seasons,
     IReadOnlyCollection<string> Statuses,
-    IReadOnlyCollection<string> Sources);
+    IReadOnlyCollection<string> Sources,
+    IReadOnlyCollection<TournamentCycleOption> TournamentCycles,
+    IReadOnlyCollection<int> PlayedYears);
+
+public record TournamentCycleOption(string Key, string DisplayName);
 
 public record GameBrowseSummary(
     int TotalGames,

@@ -123,6 +123,8 @@ public class BackfillCatalog : IBackfillCatalog
                 new("Latvia", "LBL")
             ],
             EndSeason: "2025-2026"),
+        new("api-sports", "Latvia", "LBL", "Latvia: LBL", "2011-2012", EndSeason: "2020-2021"),
+        new("flashscore-domestic", "Latvia", "LBL", "Latvia: LBL (Flashscore validation)", "2018-2019", ExplicitSeasons: ["2018-2019", "2020-2021"]),
         new("api-sports", "Latvia", "Latvian Cup", "Latvia: Latvian Cup", "2024", CompetitionType: "domestic_cup", EndSeason: "2026"),
         new(
             "api-sports",
@@ -136,6 +138,7 @@ public class BackfillCatalog : IBackfillCatalog
                 new("Belgium", "Pro Basketball League", "end_year")
             ],
             EndSeason: "2025-2026"),
+        new("flashscore-domestic", "Belgium", "EuroMillions Basketball League", "Belgium: Ethias / Pro Basketball League", "2009-2010", ExplicitSeasons: ["2009-2010"]),
         new("api-sports", "Belgium", "Belgian Cup", "Belgium: Belgian Cup", "2012", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new("api-sports", "Germany", "BBL", "Germany: BBL", "2008-2009", EndSeason: "2025-2026"),
         new("german-official", "Germany", "BBL", "Germany: BBL", "1975-1976", EndSeason: "2007-2008"),
@@ -164,6 +167,8 @@ public class BackfillCatalog : IBackfillCatalog
         new("flashscore-czech-nbl", "Czech Republic", "NBL", "Czech Republic: NBL", "2000-2001", EndSeason: "2007-2008"),
         new("api-sports", "Czech Republic", "Czech Cup", "Czech Republic: Czech Cup", "2010-2011", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
         new("api-sports", "Russia", "VTB United League Promo-Cup", "Russia: Top Tier", "2010-2011", EndSeason: "2025-2026"),
+        new("api-sports", "Russia", "PBL", "Russia: PBL", "2011-2012", EndSeason: "2012-2013"),
+        new("flashscore-domestic", "Russia", "PBL", "Russia: PBL / Superleague A", "2005-2006", EndSeason: "2008-2009"),
         new("api-sports", "Russia", "Russian Cup", "Russia: Russian Cup", "2008-2009", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
         new("api-sports", "Russia", "VTB Super Cup", "Russia: VTB Super Cup", "2021", CompetitionType: "domestic_cup", EndSeason: "2025"),
         new(
@@ -195,6 +200,7 @@ public class BackfillCatalog : IBackfillCatalog
             ExplicitSeasons: SerbianCupHistoricalSeasons()),
         new("api-sports", "Serbia", "Korac cup", "Serbia: Korac Cup", "2012", CompetitionType: "domestic_cup"),
         new("api-sports", "Croatia", "Premijer liga", "Croatia: Premijer liga", "2008-2009", EndSeason: "2025-2026"),
+        new("flashscore-domestic", "Croatia", "Premijer liga", "Croatia: A1 Liga / Premijer liga (Flashscore validation)", "2008-2009", EndSeason: "2013-2014"),
         new("api-sports", "Croatia", "Croatian Cup", "Croatia: Croatian Cup", "2012-2013", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
         new("api-sports", "Slovenia", "Liga UPC", "Slovenia: Liga Nova KBM", "2008-2009", EndSeason: "2025-2026"),
         new("api-sports", "Slovenia", "Slovenian Cup", "Slovenia: Slovenian Cup", "2013-2014", CompetitionType: "domestic_cup", EndSeason: "2025-2026"),
@@ -206,7 +212,9 @@ public class BackfillCatalog : IBackfillCatalog
         new("global-sports-archive", "Africa", "FIBA AfroBasket", "Africa: FIBA AfroBasket", "1962", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1962, 1964, 1965, 1968, 1970, 1972, 1974, 1975, 1978, 1980, 1981, 1983, 1985, 1987, 1989, 1992, 1993, 1995, 1997, 1999, 2001, 2003, 2005, 2007, 2009, 2011, 2013, 2015, 2017, 2021, 2025), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "Africa", "FIBA AfroBasket Qualifiers", "Africa: FIBA AfroBasket Qualifiers", "2021", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2021, 2025), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "Africa", "FIBA AfroBasket Pre-Qualifiers", "Africa: FIBA AfroBasket Pre-Qualifiers", "2021", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2021, 2025), UsesSingleYearSeasonLabel: true),
-        new("fiba", "Africa", "FIBA AfroBasket Pre-Qualifiers", "Africa: FIBA AfroBasket Pre-Qualifiers", "2021", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2021), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Africa", "FIBA AfroBasket", "Africa: FIBA AfroBasket", "2021", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1962, 1964, 1965, 1968, 1970, 1972, 1974, 1975, 1978, 1980, 1981, 1983, 1985, 1987, 1989, 1993, 1995, 1997, 1999, 2001, 2005, 2007, 2009, 2011, 2013, 2015, 2017, 2021, 2025), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Africa", "FIBA AfroBasket Qualifiers", "Africa: FIBA AfroBasket Qualifiers", "2021", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2005, 2007, 2009, 2011, 2013, 2015, 2017, 2021, 2025), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Africa", "FIBA AfroBasket Pre-Qualifiers", "Africa: FIBA AfroBasket Pre-Qualifiers", "2021", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2021, 2025), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "World", "FIBA WC Qualification", "World: FIBA WC Qualification", "2019", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2019, 2023, 2027), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "Spain", "ACB", "Global Sports Archive: ACB COVID fallback", "2019-2020", ExplicitSeasons: ["2019-2020"]),
         new("global-sports-archive", "Europe", "ABA League", "Global Sports Archive: ABA League COVID fallback", "2019-2020", CompetitionType: "international", ExplicitSeasons: ["2019-2020"]),
@@ -216,6 +224,9 @@ public class BackfillCatalog : IBackfillCatalog
         new("global-sports-archive", "Europe", "Euroleague", "Global Sports Archive: Euroleague COVID fallback", "2019-2020", CompetitionType: "international", ExplicitSeasons: ["2019-2020"]),
         new("global-sports-archive", "Asia", "FIBA Asia Cup", "Asia: FIBA Asia Cup", "1960", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1960, 1963, 1965, 1967, 1969, 1971, 1973, 1975, 1977, 1979, 1981, 1983, 1985, 1987, 1989, 1991, 1993, 1995, 1997, 1999, 2001, 2003, 2005, 2007, 2009, 2011, 2013, 2015, 2017, 2022, 2025), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "Asia", "FIBA Asia Cup Qualification", "Asia: FIBA Asia Cup Qualification", "2021", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2021, 2025), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Asia", "FIBA Asia Cup", "Asia: FIBA Asia Cup", "1960", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1960, 1963, 1965, 1967, 1969, 1971, 1973, 1975, 1977, 1979, 1981, 1983, 1985, 1987, 1989, 1991, 1993, 1995, 1997, 1999, 2001, 2002, 2003, 2005, 2007, 2009, 2011, 2013, 2015, 2017, 2022, 2025), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Asia", "FIBA Asia Cup Qualifiers", "Asia: FIBA Asia Cup Qualifiers", "2021", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2021, 2025), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Asia", "FIBA Asia Cup Pre-Qualifiers", "Asia: FIBA Asia Cup Pre-Qualifiers", "2021", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2021, 2025), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "Asia", "Asian Games", "Asia: Asian Games", "2018", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2018, 2022), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "Europe", "EuroBasket", "Europe: EuroBasket", "1935", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1935, 1937, 1939, 1946, 1947, 1949, 1951, 1953, 1955, 1957, 1959, 1961, 1963, 1965, 1967, 1969, 1971, 1973, 1975, 1977, 1979, 1981, 1983, 1985, 1987, 1989, 1991, 1993, 1995, 1997, 1999, 2001, 2003, 2005, 2007, 2009, 2011, 2013, 2015, 2017, 2022, 2025), UsesSingleYearSeasonLabel: true),
         new("fiba", "Europe", "FIBA EuroBasket Division B", "Europe: FIBA EuroBasket Division B", "2007", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2007, 2009, 2011), UsesSingleYearSeasonLabel: true),
@@ -237,10 +248,26 @@ public class BackfillCatalog : IBackfillCatalog
             ExplicitSeasons: Years(1993, 1991),
             UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "World", "FIBA Basketball World Cup", "World: FIBA Basketball World Cup", "1950", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1950, 1954, 1959, 1963, 1967, 1970, 1974, 1978, 1982, 1986, 1990, 1994, 1998, 2002, 2006, 2010, 2014, 2019, 2023), UsesSingleYearSeasonLabel: true),
+        new("fiba", "World", "FIBA Basketball World Cup", "World: FIBA Basketball World Cup", "1950", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1950, 1954, 1959, 1963, 1967, 1970, 1974, 1978, 1982, 1986, 1990, 1994, 1998, 2002, 2006, 2010, 2014, 2019, 2023), UsesSingleYearSeasonLabel: true),
+        new("fiba", "World", "FIBA Basketball World Cup Qualifiers", "World: FIBA Basketball World Cup Qualifiers", "2019", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2019, 2023, 2027), UsesSingleYearSeasonLabel: true),
+        new("fiba", "World", "FIBA Basketball World Cup Pre-Qualifiers", "World: FIBA Basketball World Cup Pre-Qualifiers", "2019", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2019, 2023, 2027), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "World", "Summer Olympics", "World: Summer Olympics (men)", "2012", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2012, 2016, 2020, 2024), UsesSingleYearSeasonLabel: true),
         new("global-sports-archive", "World", "Olympics Qualification", "World: Olympics Qualification", "2016", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2016, 2020, 2024), UsesSingleYearSeasonLabel: true),
-        new("global-sports-archive", "World", "FIBA AmeriCup", "World: FIBA AmeriCup", "1980", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1980, 1984, 1988, 1989, 1992, 1993, 1995, 1997, 1999, 2001, 2003, 2005, 2007, 2009, 2011, 2013, 2015, 2017, 2022, 2025), UsesSingleYearSeasonLabel: true),
-        new("global-sports-archive", "World", "FIBA AmeriCup Qualification", "World: FIBA AmeriCup Qualification", "2022", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2022, 2025), UsesSingleYearSeasonLabel: true)
+        new("global-sports-archive", "World", "Olympics Pre-Qualification", "World: Olympics Pre-Qualification", "2024", ProviderLeagues: [new("World", "Olympics Pre-Qualification", "year")], CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2024), UsesSingleYearSeasonLabel: true),
+        new("fiba", "World", "Summer Olympics", "World: Summer Olympics (men)", "1948", ProviderLeagues: [new("World", "FIBA Men's Olympic Basketball Tournament", "year")], CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1948, 1952, 1956, 1960, 1964, 1968, 1972, 1976, 1980, 1984, 1988, 1992, 1996, 2000, 2004, 2008, 2012, 2016, 2020, 2024), UsesSingleYearSeasonLabel: true),
+        new("fiba", "World", "Olympics Qualification", "World: Olympics Qualification", "1968", ProviderLeagues: [new("World", "FIBA Olympic Qualifying Tournament", "year")], CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1968, 1972, 1976, 1980, 1984, 1988, 1992, 2008, 2012, 2016, 2020, 2024), UsesSingleYearSeasonLabel: true),
+        new("fiba", "World", "Olympics Pre-Qualification", "World: Olympics Pre-Qualification", "1960", ProviderLeagues: [new("World", "FIBA Olympic Pre-Qualifying Tournament", "year")], CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1960, 1964, 1968, 1972, 1976, 2024), UsesSingleYearSeasonLabel: true),
+        new("global-sports-archive", "Americas", "FIBA AmeriCup", "Americas: FIBA AmeriCup", "1980", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1980, 1984, 1988, 1989, 1992, 1993, 1995, 1997, 1999, 2001, 2003, 2005, 2007, 2009, 2011, 2013, 2015, 2017, 2022, 2025), UsesSingleYearSeasonLabel: true),
+        new("global-sports-archive", "Americas", "FIBA AmeriCup Qualification", "Americas: FIBA AmeriCup Qualification", "2022", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2022, 2025), UsesSingleYearSeasonLabel: true),
+        new("global-sports-archive", "Americas", "FIBA AmeriCup Pre-Qualifiers", "Americas: FIBA AmeriCup Pre-Qualifiers", "2022", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2022, 2025), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Americas", "FIBA AmeriCup", "Americas: FIBA AmeriCup", "1980", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1980, 1984, 1988, 1989, 1992, 1993, 1995, 1997, 1999, 2001, 2003, 2005, 2007, 2009, 2011, 2013, 2015, 2017, 2022, 2025), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Americas", "FIBA AmeriCup Qualifiers", "Americas: FIBA AmeriCup Qualifiers", "2022", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2022, 2025), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Americas", "FIBA AmeriCup Pre-Qualifiers", "Americas: FIBA AmeriCup Pre-Qualifiers", "2022", CompetitionType: "qualifier", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2022, 2025, 2029), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Americas", "Centrobasket Championship", "Americas: Centrobasket Championship", "1965", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1965, 1967, 1969, 1971, 1973, 1975, 1977, 1981, 1985, 1987, 1989, 1991, 1993, 1995, 1997, 1998, 1999, 2001, 2002, 2003, 2004, 2006, 2008, 2010, 2012, 2014, 2016), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Americas", "COCABA Championship", "Americas: COCABA Championship", "2003", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2003, 2004, 2006, 2007, 2009, 2011, 2013, 2015), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Americas", "South American Championship", "Americas: South American Championship", "1932", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1932, 1942, 1943, 1987, 1989, 1991, 1993, 1995, 1997, 1999, 2001, 2003, 2004, 2006, 2008, 2010, 2011, 2012, 2014, 2015, 2016), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Americas", "Caribbean Basketball Championship", "Americas: Caribbean Basketball Championship", "2004", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(2004, 2006, 2007, 2009, 2011, 2014, 2015), UsesSingleYearSeasonLabel: true),
+        new("fiba", "Oceania", "FIBA Oceania Championship", "Oceania: FIBA Oceania Championship", "1971", CompetitionType: "international", EloPoolKey: EloPoolKeys.NationalTeams, ExplicitSeasons: Years(1971, 1975, 1978, 1979, 1981, 1983, 1985, 1987, 1989, 1991, 1993, 1995, 1997, 1999, 2001, 2003, 2005, 2007, 2009, 2011, 2013, 2015), UsesSingleYearSeasonLabel: true)
     ];
 
     public IReadOnlyCollection<ConfiguredBackfillLeague> GetLeagues() => Leagues;

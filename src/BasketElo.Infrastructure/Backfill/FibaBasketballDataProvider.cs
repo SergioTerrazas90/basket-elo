@@ -48,17 +48,20 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             ["Africa:FIBA AfroBasket Qualifiers"] = ("178-fiba-afrobasket-qualifiers", "FIBA AfroBasket Qualifiers", "AFR"),
             ["Africa:FIBA AfroBasket Pre-Qualifiers"] = ("178-fiba-afrobasket-qualifiers|pre-qualifiers", "FIBA AfroBasket Pre-Qualifiers", "AFR"),
             ["Asia:FIBA Asia Cup"] = ("195-fiba-asia-cup", "FIBA Asia Cup", "ASI"),
+            ["Americas:FIBA AmeriCup"] = ("184-fiba-americup", "FIBA AmeriCup", "AME"),
             ["Americas:FIBA AmeriCup Qualifiers"] = ("183-fiba-americup-qualifiers", "FIBA AmeriCup Qualifiers", "AME"),
             ["Americas:FIBA AmeriCup Pre-Qualifiers"] = ("182-fiba-americup-pre-qualifiers", "FIBA AmeriCup Pre-Qualifiers", "AME"),
-            ["Americas:FIBA Americas Championship"] = ("184-fiba-americup", "FIBA Americas Championship", "AME"),
+            ["Americas:FIBA Americas Championship"] = ("184-fiba-americup", "FIBA AmeriCup", "AME"),
             ["Americas:Centrobasket Championship"] = ("122-centrobasket-championship", "Centrobasket Championship", "AME"),
             ["Americas:COCABA Championship"] = ("113-cbc-championship|cocaba", "COCABA Championship", "AME"),
             ["Americas:South American Championship"] = ("327-south-american-championship", "South American Championship", "AME"),
             ["Americas:Caribbean Basketball Championship"] = ("113-cbc-championship|caribbean", "Caribbean Basketball Championship", "AME"),
             ["Asia:FIBA Asia Cup Qualifiers"] = ("192-fiba-asia-cup-qualifiers", "FIBA Asia Cup Qualifiers", "ASI"),
+            ["Asia:FIBA Asia Cup Pre-Qualifiers"] = ("192-fiba-asia-cup-qualifiers|pre-qualifiers", "FIBA Asia Cup Pre-Qualifiers", "ASI"),
             ["Oceania:FIBA Oceania Championship"] = ("216-fiba-oceania-championship", "FIBA Oceania Championship", "OCE"),
             ["World:FIBA Basketball World Cup"] = ("201-fiba-basketball-world-cup", "FIBA Basketball World Cup", "WOR"),
             ["World:FIBA Basketball World Cup Qualifiers"] = ("200-fiba-basketball-world-cup-qualifiers", "FIBA Basketball World Cup Qualifiers", "WOR"),
+            ["World:FIBA Basketball World Cup Pre-Qualifiers"] = ("199-fiba-basketball-world-cup-pre-qualifiers", "FIBA Basketball World Cup Pre-Qualifiers", "WOR"),
             ["World:FIBA Olympic Qualifying Tournament"] = ("219-fiba-olympic-qualifying-tournament", "FIBA Olympic Qualifying Tournament", "WOR"),
             ["World:FIBA Olympic Pre-Qualifying Tournament"] = ("218-fiba-olympic-pre-qualifying-tournament", "FIBA Olympic Pre-Qualifying Tournament", "WOR"),
             ["World:Olympic Qualifying Tournament"] = ("324-olympic-qualifying-tournament", "Olympic Qualifying Tournament", "WOR"),
@@ -91,6 +94,30 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         var (historyFamily, variant) = ParseFamily(league.SourceLeagueId);
         var historyPath = $"/en/history/{historyFamily}";
         var archiveYear = IsEuropeanClubCompetition(historyFamily) ? year + 1 : year;
+        if (historyFamily.Equals("219-fiba-olympic-qualifying-tournament", StringComparison.OrdinalIgnoreCase) && year == 2020)
+        {
+            // The Tokyo Olympic cycle is labelled 2020 by the target
+            // competition but its qualifying tournaments were played in 2021.
+            archiveYear = 2021;
+        }
+
+        if (historyFamily.Equals("218-fiba-olympic-pre-qualifying-tournament", StringComparison.OrdinalIgnoreCase) && year == 2024)
+        {
+            // The Paris Olympic cycle's pre-qualifying tournaments were played
+            // in 2023 and feed the 2024 Olympic qualifying tournaments.
+            archiveYear = 2023;
+        }
+
+        if (historyFamily.Equals("199-fiba-basketball-world-cup-pre-qualifiers", StringComparison.OrdinalIgnoreCase))
+        {
+            archiveYear = year switch
+            {
+                2019 => 2017,
+                2023 => 2021,
+                2027 => 2025,
+                _ => year
+            };
+        }
         var editionPaths = KnownEditionPaths(historyFamily, variant, year);
         if (editionPaths is null)
         {
@@ -117,11 +144,34 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             try
             {
                 var gamesPage = await GetPageAsync(gamesPath, context, cancellationToken);
-                var parsedGames = ParseGames(gamesPage.Content, gamesPage.FetchedAtUtc, gamesPage.Revision, gamesPath, archiveYear, warnings);
+                var sourceSeason = GetSourceSeason(historyFamily, variant, year, archiveYear);
+                var parsedGames = ParseGames(gamesPage.Content, gamesPage.FetchedAtUtc, gamesPage.Revision, gamesPath, sourceSeason, warnings);
                 if (IsEuroBasket2005Event(editionPath))
                 {
                     parsedGames = parsedGames
                         .Where(IsEuroBasket2005QualificationGame)
+                        .ToArray();
+                }
+
+                var isEmbeddedAfroBasketQualifierImport = historyFamily.Equals("178-fiba-afrobasket-qualifiers", StringComparison.OrdinalIgnoreCase) &&
+                    editionPath.Contains("/history/179-fiba-afrobasket/", StringComparison.OrdinalIgnoreCase);
+                var isEmbeddedAfroBasketFinalImport = historyFamily.Equals("179-fiba-afrobasket", StringComparison.OrdinalIgnoreCase);
+                if ((isEmbeddedAfroBasketFinalImport || isEmbeddedAfroBasketQualifierImport) &&
+                    IsAfroBasketEmbeddedQualificationEdition(year))
+                {
+                    parsedGames = parsedGames
+                        .Where(game => isEmbeddedAfroBasketQualifierImport
+                            ? IsAfroBasketQualificationGame(year, game)
+                            : !IsAfroBasketQualificationGame(year, game))
+                        .ToArray();
+                }
+
+                if (historyFamily.Equals("178-fiba-afrobasket-qualifiers", StringComparison.OrdinalIgnoreCase) &&
+                    variant?.Equals("pre-qualifiers", StringComparison.OrdinalIgnoreCase) == true &&
+                    year == 2025)
+                {
+                    parsedGames = parsedGames
+                        .Where(IsAfroBasket2025PreQualifierGame)
                         .ToArray();
                 }
 
@@ -296,6 +346,42 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         return (parts[0], parts.Length == 2 ? parts[1] : null);
     }
 
+    private static int GetSourceSeason(string historyFamily, string? variant, int targetSeason, int archiveYear)
+    {
+        if (historyFamily.Equals("183-fiba-americup-qualifiers", StringComparison.OrdinalIgnoreCase))
+        {
+            return targetSeason switch
+            {
+                2022 => 2021,
+                _ => archiveYear
+            };
+        }
+
+        if (historyFamily.Equals("182-fiba-americup-pre-qualifiers", StringComparison.OrdinalIgnoreCase))
+        {
+            return targetSeason switch
+            {
+                2022 => 2019,
+                2025 => 2023,
+                2029 => 2026,
+                _ => archiveYear
+            };
+        }
+
+        if (historyFamily.Equals("192-fiba-asia-cup-qualifiers", StringComparison.OrdinalIgnoreCase) &&
+            variant?.Equals("pre-qualifiers", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return targetSeason switch
+            {
+                2021 => 2019,
+                2025 => 2023,
+                _ => archiveYear
+            };
+        }
+
+        return archiveYear;
+    }
+
     private static bool IsEuropeanClubCompetition(string family)
         => family.Equals("112-fiba-mens-european-club-competitions-tier-1", StringComparison.OrdinalIgnoreCase) ||
            family.Equals("212-fiba-mens-european-club-competitions-tier-2", StringComparison.OrdinalIgnoreCase) ||
@@ -309,6 +395,19 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
     private static IReadOnlyCollection<string>? KnownEditionPaths(string family, string? variant, int year)
     {
+        if (family.Equals("195-fiba-asia-cup", StringComparison.OrdinalIgnoreCase))
+        {
+            // The archive has two rows labelled 2003. Resolve the host/event
+            // identity explicitly so the 2002 Malaysian event is not merged
+            // into the 2003 championship.
+            return year switch
+            {
+                2002 => ["/en/history/195-fiba-asia-cup/2651"],
+                2003 => ["/en/history/195-fiba-asia-cup/2675"],
+                _ => null
+            };
+        }
+
         if (family.Equals("212-fiba-mens-european-club-competitions-tier-2", StringComparison.OrdinalIgnoreCase))
         {
             // The archive's 2002 row also contains the post-Saporta FIBA Europe
@@ -406,6 +505,30 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             ];
         }
 
+        if (family.Equals("199-fiba-basketball-world-cup-pre-qualifiers", StringComparison.OrdinalIgnoreCase))
+        {
+            return year switch
+            {
+                2019 => ["/en/history/199-fiba-basketball-world-cup-pre-qualifiers/10594"],
+                2023 =>
+                [
+                    "/en/history/199-fiba-basketball-world-cup-pre-qualifiers/208171",
+                    "/en/history/199-fiba-basketball-world-cup-pre-qualifiers/208402",
+                    "/en/history/199-fiba-basketball-world-cup-pre-qualifiers/208405",
+                    "/en/history/199-fiba-basketball-world-cup-pre-qualifiers/208321"
+                ],
+                2027 =>
+                [
+                    "/en/events/fiba-basketball-world-cup-2027-european-pre-qualifiers",
+                    "/en/events/fiba-basketball-world-cup-2027-americas-pre-qualifiers",
+                    "/en/events/fiba-basketball-world-cup-2027-central-american-pre-qualifiers",
+                    "/en/events/fiba-basketball-world-cup-2027-south-american-pre-qualifiers",
+                    "/en/history/199-fiba-basketball-world-cup-pre-qualifiers/208746"
+                ],
+                _ => null
+            };
+        }
+
         if (family.Equals("178-fiba-afrobasket-qualifiers", StringComparison.OrdinalIgnoreCase))
         {
             if (variant?.Equals("pre-qualifiers", StringComparison.OrdinalIgnoreCase) == true)
@@ -419,6 +542,12 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
             return year switch
             {
+                2005 => ["/en/history/178-fiba-afrobasket-qualifiers/3771"],
+                2007 => ["/en/history/179-fiba-afrobasket/3304"],
+                2009 => ["/en/history/179-fiba-afrobasket/3360"],
+                2011 => ["/en/history/179-fiba-afrobasket/4355"],
+                2013 => ["/en/history/179-fiba-afrobasket/5329"],
+                2015 => ["/en/history/179-fiba-afrobasket/6302"],
                 2020 => ["/en/history/178-fiba-afrobasket-qualifiers/208167"],
                 2021 => ["/en/history/178-fiba-afrobasket-qualifiers/208166"],
                 2024 => ["/en/history/178-fiba-afrobasket-qualifiers/208806"],
@@ -429,6 +558,16 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
         if (family.Equals("192-fiba-asia-cup-qualifiers", StringComparison.OrdinalIgnoreCase))
         {
+            if (variant?.Equals("pre-qualifiers", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return year switch
+                {
+                    2021 => ["/en/history/192-fiba-asia-cup-qualifiers/208018"],
+                    2025 => ["/en/history/192-fiba-asia-cup-qualifiers/208462"],
+                    _ => null
+                };
+            }
+
             return year switch
             {
                 2019 => ["/en/history/192-fiba-asia-cup-qualifiers/208018"],
@@ -443,6 +582,25 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
         {
             return year switch
             {
+                2022 =>
+                [
+                    "/en/history/182-fiba-americup-pre-qualifiers/208040",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208039",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208038",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208060"
+                ],
+                2025 =>
+                [
+                    "/en/history/182-fiba-americup-pre-qualifiers/208517",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208516",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208515",
+                    "/en/history/182-fiba-americup-pre-qualifiers/208518"
+                ],
+                2029 =>
+                [
+                    "/en/events/fiba-americup-2029-caribbean-pre-qualifiers",
+                    "/en/events/fiba-americup-2029-central-american-pre-qualifiers"
+                ],
                 2018 =>
                 [
                     "/en/history/182-fiba-americup-pre-qualifiers/208040",
@@ -462,6 +620,16 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                     "/en/events/fiba-americup-2029-caribbean-pre-qualifiers",
                     "/en/events/fiba-americup-2029-central-american-pre-qualifiers"
                 ],
+                _ => null
+            };
+        }
+
+        if (family.Equals("183-fiba-americup-qualifiers", StringComparison.OrdinalIgnoreCase))
+        {
+            return year switch
+            {
+                2022 => ["/en/history/183-fiba-americup-qualifiers/208142"],
+                2025 => ["/en/events/fiba-americup-2025-qualifiers"],
                 _ => null
             };
         }
@@ -513,6 +681,23 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             "Qualifying Round" or
             "Additional Qualifying Round Games" or
             "Additional Qualifying Tournament";
+
+    private static bool IsAfroBasketEmbeddedQualificationEdition(int year)
+        => year is 2007 or 2009 or 2011 or 2013 or 2015;
+
+    private static bool IsAfroBasketQualificationGame(int year, BasketballProviderGame game)
+    {
+        var phase = game.CompetitionPhase?.Trim() ?? string.Empty;
+        return year == 2007
+            ? phase.StartsWith("Zone ", StringComparison.OrdinalIgnoreCase)
+            : year is 2009 or 2011 or 2013
+            ? phase.Equals("Qualifying Round", StringComparison.OrdinalIgnoreCase)
+            : year == 2015 && Regex.IsMatch(phase, "^GROUP [A-J]$", RegexOptions.IgnoreCase);
+    }
+
+    private static bool IsAfroBasket2025PreQualifierGame(BasketballProviderGame game)
+        => $"{game.CompetitionPhase} {game.CompetitionRound}"
+            .Contains("zone", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsGroupStage(BasketballProviderGame game)
     {
@@ -780,6 +965,7 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             var phaseLabel = FindPhaseLabel(card);
             var phaseParts = phaseLabel?.Split('·', 2, StringSplitOptions.TrimEntries);
             var status = FindStatus(card, scores);
+            var isScheduled = status.Equals("scheduled", StringComparison.OrdinalIgnoreCase);
 
             games.Add(new BasketballProviderGame(
                 Source,
@@ -790,8 +976,8 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 homeCode,
                 awayCode,
                 awayCode,
-                scores.ElementAtOrDefault(0),
-                scores.ElementAtOrDefault(1),
+                isScheduled ? null : scores.ElementAtOrDefault(0),
+                isScheduled ? null : scores.ElementAtOrDefault(1),
                 new BasketballProviderGameProvenance(
                     BuildAbsoluteUrl(gamePath),
                     $"{year}:{sourcePath}",
@@ -930,17 +1116,23 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
                 continue;
             }
 
+            var homeScore = ParseEmbeddedScore(scores.Groups["home"].Value);
+            var awayScore = ParseEmbeddedScore(scores.Groups["away"].Value);
+            var isScheduled = scores.Groups["home"].Value == "null" ||
+                scores.Groups["away"].Value == "null" ||
+                IsUnplayedZeroScore(homeScore, awayScore);
+
             games.Add(new BasketballProviderGame(
                 Source,
                 gameMatch.Groups["id"].Value,
                 date.ToUniversalTime(),
-                scores.Groups["home"].Value == "null" ? "scheduled" : "final",
+                isScheduled ? "scheduled" : "final",
                 home.SourceId,
                 home.Name,
                 away.SourceId,
                 away.Name,
-                ParseEmbeddedScore(scores.Groups["home"].Value),
-                ParseEmbeddedScore(scores.Groups["away"].Value),
+                isScheduled ? null : homeScore,
+                isScheduled ? null : awayScore,
                 new BasketballProviderGameProvenance(
                     BuildAbsoluteUrl(BuildEmbeddedGamePath(
                         sourcePath,
@@ -1088,11 +1280,19 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
 
     private static string FindStatus(HtmlNode card, IReadOnlyCollection<short?> scores)
     {
+        if (scores.Count >= 2 && IsUnplayedZeroScore(scores.ElementAtOrDefault(0), scores.ElementAtOrDefault(1)))
+        {
+            return "scheduled";
+        }
+
         var text = Normalize(card.InnerText);
         var status = new[] { "Final", "Scheduled", "Postponed", "Cancelled" }
             .FirstOrDefault(candidate => text.Contains(candidate, StringComparison.OrdinalIgnoreCase));
         return (status ?? (scores.All(x => x.HasValue) ? "Final" : "Scheduled")).ToLowerInvariant();
     }
+
+    private static bool IsUnplayedZeroScore(short? homeScore, short? awayScore)
+        => homeScore == 0 && awayScore == 0;
 
     private string BuildAbsoluteUrl(string path)
         => httpClient.BaseAddress is null ? path : new Uri(httpClient.BaseAddress, path).ToString();

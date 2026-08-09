@@ -147,6 +147,7 @@ public class EloController(
         [FromQuery] string? teams = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] string? tournamentCycle = null,
         CancellationToken cancellationToken = default)
     {
         var poolKey = ResolvePoolOrDefault(pool);
@@ -161,6 +162,7 @@ public class EloController(
                 country,
                 competition,
                 season,
+                tournamentCycle,
                 fromUtc,
                 toUtc,
                 asOfDate,
@@ -183,6 +185,7 @@ public class EloController(
                 country,
                 competition,
                 season,
+                tournamentCycle,
                 fromUtc,
                 toUtc,
                 asOfDate,
@@ -201,6 +204,7 @@ public class EloController(
                 country,
                 competition,
                 season,
+                tournamentCycle,
                 fromUtc,
                 toUtc,
                 asOfDate,
@@ -219,6 +223,7 @@ public class EloController(
                     country,
                     competition,
                     season,
+                    tournamentCycle,
                     fromUtc,
                     toUtc,
                     asOfDate,
@@ -238,6 +243,7 @@ public class EloController(
             country,
             competition,
             season,
+            tournamentCycle,
             fromUtc,
             toUtc,
             asOfDate,
@@ -255,6 +261,7 @@ public class EloController(
         [FromQuery] string? country,
         [FromQuery] string? competition,
         [FromQuery] string? season,
+        [FromQuery] string? tournamentCycle,
         [FromQuery] DateTime? fromUtc,
         [FromQuery] DateTime? toUtc,
         [FromQuery] DateTime? asOfDate,
@@ -355,9 +362,9 @@ public class EloController(
                     .Select(x => x.TeamId));
             }
 
-            if (HasHistoryFilter(competition, season, fromUtc, toUtc))
+            if (HasHistoryFilter(competition, season, tournamentCycle, fromUtc, toUtc))
             {
-                var historyTeamIds = await BuildHistoryFilterQuery(poolKey, selectedRuleset, competition, season, fromUtc, toUtc)
+                var historyTeamIds = await BuildHistoryFilterQuery(poolKey, selectedRuleset, competition, season, tournamentCycle, fromUtc, toUtc)
                     .Where(x => x.GameDateTimeUtc <= cutoffUtc)
                     .Select(x => x.TeamId)
                     .Distinct()
@@ -419,7 +426,7 @@ public class EloController(
                     latestRatedGameUtc,
                     globalArchiveRatings.FirstOrDefault()?.TeamName,
                     globalArchiveRatings.FirstOrDefault()?.Elo,
-                    IsFiltered(country, competition, season, fromUtc, toUtc, minimumGames, team)),
+                    IsFiltered(country, competition, season, tournamentCycle, fromUtc, toUtc, minimumGames, team)),
                 new EloRankingArchiveMetadata(
                     "archive",
                     requestedAsOfUtc,
@@ -479,9 +486,9 @@ public class EloController(
                 .Select(x => x.TeamId));
         }
 
-        if (HasHistoryFilter(competition, season, fromUtc, toUtc))
+        if (HasHistoryFilter(competition, season, tournamentCycle, fromUtc, toUtc))
         {
-            var historyTeamIds = await BuildHistoryFilterQuery(poolKey, selectedRuleset, competition, season, fromUtc, toUtc)
+            var historyTeamIds = await BuildHistoryFilterQuery(poolKey, selectedRuleset, competition, season, tournamentCycle, fromUtc, toUtc)
                 .Select(x => x.TeamId)
                 .Distinct()
                 .ToListAsync(cancellationToken);
@@ -538,7 +545,7 @@ public class EloController(
                 globalRatings.Select(x => x.LastGame?.GameDateTimeUtc).Where(x => x.HasValue).Max(),
                 globalRatings.FirstOrDefault()?.Team.CanonicalName,
                 globalRatings.FirstOrDefault()?.Elo,
-                IsFiltered(country, competition, season, fromUtc, toUtc, minimumGames, team)),
+                IsFiltered(country, competition, season, tournamentCycle, fromUtc, toUtc, minimumGames, team)),
             new EloRankingArchiveMetadata("current", null, null, null),
             page,
             pageSize,
@@ -553,6 +560,7 @@ public class EloController(
         [FromQuery] string? teamIds,
         [FromQuery] string? competition,
         [FromQuery] string? season,
+        [FromQuery] string? tournamentCycle,
         [FromQuery] DateTime? fromUtc,
         [FromQuery] DateTime? toUtc,
         [FromQuery] int pointsPerTeam = EloEvolutionLimits.DefaultPointsPerTeam,
@@ -585,12 +593,13 @@ public class EloController(
             !string.IsNullOrWhiteSpace(teamIds) &&
             string.IsNullOrWhiteSpace(competition) &&
             string.IsNullOrWhiteSpace(season) &&
+            string.IsNullOrWhiteSpace(tournamentCycle) &&
             !fromUtc.HasValue &&
             !toUtc.HasValue &&
             pointsPerTeam == EloEvolutionLimits.DefaultPointsPerTeam &&
             await IsDefaultEvolutionTeamSetAsync(poolKey, selectedRuleset, selectedTeamIds, cancellationToken);
         var evolutionCacheKey = canCacheDefaultEvolution
-            ? EloResponseCache.EvolutionKey(poolKey, selectedRuleset, selectedTeamIds, competition, season, fromUtc, toUtc, pointsPerTeam)
+            ? EloResponseCache.EvolutionKey(poolKey, selectedRuleset, selectedTeamIds, competition, season, tournamentCycle, fromUtc, toUtc, pointsPerTeam)
             : null;
         if (evolutionCacheKey is not null &&
             responseCache.TryGet<EloRankingsEvolutionResponse>(evolutionCacheKey, out var cachedEvolution) &&
@@ -607,16 +616,7 @@ public class EloController(
             : new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var hasCompetitionFilter = !string.IsNullOrWhiteSpace(competition);
         var hasSeasonFilter = !string.IsNullOrWhiteSpace(season);
-        var normalizedSeason = hasSeasonFilter ? NormalizeSeasonLabel(season!) : string.Empty;
-        var seasonStartUtc = DateTime.SpecifyKind(DateTime.MinValue.Date, DateTimeKind.Utc);
-        var seasonEndUtc = DateTime.SpecifyKind(DateTime.MaxValue.Date, DateTimeKind.Utc);
-        var previousSingleYearSeasonLabel = string.Empty;
-        var currentSingleYearSeasonLabel = string.Empty;
-        if (hasSeasonFilter)
-        {
-            TryGetSeasonWindow(normalizedSeason, out seasonStartUtc, out seasonEndUtc);
-            SetSingleYearSeasonLabels(normalizedSeason, out previousSingleYearSeasonLabel, out currentSingleYearSeasonLabel);
-        }
+        var hasCycleFilter = !string.IsNullOrWhiteSpace(tournamentCycle);
 
         var rows = await dbContext.Database
             .SqlQueryRaw<EvolutionHistorySqlRow>(
@@ -639,24 +639,15 @@ public class EloController(
                     INNER JOIN games g ON g."Id" = rh."GameId"
                     INNER JOIN seasons s ON s."Id" = g."SeasonId"
                     INNER JOIN competitions c ON c."Id" = g."CompetitionId"
+                    LEFT JOIN tournament_cycles tc ON tc."Id" = g."TournamentCycleId"
                     WHERE rh."EloPoolKey" = @poolKey
                       AND rh."RulesetVersion" = @rulesetVersion
                       AND rh."TeamId" = ANY(@teamIds)
                       AND rh."GameDateTimeUtc" >= @startUtc
                       AND rh."GameDateTimeUtc" <= @cutoffUtc
                       AND (@hasCompetitionFilter = false OR c."Name" = @competition)
-                      AND (
-                          @hasSeasonFilter = false
-                          OR (
-                              rh."GameDateTimeUtc" >= @seasonStartUtc
-                              AND rh."GameDateTimeUtc" <= @seasonEndUtc
-                              AND s."Label" <> @previousSingleYearSeasonLabel
-                          )
-                          OR (
-                              s."Label" = @currentSingleYearSeasonLabel
-                              AND rh."GameDateTimeUtc" > @seasonEndUtc
-                          )
-                      )
+                      AND (@hasSeasonFilter = false OR s."Label" = @season)
+                      AND (@hasCycleFilter = false OR tc."Key" = @tournamentCycle)
                 ), bucketed AS (
                     SELECT
                         *,
@@ -693,10 +684,9 @@ public class EloController(
                 new NpgsqlParameter("hasCompetitionFilter", hasCompetitionFilter),
                 new NpgsqlParameter("competition", competition ?? string.Empty),
                 new NpgsqlParameter("hasSeasonFilter", hasSeasonFilter),
-                new NpgsqlParameter("seasonStartUtc", seasonStartUtc),
-                new NpgsqlParameter("seasonEndUtc", seasonEndUtc),
-                new NpgsqlParameter("previousSingleYearSeasonLabel", previousSingleYearSeasonLabel),
-                new NpgsqlParameter("currentSingleYearSeasonLabel", currentSingleYearSeasonLabel),
+                new NpgsqlParameter("season", season?.Trim() ?? string.Empty),
+                new NpgsqlParameter("hasCycleFilter", hasCycleFilter),
+                new NpgsqlParameter("tournamentCycle", tournamentCycle?.Trim() ?? string.Empty),
                 new NpgsqlParameter("pointsPerTeam", pointsPerTeam))
             .ToListAsync(cancellationToken);
 
@@ -732,6 +722,7 @@ public class EloController(
         [FromQuery] string? country = null,
         [FromQuery] string? competition = null,
         [FromQuery] string? season = null,
+        [FromQuery] string? tournamentCycle = null,
         [FromQuery] DateTime? fromUtc = null,
         [FromQuery] DateTime? toUtc = null,
         [FromQuery] int? minGames = null,
@@ -788,7 +779,7 @@ public class EloController(
                 now.AddDays(-windowDays),
                 now,
                 [],
-                new EloMoversSummary(0, 0, 0, IsFiltered(country, competition, season, fromUtc, toUtc, minimumGames, team)),
+                new EloMoversSummary(0, 0, 0, IsFiltered(country, competition, season, tournamentCycle, fromUtc, toUtc, minimumGames, team)),
                 1,
                 pageSize,
                 0,
@@ -866,6 +857,11 @@ public class EloController(
         if (!string.IsNullOrWhiteSpace(season))
         {
             movementQuery = ApplySeasonFilter(movementQuery, season);
+        }
+
+        if (!string.IsNullOrWhiteSpace(tournamentCycle))
+        {
+            movementQuery = movementQuery.Where(x => x.Game.TournamentCycle != null && x.Game.TournamentCycle.Key == tournamentCycle.Trim());
         }
 
         var movementRows = await movementQuery
@@ -949,7 +945,7 @@ public class EloController(
                 movers.Count,
                 filteredTeamIds.Count,
                 movementRows.Select(x => x.GameId).Distinct().Count(),
-                IsFiltered(country, competition, season, fromUtc, toUtc, minimumGames, team)),
+                IsFiltered(country, competition, season, tournamentCycle, fromUtc, toUtc, minimumGames, team)),
             page,
             pageSize,
             totalCount,
@@ -1301,9 +1297,9 @@ public class EloController(
             return NotFound();
         }
 
-        if (sourceRun.Status is not (EloRebuildRunStatus.Failed or EloRebuildRunStatus.Canceled))
+        if (sourceRun.Status is not (EloRebuildRunStatus.Failed or EloRebuildRunStatus.Canceled or EloRebuildRunStatus.Blocked))
         {
-            return Conflict($"Only failed or canceled rebuilds can be retried. Run '{runId}' is {sourceRun.Status}.");
+            return Conflict($"Only failed, canceled, or blocked rebuilds can be retried. Run '{runId}' is {sourceRun.Status}.");
         }
 
         var activeExists = await dbContext.EloRebuildRuns.AnyAsync(x =>
@@ -1394,6 +1390,7 @@ public class EloController(
         string? country,
         string? competition,
         string? season,
+        string? tournamentCycle,
         DateTime? fromUtc,
         DateTime? toUtc,
         DateTime? asOfDate,
@@ -1407,6 +1404,7 @@ public class EloController(
             string.IsNullOrWhiteSpace(country) &&
             string.IsNullOrWhiteSpace(competition) &&
             string.IsNullOrWhiteSpace(season) &&
+            string.IsNullOrWhiteSpace(tournamentCycle) &&
             !fromUtc.HasValue &&
             !toUtc.HasValue &&
             !asOfDate.HasValue &&
@@ -1813,6 +1811,7 @@ public class EloController(
         string rulesetVersion,
         string? competition,
         string? season,
+        string? tournamentCycle,
         DateTime? fromUtc,
         DateTime? toUtc)
     {
@@ -1828,6 +1827,11 @@ public class EloController(
         if (!string.IsNullOrWhiteSpace(season))
         {
             query = ApplySeasonFilter(query, season);
+        }
+
+        if (!string.IsNullOrWhiteSpace(tournamentCycle))
+        {
+            query = query.Where(x => x.Game.TournamentCycle != null && x.Game.TournamentCycle.Key == tournamentCycle.Trim());
         }
 
         if (fromUtc.HasValue)
@@ -1873,17 +1877,13 @@ public class EloController(
                 var seasons = await dbContext.RatingHistories
                     .AsNoTracking()
                     .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion)
-                    .Select(x => new
-                    {
-                        x.Game.Season.Label,
-                        x.GameDateTimeUtc
-                    })
+                    .Select(x => x.Game.Season.Label)
                     .ToListAsync(cancellationToken);
 
                 return new EloRankingFilterOptions(
                     countries.Select(DisplayCountryFromCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x).ToList(),
                     competitions,
-                    seasons.Select(x => NormalizeSeasonLabel(x.Label, x.GameDateTimeUtc)).Distinct().OrderByDescending(x => x).ToList());
+                    seasons.Distinct().OrderByDescending(x => x).ToList());
             }) ?? new EloRankingFilterOptions([], [], []);
     }
 
@@ -1921,9 +1921,10 @@ public class EloController(
                 x => x.First().EloDelta);
     }
 
-    private static bool HasHistoryFilter(string? competition, string? season, DateTime? fromUtc, DateTime? toUtc)
+    private static bool HasHistoryFilter(string? competition, string? season, string? tournamentCycle, DateTime? fromUtc, DateTime? toUtc)
         => !string.IsNullOrWhiteSpace(competition) ||
            !string.IsNullOrWhiteSpace(season) ||
+           !string.IsNullOrWhiteSpace(tournamentCycle) ||
            fromUtc.HasValue ||
            toUtc.HasValue;
 
@@ -1931,6 +1932,7 @@ public class EloController(
         string? country,
         string? competition,
         string? season,
+        string? tournamentCycle,
         DateTime? fromUtc,
         DateTime? toUtc,
         int minGames,
@@ -1938,6 +1940,7 @@ public class EloController(
         => !string.IsNullOrWhiteSpace(country) ||
            !string.IsNullOrWhiteSpace(competition) ||
            !string.IsNullOrWhiteSpace(season) ||
+           !string.IsNullOrWhiteSpace(tournamentCycle) ||
            fromUtc.HasValue ||
            toUtc.HasValue ||
            minGames > 0 ||
@@ -1971,21 +1974,7 @@ public class EloController(
            CountryCodeCatalog.AreEquivalent(countryCode, country);
 
     private static IQueryable<RatingHistory> ApplySeasonFilter(IQueryable<RatingHistory> query, string season)
-    {
-        var normalized = NormalizeSeasonLabel(season);
-        if (!TryGetSeasonWindow(normalized, out var seasonStartUtc, out var seasonEndUtc))
-        {
-            return query.Where(x => x.Game.Season.Label == normalized);
-        }
-
-        SetSingleYearSeasonLabels(normalized, out var previousSingleYearSeasonLabel, out var currentSingleYearSeasonLabel);
-        return query.Where(x =>
-            x.Game.Season.Label == normalized ||
-            x.Game.Season.Label == currentSingleYearSeasonLabel ||
-            (x.GameDateTimeUtc >= seasonStartUtc &&
-             x.GameDateTimeUtc <= seasonEndUtc &&
-             x.Game.Season.Label != previousSingleYearSeasonLabel));
-    }
+        => query.Where(x => x.Game.Season.Label == season.Trim());
 
     private static string NormalizeSeasonLabel(string season, DateTime? gameDateTimeUtc = null)
     {

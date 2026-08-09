@@ -1,4 +1,14 @@
 ﻿@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@implements IDisposable
+
+@if (isNavigating)
+{
+    <div class="app-navigation-loading" role="status" aria-live="polite">
+        <span class="app-navigation-spinner" aria-hidden="true"></span>
+        <span>Loading page…</span>
+    </div>
+}
 
 <div class="page">
     <div class="sidebar">
@@ -47,3 +57,32 @@
     <a href="" class="reload">Reload</a>
     <a class="dismiss">x</a>
 </div>
+
+@code {
+    private bool isNavigating;
+    private IDisposable? locationChangingRegistration;
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += HandleLocationChanged;
+        locationChangingRegistration = Navigation.RegisterLocationChangingHandler(HandleLocationChanging);
+    }
+
+    private ValueTask HandleLocationChanging(LocationChangingContext context)
+    {
+        isNavigating = true;
+        return ValueTask.CompletedTask;
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        isNavigating = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
+        locationChangingRegistration?.Dispose();
+    }
+}

@@ -81,6 +81,7 @@ public sealed class EloResponseCache(
         string? country,
         string? competition,
         string? season,
+        string? tournamentCycle,
         DateTime? fromUtc,
         DateTime? toUtc,
         DateTime? asOfDate,
@@ -88,7 +89,7 @@ public sealed class EloResponseCache(
         string? team,
         int page,
         int pageSize)
-        => $"elo:rankings:{poolKey}:{rulesetVersion}:{teamScope}:{Normalize(country)}:{Normalize(competition)}:{Normalize(season)}:{FormatDate(fromUtc)}:{FormatDate(toUtc)}:{FormatDate(asOfDate)}:{minGames}:{Normalize(team)}:{page}:{pageSize}";
+        => $"elo:rankings:{poolKey}:{rulesetVersion}:{teamScope}:{Normalize(country)}:{Normalize(competition)}:{Normalize(season)}:{Normalize(tournamentCycle)}:{FormatDate(fromUtc)}:{FormatDate(toUtc)}:{FormatDate(asOfDate)}:{minGames}:{Normalize(team)}:{page}:{pageSize}";
 
     public static string EvolutionKey(
         string poolKey,
@@ -96,10 +97,11 @@ public sealed class EloResponseCache(
         IEnumerable<Guid> teamIds,
         string? competition,
         string? season,
+        string? tournamentCycle,
         DateTime? fromUtc,
         DateTime? toUtc,
         int pointsPerTeam)
-        => $"elo:evolution:{poolKey}:{rulesetVersion}:{string.Join(',', teamIds)}:{Normalize(competition)}:{Normalize(season)}:{FormatDate(fromUtc)}:{FormatDate(toUtc)}:{pointsPerTeam}";
+        => $"elo:evolution:{poolKey}:{rulesetVersion}:{string.Join(',', teamIds)}:{Normalize(competition)}:{Normalize(season)}:{Normalize(tournamentCycle)}:{FormatDate(fromUtc)}:{FormatDate(toUtc)}:{pointsPerTeam}";
 
     private static string Normalize(string? value) => value?.Trim().ToLowerInvariant() ?? string.Empty;
 

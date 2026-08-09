@@ -4,6 +4,7 @@ using System.Text.Json;
 using BasketElo.Domain.Backfill;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
+using BasketElo.Domain.Tournaments;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,8 @@ public class BackfillJobProcessor(
     ILogger<BackfillJobProcessor> logger,
     IOptions<BackfillOptions> backfillOptions) : IBackfillJobProcessor
 {
+    private static readonly TimeSpan CrossSourceReconciliationWindow = TimeSpan.FromHours(36);
+
     public async Task<bool> TryProcessNextPendingJobAsync(CancellationToken cancellationToken)
     {
         var job = await dbContext.BackfillJobs
@@ -241,6 +244,11 @@ public class BackfillJobProcessor(
             }
 
             var season = await GetOrCreateSeasonAsync(competition, canonicalSeason, usesSingleYearSeasonLabel, cancellationToken);
+            var tournamentCycle = await GetOrCreateTournamentCycleAsync(
+                configuredLeague?.Country ?? job.Country,
+                configuredLeague?.LeagueName ?? competition.Name,
+                canonicalSeason,
+                cancellationToken);
 
             var isRichEuropeanChampionsCupArchive = string.Equals(provider.SourceKey, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
                 resolvedLeagues.Any(league => league.SourceLeagueId.StartsWith(
@@ -323,6 +331,35 @@ public class BackfillJobProcessor(
                 }
             }
 
+            var preservesFibaAfroBasketRows = IsFibaAfroBasketCompetition(
+                provider.SourceKey,
+                job.Country,
+                configuredLeague?.LeagueName ?? competition.Name);
+            var preservesFibaAsiaCupRows = IsFibaAsiaCupCompetition(
+                provider.SourceKey,
+                job.Country,
+                configuredLeague?.LeagueName ?? competition.Name);
+            var preservesFibaAmeriCupRows = IsFibaAmeriCupCompetition(
+                provider.SourceKey,
+                job.Country,
+                configuredLeague?.LeagueName ?? competition.Name);
+            var preservesFibaWorldCupRows = IsFibaWorldCupCompetition(
+                provider.SourceKey,
+                job.Country,
+                configuredLeague?.LeagueName ?? competition.Name);
+            var preservesFibaOlympicRows = IsFibaOlympicCompetition(
+                provider.SourceKey,
+                job.Country,
+                configuredLeague?.LeagueName ?? competition.Name);
+            var preservesFibaOceaniaRows = IsFibaOceaniaCompetition(
+                provider.SourceKey,
+                job.Country,
+                configuredLeague?.LeagueName ?? competition.Name);
+            var preservesFibaAmericasRegionalRows = IsFibaAmericasRegionalCompetition(
+                provider.SourceKey,
+                job.Country,
+                configuredLeague?.LeagueName ?? competition.Name);
+
             foreach (var providerGame in allGames)
             {
                 var homeCountryCode = NormalizeCountryCode(providerGame.SourceHomeTeamCountryCode ??
@@ -341,10 +378,34 @@ public class BackfillJobProcessor(
                         x.Source == providerGame.Source &&
                         x.SourceGameId == providerGame.SourceGameId,
                         cancellationToken);
+                var reverseReconciled = false;
+                if (existingGame is null && !string.Equals(providerGame.Source, "livescore", StringComparison.OrdinalIgnoreCase))
+                {
+                    var reverseMatch = await FindLivescoreFixtureAsync(
+                        competition.Id,
+                        homeTeam.Id,
+                        awayTeam.Id,
+                        providerGame.GameDateTimeUtc,
+                        cancellationToken);
+                    if (reverseMatch.Ambiguous)
+                    {
+                        summary.Warnings.Add($"Skipped {providerGame.Source}:{providerGame.SourceGameId}: multiple Livescore fixtures matched the official schedule within the reconciliation window.");
+                        continue;
+                    }
+
+                    existingGame = reverseMatch.Game;
+                    reverseReconciled = existingGame is not null;
+                    if (existingGame is not null)
+                    {
+                        summary.GamesDeduplicated += 1;
+                        existingGame.Source = providerGame.Source;
+                        existingGame.SourceGameId = providerGame.SourceGameId;
+                    }
+                }
 
                 if (existingGame is null)
                 {
-                    var duplicateAcrossSources = await dbContext.Games
+                    var duplicateAcrossSources = !preservesFibaAfroBasketRows && !preservesFibaAsiaCupRows && !preservesFibaAmeriCupRows && !preservesFibaWorldCupRows && !preservesFibaOlympicRows && !preservesFibaOceaniaRows && !preservesFibaAmericasRegionalRows && await dbContext.Games
                         .Where(x =>
                             x.SeasonId == season.Id &&
                             x.Source != providerGame.Source &&
@@ -375,6 +436,7 @@ public class BackfillJobProcessor(
                         ParserVersion = providerGame.Provenance?.ParserVersion,
                         CompetitionId = competition.Id,
                         SeasonId = season.Id,
+                        TournamentCycleId = tournamentCycle?.Id,
                         GameDateTimeUtc = providerGame.GameDateTimeUtc,
                         HomeTeamId = homeTeam.Id,
                         AwayTeamId = awayTeam.Id,
@@ -394,12 +456,21 @@ public class BackfillJobProcessor(
                 else
                 {
                     var preserveManualResult = existingGame.HasManualResultOverride;
+                    var preserveExistingFinishedResult = reverseReconciled &&
+                        string.Equals(existingGame.Status, "finished", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(providerGame.Status, "scheduled", StringComparison.OrdinalIgnoreCase) &&
+                        !providerGame.HomeScore.HasValue &&
+                        !providerGame.AwayScore.HasValue;
                     existingGame.CompetitionId = competition.Id;
                     existingGame.SeasonId = season.Id;
+                    if (tournamentCycle is not null)
+                    {
+                        existingGame.TournamentCycleId = tournamentCycle.Id;
+                    }
                     existingGame.GameDateTimeUtc = providerGame.GameDateTimeUtc;
                     existingGame.HomeTeamId = homeTeam.Id;
                     existingGame.AwayTeamId = awayTeam.Id;
-                    if (!preserveManualResult)
+                    if (!preserveManualResult && !preserveExistingFinishedResult)
                     {
                         existingGame.HomeScore = providerGame.HomeScore;
                         existingGame.AwayScore = providerGame.AwayScore;
@@ -689,6 +760,135 @@ public class BackfillJobProcessor(
         await dbContext.SaveChangesAsync(cancellationToken);
         return season;
     }
+
+    private async Task<TournamentCycle?> GetOrCreateTournamentCycleAsync(
+        string country,
+        string competitionName,
+        string seasonLabel,
+        CancellationToken cancellationToken)
+    {
+        var key = TournamentCycleCatalog.ResolveKey(country, competitionName, seasonLabel);
+        if (key is null)
+        {
+            return null;
+        }
+
+        var existing = await dbContext.TournamentCycles
+            .FirstOrDefaultAsync(x => x.Key == key, cancellationToken);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var family = key.StartsWith("afrobasket-", StringComparison.OrdinalIgnoreCase)
+            ? "AfroBasket"
+            : key.StartsWith("asiacup-", StringComparison.OrdinalIgnoreCase)
+                ? "FIBA Asia Cup"
+                    : key.StartsWith("americup-", StringComparison.OrdinalIgnoreCase)
+                        ? "FIBA AmeriCup"
+                    : key.StartsWith("centrobasket-", StringComparison.OrdinalIgnoreCase)
+                        ? "Centrobasket Championship"
+                        : key.StartsWith("cocaba-", StringComparison.OrdinalIgnoreCase)
+                            ? "COCABA Championship"
+                            : key.StartsWith("south-american-", StringComparison.OrdinalIgnoreCase)
+                                ? "South American Championship"
+                                : key.StartsWith("caribbean-", StringComparison.OrdinalIgnoreCase)
+                                    ? "Caribbean Basketball Championship"
+                                        : key.StartsWith("oceania-", StringComparison.OrdinalIgnoreCase)
+                                            ? "FIBA Oceania Championship"
+                                        : key.StartsWith("worldcup-", StringComparison.OrdinalIgnoreCase)
+                                            ? "FIBA Basketball World Cup"
+                                        : key.StartsWith("olympics-", StringComparison.OrdinalIgnoreCase)
+                                            ? "Olympics"
+                                            : "EuroBasket";
+        var cycle = new TournamentCycle
+        {
+            Id = Guid.NewGuid(),
+            Key = key,
+            Family = family,
+            EditionLabel = seasonLabel.Trim(),
+            DisplayName = TournamentCycleCatalog.DisplayName(family, seasonLabel.Trim()),
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        dbContext.TournamentCycles.Add(cycle);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return cycle;
+    }
+
+    private static bool IsFibaAfroBasketCompetition(
+        string provider,
+        string country,
+        string competitionName)
+        => string.Equals(provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(country, "Africa", StringComparison.OrdinalIgnoreCase) &&
+            competitionName is "FIBA AfroBasket" or
+                "FIBA AfroBasket Qualifiers" or
+                "FIBA AfroBasket Pre-Qualifiers";
+
+    private static bool IsFibaAsiaCupCompetition(
+        string provider,
+        string country,
+        string competitionName)
+        => string.Equals(provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(country, "Asia", StringComparison.OrdinalIgnoreCase) &&
+            competitionName is "FIBA Asia Cup" or
+                "FIBA Asia Cup Qualifiers" or
+                "FIBA Asia Cup Pre-Qualifiers";
+
+    private static bool IsFibaAmeriCupCompetition(
+        string provider,
+        string country,
+        string competitionName)
+        => string.Equals(provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(country, "Americas", StringComparison.OrdinalIgnoreCase) &&
+            competitionName is "FIBA AmeriCup" or
+                "FIBA Americas Championship" or
+                "FIBA AmeriCup Qualifiers" or
+                "FIBA AmeriCup Pre-Qualifiers";
+
+    private static bool IsFibaOlympicCompetition(
+        string provider,
+        string country,
+        string competitionName)
+        => string.Equals(provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(country, "World", StringComparison.OrdinalIgnoreCase) &&
+            competitionName is "Summer Olympics" or
+                "Olympics Qualification" or
+                "Olympics Pre-Qualification" or
+                "FIBA Men's Olympic Basketball Tournament" or
+                "FIBA Olympic Qualifying Tournament" or
+                "FIBA Olympic Pre-Qualifying Tournament";
+
+    private static bool IsFibaWorldCupCompetition(
+        string provider,
+        string country,
+        string competitionName)
+        => string.Equals(provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(country, "World", StringComparison.OrdinalIgnoreCase) &&
+            competitionName is "FIBA Basketball World Cup" or
+                "FIBA Basketball World Cup Qualifiers" or
+                "FIBA Basketball World Cup Pre-Qualifiers" or
+                "FIBA WC Qualification";
+
+    private static bool IsFibaOceaniaCompetition(
+        string provider,
+        string country,
+        string competitionName)
+        => string.Equals(provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(country, "Oceania", StringComparison.OrdinalIgnoreCase) &&
+            competitionName is "FIBA Oceania Championship" or
+                "Oceania Championship";
+
+    private static bool IsFibaAmericasRegionalCompetition(
+        string provider,
+        string country,
+        string competitionName)
+        => string.Equals(provider, FibaBasketballDataProvider.Source, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(country, "Americas", StringComparison.OrdinalIgnoreCase) &&
+            competitionName is "Centrobasket Championship" or
+                "COCABA Championship" or
+                "South American Championship" or
+                "Caribbean Basketball Championship";
 
     private async Task<Team> GetOrCreateTeamAsync(
         string source,
@@ -998,9 +1198,51 @@ public class BackfillJobProcessor(
             "Estonia" => "EE",
             "USA" => "US",
             "United States" => "US",
+            "Oceania" => "OCE",
+            "Americas" => "AME",
             "Europe" => null,
             _ => null
         };
+    }
+
+    private async Task<PlannedFixtureMatch> FindLivescoreFixtureAsync(
+        Guid competitionId,
+        Guid homeTeamId,
+        Guid awayTeamId,
+        DateTime gameDateTimeUtc,
+        CancellationToken cancellationToken)
+    {
+        var minimumDateTimeUtc = gameDateTimeUtc - CrossSourceReconciliationWindow;
+        var maximumDateTimeUtc = gameDateTimeUtc + CrossSourceReconciliationWindow;
+        var candidates = await dbContext.Games
+            .Where(x =>
+                x.Source == "livescore" &&
+                x.CompetitionId == competitionId &&
+                x.HomeTeamId == homeTeamId &&
+                x.AwayTeamId == awayTeamId &&
+                x.GameDateTimeUtc >= minimumDateTimeUtc &&
+                x.GameDateTimeUtc <= maximumDateTimeUtc)
+            .ToListAsync(cancellationToken);
+
+        if (candidates.Count == 0)
+        {
+            return new PlannedFixtureMatch(null, false);
+        }
+
+        var ordered = candidates
+            .OrderBy(x => Math.Abs((x.GameDateTimeUtc - gameDateTimeUtc).TotalSeconds))
+            .ToList();
+        if (ordered.Count > 1)
+        {
+            var closestDistance = Math.Abs((ordered[0].GameDateTimeUtc - gameDateTimeUtc).TotalSeconds);
+            var secondClosestDistance = Math.Abs((ordered[1].GameDateTimeUtc - gameDateTimeUtc).TotalSeconds);
+            if (closestDistance == secondClosestDistance)
+            {
+                return new PlannedFixtureMatch(null, true);
+            }
+        }
+
+        return new PlannedFixtureMatch(ordered[0], false);
     }
 
     private static void CompleteJob(BackfillJob job, string status, object summary)
@@ -1037,4 +1279,6 @@ public class BackfillJobProcessor(
         public int IdentityFindingsCount { get; set; }
         public int IdentityBlockersCount { get; set; }
     }
+
+    private sealed record PlannedFixtureMatch(Game? Game, bool Ambiguous);
 }

@@ -93,6 +93,28 @@
         </div>
 
         <div class="filter-field">
+            <label for="tournamentCycleFilter">Tournament cycle</label>
+            <select id="tournamentCycleFilter" class="form-select" @bind="selectedTournamentCycle">
+                <option value="">All cycles</option>
+                @foreach (var option in response?.Filters.TournamentCycles ?? [])
+                {
+                    <option value="@option.Key">@option.DisplayName</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="playedYearFilter">Played year (UTC)</label>
+            <select id="playedYearFilter" class="form-select" @bind="selectedPlayedYear">
+                <option value="">All years</option>
+                @foreach (var option in response?.Filters.PlayedYears ?? [])
+                {
+                    <option value="@option">@option</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-field">
             <label for="statusFilter">Status</label>
             <select id="statusFilter" class="form-select" @bind="selectedStatus">
                 <option value="">All</option>
@@ -193,6 +215,7 @@
                             <th>Country</th>
                             <th>League</th>
                             <th>Season</th>
+                            <th>Tournament cycle</th>
                             <th>Matchup</th>
                             <th>Score</th>
                             <th>Status</th>
@@ -205,7 +228,7 @@
                         @if (response.Games.Count == 0)
                         {
                             <tr>
-                                <td colspan="10" class="empty-state">No games match the current filters.</td>
+                                <td colspan="11" class="empty-state">No games match the current filters.</td>
                             </tr>
                         }
                         else
@@ -217,6 +240,20 @@
                                     <td>@game.Country</td>
                                     <td>@game.LeagueName</td>
                                     <td>@game.Season</td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(game.TournamentCycle))
+                                        {
+                                            <span>@game.TournamentCycle</span>
+                                            @if (!string.IsNullOrWhiteSpace(game.CompetitionPhase) || !string.IsNullOrWhiteSpace(game.CompetitionRound))
+                                            {
+                                                <small class="source-game-id">@game.CompetitionPhase @game.CompetitionRound</small>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="muted-cell">-</span>
+                                        }
+                                    </td>
                                     <td>
                                         <div class="matchup">
                                             <span>@game.HomeTeam</span>
@@ -340,6 +377,12 @@
     [SupplyParameterFromQuery(Name = "season")]
     public string? Season { get; set; }
 
+    [SupplyParameterFromQuery(Name = "tournamentCycle")]
+    public string? TournamentCycle { get; set; }
+
+    [SupplyParameterFromQuery(Name = "playedYear")]
+    public int? PlayedYear { get; set; }
+
     [SupplyParameterFromQuery(Name = "status")]
     public string? Status { get; set; }
 
@@ -375,6 +418,8 @@
     private string? selectedSource;
     private string? selectedLeague;
     private string? selectedSeason;
+    private string? selectedTournamentCycle;
+    private string? selectedPlayedYear;
     private string? selectedStatus;
     private string? selectedReview;
     private string? team;
@@ -407,6 +452,8 @@
         selectedSource = Source;
         selectedLeague = League;
         selectedSeason = Season;
+        selectedTournamentCycle = TournamentCycle;
+        selectedPlayedYear = PlayedYear?.ToString(CultureInfo.InvariantCulture);
         selectedStatus = Status;
         selectedReview = Review;
         team = Team;
@@ -464,6 +511,8 @@
         selectedSource = null;
         selectedLeague = null;
         selectedSeason = null;
+        selectedTournamentCycle = null;
+        selectedPlayedYear = null;
         selectedStatus = null;
         selectedReview = null;
         teamId = null;
@@ -514,6 +563,8 @@
             ["source"] = selectedSource,
             ["league"] = selectedLeague,
             ["season"] = selectedSeason,
+            ["tournamentCycle"] = selectedTournamentCycle,
+            ["playedYear"] = selectedPlayedYear,
             ["status"] = selectedStatus,
             ["review"] = selectedReview,
             ["teamId"] = teamId,
@@ -540,6 +591,8 @@
         Append(query, "source", selectedSource);
         Append(query, "leagueName", selectedLeague);
         Append(query, "season", selectedSeason);
+        Append(query, "tournamentCycle", selectedTournamentCycle);
+        Append(query, "playedYear", selectedPlayedYear);
         Append(query, "status", selectedStatus);
         Append(query, "review", selectedReview);
         Append(query, "teamId", teamId?.ToString());

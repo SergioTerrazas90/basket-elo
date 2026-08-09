@@ -318,7 +318,7 @@
                                                     Cancel
                                                 </button>
                                             }
-                                            @if (run.Status == EloRebuildRunStatus.Failed || run.Status == EloRebuildRunStatus.Canceled)
+                                            @if (run.Status == EloRebuildRunStatus.Failed || run.Status == EloRebuildRunStatus.Canceled || run.Status == EloRebuildRunStatus.Blocked)
                                             {
                                                 <button class="btn btn-sm btn-outline-primary" @onclick="() => RetryRebuildAsync(run.Id)" disabled="@isBusy">
                                                     Retry
@@ -491,6 +491,7 @@
         "running" => "status-progress",
         "canceled" => "status-canceled",
         "failed" => "status-failed",
+        "blocked" => "status-failed",
         "attention" => "status-failed",
         "idle" => "status-empty",
         _ => "status-empty"

@@ -358,6 +358,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("AssignedGameId")
+                        .HasColumnType("uuid");
+
                     b.Property<short?>("AwayScore")
                         .HasColumnType("smallint");
 
@@ -404,6 +407,14 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("ResolutionAction")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -413,6 +424,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("ResolvedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("RunId")
                         .HasColumnType("uuid");
@@ -459,6 +473,8 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AssignedGameId");
 
                     b.HasIndex("RunId");
 
@@ -677,6 +693,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<Guid?>("TournamentCycleId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -695,7 +714,34 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.HasIndex("Source", "SourceGameId")
                         .IsUnique();
 
+                    b.HasIndex("TournamentCycleId", "GameDateTimeUtc");
+
                     b.ToTable("games", (string)null);
+                });
+
+            modelBuilder.Entity("BasketElo.Domain.Entities.GameTournamentCycleLink", b =>
+                {
+                    b.Property<Guid>("GameId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TournamentCycleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("GameId", "TournamentCycleId");
+
+                    b.HasIndex("TournamentCycleId", "Stage", "GameId");
+
+                    b.ToTable("game_tournament_cycle_links", (string)null);
                 });
 
             modelBuilder.Entity("BasketElo.Domain.Entities.IdentityHealthCheckFinding", b =>
@@ -1730,6 +1776,51 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.ToTable("team_ratings", (string)null);
                 });
 
+            modelBuilder.Entity("BasketElo.Domain.Entities.TournamentCycle", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("EditionLabel")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("EndDateUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Family")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<DateTime?>("StartDateUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.HasIndex("Family", "EditionLabel");
+
+                    b.ToTable("tournament_cycles", (string)null);
+                });
+
             modelBuilder.Entity("BasketElo.Domain.Entities.ApplicationUserExternalLogin", b =>
                 {
                     b.HasOne("BasketElo.Domain.Entities.ApplicationUser", "User")
@@ -1807,6 +1898,11 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("BasketElo.Domain.Entities.TournamentCycle", "TournamentCycle")
+                        .WithMany("Games")
+                        .HasForeignKey("TournamentCycleId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("AwayTeam");
 
                     b.Navigation("Competition");
@@ -1814,6 +1910,27 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Navigation("HomeTeam");
 
                     b.Navigation("Season");
+
+                    b.Navigation("TournamentCycle");
+                });
+
+            modelBuilder.Entity("BasketElo.Domain.Entities.GameTournamentCycleLink", b =>
+                {
+                    b.HasOne("BasketElo.Domain.Entities.Game", "Game")
+                        .WithMany("TournamentCycleLinks")
+                        .HasForeignKey("GameId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BasketElo.Domain.Entities.TournamentCycle", "TournamentCycle")
+                        .WithMany("GameLinks")
+                        .HasForeignKey("TournamentCycleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Game");
+
+                    b.Navigation("TournamentCycle");
                 });
 
             modelBuilder.Entity("BasketElo.Domain.Entities.IdentityHealthCheckFinding", b =>
@@ -2171,6 +2288,11 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Navigation("Aliases");
                 });
 
+            modelBuilder.Entity("BasketElo.Domain.Entities.Game", b =>
+                {
+                    b.Navigation("TournamentCycleLinks");
+                });
+
             modelBuilder.Entity("BasketElo.Domain.Entities.IdentityHealthCheckRun", b =>
                 {
                     b.Navigation("Findings");
@@ -2204,6 +2326,13 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("BasketElo.Domain.Entities.Team", b =>
                 {
                     b.Navigation("Aliases");
+                });
+
+            modelBuilder.Entity("BasketElo.Domain.Entities.TournamentCycle", b =>
+                {
+                    b.Navigation("GameLinks");
+
+                    b.Navigation("Games");
                 });
 #pragma warning restore 612, 618
         }

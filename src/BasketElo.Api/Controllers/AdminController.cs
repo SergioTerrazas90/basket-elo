@@ -244,7 +244,7 @@ public class AdminController(BasketEloDbContext dbContext) : ControllerBase
         }
 
         if (backfillJobs.Any(x => x.Status == BackfillJobStatus.Failed) ||
-            rebuildRuns.Any(x => x.Status == EloRebuildRunStatus.Failed))
+            rebuildRuns.Any(x => x.Status is EloRebuildRunStatus.Failed or EloRebuildRunStatus.Blocked))
         {
             return "attention";
         }

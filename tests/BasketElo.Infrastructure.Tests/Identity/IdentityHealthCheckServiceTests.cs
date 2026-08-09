@@ -342,7 +342,8 @@ public sealed class IdentityHealthCheckServiceTests
             LeftTeamId = left.Id,
             RightTeamId = right.Id,
             Action = "keep_separate",
-            ResolvedBy = "test"
+            ResolvedBy = "test",
+            Note = "Different clubs despite similar names."
         }, CancellationToken.None);
 
         Assert.Single(await dbContext.IdentityReviewDecisions.ToListAsync());

@@ -25,6 +25,8 @@ public static class CurrentResultReviewReasons
     public const string AmbiguousHomeTeam = "ambiguous_home_team";
     public const string AmbiguousAwayTeam = "ambiguous_away_team";
     public const string InvalidResult = "invalid_result";
+    public const string AmbiguousPlannedFixture = "ambiguous_planned_fixture";
+    public const string TournamentCycleConfirmationRequired = "tournament_cycle_confirmation_required";
 }
 
 public sealed record CurrentResultCandidate(
@@ -75,9 +77,40 @@ public sealed record CurrentResultReviewDto(
     string? StageName,
     string HomeTeamName,
     string AwayTeamName,
+    DateTime GameDateTimeUtc,
+    short? HomeScore,
+    short? AwayScore,
+    string ResultStatus,
     string Reason,
     string Status,
     string? SuggestedCompetitionName,
     string? SuggestedCompetitionCountryCode,
+    Guid? AssignedGameId,
+    string? ResolutionAction,
+    string? ResolutionNote,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);
+
+public sealed record CurrentResultReviewMatchDto(
+    Guid GameId,
+    string Source,
+    string SourceGameId,
+    DateTime GameDateTimeUtc,
+    string CompetitionName,
+    string Season,
+    string? TournamentCycleKey,
+    string HomeTeamName,
+    string AwayTeamName,
+    string Status);
+
+public sealed record CurrentResultReviewResolutionRequest(
+    string Action,
+    Guid? GameId = null,
+    string? Note = null);
+
+public sealed record CurrentResultReviewResolutionDto(
+    Guid ReviewId,
+    string Status,
+    Guid? AssignedGameId,
+    int EloRunsQueued,
+    string? Message);

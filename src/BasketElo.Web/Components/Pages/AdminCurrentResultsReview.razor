@@ -1,0 +1,241 @@
+@page "/admin/current-results-review"
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@using BasketElo.Domain.CurrentResults
+@inject HttpClient Http
+
+<PageTitle>Current Results Review</PageTitle>
+
+<div class="admin-page">
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Operations</p>
+            <h1>Current-results review</h1>
+            <p class="intro">Assign Livescore results that could not be matched safely, or ignore them without creating duplicate games.</p>
+        </div>
+        <div class="header-actions">
+            <NavLink class="btn btn-outline-secondary" href="admin">Admin dashboard</NavLink>
+            <button type="button" class="btn btn-primary" @onclick="LoadAsync" disabled="@isBusy">Refresh</button>
+        </div>
+    </section>
+
+    <section class="card mb-4">
+        <div class="card-body d-flex flex-wrap align-items-end gap-3">
+            <div>
+                <label class="form-label" for="current-results-status">Status</label>
+                <select id="current-results-status" class="form-select" @bind="statusFilter">
+                    <option value="open">Needs review</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="ignored">Ignored</option>
+                    <option value="all">All</option>
+                </select>
+            </div>
+            <span class="text-muted small">Open reviews are held outside the games table until assigned.</span>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="alert @messageCss" role="alert">@message</div>
+    }
+
+    @if (reviews is null)
+    {
+        <p><em>Loading current-results reviews...</em></p>
+    }
+    else if (reviews.Count == 0)
+    {
+        <div class="alert alert-success">No current-results reviews match this filter.</div>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-3">
+            @foreach (var review in reviews)
+            {
+                var isOpen = review.Status == CurrentResultReviewStatuses.Open;
+                var isExpanded = expandedReviewId == review.Id;
+                var cyclePending = review.Reason == CurrentResultReviewReasons.TournamentCycleConfirmationRequired;
+                <article class="card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start gap-3">
+                            <div>
+                                <div class="text-muted small">@review.SourceDate.ToString("yyyy-MM-dd") · @review.CompetitionName · @review.Reason</div>
+                                <h2 class="h5 mb-1">@review.HomeTeamName <span class="text-muted">vs</span> @review.AwayTeamName</h2>
+                                <div class="small">@review.ResultStatus · @FormatScore(review) · @review.GameDateTimeUtc.ToLocalTime().ToString("g")</div>
+                                @if (!string.IsNullOrWhiteSpace(review.SourceUrl))
+                                {
+                                    <a class="small" href="@review.SourceUrl" target="_blank" rel="noreferrer">Open Livescore source</a>
+                                }
+                            </div>
+                            <span class="badge @(isOpen ? "text-bg-warning" : review.Status == CurrentResultReviewStatuses.Resolved ? "text-bg-success" : "text-bg-secondary")">@review.Status</span>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(review.ResolutionNote))
+                        {
+                            <p class="text-muted small mt-2 mb-0">Note: @review.ResolutionNote</p>
+                        }
+
+                        @if (isOpen)
+                        {
+                            @if (cyclePending)
+                            {
+                                <div class="alert alert-warning mt-3 mb-2">Tournament cycle confirmation is required before this game can become Elo-eligible. Confirm it through the official tournament ingestion, then refresh this queue.</div>
+                            }
+                            <div class="d-flex gap-2 mt-3">
+                                @if (!cyclePending)
+                                {
+                                    <button type="button" class="btn btn-sm btn-primary" @onclick="() => ToggleMatchesAsync(review.Id)" disabled="@isBusy">
+                                        @(isExpanded ? "Hide planned matches" : "Choose planned match")
+                                    </button>
+                                }
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => IgnoreAsync(review.Id)" disabled="@isBusy">Ignore</button>
+                            </div>
+                        }
+
+                        @if (isExpanded)
+                        {
+                            <div class="mt-3 border-top pt-3">
+                                @if (!matchesByReview.TryGetValue(review.Id, out var matches))
+                                {
+                                    <p class="text-muted mb-0">Loading planned matches...</p>
+                                }
+                                else if (matches.Count == 0)
+                                {
+                                    <p class="text-muted mb-0">No scheduled games were found within 36 hours. Leave this review open until the planned source is available, or ignore it.</p>
+                                }
+                                else
+                                {
+                                    <p class="small text-muted">Select the canonical planned fixture. The Livescore score/status will be applied while the planned source identity is preserved.</p>
+                                    <div class="list-group">
+                                        @foreach (var match in matches)
+                                        {
+                                            var selected = selectedGameByReview.TryGetValue(review.Id, out var selectedGame) && selectedGame == match.GameId;
+                                            <button type="button" class="list-group-item list-group-item-action @(selected ? "active" : string.Empty)" @onclick="() => SelectMatch(review.Id, match.GameId)">
+                                                <div class="d-flex justify-content-between gap-3">
+                                                    <strong>@match.HomeTeamName <span class="fw-normal">vs</span> @match.AwayTeamName</strong>
+                                                    <span>@match.GameDateTimeUtc.ToLocalTime().ToString("g")</span>
+                                                </div>
+                                                <div class="small">@match.CompetitionName · @match.Season · @(match.TournamentCycleKey ?? "no tournament cycle") · @match.Source:@match.SourceGameId</div>
+                                            </button>
+                                        }
+                                    </div>
+                                    <div class="d-flex gap-2 mt-3">
+                                        <button type="button" class="btn btn-success" @onclick="() => AssignAsync(review.Id)" disabled="@(!selectedGameByReview.ContainsKey(review.Id) || isBusy)">Assign selected match</button>
+                                        <button type="button" class="btn btn-outline-secondary" @onclick="() => Collapse(review.Id)">Cancel</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<CurrentResultReviewDto>? reviews;
+    private readonly Dictionary<Guid, IReadOnlyList<CurrentResultReviewMatchDto>> matchesByReview = [];
+    private readonly Dictionary<Guid, Guid> selectedGameByReview = [];
+    private Guid? expandedReviewId;
+    private string statusFilter = CurrentResultReviewStatuses.Open;
+    private string? message;
+    private string messageCss = "alert-info";
+    private bool isBusy;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isBusy = true;
+        message = null;
+        try
+        {
+            var query = statusFilter == "all" ? "" : $"?status={Uri.EscapeDataString(statusFilter)}";
+            reviews = await Http.GetFromJsonAsync<IReadOnlyList<CurrentResultReviewDto>>($"api/current-results/reviews{query}") ?? [];
+            matchesByReview.Clear();
+            selectedGameByReview.Clear();
+            expandedReviewId = null;
+        }
+        catch (Exception exception)
+        {
+            SetMessage($"Could not load current-results reviews: {exception.Message}", "alert-danger");
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task ToggleMatchesAsync(Guid reviewId)
+    {
+        if (expandedReviewId == reviewId)
+        {
+            expandedReviewId = null;
+            return;
+        }
+
+        expandedReviewId = reviewId;
+        if (matchesByReview.ContainsKey(reviewId)) return;
+
+        try
+        {
+            matchesByReview[reviewId] = await Http.GetFromJsonAsync<IReadOnlyList<CurrentResultReviewMatchDto>>($"api/current-results/reviews/{reviewId}/matches") ?? [];
+        }
+        catch (Exception exception)
+        {
+            SetMessage($"Could not load planned matches: {exception.Message}", "alert-danger");
+        }
+    }
+
+    private void SelectMatch(Guid reviewId, Guid gameId) => selectedGameByReview[reviewId] = gameId;
+
+    private void Collapse(Guid reviewId)
+    {
+        if (expandedReviewId == reviewId) expandedReviewId = null;
+    }
+
+    private async Task AssignAsync(Guid reviewId)
+    {
+        if (!selectedGameByReview.TryGetValue(reviewId, out var gameId)) return;
+        await ResolveAsync(reviewId, new CurrentResultReviewResolutionRequest("assign", gameId, "Assigned from Current Results Review."));
+    }
+
+    private async Task IgnoreAsync(Guid reviewId) =>
+        await ResolveAsync(reviewId, new CurrentResultReviewResolutionRequest("ignore", null, "Ignored from Current Results Review."));
+
+    private async Task ResolveAsync(Guid reviewId, CurrentResultReviewResolutionRequest request)
+    {
+        isBusy = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync($"api/current-results/reviews/{reviewId}/resolve", request);
+            if (!response.IsSuccessStatusCode)
+            {
+                SetMessage(await response.Content.ReadAsStringAsync(), "alert-danger");
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<CurrentResultReviewResolutionDto>();
+            SetMessage(result?.Message ?? "Review updated.", "alert-success");
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            SetMessage($"Could not update review: {exception.Message}", "alert-danger");
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static string FormatScore(CurrentResultReviewDto review) =>
+        review.HomeScore.HasValue && review.AwayScore.HasValue ? $"{review.HomeScore}-{review.AwayScore}" : "score pending";
+
+    private void SetMessage(string value, string css)
+    {
+        message = value;
+        messageCss = css;
+    }
+}

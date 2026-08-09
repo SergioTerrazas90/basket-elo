@@ -1,12 +1,22 @@
 @page "/admin/identity-review"
 @attribute [Authorize(Roles = "admin")]
+@attribute [StreamRendering]
 @rendermode InteractiveServer
 @using BasketElo.Domain.Teams
 @inject HttpClient Http
 
 <PageTitle>Identity Review</PageTitle>
 
-<div class="admin-identity-review-page">
+<div class="admin-identity-review-page @(isBusy ? "identity-review-loading" : string.Empty)" aria-busy="@isBusy">
+    @if (isBusy)
+    {
+        <div class="identity-review-loading-backdrop" aria-hidden="true"></div>
+        <div class="identity-review-loading-indicator" role="status" aria-live="polite">
+            <span class="identity-review-spinner" aria-hidden="true"></span>
+            <span>Loading identity review…</span>
+        </div>
+    }
+
     <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
         <div>
             <h1>Identity review</h1>
@@ -130,19 +140,34 @@
                         {
                             <div class="identity-review-actions">
                                 <div class="row g-2 align-items-end">
+                                    <div class="col-12">
+                                        <label class="form-label" for="decision-note-@candidate.PrimaryFindingId">Description / reason</label>
+                                        <textarea id="decision-note-@candidate.PrimaryFindingId"
+                                                  class="form-control"
+                                                  rows="2"
+                                                  maxlength="1000"
+                                                  placeholder="Explain this decision, especially why these are separate clubs."
+                                                  @bind="state.Note"
+                                                  @bind:event="oninput"></textarea>
+                                        <div class="form-text">Required for “Different clubs”; optional for the other actions.</div>
+                                    </div>
                                     <div class="col-md-5">
                                         <label class="form-label" for="target-@candidate.PrimaryFindingId">Merge onto (team to keep)</label>
                                         <select id="target-@candidate.PrimaryFindingId" class="form-select" @bind="state.MergeTargetTeamId">
-                                            <option value="@candidate.LeftTeam.Id">@candidate.LeftTeam.Name</option>
-                                            <option value="@candidate.RightTeam.Id">@candidate.RightTeam.Name</option>
+                                        <option value="@candidate.LeftTeam.Id">@candidate.LeftTeam.Name [@candidate.LeftTeam.Id]</option>
+                                        <option value="@candidate.RightTeam.Id">@candidate.RightTeam.Name [@candidate.RightTeam.Id]</option>
                                         </select>
                                     </div>
                                     <div class="col-md-7 d-flex flex-wrap gap-2 align-items-center">
                                         <label class="form-check me-2">
-                                            <input class="form-check-input" type="checkbox" @bind="state.ConfirmMergeWithRatings" />
+                                            <input class="form-check-input" type="checkbox" checked="@IsMergeConfirmed(candidate)" @onclick="() => ToggleMergeConfirmation(candidate)" @onclick:preventDefault="true" />
                                             <span class="form-check-label">I understand this changes historical ownership</span>
                                         </label>
-                                        <button class="btn btn-sm btn-primary" @onclick="() => MergeCandidateAsync(candidate)" disabled="@(isBusy || !state.ConfirmMergeWithRatings)">Merge pair</button>
+                                        @if (IsMergeConfirmed(candidate))
+                                        {
+                                            <span class="badge bg-success">Confirmed</span>
+                                        }
+                                        <button class="btn btn-sm btn-primary" @onclick="() => MergeCandidateAsync(candidate)" disabled="@(isBusy || !IsMergeConfirmed(candidate))">Merge pair</button>
                                         <button class="btn btn-sm btn-outline-success" @onclick="() => KeepSeparateCandidateAsync(candidate)" disabled="@isBusy">Different clubs</button>
                                         <button class="btn btn-sm btn-outline-warning" @onclick="() => DeferCandidateAsync(candidate)" disabled="@isBusy">Defer</button>
                                         <button class="btn btn-sm btn-outline-secondary" @onclick="() => IgnoreCandidateAsync(candidate)" disabled="@isBusy">Ignore</button>
@@ -226,6 +251,7 @@
     private string messageCss = "alert-info";
     private readonly Dictionary<string, ReviewState> reviewStates = [];
     private readonly Dictionary<Guid, string> countrySelections = [];
+    private readonly HashSet<Guid> mergeConfirmations = [];
 
     private IdentityHealthCheckRunDto? selectedRun => runs?.FirstOrDefault(x => x.Id == selectedRunId);
     private IReadOnlyList<IdentityReviewCandidateDto> VisibleCandidates => (candidates ?? [])
@@ -237,9 +263,23 @@
 
     protected override async Task OnInitializedAsync()
     {
+        isBusy = true;
         countryCode = Country;
-        options = await Http.GetFromJsonAsync<IdentityHealthOptionsDto>("api/identity-health/options");
-        await LoadAsync();
+        try
+        {
+            options = await Http.GetFromJsonAsync<IdentityHealthOptionsDto>("api/identity-health/options");
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            candidates = [];
+            message = $"Could not load the review page: {ex.Message}";
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
     }
 
     private async Task LoadAsync()
@@ -248,10 +288,11 @@
         message = null;
         evidenceResponse = null;
         evidenceLoading = false;
+        mergeConfirmations.Clear();
 
         try
         {
-            var query = new List<string> { "limit=1000" };
+            var query = new List<string> { "limit=25" };
             Append(query, "countryCode", countryCode == "UNK" ? null : countryCode);
             runs = await Http.GetFromJsonAsync<IReadOnlyList<IdentityHealthCheckRunDto>>($"api/identity-health/checks?{string.Join("&", query)}") ?? [];
             if (selectedRunId.HasValue && !runs.Any(x => x.Id == selectedRunId))
@@ -268,8 +309,8 @@
                 var candidateQuery = new List<string>
                 {
                     $"runId={selectedRunId}",
-                    "status=all",
-                    "limit=1000"
+                    $"status={Uri.EscapeDataString(statusFilter)}",
+                    "limit=250"
                 };
                 Append(candidateQuery, "teamCountryCode", countryCode);
                 candidates = await Http.GetFromJsonAsync<IReadOnlyList<IdentityReviewCandidateDto>>($"api/identity-health/review-candidates?{string.Join("&", candidateQuery)}") ?? [];
@@ -294,12 +335,14 @@
     private async Task ResolveCandidateAsync(IdentityReviewCandidateDto candidate, string action)
     {
         var state = GetState(candidate);
-        if (action == "merge_duplicate" && !state.ConfirmMergeWithRatings)
+        if (action == "merge_duplicate" && !IsMergeConfirmed(candidate))
         {
             message = "Confirm the historical ownership change before merging.";
             messageCss = "alert-warning";
             return;
         }
+
+        state.ConfirmMergeWithRatings = IsMergeConfirmed(candidate);
 
         isBusy = true;
         message = null;
@@ -314,13 +357,14 @@
                 TargetTeamId = action == "merge_duplicate" ? state.MergeTargetTeamId : null,
                 ConfirmMergeWithRatings = state.ConfirmMergeWithRatings,
                 ResolvedBy = "admin-ui",
-                Note = action switch
-                {
-                    "keep_separate" => "Confirmed as different clubs from the Identity Review page.",
-                    "defer_review" => "Deferred for later review from the Identity Review page.",
-                    "ignore" => "Ignored from the Identity Review page.",
-                    _ => "Merged from the Identity Review page."
-                }
+                Note = string.IsNullOrWhiteSpace(state.Note)
+                    ? action switch
+                    {
+                        "defer_review" => "Deferred for later review from the Identity Review page.",
+                        "ignore" => "Ignored from the Identity Review page.",
+                        _ => "Merged from the Identity Review page."
+                    }
+                    : state.Note.Trim()
             });
             if (!response.IsSuccessStatusCode)
             {
@@ -349,7 +393,18 @@
     }
 
     private Task MergeCandidateAsync(IdentityReviewCandidateDto candidate) => ResolveCandidateAsync(candidate, "merge_duplicate");
-    private Task KeepSeparateCandidateAsync(IdentityReviewCandidateDto candidate) => ResolveCandidateAsync(candidate, "keep_separate");
+    private async Task KeepSeparateCandidateAsync(IdentityReviewCandidateDto candidate)
+    {
+        var state = GetState(candidate);
+        if (string.IsNullOrWhiteSpace(state.Note))
+        {
+            message = "Add a description explaining why these teams should remain separate.";
+            messageCss = "alert-warning";
+            return;
+        }
+
+        await ResolveCandidateAsync(candidate, "keep_separate");
+    }
     private Task DeferCandidateAsync(IdentityReviewCandidateDto candidate) => ResolveCandidateAsync(candidate, "defer_review");
     private Task IgnoreCandidateAsync(IdentityReviewCandidateDto candidate) => ResolveCandidateAsync(candidate, "ignore");
 
@@ -436,6 +491,20 @@
         return state;
     }
 
+    private bool IsMergeConfirmed(IdentityReviewCandidateDto candidate)
+        => mergeConfirmations.Contains(candidate.PrimaryFindingId);
+
+    private void ToggleMergeConfirmation(IdentityReviewCandidateDto candidate)
+    {
+        var state = GetState(candidate);
+        if (!mergeConfirmations.Add(candidate.PrimaryFindingId))
+        {
+            mergeConfirmations.Remove(candidate.PrimaryFindingId);
+        }
+
+        state.ConfirmMergeWithRatings = IsMergeConfirmed(candidate);
+    }
+
     private static IEnumerable<IdentityEvidenceTeamGamesDto> EvidenceTeams(IdentityEvidenceGamesResponseDto response)
         => new[] { response.AffectedTeam, response.RelatedTeam }.Where(x => x is not null).Select(x => x!);
 
@@ -487,12 +556,13 @@
     {
         public Guid? MergeTargetTeamId { get; set; }
         public bool ConfirmMergeWithRatings { get; set; }
+        public string Note { get; set; } = string.Empty;
     }
 
     private RenderFragment<IdentityReviewTeamDto> ReviewTeam => team => @<div class="identity-review-team">
         <div class="identity-review-team-heading">
             <h2>@team.Name</h2>
-            <a href="admin/teams?search=@Uri.EscapeDataString(team.Name)">Open team record</a>
+            <a href="admin/teams?teamId=@team.Id">Open team record</a>
         </div>
         <div class="identity-review-team-id">@team.Id</div>
         <div class="identity-review-team-stats">

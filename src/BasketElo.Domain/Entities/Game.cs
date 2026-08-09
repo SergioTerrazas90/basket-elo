@@ -12,6 +12,7 @@ public class Game
     public string? ParserVersion { get; set; }
     public Guid CompetitionId { get; set; }
     public Guid SeasonId { get; set; }
+    public Guid? TournamentCycleId { get; set; }
     public DateTime GameDateTimeUtc { get; set; }
     public Guid HomeTeamId { get; set; }
     public Guid AwayTeamId { get; set; }
@@ -28,6 +29,8 @@ public class Game
 
     public Competition Competition { get; set; } = null!;
     public Season Season { get; set; } = null!;
+    public TournamentCycle? TournamentCycle { get; set; }
+    public ICollection<GameTournamentCycleLink> TournamentCycleLinks { get; set; } = new List<GameTournamentCycleLink>();
     public Team HomeTeam { get; set; } = null!;
     public Team AwayTeam { get; set; } = null!;
 }

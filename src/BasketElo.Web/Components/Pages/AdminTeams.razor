@@ -2,6 +2,7 @@
 @attribute [Authorize(Roles = "admin")]
 @rendermode InteractiveServer
 @using BasketElo.Domain.Teams
+@using Microsoft.AspNetCore.Components
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
@@ -36,8 +37,8 @@
             <label for="team-search">Search</label>
             <input id="team-search"
                    class="form-control"
-                   @bind="search"
-                   @bind:event="oninput"
+                   value="@search"
+                   @oninput="HandleSearchInputAsync"
                    @onblur="ApplySearchAsync"
                    @onkeydown="HandleSearchKeyDown"
                    placeholder="Canonical name, alias, provider ID..." />
@@ -350,6 +351,9 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "teamId")]
+    private Guid? TeamId { get; set; }
+
     private TeamAdminListResponse? response;
     private IReadOnlyList<TeamAdminOption> teamOptions = [];
     private TeamAdminDetail? teamDetail;
@@ -360,6 +364,7 @@
     private int page = 1;
     private int pageSize = 50;
     private string? lastAppliedSearch;
+    private CancellationTokenSource? searchDebounceCancellation;
     private bool isBusy;
     private bool CanMergeSelected => !isBusy && selectedForMerge.Count == 2;
     private string? message;
@@ -389,6 +394,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        selectedTeamId = TeamId;
         teamOptions = await Http.GetFromJsonAsync<IReadOnlyList<TeamAdminOption>>("api/admin/teams/options") ?? [];
         await RefreshAsync();
     }
@@ -422,6 +428,8 @@
 
     private async Task ApplySearchAsync()
     {
+        searchDebounceCancellation?.Cancel();
+
         if (string.Equals(search, lastAppliedSearch, StringComparison.Ordinal))
         {
             return;
@@ -430,6 +438,40 @@
         page = 1;
         lastAppliedSearch = search;
         await RefreshAsync();
+    }
+
+    private async Task HandleSearchInputAsync(ChangeEventArgs args)
+    {
+        search = args.Value?.ToString();
+        searchDebounceCancellation?.Cancel();
+        searchDebounceCancellation?.Dispose();
+
+        var cancellation = new CancellationTokenSource();
+        searchDebounceCancellation = cancellation;
+
+        try
+        {
+            await Task.Delay(300, cancellation.Token);
+            if (cancellation.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await ApplySearchAsync();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // A newer keystroke replaced this pending search.
+        }
+        finally
+        {
+            if (ReferenceEquals(searchDebounceCancellation, cancellation))
+            {
+                searchDebounceCancellation = null;
+            }
+
+            cancellation.Dispose();
+        }
     }
 
     private async Task HandleSearchKeyDown(KeyboardEventArgs args)

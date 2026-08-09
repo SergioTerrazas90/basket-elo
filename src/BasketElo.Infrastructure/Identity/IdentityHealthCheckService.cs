@@ -226,12 +226,42 @@ public class IdentityHealthCheckService(
             runs = runs.Where(x => x.CompetitionId == query.CompetitionId);
         }
 
-        return await runs
-            .Include(x => x.Findings)
+        var runRows = await runs
             .OrderByDescending(x => x.CheckedAtUtc)
             .Take(Math.Clamp(query.Limit, 1, 1000))
-            .Select(x => ToDto(x))
+            .Select(x => new IdentityHealthCheckRunSummaryRow(
+                x.Id,
+                x.Source,
+                x.Season,
+                x.CountryCode,
+                x.CompetitionId,
+                x.ScopeKey,
+                x.RulesVersion,
+                x.Status,
+                x.FindingsCount,
+                x.UnresolvedBlockersCount,
+                x.Forced,
+                x.CheckedAtUtc,
+                x.InvalidatedAtUtc))
             .ToListAsync(cancellationToken);
+
+        if (runRows.Count == 0)
+        {
+            return [];
+        }
+
+        // Do not include every finding for every run just to calculate the
+        // summary counts. The review page only needs the grouped totals.
+        var findingSummaryRows = await dbContext.IdentityHealthCheckFindings
+            .AsNoTracking()
+            .Where(x => runRows.Select(run => run.Id).Contains(x.RunId))
+            .GroupBy(x => new { x.RunId, x.FindingType, x.Status, x.Severity })
+            .Select(x => new IdentityFindingSummaryRow(x.Key.RunId, x.Key.FindingType, x.Key.Status, x.Key.Severity, x.Count()))
+            .ToListAsync(cancellationToken);
+
+        return runRows
+            .Select(run => ToDto(run, findingSummaryRows.Where(x => x.RunId == run.Id)))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<IdentityHealthCheckFindingDto>> GetFindingsAsync(IdentityFindingQuery query, CancellationToken cancellationToken)
@@ -388,11 +418,18 @@ public class IdentityHealthCheckService(
             return [];
         }
 
+        // "open" maps directly to finding status and is the hot path for the
+        // review page. Deferred/completed are pair-level states derived from
+        // ResolutionAction, so those views must retain the full finding set.
+        var findingStatus = string.Equals(query.Status, "open", StringComparison.OrdinalIgnoreCase)
+            ? IdentityFindingStatus.Open
+            : null;
         var findings = await GetFindingsAsync(new IdentityFindingQuery
         {
             RunId = runId,
             CountryCode = query.CountryCode,
-            Limit = 5000
+            Status = findingStatus,
+            Limit = Math.Clamp(query.Limit * 5, 250, 5000)
         }, cancellationToken);
 
         var pairFindings = findings
@@ -412,7 +449,7 @@ public class IdentityHealthCheckService(
             .SelectMany(x => x.SelectMany(f => new[] { f.AffectedTeamId!.Value, f.RelatedTeamId!.Value }))
             .Distinct()
             .ToList();
-        var teamRows = await dbContext.Teams
+        var teamBaseRows = await dbContext.Teams
             .AsNoTracking()
             .Where(x => teamIds.Contains(x.Id))
             .Select(x => new
@@ -420,15 +457,45 @@ public class IdentityHealthCheckService(
                 x.Id,
                 x.CanonicalName,
                 x.CountryCode,
-                x.IsActive,
-                AliasCount = dbContext.TeamAliases.Count(alias => alias.TeamId == x.Id),
-                GameCount = dbContext.Games.Count(game => game.HomeTeamId == x.Id || game.AwayTeamId == x.Id),
-                LastGameUtc = dbContext.Games
-                    .Where(game => game.HomeTeamId == x.Id || game.AwayTeamId == x.Id)
-                    .Select(game => (DateTime?)game.GameDateTimeUtc)
-                    .Max()
+                x.IsActive
             })
             .ToDictionaryAsync(x => x.Id, cancellationToken);
+        var aliasCounts = await dbContext.TeamAliases
+            .AsNoTracking()
+            .Where(x => teamIds.Contains(x.TeamId))
+            .GroupBy(x => x.TeamId)
+            .Select(x => new { TeamId = x.Key, Count = x.Count() })
+            .ToDictionaryAsync(x => x.TeamId, x => x.Count, cancellationToken);
+        var homeGameStats = await dbContext.Games
+            .AsNoTracking()
+            .Where(x => teamIds.Contains(x.HomeTeamId))
+            .GroupBy(x => x.HomeTeamId)
+            .Select(x => new TeamGameStats(x.Key, x.Count(), x.Max(game => (DateTime?)game.GameDateTimeUtc)))
+            .ToDictionaryAsync(x => x.TeamId, cancellationToken);
+        var awayGameStats = await dbContext.Games
+            .AsNoTracking()
+            .Where(x => teamIds.Contains(x.AwayTeamId))
+            .GroupBy(x => x.AwayTeamId)
+            .Select(x => new TeamGameStats(x.Key, x.Count(), x.Max(game => (DateTime?)game.GameDateTimeUtc)))
+            .ToDictionaryAsync(x => x.TeamId, cancellationToken);
+        var teamRows = teamBaseRows.ToDictionary(
+            x => x.Key,
+            x =>
+            {
+                homeGameStats.TryGetValue(x.Key, out var homeStats);
+                awayGameStats.TryGetValue(x.Key, out var awayStats);
+                var lastGameUtc = homeStats?.LastGameUtc > awayStats?.LastGameUtc
+                    ? homeStats.LastGameUtc
+                    : awayStats?.LastGameUtc;
+                return new TeamReviewRow(
+                    x.Value.Id,
+                    x.Value.CanonicalName,
+                    x.Value.CountryCode,
+                    x.Value.IsActive,
+                    (homeStats?.GameCount ?? 0) + (awayStats?.GameCount ?? 0),
+                    aliasCounts.GetValueOrDefault(x.Key),
+                    lastGameUtc);
+            });
 
         var candidates = new List<IdentityReviewCandidateDto>();
         var teamCountryCode = NormalizeCountryCode(query.TeamCountryCode);
@@ -508,6 +575,17 @@ public class IdentityHealthCheckService(
             throw new InvalidOperationException("This review action is not supported for a team pair.");
         }
 
+        var note = request.Note?.Trim();
+        if (note?.Length > 1000)
+        {
+            throw new InvalidOperationException("The decision description must be 1000 characters or fewer.");
+        }
+
+        if (action == "keep_separate" && string.IsNullOrWhiteSpace(note))
+        {
+            throw new InvalidOperationException("Add a description explaining why these teams should remain separate.");
+        }
+
         var findings = await dbContext.IdentityHealthCheckFindings
             .Include(x => x.AffectedTeam)
             .Include(x => x.RelatedTeam)
@@ -553,7 +631,7 @@ public class IdentityHealthCheckService(
                 TargetTeamId = request.TargetTeamId,
                 ConfirmMergeWithRatings = true,
                 ResolvedBy = request.ResolvedBy,
-                Note = request.Note
+                Note = note
             }, cancellationToken);
         }
         else if (action == "keep_separate")
@@ -567,7 +645,7 @@ public class IdentityHealthCheckService(
             finding.ResolutionAction = action;
             finding.ResolvedBy = string.IsNullOrWhiteSpace(request.ResolvedBy) ? "admin" : request.ResolvedBy.Trim();
             finding.ResolvedAtUtc = DateTime.UtcNow;
-            finding.ResolutionNote = request.Note?.Trim();
+            finding.ResolutionNote = note;
             await SaveReviewDecisionAsync(finding, action, cancellationToken);
         }
 
@@ -1983,6 +2061,66 @@ public class IdentityHealthCheckService(
             run.InvalidatedAtUtc);
     }
 
+    private static IdentityHealthCheckRunDto ToDto(
+        IdentityHealthCheckRunSummaryRow run,
+        IEnumerable<IdentityFindingSummaryRow> findingSummaries)
+    {
+        var findings = findingSummaries.ToList();
+        var typeSummaries = findings
+            .GroupBy(x => x.FindingType)
+            .Select(x => new IdentityFindingTypeSummaryDto(
+                x.Key,
+                x.Where(f => f.Status == IdentityFindingStatus.Open).Sum(f => f.Count),
+                x.Where(f => f.Status == IdentityFindingStatus.Resolved).Sum(f => f.Count),
+                x.Where(f => f.Status == IdentityFindingStatus.Ignored).Sum(f => f.Count)))
+            .OrderByDescending(x => x.OpenCount)
+            .ThenBy(x => x.FindingType)
+            .ToList();
+
+        return new IdentityHealthCheckRunDto(
+            run.Id,
+            run.Source,
+            run.Season,
+            run.CountryCode,
+            run.CompetitionId,
+            run.ScopeKey,
+            run.RulesVersion,
+            run.Status,
+            run.FindingsCount,
+            run.UnresolvedBlockersCount,
+            findings.Where(x => x.Status == IdentityFindingStatus.Open).Sum(x => x.Count),
+            findings.Where(x => x.Status == IdentityFindingStatus.Open && x.Severity == IdentityFindingSeverity.Warning).Sum(x => x.Count),
+            findings.Where(x => x.Status == IdentityFindingStatus.Open && x.Severity == IdentityFindingSeverity.Blocker).Sum(x => x.Count),
+            findings.Where(x => x.Status == IdentityFindingStatus.Resolved).Sum(x => x.Count),
+            findings.Where(x => x.Status == IdentityFindingStatus.Ignored).Sum(x => x.Count),
+            typeSummaries,
+            run.Forced,
+            run.CheckedAtUtc,
+            run.InvalidatedAtUtc);
+    }
+
+    private sealed record IdentityHealthCheckRunSummaryRow(
+        Guid Id,
+        string? Source,
+        string? Season,
+        string? CountryCode,
+        Guid? CompetitionId,
+        string ScopeKey,
+        string RulesVersion,
+        string Status,
+        int FindingsCount,
+        int UnresolvedBlockersCount,
+        bool Forced,
+        DateTime CheckedAtUtc,
+        DateTime? InvalidatedAtUtc);
+
+    private sealed record IdentityFindingSummaryRow(
+        Guid RunId,
+        string FindingType,
+        string Status,
+        string Severity,
+        int Count);
+
     private static IdentityHealthCheckFindingDto ToDto(
         IdentityHealthCheckFinding finding,
         Team? inferredAffectedTeam = null,
@@ -2037,4 +2175,15 @@ public class IdentityHealthCheckService(
         DateTime SeasonEndUtc);
 
     private sealed record SourceTeamKey(string Source, string SourceTeamId);
+
+    private sealed record TeamGameStats(Guid TeamId, int GameCount, DateTime? LastGameUtc);
+
+    private sealed record TeamReviewRow(
+        Guid Id,
+        string CanonicalName,
+        string CountryCode,
+        bool IsActive,
+        int GameCount,
+        int AliasCount,
+        DateTime? LastGameUtc);
 }

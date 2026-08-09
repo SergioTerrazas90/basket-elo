@@ -9,4 +9,9 @@ public interface ICurrentResultsIngestionService
         DateOnly toDate,
         bool dryRun,
         CancellationToken cancellationToken);
+
+    Task<CurrentResultReviewResolutionDto> ResolveReviewAsync(
+        Guid reviewId,
+        CurrentResultReviewResolutionRequest request,
+        CancellationToken cancellationToken);
 }

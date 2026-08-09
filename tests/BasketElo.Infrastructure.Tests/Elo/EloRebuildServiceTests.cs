@@ -98,6 +98,79 @@ public class EloRebuildServiceTests
         Assert.Contains("Playoff", notes.RootElement.GetProperty("playoffPolicy").GetString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task RebuildIsBlockedWhenPlayedGameIsNotEloEligible()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var nba = Competition("NBA", "USA");
+        var season = Season(nba, "2025-2026");
+        var home = Team("Home", "USA");
+        var away = Team("Away", "CAN");
+        var blockingGame = Game(
+            nba,
+            season,
+            home,
+            away,
+            new DateTime(2026, 1, 10, 20, 0, 0, DateTimeKind.Utc),
+            80,
+            75,
+            "blocked-game");
+        blockingGame.EloEligible = false;
+        blockingGame.EloExclusionReason = "tournament_cycle_confirmation_required";
+        var laterGame = Game(
+            nba,
+            season,
+            away,
+            home,
+            new DateTime(2026, 1, 11, 20, 0, 0, DateTimeKind.Utc),
+            90,
+            88,
+            "later-game");
+        var run = new EloRebuildRun
+        {
+            Id = Guid.NewGuid(),
+            EloPoolKey = EloPoolKeys.Nba,
+            RulesetVersion = EloRulesetVersions.AdjustedV1,
+            CompetitionName = "NBA",
+            Status = EloRebuildRunStatus.Running,
+            QueuedAtUtc = DateTime.UtcNow,
+            StartedAtUtc = DateTime.UtcNow
+        };
+        var existingRating = new TeamRating
+        {
+            TeamId = home.Id,
+            Team = home,
+            EloPoolKey = EloPoolKeys.Nba,
+            RulesetVersion = run.RulesetVersion,
+            Elo = 1543m,
+            GamesPlayed = 7,
+            LastGameId = laterGame.Id,
+            LastGame = laterGame
+        };
+        dbContext.AddRange(nba, season, home, away, blockingGame, laterGame, run, existingRating);
+        await dbContext.SaveChangesAsync();
+
+        var service = new EloRebuildService(
+            dbContext,
+            new TestNotificationPublisher(),
+            NullLogger<EloRebuildService>.Instance);
+
+        var result = await service.RebuildAsync(run.Id, CancellationToken.None);
+
+        Assert.Equal(EloRebuildRunStatus.Blocked, result.Status);
+        Assert.Equal(EloRebuildRunStatus.Blocked, run.Status);
+        Assert.Equal(0, result.GamesProcessed);
+        Assert.Equal(0, result.TeamsRated);
+        Assert.Contains("blocked-game", result.Notes, StringComparison.Ordinal);
+        Assert.Contains("tournament_cycle_confirmation_required", result.Notes, StringComparison.Ordinal);
+        var rating = await dbContext.TeamRatings.SingleAsync(x => x.TeamId == home.Id && x.EloPoolKey == EloPoolKeys.Nba);
+        Assert.Equal(1543m, rating.Elo);
+        Assert.Equal(7, rating.GamesPlayed);
+    }
+
     private static Competition Competition(string name, string countryCode) => new()
     {
         Id = Guid.NewGuid(),

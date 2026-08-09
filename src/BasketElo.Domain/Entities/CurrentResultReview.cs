@@ -25,6 +25,10 @@ public class CurrentResultReview
     public string? SuggestedCompetitionCountryCode { get; set; }
     public string? ParserVersion { get; set; }
     public string? SourceRevision { get; set; }
+    public Guid? AssignedGameId { get; set; }
+    public string? ResolutionAction { get; set; }
+    public string? ResolutionNote { get; set; }
+    public DateTime? ResolvedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 

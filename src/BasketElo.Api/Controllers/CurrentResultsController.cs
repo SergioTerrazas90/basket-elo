@@ -54,10 +54,75 @@ public class CurrentResultsController(
             .Take(Math.Clamp(limit, 1, 500))
             .Select(x => new CurrentResultReviewDto(
                 x.Id, x.SourceGameId, x.SourceDate, x.SourceUrl, x.CountryName, x.CompetitionName, x.StageName,
-                x.HomeTeamName, x.AwayTeamName, x.Reason, x.Status, x.SuggestedCompetitionName,
-                x.SuggestedCompetitionCountryCode, x.CreatedAtUtc, x.UpdatedAtUtc))
+                x.HomeTeamName, x.AwayTeamName, x.GameDateTimeUtc, x.HomeScore, x.AwayScore, x.ResultStatus,
+                x.Reason, x.Status, x.SuggestedCompetitionName, x.SuggestedCompetitionCountryCode,
+                x.AssignedGameId, x.ResolutionAction, x.ResolutionNote, x.CreatedAtUtc, x.UpdatedAtUtc))
             .ToListAsync(cancellationToken);
         return Ok(reviews);
+    }
+
+    [HttpGet("reviews/{reviewId:guid}/matches")]
+    public async Task<ActionResult<IReadOnlyCollection<CurrentResultReviewMatchDto>>> GetReviewMatches(
+        Guid reviewId,
+        CancellationToken cancellationToken)
+    {
+        var review = await dbContext.CurrentResultReviews
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == reviewId, cancellationToken);
+        if (review is null) return NotFound();
+
+        var minimumDateTimeUtc = review.GameDateTimeUtc.AddHours(-36);
+        var maximumDateTimeUtc = review.GameDateTimeUtc.AddHours(36);
+        var query = dbContext.Games
+            .AsNoTracking()
+            .Where(x => x.Status == CurrentResultStatuses.Scheduled &&
+                        x.GameDateTimeUtc >= minimumDateTimeUtc &&
+                        x.GameDateTimeUtc <= maximumDateTimeUtc);
+        if (!string.IsNullOrWhiteSpace(review.SuggestedCompetitionName))
+        {
+            query = query.Where(x => x.Competition.Name == review.SuggestedCompetitionName);
+        }
+
+        var matches = await query
+            .OrderBy(x => x.GameDateTimeUtc)
+            .Take(250)
+            .Select(x => new CurrentResultReviewMatchDto(
+                x.Id,
+                x.Source,
+                x.SourceGameId,
+                x.GameDateTimeUtc,
+                x.Competition.Name,
+                x.Season.Label,
+                x.TournamentCycle == null ? null : x.TournamentCycle.Key,
+                x.HomeTeam.CanonicalName,
+                x.AwayTeam.CanonicalName,
+                x.Status))
+            .ToListAsync(cancellationToken);
+        return Ok(matches);
+    }
+
+    [HttpPost("reviews/{reviewId:guid}/resolve")]
+    public async Task<ActionResult<CurrentResultReviewResolutionDto>> ResolveReview(
+        Guid reviewId,
+        [FromBody] CurrentResultReviewResolutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await ingestionService.ResolveReviewAsync(reviewId, request, cancellationToken));
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return NotFound(exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(exception.Message);
+        }
     }
 }
 

@@ -26,6 +26,33 @@ public class EloRebuildService(
 
         try
         {
+            var blockingGame = await dbContext.Games
+                .AsNoTracking()
+                .Where(x =>
+                    x.Competition.EloPoolKey == poolKey &&
+                    x.Status == "finished" &&
+                    !x.EloEligible)
+                .OrderBy(x => x.GameDateTimeUtc)
+                .ThenBy(x => x.Source)
+                .ThenBy(x => x.SourceGameId)
+                .Select(x => new
+                {
+                    x.Source,
+                    x.SourceGameId,
+                    x.GameDateTimeUtc,
+                    x.EloExclusionReason
+                })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (blockingGame is not null)
+            {
+                run.Status = EloRebuildRunStatus.Blocked;
+                run.FinishedAtUtc = DateTime.UtcNow;
+                run.Notes = $"ELO rebuild blocked by played non-Elo-eligible game {blockingGame.Source}:{blockingGame.SourceGameId} at {blockingGame.GameDateTimeUtc:O}; reason={blockingGame.EloExclusionReason ?? "unspecified"}. Resolve the game before rebuilding this pool.";
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await PublishNotificationAsync(run, cancellationToken);
+                return ToResult(run, poolKey);
+            }
+
             await using var transaction = dbContext.Database.IsRelational()
                 ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
                 : null;
@@ -187,21 +214,23 @@ public class EloRebuildService(
             await PublishNotificationAsync(run, CancellationToken.None);
         }
 
-        return new EloRebuildResult
-        {
-            RunId = run.Id,
-            EloPoolKey = poolKey,
-            RulesetVersion = run.RulesetVersion,
-            CompetitionName = run.CompetitionName,
-            Status = run.Status,
-            GamesProcessed = run.GamesProcessed,
-            TeamsRated = run.TeamsRated,
-            QueuedAtUtc = run.QueuedAtUtc,
-            StartedAtUtc = run.StartedAtUtc,
-            FinishedAtUtc = run.FinishedAtUtc,
-            Notes = run.Notes
-        };
+        return ToResult(run, poolKey);
     }
+
+    private static EloRebuildResult ToResult(EloRebuildRun run, string poolKey) => new()
+    {
+        RunId = run.Id,
+        EloPoolKey = poolKey,
+        RulesetVersion = run.RulesetVersion,
+        CompetitionName = run.CompetitionName,
+        Status = run.Status,
+        GamesProcessed = run.GamesProcessed,
+        TeamsRated = run.TeamsRated,
+        QueuedAtUtc = run.QueuedAtUtc,
+        StartedAtUtc = run.StartedAtUtc,
+        FinishedAtUtc = run.FinishedAtUtc,
+        Notes = run.Notes
+    };
 
     private async Task DeleteExistingRatingsAsync(
         string poolKey,

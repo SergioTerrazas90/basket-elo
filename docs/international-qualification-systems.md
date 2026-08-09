@@ -6,6 +6,11 @@ database. It is deliberately a historical guide, not a single universal rule:
 FIBA changed calendars, qualification places, regional structures, hosts, and
 competition names from cycle to cycle.
 
+For the current ingestion catalog, use the uniform stage and source matrix in
+[`fiba-national-team-tournaments.md`](fiba-national-team-tournaments.md). It
+records the shared tournament-cycle keys, current database snapshot, and the
+reconciliation policy for EuroBasket, AfroBasket, Asia Cup, and AmeriCup.
+
 ## The central distinction
 
 Older qualification systems usually did not have a standalone competition
@@ -131,6 +136,11 @@ qualifier competition, the game belongs to the pre-qualifier competition based
 on its stage and is reconciled there rather than counted twice. See the
 [FIBA Pre-Qualifiers archive](https://www.fiba.basketball/en/history/204-fiba-eurobasket-pre-qualifiers).
 
+EuroBasket uses a mixed source policy because FIBA, GSA, and the documented
+Wikipedia historical fallback do not expose identical coverage. Reconciliation
+is stage-aware; an unmatched GSA row is retained rather than forcing a false
+match.
+
 ## Africa
 
 ### Older route
@@ -145,6 +155,14 @@ FIBA’s archive shows this evolution directly: the 2005 African Championship
 qualifying round, 2017 preliminaries, the 2020 preliminary phase, and the 2021
 qualifiers are all listed under the qualifier family. See the [AfroBasket
 qualifiers archive](https://www.fiba.basketball/en/history/178-fiba-afrobasket-qualifiers).
+For 2007, 2009, 2011, 2013, and 2015, the qualifying rounds are embedded in the main
+AfroBasket edition pages rather than exposed as separate qualifier editions;
+the ingestion splits those phases from the finals using the FIBA phase labels.
+
+Coverage limitation: the current FIBA source exposes usable AfroBasket qualifier
+game coverage from 2005 onward. We are missing AfroBasket qualifiers for 2003
+and earlier; this is a source/archive gap, not a claim that no qualification
+games existed in those cycles.
 
 ### Modern route
 
@@ -169,6 +187,25 @@ Use separate families for:
 Do not treat the AfroBasket itself as a friendly or as a duplicate of the
 World Cup qualifiers. Its games are official tournament games even when the
 edition also determines World Cup places.
+
+### Source reconciliation decision
+
+For AfroBasket editions covered by the official FIBA source, FIBA is the
+canonical game-level source and Global Sports Archive is a comparison source.
+The overlaps were reconciled one-to-one using the target edition, competition
+stage, UTC game date, home and away teams, and final scores. The first
+backup-backed cleanup removed 165 exact GSA duplicates from 2021 and 2025; the
+historical cleanup removed a further 267 exact duplicates from 2005 through
+2017. A follow-up cleanup removed 73 additional exact one-to-one duplicates
+from older editions. Remaining GSA rows with a date, team, score, or coverage
+disagreement remain available for review; they were not silently discarded.
+FIBA-only pre-qualifier games also remain separate from the main qualifier
+competition.
+
+This precedence applies to AfroBasket finals, qualifiers, and pre-qualifiers;
+it does not authorize merging AfroBasket games with World Cup qualifiers or
+other national-team competitions. Any future GSA refresh must be reconciled
+against the FIBA canonical rows before it is treated as production coverage.
 
 ## Asia
 
@@ -210,6 +247,11 @@ Keep these distinct:
 
 The Asia and Oceania World Cup region is a combined qualification region even
 when the continental championship is called Asia Cup.
+
+FIBA is canonical for Asia Cup rows when the official game record is usable.
+The deployed reconciliation retains unmatched GSA finals and qualification
+rows for review, and the 2002 Malaysian archive gap remains explicit rather
+than being filled from standings.
 
 ## Oceania
 
@@ -297,6 +339,13 @@ Use the following distinction:
 This preserves historical qualification evidence without pretending that a
 1960s regional championship used the same system as a 2025 AmeriCup window.
 
+For AmeriCup, FIBA is canonical and GSA is the comparison source. The deployed
+stage split and three-pass reconciliation removed only one-to-one duplicates,
+kept manual overrides, and left no unmatched GSA rows in the current AmeriCup
+stages. See the
+[AmeriCup runbook](americup-ingestion.md) for the official page mappings,
+source-year-to-target-cycle rules, backup, and verification details.
+
 ## FIBA Basketball World Cup
 
 ### Before 2019
@@ -307,9 +356,27 @@ champions could receive direct places, and some cycles used wild cards or other
 FIBA decisions to complete the field. The continental championship was
 therefore both a major tournament and a World Cup qualifier.
 
-For example, FIBA described the 2013 continental championships as qualifying
-tournaments for the 2014 World Cup. The 2014 World Cup still had a 24-team
-field.
+These were real World Cup qualification editions, but not a single global
+home-and-away World Cup Qualifiers competition. Wikipedia's qualification
+history describes the earlier routes as follows:
+
+- 1950–1963 combined Olympic places, regional championships, and invitations;
+- from 1967, continental championships became established qualifying routes;
+- 2006, 2010, and 2014 used the Africa, Americas, Asia, Europe, and Oceania
+  championships as the qualifying tournaments, alongside host/Olympic places
+  and, in the later cycles, wild cards; and
+- FIBA's separate pre-qualifier archive contains a 2017 European preliminary
+  stage for the 2019 cycle.
+
+For example, the [2010 qualification summary](https://en.wikipedia.org/wiki/2010_FIBA_World_Championship_qualification)
+states that qualification culminated in the five continental championships,
+with the 2008 Olympics/host route and wild cards also contributing to the
+24-team field. The [2014 qualification summary](https://en.wikipedia.org/wiki/2014_FIBA_Basketball_World_Cup_qualification)
+similarly states that the continental championships doubled as qualifying
+tournaments.
+The [general qualification history](https://en.wikipedia.org/wiki/FIBA_Basketball_World_Cup_qualification)
+records the earlier Olympic/regional/invitation model and the transition to
+the modern system. The 2014 World Cup still had a 24-team field.
 
 ### 2019 onward
 
@@ -328,6 +395,11 @@ Cup allocation is completed.
 
 Source: [FIBA’s 2019 qualification summary](https://www.fiba.basketball/en/news/basketballworldcup-2019-news-fiba-basketball-world-cup-2019s-32-team-field-complete-after-qualifiers-come-to-an-end)
 and [How to qualify for the 2027 World Cup](https://www.fiba.basketball/en/events/fiba-basketball-world-cup-2027/how-to-qualify).
+
+The official [World Cup Pre-Qualifiers archive](https://www.fiba.basketball/en/history/199-fiba-basketball-world-cup-pre-qualifiers)
+also lists the 2017 European pre-qualifiers for the 2019 cycle, plus later
+2021, 2024, and 2025 regional editions. These are distinct from the main
+World Cup Qualifiers archive and remain a separate follow-up ingestion family.
 
 ## Olympic Games
 
@@ -356,6 +428,12 @@ The Paris 2024 cycle used four OQTs, with each tournament winner qualifying for
 the Olympic Games. The OQT itself is therefore a final qualification event, not
 a continental championship and not a friendly tournament.
 
+The ingestion model keeps the Paris cycle's five 2023 pre-OQTs separate from
+the four 2024 OQTs. Both belong to `olympics-2024`, alongside the Olympic finals,
+so the cycle filter shows the complete route while stage filters remain precise.
+The Tokyo cycle's OQTs are similarly stored under `olympics-2020` even though
+they were played in 2021.
+
 Sources: [the 2016 OQT format and regional allocation](https://www.fiba.basketball/en/news/new-olympic-qualifying-tournament-format-to-feature-18-teams-playing-across-three-tournaments),
 [the 2019 World Cup-to-Olympics explanation](https://www.fiba.basketball/en/news/news-australia-qualify-for-olympics-as-top-oceania-side-at-world-cup),
 and [the Paris 2024 OQT results](https://www.fiba.basketball/en/news/greece-brazil-puerto-rico-and-spain-qualify-for-last-spots-at-mens-olympic-basketball-tournament-paris-2024).
@@ -369,8 +447,11 @@ The ingestion model should apply these rules consistently:
 2. Exclude friendlies from ELO eligibility even if the provider exposes them.
 3. Keep the competition family stable, but retain the edition title, season,
    phase, round, source URL, and source season key.
-4. Do not merge continental qualifiers with World Cup or Olympic qualifiers just
-   because they occur in the same window.
+4. Do not merge modern continental qualifier competition identities with World
+   Cup or Olympic qualifiers just because they occur in the same window. For
+   pre-2019 World Cup cycles, retain the original game row and add a secondary
+   World Cup qualification-cycle link when the source explicitly treats that
+   tournament as a qualifying route.
 5. Treat missing FIBA archive pages as provider gaps or inspection cases; never
    create synthetic games from standings or qualification outcomes.
 6. When FIBA has no individual historical game date, use the edition date only

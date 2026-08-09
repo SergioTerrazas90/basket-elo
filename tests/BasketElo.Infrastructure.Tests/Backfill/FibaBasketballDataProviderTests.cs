@@ -62,10 +62,135 @@ public sealed class FibaBasketballDataProviderTests
             new BackfillExecutionContext(3, 0),
             CancellationToken.None);
 
-        Assert.Equal(2, result.Games.Count);
+        Assert.Equal(3, result.Games.Count);
         Assert.Contains(result.Games, game => game.SourceGameId == "127002" && game.SourceHomeTeamId == "ESP" && game.SourceAwayTeamId == "GEO");
+        var scheduled = Assert.Single(result.Games.Where(game => game.SourceGameId == "127004"));
+        Assert.Equal("scheduled", scheduled.Status);
+        Assert.Null(scheduled.HomeScore);
+        Assert.Null(scheduled.AwayScore);
         Assert.Contains(result.Games, game => game.SourceGameId == "127003" && game.SourceHomeTeamId == "USA" && game.SourceAwayTeamId == "BRA");
         Assert.Equal(3, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task ResolvesWorldCupPreQualifiersAsASeparateFibaHistoryFamily()
+    {
+        var provider = new FibaBasketballDataProvider(new HttpClient
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "World",
+            "FIBA Basketball World Cup Pre-Qualifiers",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+
+        Assert.NotNull(league);
+        Assert.Equal("199-fiba-basketball-world-cup-pre-qualifiers", league.SourceLeagueId);
+        Assert.Equal("FIBA Basketball World Cup Pre-Qualifiers", league.Name);
+    }
+
+    [Fact]
+    public async Task ResolvesAsiaCupPreQualifiersAsASeparateFibaHistoryVariant()
+    {
+        var provider = new FibaBasketballDataProvider(new HttpClient
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "Asia",
+            "FIBA Asia Cup Pre-Qualifiers",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+
+        Assert.NotNull(league);
+        Assert.Equal(
+            "192-fiba-asia-cup-qualifiers|pre-qualifiers",
+            league.SourceLeagueId);
+        Assert.Equal("FIBA Asia Cup Pre-Qualifiers", league.Name);
+    }
+
+    [Fact]
+    public async Task ResolvesAmeriCupFinalsAndQualifyingVariants()
+    {
+        var provider = new FibaBasketballDataProvider(new HttpClient
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var finals = await provider.ResolveLeagueAsync(
+            "Americas",
+            "FIBA AmeriCup",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+        var qualifiers = await provider.ResolveLeagueAsync(
+            "Americas",
+            "FIBA AmeriCup Qualifiers",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+        var preQualifiers = await provider.ResolveLeagueAsync(
+            "Americas",
+            "FIBA AmeriCup Pre-Qualifiers",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+
+        Assert.Equal("184-fiba-americup", finals?.SourceLeagueId);
+        Assert.Equal("183-fiba-americup-qualifiers", qualifiers?.SourceLeagueId);
+        Assert.Equal("182-fiba-americup-pre-qualifiers", preQualifiers?.SourceLeagueId);
+        Assert.Equal("FIBA AmeriCup", finals?.Name);
+        Assert.Equal("FIBA AmeriCup Qualifiers", qualifiers?.Name);
+        Assert.Equal("FIBA AmeriCup Pre-Qualifiers", preQualifiers?.Name);
+    }
+
+    [Fact]
+    public async Task ResolvesOceaniaChampionshipFromOfficialHistoryFamily()
+    {
+        var provider = new FibaBasketballDataProvider(new HttpClient
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "Oceania",
+            "FIBA Oceania Championship",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+
+        Assert.Equal("216-fiba-oceania-championship", league?.SourceLeagueId);
+        Assert.Equal("FIBA Oceania Championship", league?.Name);
+        Assert.Equal("OCE", league?.CountryCode);
+    }
+
+    [Fact]
+    public async Task ResolvesAmericasRegionalHistoryFamilies()
+    {
+        var provider = new FibaBasketballDataProvider(new HttpClient
+        {
+            BaseAddress = new Uri("https://www.fiba.basketball")
+        });
+
+        var expected = new Dictionary<string, string>
+        {
+            ["Centrobasket Championship"] = "122-centrobasket-championship",
+            ["COCABA Championship"] = "113-cbc-championship|cocaba",
+            ["South American Championship"] = "327-south-american-championship",
+            ["Caribbean Basketball Championship"] = "113-cbc-championship|caribbean"
+        };
+
+        foreach (var entry in expected)
+        {
+            var league = await provider.ResolveLeagueAsync(
+                "Americas",
+                entry.Key,
+                new BackfillExecutionContext(0, 0),
+                CancellationToken.None);
+
+            Assert.Equal(entry.Value, league?.SourceLeagueId);
+            Assert.Equal(entry.Key, league?.Name);
+            Assert.Equal("AME", league?.CountryCode);
+        }
     }
 
     [Fact]
@@ -317,6 +442,13 @@ public sealed class FibaBasketballDataProviderTests
                 <div>Group Phase &middot; Group C</div><div>Final</div>
                 <div class="wa01avm"><div>ESP ESP 74</div></div>
                 <div class="wa01avm"><div>GEO GEO 64</div></div>
+              </a>
+            </div></div>
+            <div class="games"><div data-testid="ui-game-card">
+              <a href="/en/events/fiba-basketball-world-cup-2027-european-qualifiers/games/127004-ESP-GEO">
+                <div>Group Phase &middot; Group C</div>
+                <div class="wa01avm"><div>ESP ESP 0</div></div>
+                <div class="wa01avm"><div>GEO GEO 0</div></div>
               </a>
             </div></div>
             """;

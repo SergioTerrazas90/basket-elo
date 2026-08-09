@@ -2,7 +2,7 @@
 
 This deploy shape mirrors a simple VPS setup:
 
-- publish three self-contained Linux builds from Windows
+- publish three self-contained Linux services plus the one-shot tools build from Windows
 - copy them to the VPS over SSH
 - run each app with systemd
 - expose only the web app through Caddy on the VPS IP, using a dedicated port so existing Caddy sites are not overwritten
@@ -67,10 +67,60 @@ Do not replace the existing Caddyfile. The Basket ELO snippet listens on `:8081`
 .\deploy\vps\deploy.ps1 -User ubuntu -Server 152.228.139.241 -IdentityFile "$HOME\.ssh\ovh_vps-22091453"
 ```
 
-The script publishes all three apps as `linux-x64` self-contained builds, uploads them, installs them under `/opt/basket-elo`, and restarts the three systemd services.
+The script publishes the three apps and tools as `linux-x64` self-contained builds, uploads them, installs them under `/opt/basket-elo`, and restarts the three systemd services.
 
 It also publishes the one-shot historical-ingestion tools under
 `/opt/basket-elo/releases/tools`; the tools are not started as a service.
+
+## FIBA national-team tournament VPS workflow
+
+Deploy the current checkout with the tools included:
+
+```powershell
+.\deploy\vps\deploy.ps1 `
+  -User ubuntu `
+  -Server 152.228.139.241 `
+  -IdentityFile "$HOME\.ssh\ovh_vps-22091453"
+```
+
+The script publishes `web`, `api`, `worker`, and `tools`, installs each archive
+under `/opt/basket-elo/releases/<service>`, then restarts and reports the API,
+worker, and web services. It does not run an ingestion job.
+
+Run a read-only FIBA check from the VPS after deployment:
+
+```bash
+cd /opt/basket-elo/releases/tools
+./BasketElo.Tools fiba-dry-run --country Asia --league "FIBA Asia Cup Pre-Qualifiers" --season 2025 --max-requests 2
+./BasketElo.Tools fiba-dry-run --country Africa --league "FIBA AfroBasket Pre-Qualifiers" --season 2025 --max-requests 2
+./BasketElo.Tools fiba-dry-run --country Europe --league "FIBA EuroBasket Pre-Qualifiers" --season 2025 --max-requests 2
+./BasketElo.Tools fiba-dry-run --country Americas --league "FIBA AmeriCup Pre-Qualifiers" --season 2025 --max-requests 2
+```
+
+Before any database-writing FIBA ingest or reconciliation, create and verify a
+PostgreSQL backup:
+
+```bash
+sudo install -d -m 0750 /var/backups/basket-elo
+backup=/var/backups/basket-elo/basket-elo-$(date +%Y%m%d-%H%M%S).dump
+sudo -u postgres pg_dump --format=custom --file="$backup" basket_elo
+sudo -u postgres pg_restore --list "$backup" > /tmp/basket-elo-backup-verify.txt
+```
+
+Only after the backup is verified should one regional catalog be ingested. The
+country filter keeps the run scoped to one tournament family:
+
+```bash
+sudo bash -c 'conn=$(grep "^ConnectionStrings__Postgres=" /etc/basket-elo/basket-elo.env | cut -d= -f2-); export ConnectionStrings__Postgres="$conn"; cd /opt/basket-elo/releases/tools; exec ./BasketElo.Tools fiba-ingest --country Asia --max-jobs 0 --max-requests 0'
+```
+
+Replace `--country Asia` with `Africa`, `Europe`, or `Americas` for the other
+families. The ingest keeps finals, qualifiers, and pre-qualifiers in separate
+competitions and assigns cross-year qualification games to their target
+tournament cycle. Reconciliation migrations are backup-backed, preserve
+manual-result rows, and fail without deleting anything if a candidate match is
+ambiguous. See [`docs/fiba-national-team-tournaments.md`](../docs/fiba-national-team-tournaments.md)
+for the current source policy, mappings, and coverage snapshot.
 
 ## Health checks
 

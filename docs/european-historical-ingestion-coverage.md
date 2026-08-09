@@ -68,6 +68,95 @@ The last run completed with warnings because many archived game pages were
 incomplete; it is not documented as a complete 110-game regular season. See
 [`baltic-basketball-league-ingestion.md`](baltic-basketball-league-ingestion.md).
 
+## Additional European domestic targets
+
+The following four target leagues were probed and backfilled where the
+configured API-Sports source actually exposes scored games. These imports did
+not rebuild ELOs.
+
+| Competition | Provider | Clean cutoff | VPS result | Notes |
+| --- | --- | --- | --- | --- |
+| Latvian LBL | `api-sports`, league 146 | 2011-2012 | 2011-2012 through 2017-2018 complete; 2018-2019 partial (20), 2019-2020 no data, 2020-2021 partial (23) | 2010-2011 and earlier are not exposed by this provider |
+| Croatian Premijer liga | `api-sports`, league 30 | 2008-2009 | 2008-2009 present (64); 2009-2010 and earlier returned no data | Existing coverage continues from 2010-2011 onward |
+| Belgian top tier | `api-sports`, leagues 24/374 | 2010-2011 | 2010-2011 onward present | 2009-2010 and earlier returned no data |
+| Russian PBL | `api-sports`, league 188 | 2011-2012 | 2011-2012: 111; 2012-2013: 58 | Earlier PBL seasons are not exposed; VTB coverage remains a separate competition |
+
+The Latvia and Russia jobs were queued with `maxRequests=0`, completed without
+warnings, and are idempotent API-Sports imports. The VPS backup preceding the
+write was `basket_elo_pre_lv_ru_backfill_20260807T091648Z.dump`.
+
+### Flashscore domestic follow-up
+
+The follow-up source probe added the configurable `flashscore-domestic`
+provider. It uses the Flashscore paginated results feeds and preserves the
+source event/team IDs. The Russian historical pages are served from the
+Flashscore Ghana domain, while the Croatian, Belgian, and Latvian routes use
+the primary Flashscore domains. These imports also did not rebuild ELOs. The
+VPS backup preceding the write was
+`basket_elo_pre_flashscore_domestic_20260807T1725Z.dump`.
+
+Representative source pages: [Russia PBL 2007-2008](https://www.flashscore.com.gh/basketball/russia/pbl-2007-2008/results/), [Croatia A1 Liga 2008-2009](https://www.flashscore.info/basketball/croatia/premijer-liga-2008-2009/results/), [Belgium Ethias League 2009-2010](https://www.flashscore.com/basketball/belgium/pro-basketball-league-2009-2010/results/), and [Latvia LBL 2018-2019](https://www.flashscore.com/basketball/latvia/lbl-2018-2019/results/).
+
+| Competition | Source cutoff found | Season | Source games | Database result | Status |
+| --- | --- | --- | ---: | ---: | --- |
+| Russian PBL / Superleague A | 2005-2006 | 2005-2006 | 206 | 206 inserted | complete, no warnings |
+| Russian PBL / Superleague A | 2005-2006 | 2006-2007 | 204 | 204 inserted | complete, no warnings |
+| Russian PBL / Superleague A | 2005-2006 | 2007-2008 | 210 | 210 inserted | complete, no warnings |
+| Russian PBL / Superleague A | 2005-2006 | 2008-2009 | 174 | 174 inserted | complete, no warnings |
+| Croatian A1 Liga / Premijer liga | 2008-2009 | 2008-2009 | 64 | 0 inserted; 64 deduplicated | matches existing API-Sports coverage |
+| Croatian A1 Liga / Premijer liga | 2008-2009 | 2009-2010 | 105 | 105 inserted | incomplete source feed; warning |
+| Croatian A1 Liga / Premijer liga | 2008-2009 | 2010-2011 | 183 | 0 inserted; 183 deduplicated | matches existing API-Sports coverage |
+| Croatian A1 Liga / Premijer liga | 2008-2009 | 2011-2012 | 205 | 0 inserted; 205 deduplicated | matches existing API-Sports coverage |
+| Croatian A1 Liga / Premijer liga | 2008-2009 | 2012-2013 | 186 | 0 inserted; 186 deduplicated | matches existing API-Sports coverage |
+| Croatian A1 Liga / Premijer liga | 2008-2009 | 2013-2014 | 175 | 0 inserted; 175 deduplicated | matches existing API-Sports coverage |
+
+The Russian Flashscore source is the cleanest newly discovered extension: its
+documented cutoff is 2005-2006 and 794 games were added through 2008-2009.
+Croatia's Flashscore pages confirm the 2008-2009 API boundary and later
+seasons, but only the 2009-2010 feed added new rows. That season is retained as
+`completed_with_warnings` because Flashscore advertised 156 events while the
+usable result feed exposed 105; it must not be treated as a complete league
+season without a second source.
+
+Belgium's 2009-2010 Flashscore page exposed 105 usable games against a listed
+156-event count and no pagination token, so it was dry-run only and was not
+imported. Latvia's 2018-2019 Flashscore page exposed the same 20-game partial
+segment already present from API-Sports, so it was also validation-only. The
+remaining Belgian and Latvian gaps stay open rather than being filled with
+unverified partial data.
+
+The clean source cutoffs are therefore: Russia 2005-2006, Croatia 2008-2009,
+Belgium unresolved before 2010-2011, and Latvia unresolved before 2011-2012.
+
+### Latvia LBL season verification
+
+| Season | Games | First game | Last game | Result |
+| --- | ---: | --- | --- | --- |
+| 2011-2012 | 122 | 2011-10-08 | 2012-05-20 | complete |
+| 2012-2013 | 185 | 2012-10-03 | 2013-05-27 | complete |
+| 2013-2014 | 220 | 2013-10-01 | 2014-05-17 | complete |
+| 2014-2015 | 165 | 2014-10-01 | 2015-05-28 | complete |
+| 2015-2016 | 208 | 2015-09-29 | 2016-05-31 | complete |
+| 2016-2017 | 170 | 2016-09-28 | 2017-05-25 | complete |
+| 2017-2018 | 143 | 2017-09-27 | 2018-06-06 | complete |
+| 2018-2019 | 20 | 2019-04-09 | 2019-05-17 | partial provider coverage |
+| 2019-2020 | 0 | — | — | no provider data |
+| 2020-2021 | 23 | 2021-04-13 | 2021-05-17 | partial provider coverage |
+
+The 2018-2019 and 2020-2021 rows must not be treated as complete league
+seasons. The API-Sports season metadata itself starts late in those editions.
+
+### Russian PBL season verification
+
+| Season | Games | First game | Last game | Result |
+| --- | ---: | --- | --- | --- |
+| 2011-2012 | 111 | 2011-10-06 | 2012-05-19 | complete provider return |
+| 2012-2013 | 58 | 2012-10-03 | 2013-05-12 | complete provider return |
+
+These PBL seasons are separate from the multinational VTB United League
+competition. No historical PBL games before 2011-2012 were exposed by
+API-Sports.
+
 ## Lithuanian Cup
 
 `wikipedia-lithuanian-cup` covers the published Final Four results from

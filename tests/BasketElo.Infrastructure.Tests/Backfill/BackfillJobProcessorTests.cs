@@ -101,7 +101,7 @@ public class BackfillJobProcessorTests
 
         Assert.Equal(BackfillJobStatus.Failed, poisonJob.Status);
         Assert.Equal(BackfillJobStatus.Pending, laterJob.Status);
-        Assert.Contains("test-source backfill failed", poisonJob.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("fiba backfill failed", poisonJob.ErrorMessage, StringComparison.Ordinal);
         using (var failure = JsonDocument.Parse(poisonJob.SummaryJson!))
         {
             var context = failure.RootElement.GetProperty("failure");
@@ -159,6 +159,50 @@ public class BackfillJobProcessorTests
         Assert.True(updated.EloEligible);
     }
 
+    [Fact]
+    public async Task OfficialSchedulePromotesExistingLivescoreFixtureWithoutCreatingDuplicate()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var provider = new TestProvider { Status = "scheduled", HomeScore = null, AwayScore = null };
+        var catalog = new TestCatalog();
+        var processor = new BackfillJobProcessor(
+            dbContext,
+            [provider],
+            new IdentityHealthCheckService(dbContext, catalog),
+            catalog,
+            NullLogger<BackfillJobProcessor>.Instance,
+            Microsoft.Extensions.Options.Options.Create(new BackfillOptions()));
+
+        var firstJob = CreateJob();
+        dbContext.BackfillJobs.Add(firstJob);
+        await dbContext.SaveChangesAsync();
+        Assert.True(await processor.TryProcessNextPendingJobAsync(CancellationToken.None));
+
+        var livescoreFixture = await dbContext.Games.SingleAsync();
+        livescoreFixture.Source = "livescore";
+        livescoreFixture.SourceGameId = "livescore-planned-1";
+        livescoreFixture.SourceUrl = "https://www.livescores.com/basketball/event/1/";
+        await dbContext.SaveChangesAsync();
+
+        var secondJob = CreateJob();
+        dbContext.BackfillJobs.Add(secondJob);
+        await dbContext.SaveChangesAsync();
+        Assert.True(await processor.TryProcessNextPendingJobAsync(CancellationToken.None));
+
+        var promoted = await dbContext.Games.SingleAsync();
+        Assert.Equal(TestProvider.Source, promoted.Source);
+        Assert.Equal("game-1", promoted.SourceGameId);
+        Assert.Equal("scheduled", promoted.Status);
+        Assert.Null(promoted.HomeScore);
+        Assert.Equal(livescoreFixture.Id, promoted.Id);
+        using var summary = JsonDocument.Parse(secondJob.SummaryJson!);
+        Assert.Equal(1, summary.RootElement.GetProperty("GamesDeduplicated").GetInt32());
+        Assert.Equal(1, summary.RootElement.GetProperty("GamesUpdated").GetInt32());
+    }
+
     private static BackfillJob CreateJob(string season = "2024-2025", bool dryRun = false) => new()
     {
         Id = Guid.NewGuid(),
@@ -172,7 +216,7 @@ public class BackfillJobProcessorTests
 
     private sealed class TestProvider : IBasketballDataProvider
     {
-        public const string Source = "test-source";
+        public const string Source = "fiba";
 
         public string SourceKey => Source;
         public short? HomeScore { get; set; } = 90;

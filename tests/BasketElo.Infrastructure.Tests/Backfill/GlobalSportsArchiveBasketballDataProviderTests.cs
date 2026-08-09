@@ -67,6 +67,50 @@ public sealed class GlobalSportsArchiveBasketballDataProviderTests
         Assert.Equal(2, handler.RequestCount);
     }
 
+    [Theory]
+    [InlineData("FIBA AmeriCup", "fiba-americup")]
+    [InlineData("FIBA AmeriCup Qualifiers", "fiba-americup-qualification")]
+    [InlineData("FIBA AmeriCup Pre-Qualifiers", "fiba-americup-pre-qualifiers")]
+    public async Task ResolvesAmeriCupStagesSeparately(string leagueName, string sourceLeagueId)
+    {
+        var provider = new GlobalSportsArchiveBasketballDataProvider(new HttpClient
+        {
+            BaseAddress = new Uri("https://globalsportsarchive.com")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "Americas",
+            leagueName,
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+
+        Assert.NotNull(league);
+        Assert.Equal(sourceLeagueId, league.SourceLeagueId);
+        Assert.Equal(leagueName, league.Name);
+    }
+
+    [Theory]
+    [InlineData("Summer Olympics", "summer-olympics")]
+    [InlineData("Olympics Qualification", "olympics-qualification")]
+    [InlineData("Olympics Pre-Qualification", "olympics-pre-qualification")]
+    public async Task ResolvesOlympicStagesSeparately(string leagueName, string sourceLeagueId)
+    {
+        var provider = new GlobalSportsArchiveBasketballDataProvider(new HttpClient
+        {
+            BaseAddress = new Uri("https://globalsportsarchive.com")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "World",
+            leagueName,
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+
+        Assert.NotNull(league);
+        Assert.Equal(sourceLeagueId, league.SourceLeagueId);
+        Assert.Equal(leagueName, league.Name);
+    }
+
     [Fact]
     public async Task ResolvesHistoricalAsiaCupAndParsesLegacyAbcGameCard()
     {

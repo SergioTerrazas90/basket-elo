@@ -24,6 +24,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<Competition> Competitions => Set<Competition>();
     public DbSet<CompetitionAlias> CompetitionAliases => Set<CompetitionAlias>();
     public DbSet<Season> Seasons => Set<Season>();
+    public DbSet<TournamentCycle> TournamentCycles => Set<TournamentCycle>();
     public DbSet<Game> Games => Set<Game>();
     public DbSet<TeamRating> TeamRatings => Set<TeamRating>();
     public DbSet<RatingHistory> RatingHistories => Set<RatingHistory>();
@@ -418,6 +419,36 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasIndex(x => new { x.CompetitionId, x.Label }).IsUnique();
         });
 
+        modelBuilder.Entity<TournamentCycle>(entity =>
+        {
+            entity.ToTable("tournament_cycles");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Key).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.Family).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.EditionLabel).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.DisplayName).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasIndex(x => x.Key).IsUnique();
+            entity.HasIndex(x => new { x.Family, x.EditionLabel });
+        });
+
+        modelBuilder.Entity<GameTournamentCycleLink>(entity =>
+        {
+            entity.ToTable("game_tournament_cycle_links");
+            entity.HasKey(x => new { x.GameId, x.TournamentCycleId });
+            entity.Property(x => x.Stage).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Source).HasMaxLength(100).IsRequired();
+            entity.HasOne(x => x.Game)
+                .WithMany(x => x.TournamentCycleLinks)
+                .HasForeignKey(x => x.GameId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.TournamentCycle)
+                .WithMany(x => x.GameLinks)
+                .HasForeignKey(x => x.TournamentCycleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.TournamentCycleId, x.Stage, x.GameId });
+        });
+
         modelBuilder.Entity<Game>(entity =>
         {
             entity.ToTable("games");
@@ -426,6 +457,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.SourceGameId).HasMaxLength(100).IsRequired();
             entity.Property(x => x.SourceUrl).HasMaxLength(1000);
             entity.Property(x => x.SourceSeasonKey).HasMaxLength(100);
+            entity.Property(x => x.TournamentCycleId);
             entity.Property(x => x.SourceRevision).HasMaxLength(100);
             entity.Property(x => x.ParserVersion).HasMaxLength(100);
             entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
@@ -444,6 +476,10 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .WithMany()
                 .HasForeignKey(x => x.SeasonId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.TournamentCycle)
+                .WithMany(x => x.Games)
+                .HasForeignKey(x => x.TournamentCycleId)
+                .OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(x => x.HomeTeam)
                 .WithMany()
                 .HasForeignKey(x => x.HomeTeamId)
@@ -455,6 +491,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasIndex(x => new { x.Source, x.SourceGameId }).IsUnique();
             entity.HasIndex(x => x.GameDateTimeUtc);
             entity.HasIndex(x => new { x.CompetitionId, x.GameDateTimeUtc });
+            entity.HasIndex(x => new { x.TournamentCycleId, x.GameDateTimeUtc });
         });
 
         modelBuilder.Entity<TeamRating>(entity =>
@@ -592,6 +629,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.SuggestedCompetitionCountryCode).HasMaxLength(3);
             entity.Property(x => x.ParserVersion).HasMaxLength(100);
             entity.Property(x => x.SourceRevision).HasMaxLength(100);
+            entity.Property(x => x.ResolutionAction).HasMaxLength(30);
+            entity.Property(x => x.ResolutionNote).HasMaxLength(1000);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.Property(x => x.UpdatedAtUtc).IsRequired();
             entity.HasOne(x => x.Run)
@@ -599,6 +638,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .HasForeignKey(x => x.RunId)
                 .OnDelete(DeleteBehavior.SetNull);
             entity.HasIndex(x => new { x.Source, x.SourceGameId }).IsUnique();
+            entity.HasIndex(x => x.AssignedGameId);
             entity.HasIndex(x => new { x.Status, x.UpdatedAtUtc });
             entity.HasIndex(x => x.SourceDate);
         });

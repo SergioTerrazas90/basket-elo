@@ -53,12 +53,57 @@ public class CurrentResultsController(
             .OrderByDescending(x => x.UpdatedAtUtc)
             .Take(Math.Clamp(limit, 1, 500))
             .Select(x => new CurrentResultReviewDto(
-                x.Id, x.SourceGameId, x.SourceDate, x.SourceUrl, x.CountryName, x.CompetitionName, x.StageName,
+                x.Id, x.SourceGameId, x.SourceCompetitionId, x.SourceDate, x.SourceUrl, x.CountryName, x.CompetitionName, x.StageName,
                 x.HomeTeamName, x.AwayTeamName, x.GameDateTimeUtc, x.HomeScore, x.AwayScore, x.ResultStatus,
                 x.Reason, x.Status, x.SuggestedCompetitionName, x.SuggestedCompetitionCountryCode,
                 x.AssignedGameId, x.ResolutionAction, x.ResolutionNote, x.CreatedAtUtc, x.UpdatedAtUtc))
             .ToListAsync(cancellationToken);
         return Ok(reviews);
+    }
+
+    [HttpGet("reviews/unmatched-competitions")]
+    public async Task<ActionResult<IReadOnlyList<CurrentResultsUnmatchedCompetitionDto>>> GetUnmatchedCompetitions(
+        CancellationToken cancellationToken) =>
+        Ok(await ingestionService.GetUnmatchedCompetitionsAsync(cancellationToken));
+
+    [HttpPost("reviews/unmatched-competitions/merge")]
+    public async Task<ActionResult<object>> MergeUnmatchedCompetition(
+        [FromBody] MergeUnmatchedCompetitionRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var count = await ingestionService.MergeUnmatchedCompetitionAsync(request, cancellationToken);
+            return Ok(new { reviewsUpdated = count });
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return NotFound(exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(exception.Message);
+        }
+    }
+
+    [HttpPost("reviews/unmatched-competitions/ignore")]
+    public async Task<ActionResult<object>> IgnoreUnmatchedCompetition(
+        [FromBody] IgnoreUnmatchedCompetitionRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var count = await ingestionService.IgnoreUnmatchedCompetitionAsync(request, cancellationToken);
+            return Ok(new { reviewsIgnored = count });
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(exception.Message);
+        }
     }
 
     [HttpGet("reviews/{reviewId:guid}/matches")]

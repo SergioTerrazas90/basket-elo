@@ -62,7 +62,7 @@ public sealed class LiveScoreDailyResultsProvider(
 
             var country = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Sa ')]")?.InnerText);
             var competitionAndStage = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ta ')]")?.InnerText);
-            SplitCompetition(competitionAndStage, out var competition, out var stage);
+            SplitCompetition(country, competitionAndStage, out var competition, out var stage);
             var headerIndex = parent.ChildNodes.ToList().IndexOf(header);
             if (headerIndex < 0)
             {
@@ -217,8 +217,16 @@ public sealed class LiveScoreDailyResultsProvider(
         return hasScore ? CurrentResultStatuses.Live : CurrentResultStatuses.Scheduled;
     }
 
-    private static void SplitCompetition(string value, out string competition, out string? stage)
+    private static void SplitCompetition(string parentName, string value, out string competition, out string? stage)
     {
+        if (!string.IsNullOrWhiteSpace(parentName) &&
+            Regex.IsMatch(value, @"^Group\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            competition = parentName;
+            stage = Clean(value);
+            return;
+        }
+
         var separator = value.IndexOf(':');
         if (separator > 0)
         {

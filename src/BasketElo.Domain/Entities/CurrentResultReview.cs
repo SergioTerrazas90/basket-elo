@@ -6,6 +6,7 @@ public class CurrentResultReview
     public Guid? RunId { get; set; }
     public string Source { get; set; } = string.Empty;
     public string SourceGameId { get; set; } = string.Empty;
+    public string? SourceCompetitionId { get; set; }
     public string? SourceUrl { get; set; }
     public DateOnly SourceDate { get; set; }
     public DateTime GameDateTimeUtc { get; set; }

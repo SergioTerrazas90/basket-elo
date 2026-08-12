@@ -1,0 +1,256 @@
+@page "/admin/competitions"
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@using BasketElo.Domain.Competitions
+@using BasketElo.Domain.Entities
+@inject HttpClient Http
+
+<PageTitle>Competitions Admin</PageTitle>
+
+<div class="admin-page">
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Operations</p>
+            <h1>Competitions</h1>
+            <p class="intro">Manage canonical competitions, their current-results support policy, and source-specific aliases.</p>
+        </div>
+        <div class="header-actions">
+            <NavLink class="btn btn-outline-secondary" href="admin">Admin dashboard</NavLink>
+            <button type="button" class="btn btn-primary" @onclick="StartCreate">New competition</button>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="alert @messageCss" role="alert">@message</div>
+    }
+
+    @if (detail is not null)
+    {
+        <section class="card border-primary mb-4" aria-live="polite">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-3"><div><p class="eyebrow">Selected competition</p><h2 class="h4">@detail.Name</h2></div><button type="button" class="btn-close" aria-label="Close competition details" @onclick="CloseDetail"></button></div>
+                <div class="d-flex flex-wrap gap-2 mb-3"><span class="badge text-bg-light">@detail.GameCount games</span><span class="badge text-bg-light">@detail.OpenReviewCount open reviews</span><span class="badge text-bg-light">@detail.Aliases.Count aliases</span><span class="badge @(detail.IsActive ? "text-bg-success" : "text-bg-secondary")">@(detail.IsActive ? "Active" : "Inactive")</span></div>
+                <button type="button" class="btn btn-outline-primary btn-sm mb-3" @onclick="() => StartEdit(detail)">Edit metadata and policy</button>
+                <h3 class="h5">Source aliases</h3>
+                @if (detail.Aliases.Count == 0)
+                {
+                    <p class="text-muted">No source aliases configured.</p>
+                }
+                else
+                {
+                    <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Source</th><th>Source competition ID</th><th>Observed name</th><th></th></tr></thead><tbody>
+                        @foreach (var alias in detail.Aliases)
+                        {
+                            <tr><td>@alias.Source</td><td>@(alias.SourceCompetitionId ?? "—")</td><td>@alias.AliasName</td><td><button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAliasAsync(alias.Id)" disabled="@isBusy">Remove</button></td></tr>
+                        }
+                    </tbody></table></div>
+                }
+                <div class="row g-2 align-items-end"><div class="col-md-3"><label class="form-label">Source</label><input class="form-control" @bind="aliasSource" placeholder="livescore" /></div><div class="col-md-3"><label class="form-label">Source competition ID</label><input class="form-control" @bind="aliasSourceCompetitionId" placeholder="Optional" /></div><div class="col-md-4"><label class="form-label">Observed competition name</label><input class="form-control" @bind="aliasName" /></div><div class="col-md-2"><button type="button" class="btn btn-outline-primary w-100" @onclick="AddAliasAsync" disabled="@isBusy">Add alias</button></div></div>
+            </div>
+        </section>
+    }
+
+    @if (isLoadingDetail)
+    {
+        <div class="alert alert-info" role="status">Loading competition details...</div>
+    }
+
+    <section class="card mb-4">
+        <div class="card-body d-flex flex-wrap align-items-end gap-3">
+            <div class="flex-grow-1">
+                <label class="form-label" for="competition-search">Search</label>
+                <input id="competition-search" class="form-control" @bind="search" placeholder="Canonical name, alias, or source ID" />
+            </div>
+            <div>
+                <label class="form-label" for="competition-policy">Current-results policy</label>
+                <select id="competition-policy" class="form-select" @bind="policyFilter">
+                    <option value="">All policies</option>
+                    <option value="supported">Supported</option>
+                    <option value="unsupported">Unsupported</option>
+                    <option value="review_required">Review required</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label" for="competition-active-filter">Activity</label>
+                <select id="competition-active-filter" class="form-select" @bind="activeFilter">
+                    <option value="">All</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                </select>
+            </div>
+            <button type="button" class="btn btn-outline-primary" @onclick="LoadAsync" disabled="@isBusy">Search</button>
+        </div>
+    </section>
+
+    @if (editing)
+    {
+        <section class="card mb-4">
+            <div class="card-body">
+                <h2 class="h4">@(creating ? "Create competition" : "Edit competition")</h2>
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label">Canonical name</label><input class="form-control" @bind="editName" /></div>
+                    <div class="col-md-3"><label class="form-label">Type</label><input class="form-control" @bind="editType" /></div>
+                    <div class="col-md-3"><label class="form-label">Country code</label><input class="form-control" maxlength="3" @bind="editCountryCode" placeholder="Optional" /></div>
+                    <div class="col-md-4"><label class="form-label">ELO pool</label><input class="form-control" @bind="editEloPoolKey" placeholder="Optional" /></div>
+                    <div class="col-md-2"><label class="form-label">Tier</label><input class="form-control" type="number" min="0" @bind="editTier" /></div>
+                    <div class="col-md-4"><label class="form-label">Current-results policy</label><select class="form-select" @bind="editSupportPolicy"><option value="supported">Supported</option><option value="unsupported">Unsupported</option><option value="review_required">Review required</option></select></div>
+                    <div class="col-md-2 d-flex align-items-end"><div class="form-check"><input id="competition-active" class="form-check-input" type="checkbox" @bind="editIsActive" /><label class="form-check-label" for="competition-active">Active</label></div></div>
+                </div>
+                <div class="d-flex gap-2 mt-3"><button type="button" class="btn btn-primary" @onclick="SaveCompetitionAsync" disabled="@isBusy">Save</button><button type="button" class="btn btn-outline-secondary" @onclick="CancelEdit">Cancel</button></div>
+            </div>
+        </section>
+    }
+
+    @if (response is null)
+    {
+        <p><em>Loading competitions...</em></p>
+    }
+    else if (response.Competitions.Count == 0)
+    {
+        <div class="alert alert-info">No competitions match this filter.</div>
+    }
+    else
+    {
+        <section class="card">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead><tr><th>Competition</th><th>Country</th><th>Activity</th><th>Policy</th><th>Aliases</th><th>Games</th><th>Open reviews</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var competition in response.Competitions)
+                        {
+                            <tr>
+                                <td><strong>@competition.Name</strong><br /><small class="text-muted">@competition.Type</small></td>
+                                <td>@(competition.CountryCode ?? "—")</td>
+                                <td><span class="badge @(competition.IsActive ? "text-bg-success" : "text-bg-secondary")">@(competition.IsActive ? "Active" : "Inactive")</span></td>
+                                <td><span class="badge @(competition.SupportPolicy == CompetitionSupportPolicies.Supported ? "text-bg-success" : competition.SupportPolicy == CompetitionSupportPolicies.Unsupported ? "text-bg-secondary" : "text-bg-warning")">@PolicyLabel(competition.SupportPolicy)</span></td>
+                                <td>@competition.AliasCount</td><td>@competition.GameCount</td><td>@competition.OpenReviewCount</td>
+                                <td><button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OpenDetailAsync(competition.Id)">Manage</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+
+</div>
+
+@code {
+    private CompetitionAdminListResponse? response;
+    private CompetitionAdminDetail? detail;
+    private string search = string.Empty;
+    private string policyFilter = string.Empty;
+    private string activeFilter = string.Empty;
+    private bool isBusy;
+    private bool isLoadingDetail;
+    private bool editing;
+    private bool creating;
+    private string editName = string.Empty;
+    private string editType = "league";
+    private string? editCountryCode;
+    private string? editEloPoolKey;
+    private int editTier;
+    private bool editIsActive = true;
+    private string editSupportPolicy = CompetitionSupportPolicies.Supported;
+    private string aliasSource = string.Empty;
+    private string? aliasSourceCompetitionId;
+    private string aliasName = string.Empty;
+    private string? message;
+    private string messageCss = "alert-info";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isBusy = true;
+        try
+        {
+            var activeQuery = activeFilter switch { "active" => "true", "inactive" => "false", _ => string.Empty };
+            var query = $"?pageSize=200&search={Uri.EscapeDataString(search)}&supportPolicy={Uri.EscapeDataString(policyFilter)}&active={Uri.EscapeDataString(activeQuery)}";
+            response = await Http.GetFromJsonAsync<CompetitionAdminListResponse>($"api/admin/competitions{query}");
+        }
+        catch (Exception exception) { SetMessage($"Could not load competitions: {exception.Message}", "alert-danger"); }
+        finally { isBusy = false; }
+    }
+
+    private void StartCreate()
+    {
+        creating = true; editing = true; detail = null; editName = string.Empty; editType = "league"; editCountryCode = null; editEloPoolKey = null; editTier = 0; editIsActive = true; editSupportPolicy = CompetitionSupportPolicies.Supported;
+    }
+
+    private void StartEdit(CompetitionAdminDetail value)
+    {
+        creating = false; editing = true; editName = value.Name; editType = value.Type; editCountryCode = value.CountryCode; editEloPoolKey = value.EloPoolKey; editTier = value.Tier; editIsActive = value.IsActive; editSupportPolicy = value.SupportPolicy;
+    }
+
+    private void CancelEdit() => editing = false;
+
+    private async Task SaveCompetitionAsync()
+    {
+        isBusy = true;
+        try
+        {
+            HttpResponseMessage result;
+            if (creating)
+            {
+                result = await Http.PostAsJsonAsync("api/admin/competitions", new CreateCompetitionAdminRequest(editName, editType, editCountryCode, editEloPoolKey, editTier, editIsActive, editSupportPolicy));
+            }
+            else
+            {
+                result = await Http.PatchAsJsonAsync($"api/admin/competitions/{detail!.Id}", new UpdateCompetitionAdminRequest(editName, editType, editCountryCode, editEloPoolKey, editTier, editIsActive, editSupportPolicy));
+            }
+            if (!result.IsSuccessStatusCode) { SetMessage(await result.Content.ReadAsStringAsync(), "alert-danger"); return; }
+            detail = creating ? await result.Content.ReadFromJsonAsync<CompetitionAdminDetail>() : await result.Content.ReadFromJsonAsync<CompetitionAdminDetail>();
+            creating = false; editing = false; SetMessage("Competition saved.", "alert-success"); await LoadAsync();
+        }
+        catch (Exception exception) { SetMessage($"Could not save competition: {exception.Message}", "alert-danger"); }
+        finally { isBusy = false; }
+    }
+
+    private async Task OpenDetailAsync(Guid id)
+    {
+        isLoadingDetail = true;
+        detail = null;
+        try
+        {
+            detail = await Http.GetFromJsonAsync<CompetitionAdminDetail>($"api/admin/competitions/{id}");
+        }
+        catch (Exception exception) { SetMessage($"Could not load competition: {exception.Message}", "alert-danger"); }
+        finally { isLoadingDetail = false; }
+    }
+
+    private void CloseDetail() { detail = null; editing = false; }
+
+    private async Task AddAliasAsync()
+    {
+        if (detail is null) return;
+        isBusy = true;
+        try
+        {
+            var result = await Http.PostAsJsonAsync($"api/admin/competitions/{detail.Id}/aliases", new AddCompetitionAdminAliasRequest(aliasSource, aliasSourceCompetitionId, aliasName));
+            if (!result.IsSuccessStatusCode) { SetMessage(await result.Content.ReadAsStringAsync(), "alert-danger"); return; }
+            detail = await result.Content.ReadFromJsonAsync<CompetitionAdminDetail>(); aliasSource = string.Empty; aliasSourceCompetitionId = null; aliasName = string.Empty; SetMessage("Alias saved.", "alert-success"); await LoadAsync();
+        }
+        catch (Exception exception) { SetMessage($"Could not add alias: {exception.Message}", "alert-danger"); }
+        finally { isBusy = false; }
+    }
+
+    private async Task DeleteAliasAsync(Guid aliasId)
+    {
+        if (detail is null) return;
+        isBusy = true;
+        try
+        {
+            var result = await Http.DeleteAsync($"api/admin/competitions/{detail.Id}/aliases/{aliasId}");
+            if (!result.IsSuccessStatusCode) { SetMessage(await result.Content.ReadAsStringAsync(), "alert-danger"); return; }
+            detail = await result.Content.ReadFromJsonAsync<CompetitionAdminDetail>(); SetMessage("Alias removed.", "alert-success"); await LoadAsync();
+        }
+        catch (Exception exception) { SetMessage($"Could not remove alias: {exception.Message}", "alert-danger"); }
+        finally { isBusy = false; }
+    }
+
+    private static string PolicyLabel(string value) => value switch { "supported" => "Supported", "unsupported" => "Unsupported", "review_required" => "Review required", _ => value };
+
+    private void SetMessage(string value, string css) { message = value; messageCss = css; }
+}

@@ -257,6 +257,163 @@ public class CurrentResultsIngestionServiceTests
         Assert.Equal(3, await dbContext.EloRebuildRuns.CountAsync());
     }
 
+    [Fact]
+    public async Task UnknownCompetitionCreatesOnlyCompetitionReview()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var candidate = new CurrentResultCandidate(
+            "unknown-competition-game", null, new DateOnly(2026, 8, 28),
+            new DateTime(2026, 8, 28, 18, 30, 0, DateTimeKind.Utc), "USA", "WNBA", null,
+            "Minnesota Lynx", "Los Angeles Sparks", "home-source", "away-source", 88, 76,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+
+        var summary = await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        var review = await dbContext.CurrentResultReviews.SingleAsync();
+        Assert.Equal(CurrentResultReviewReasons.UnknownCompetition, review.Reason);
+        Assert.Equal(1, summary.ReviewsOpened);
+        Assert.Empty(await dbContext.Games.ToListAsync());
+        Assert.Empty(await dbContext.TeamAliases.ToListAsync());
+
+        review.Status = CurrentResultReviewStatuses.Ignored;
+        review.ResolutionAction = "ignore";
+        await dbContext.SaveChangesAsync();
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+        Assert.Equal(CurrentResultReviewStatuses.Open, (await dbContext.CurrentResultReviews.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task UnsupportedCompetitionIsSkippedBeforeTeamResolution()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "WNBA", CountryCode = "US",
+            SupportPolicy = CompetitionSupportPolicies.Unsupported
+        };
+        dbContext.Competitions.Add(competition);
+        await dbContext.SaveChangesAsync();
+        var candidate = new CurrentResultCandidate(
+            "unsupported-competition-game", null, new DateOnly(2026, 8, 28),
+            new DateTime(2026, 8, 28, 18, 30, 0, DateTimeKind.Utc), "USA", "WNBA", null,
+            "Minnesota Lynx", "Los Angeles Sparks", "home-source", "away-source", 88, 76,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+
+        var summary = await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        Assert.Equal(1, summary.UnsupportedSkipped);
+        Assert.Equal(0, summary.ReviewsOpened);
+        Assert.Empty(await dbContext.CurrentResultReviews.ToListAsync());
+        Assert.Empty(await dbContext.TeamAliases.ToListAsync());
+    }
+
+    [Fact]
+    public async Task SourceCompetitionIdAliasMatchesBeforeTeamResolution()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var competition = new Competition { Id = Guid.NewGuid(), Name = "Women's National Basketball Association", CountryCode = "US" };
+        var home = new Team { Id = Guid.NewGuid(), CanonicalName = "Minnesota Lynx", CountryCode = "US" };
+        var away = new Team { Id = Guid.NewGuid(), CanonicalName = "Los Angeles Sparks", CountryCode = "US" };
+        dbContext.AddRange(competition, home, away, new CompetitionAlias
+        {
+            Id = Guid.NewGuid(), CompetitionId = competition.Id, Source = "livescore",
+            SourceCompetitionId = "league-wnba", AliasName = "WNBA"
+        });
+        await dbContext.SaveChangesAsync();
+        var candidate = new CurrentResultCandidate(
+            "aliased-competition-game", null, new DateOnly(2026, 8, 28),
+            new DateTime(2026, 8, 28, 18, 30, 0, DateTimeKind.Utc), "USA", "WNBA: Regular Season", null,
+            home.CanonicalName, away.CanonicalName, "home-source", "away-source", 88, 76,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser", "LEAGUE-WNBA");
+        var service = CreateService(dbContext, candidate);
+
+        var summary = await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        Assert.Equal(1, summary.GamesUpserted);
+        Assert.Empty(await dbContext.CurrentResultReviews.ToListAsync());
+        Assert.Equal(competition.Id, (await dbContext.Games.SingleAsync()).CompetitionId);
+    }
+
+    [Fact]
+    public async Task IgnoringUnmatchedCompetitionCreatesUnsupportedDecisionAndHidesReviews()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var candidate = new CurrentResultCandidate(
+            "ignore-competition-game", null, new DateOnly(2026, 8, 28),
+            new DateTime(2026, 8, 28, 18, 30, 0, DateTimeKind.Utc), "USA", "WNBA", null,
+            "Minnesota Lynx", "Los Angeles Sparks", "home-source", "away-source", null, null,
+            CurrentResultStatuses.Scheduled, "18:30", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        var ignored = await service.IgnoreUnmatchedCompetitionAsync(
+            new IgnoreUnmatchedCompetitionRequest("livescore", null, "USA", "WNBA"),
+            CancellationToken.None);
+
+        Assert.Equal(1, ignored);
+        Assert.Empty(await service.GetUnmatchedCompetitionsAsync(CancellationToken.None));
+        Assert.Equal(CurrentResultReviewStatuses.Ignored, (await dbContext.CurrentResultReviews.SingleAsync()).Status);
+        Assert.Equal(CompetitionSupportPolicies.Unsupported, (await dbContext.Competitions.SingleAsync()).SupportPolicy);
+        Assert.False((await dbContext.Competitions.SingleAsync()).IsActive);
+        Assert.Single(await dbContext.CompetitionAliases.ToListAsync());
+
+        var rerun = await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+        Assert.Equal(1, rerun.UnsupportedSkipped);
+        Assert.Equal(0, rerun.ReviewsOpened);
+
+    }
+
+    [Fact]
+    public async Task MergingUnmatchedCompetitionAddsAliasAndRemovesItFromNewQueue()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var target = new Competition { Id = Guid.NewGuid(), Name = "Women's National Basketball Association", CountryCode = "US" };
+        dbContext.Competitions.Add(target);
+        await dbContext.SaveChangesAsync();
+        var candidate = new CurrentResultCandidate(
+            "merge-competition-game", null, new DateOnly(2026, 8, 28),
+            new DateTime(2026, 8, 28, 18, 30, 0, DateTimeKind.Utc), "USA", "WNBA", null,
+            "Minnesota Lynx", "Los Angeles Sparks", "home-source", "away-source", null, null,
+            CurrentResultStatuses.Scheduled, "18:30", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        var updated = await service.MergeUnmatchedCompetitionAsync(
+            new MergeUnmatchedCompetitionRequest("livescore", null, "USA", "WNBA", target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, updated);
+        Assert.Empty(await service.GetUnmatchedCompetitionsAsync(CancellationToken.None));
+        Assert.Equal(target.Id, (await dbContext.CompetitionAliases.SingleAsync()).CompetitionId);
+        Assert.Equal("merge", (await dbContext.CurrentResultReviews.SingleAsync()).ResolutionAction);
+    }
+
+    private static CurrentResultsIngestionService CreateService(BasketEloDbContext dbContext, CurrentResultCandidate candidate) =>
+        new(
+            dbContext,
+            new TestCurrentResultsProvider(candidate),
+            new TestBackfillCatalog(),
+            new CleanIdentityHealthCheckService(),
+            TimeProvider.System,
+            NullLogger<CurrentResultsIngestionService>.Instance);
+
     private sealed class TestCurrentResultsProvider(CurrentResultCandidate? candidate) : ICurrentResultsProvider
     {
         public string Source => "livescore";

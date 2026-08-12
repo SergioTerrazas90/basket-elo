@@ -8,7 +8,9 @@ When enabled, the daily run reads:
 - today; and
 - the next seven days, so upcoming games are already available before game day.
 
-The same source game is upserted by `(Source, SourceGameId)`. Manual result edits are preserved. A candidate is only written to `games` when its competition and both teams can be assigned confidently. Unsupported or ambiguous candidates are stored in `current_result_reviews` and exposed through `GET /api/current-results/reviews`.
+The same source game is upserted by `(Source, SourceGameId)`. Manual result edits are preserved. Competition identity is resolved before team identity. Competitions have an explicit current-results support policy: supported competitions continue through team resolution, while unsupported competitions are skipped without creating games, team reviews, or ELO work. Unknown or ambiguous competitions are stored as competition-only items in `current_result_reviews` and exposed through `GET /api/current-results/reviews/unmatched-competitions`.
+
+Administrators manage canonical competitions at `/admin/competitions`. The page supports creating competitions, changing their current-results policy, and adding or removing source-specific aliases with an optional source competition ID. From `/admin/current-results-review`, an unmatched source competition can be merged into an existing supported competition (which saves the alias for future runs) or marked unsupported and inactive (which creates the persistent skip policy, preserves the alias for future recognition, and ignores its existing reviews).
 
 After the complete date range has been ingested, changed Elo pools are identity-checked and the three configured rulesets are queued once per pool. The worker then processes those rebuild jobs. This avoids rebuilding once per game while still rerunning ratings after the daily batch.
 

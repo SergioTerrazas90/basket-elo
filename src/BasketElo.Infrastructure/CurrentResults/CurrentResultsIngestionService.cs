@@ -73,6 +73,7 @@ public sealed class CurrentResultsIngestionService(
 
                     run.GamesUpserted += outcome.GameChanged ? 1 : 0;
                     run.ReviewsOpened += outcome.ReviewOpened ? 1 : 0;
+                    run.UnsupportedSkipped += outcome.UnsupportedSkipped ? 1 : 0;
                 }
 
                 await dbContext.SaveChangesAsync(cancellationToken);
@@ -195,14 +196,197 @@ public sealed class CurrentResultsIngestionService(
         return new CurrentResultReviewResolutionDto(review.Id, review.Status, review.AssignedGameId, eloRunsQueued, "Result assigned to the planned game.");
     }
 
+    public async Task<IReadOnlyList<CurrentResultsUnmatchedCompetitionDto>> GetUnmatchedCompetitionsAsync(
+        CancellationToken cancellationToken)
+    {
+        var reviews = await dbContext.CurrentResultReviews
+            .AsNoTracking()
+            .Where(x => x.Status == CurrentResultReviewStatuses.Open &&
+                        (x.Reason == CurrentResultReviewReasons.UnknownCompetition ||
+                         x.Reason == CurrentResultReviewReasons.AmbiguousCompetition) &&
+                        x.ResolutionAction != "merge")
+            .ToListAsync(cancellationToken);
+
+        return reviews
+            .GroupBy(x => new
+            {
+                Source = x.Source.ToLowerInvariant(),
+                SourceCompetitionId = (x.SourceCompetitionId ?? string.Empty).ToLowerInvariant(),
+                CountryName = x.CountryName.Trim().ToLowerInvariant(),
+                CompetitionName = x.CompetitionName.Trim().ToLowerInvariant()
+            })
+            .Select(group => new CurrentResultsUnmatchedCompetitionDto(
+                group.First().Source,
+                string.IsNullOrWhiteSpace(group.First().SourceCompetitionId) ? null : group.First().SourceCompetitionId,
+                group.First().CountryName,
+                group.First().CompetitionName,
+                group.Count(),
+                group.Min(x => x.CreatedAtUtc),
+                group.Max(x => x.UpdatedAtUtc)))
+            .OrderByDescending(x => x.LastSeenUtc)
+            .ThenBy(x => x.CompetitionName)
+            .ToList();
+    }
+
+    public async Task<int> MergeUnmatchedCompetitionAsync(
+        MergeUnmatchedCompetitionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var source = RequiredValue(request.Source, "Source", 50);
+        var competitionName = RequiredValue(request.CompetitionName, "Competition name", 200);
+        var countryName = RequiredValue(request.CountryName, "Country", 100);
+        var target = await dbContext.Competitions
+            .SingleOrDefaultAsync(x => x.Id == request.TargetCompetitionId && x.IsActive, cancellationToken)
+            ?? throw new KeyNotFoundException("Target competition was not found.");
+        if (target.SupportPolicy != CompetitionSupportPolicies.Supported)
+        {
+            throw new InvalidOperationException("Only a supported competition can receive a current-results alias.");
+        }
+
+        await AddCompetitionAliasAsync(target, source, request.SourceCompetitionId, competitionName, cancellationToken);
+        var reviews = await FindUnmatchedReviewsAsync(source, request.SourceCompetitionId, countryName, competitionName, cancellationToken);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        foreach (var review in reviews)
+        {
+            review.SuggestedCompetitionName = target.Name;
+            review.SuggestedCompetitionCountryCode = target.CountryCode;
+            review.ResolutionAction = "merge";
+            review.ResolutionNote = $"Merged into {target.Name}; rerun current-results to process these candidates.";
+            review.UpdatedAtUtc = now;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return reviews.Count;
+    }
+
+    public async Task<int> IgnoreUnmatchedCompetitionAsync(
+        IgnoreUnmatchedCompetitionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var source = RequiredValue(request.Source, "Source", 50);
+        var competitionName = RequiredValue(request.CompetitionName, "Competition name", 200);
+        var countryName = RequiredValue(request.CountryName, "Country", 100);
+        var countryCode = CountryCode(countryName);
+        var competition = await dbContext.Competitions
+            .SingleOrDefaultAsync(x => x.IsActive && x.Name == competitionName && x.CountryCode == countryCode, cancellationToken);
+        if (competition is null)
+        {
+            competition = new Competition
+            {
+                Id = Guid.NewGuid(),
+                Name = competitionName,
+                Type = "current-results",
+                CountryCode = countryCode,
+                SupportPolicy = CompetitionSupportPolicies.Unsupported,
+                IsActive = false,
+                CreatedAtUtc = timeProvider.GetUtcNow().UtcDateTime
+            };
+            dbContext.Competitions.Add(competition);
+        }
+        else
+        {
+            competition.SupportPolicy = CompetitionSupportPolicies.Unsupported;
+            competition.IsActive = false;
+        }
+
+        await AddCompetitionAliasAsync(competition, source, request.SourceCompetitionId, competitionName, cancellationToken);
+        var reviews = await FindUnmatchedReviewsAsync(source, request.SourceCompetitionId, countryName, competitionName, cancellationToken);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        foreach (var review in reviews)
+        {
+            review.Status = CurrentResultReviewStatuses.Ignored;
+            review.ResolutionAction = "ignore";
+            review.ResolutionNote = $"Competition marked unsupported: {competitionName}.";
+            review.ResolvedAtUtc = now;
+            review.UpdatedAtUtc = now;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return reviews.Count;
+    }
+
+    private async Task<List<CurrentResultReview>> FindUnmatchedReviewsAsync(
+        string source,
+        string? sourceCompetitionId,
+        string countryName,
+        string competitionName,
+        CancellationToken cancellationToken) =>
+        await dbContext.CurrentResultReviews
+            .Where(x => x.Status == CurrentResultReviewStatuses.Open &&
+                        (x.Reason == CurrentResultReviewReasons.UnknownCompetition ||
+                         x.Reason == CurrentResultReviewReasons.AmbiguousCompetition) &&
+                        x.Source == source &&
+                        (string.IsNullOrWhiteSpace(sourceCompetitionId)
+                            ? string.IsNullOrWhiteSpace(x.SourceCompetitionId)
+                            : x.SourceCompetitionId == sourceCompetitionId) &&
+                        x.CountryName == countryName &&
+                        x.CompetitionName == competitionName)
+            .ToListAsync(cancellationToken);
+
+    private async Task AddCompetitionAliasAsync(
+        Competition target,
+        string source,
+        string? sourceCompetitionId,
+        string aliasName,
+        CancellationToken cancellationToken)
+    {
+        var normalizedAlias = NormalizeName(aliasName);
+        var aliases = await dbContext.CompetitionAliases
+            .Where(x => x.Source == source)
+            .ToListAsync(cancellationToken);
+        aliases = aliases.Where(x =>
+            x.CompetitionId == target.Id ||
+            (!string.IsNullOrWhiteSpace(sourceCompetitionId) && x.SourceCompetitionId == sourceCompetitionId) ||
+            NormalizeName(x.AliasName) == normalizedAlias).ToList();
+        var conflicting = aliases.FirstOrDefault(x => x.CompetitionId != target.Id);
+        if (conflicting is not null)
+        {
+            throw new InvalidOperationException("This source competition alias is already mapped to another canonical competition.");
+        }
+
+        if (!aliases.Any(x => x.CompetitionId == target.Id &&
+                              string.Equals(x.SourceCompetitionId ?? string.Empty, sourceCompetitionId ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                              NormalizeName(x.AliasName) == normalizedAlias))
+        {
+            dbContext.CompetitionAliases.Add(new CompetitionAlias
+            {
+                Id = Guid.NewGuid(),
+                CompetitionId = target.Id,
+                Source = source,
+                SourceCompetitionId = sourceCompetitionId?.Trim() ?? string.Empty,
+                AliasName = aliasName,
+                CreatedAtUtc = timeProvider.GetUtcNow().UtcDateTime
+            });
+        }
+    }
+
+    private static string RequiredValue(string? value, string label, int maxLength)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) throw new ArgumentException($"{label} is required.");
+        if (trimmed.Length > maxLength) throw new ArgumentException($"{label} cannot exceed {maxLength} characters.");
+        return trimmed;
+    }
+
     private async Task<UpsertOutcome> UpsertCandidateAsync(
         CurrentResultCandidate candidate,
         CurrentResultsRun run,
         CancellationToken cancellationToken)
     {
         var mapping = await ResolveCompetitionAsync(candidate, cancellationToken);
-        var home = await ResolveTeamAsync(candidate.HomeTeamName, candidate.HomeTeamSourceId, mapping.Competition?.CountryCode, cancellationToken);
-        var away = await ResolveTeamAsync(candidate.AwayTeamName, candidate.AwayTeamSourceId, mapping.Competition?.CountryCode, cancellationToken);
+        if (mapping.Competition is null)
+        {
+            await UpsertReviewAsync(candidate, run, mapping.Reason ?? CurrentResultReviewReasons.UnknownCompetition, mapping, cancellationToken, reopenIgnored: true);
+            return new UpsertOutcome(false, true, false, false, null);
+        }
+
+        if (!mapping.Competition.IsActive || mapping.Competition.SupportPolicy == CompetitionSupportPolicies.Unsupported)
+        {
+            return new UpsertOutcome(false, false, false, true, null);
+        }
+
+        var home = await ResolveTeamAsync(candidate.HomeTeamName, candidate.HomeTeamSourceId, mapping.Competition.CountryCode, cancellationToken);
+        var away = await ResolveTeamAsync(candidate.AwayTeamName, candidate.AwayTeamSourceId, mapping.Competition.CountryCode, cancellationToken);
         var reasons = new List<string>();
         if (mapping.Competition is null) reasons.Add(mapping.Reason ?? CurrentResultReviewReasons.UnsupportedCompetition);
         if (home.Team is null) reasons.Add(home.Ambiguous ? CurrentResultReviewReasons.AmbiguousHomeTeam : CurrentResultReviewReasons.UnresolvedHomeTeam);
@@ -212,7 +396,7 @@ public sealed class CurrentResultsIngestionService(
         if (reasons.Count > 0 || mapping.Competition is null || home.Team is null || away.Team is null)
         {
             await UpsertReviewAsync(candidate, run, string.Join(',', reasons.Distinct(StringComparer.Ordinal)), mapping, cancellationToken);
-            return new UpsertOutcome(false, true, false, mapping.Competition?.EloPoolKey);
+            return new UpsertOutcome(false, true, false, false, mapping.Competition?.EloPoolKey);
         }
 
         var season = await GetOrCreateSeasonAsync(mapping.Competition, candidate.GameDateTimeUtc, cancellationToken);
@@ -220,7 +404,7 @@ public sealed class CurrentResultsIngestionService(
             .SingleOrDefaultAsync(x => x.Source == provider.Source && x.SourceGameId == candidate.SourceGameId, cancellationToken);
         if (review?.Status == CurrentResultReviewStatuses.Ignored)
         {
-            return new UpsertOutcome(false, false, false, null);
+            return new UpsertOutcome(false, false, false, false, null);
         }
 
         var existing = await dbContext.Games
@@ -248,7 +432,7 @@ public sealed class CurrentResultsIngestionService(
             if (plannedFixtureMatch.Ambiguous)
             {
                 await UpsertReviewAsync(candidate, run, CurrentResultReviewReasons.AmbiguousPlannedFixture, mapping, cancellationToken);
-                return new UpsertOutcome(false, true, false, mapping.Competition.EloPoolKey);
+                return new UpsertOutcome(false, true, false, false, mapping.Competition.EloPoolKey);
             }
 
             existing = plannedFixtureMatch.Game;
@@ -332,7 +516,7 @@ public sealed class CurrentResultsIngestionService(
             review.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
         }
 
-        return new UpsertOutcome(changed, tournamentCyclePendingConfirmation, eloChanged, tournamentCyclePendingConfirmation ? null : mapping.Competition.EloPoolKey);
+        return new UpsertOutcome(changed, tournamentCyclePendingConfirmation, eloChanged, false, tournamentCyclePendingConfirmation ? null : mapping.Competition.EloPoolKey);
     }
 
     private async Task<TournamentCycle?> ResolveConfirmedTournamentCycleAsync(
@@ -428,7 +612,8 @@ public sealed class CurrentResultsIngestionService(
         CurrentResultsRun run,
         string reason,
         CompetitionMapping mapping,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool reopenIgnored = false)
     {
         var review = await dbContext.CurrentResultReviews
             .SingleOrDefaultAsync(x => x.Source == provider.Source && x.SourceGameId == candidate.SourceGameId, cancellationToken);
@@ -447,6 +632,7 @@ public sealed class CurrentResultsIngestionService(
 
         review.RunId = run.Id;
         review.SourceUrl = candidate.SourceUrl;
+        review.SourceCompetitionId = candidate.SourceCompetitionId;
         review.SourceDate = candidate.SourceDate;
         review.GameDateTimeUtc = candidate.GameDateTimeUtc;
         review.CountryName = candidate.CountryName;
@@ -460,7 +646,18 @@ public sealed class CurrentResultsIngestionService(
         review.AwayScore = candidate.AwayScore;
         review.ResultStatus = candidate.Status;
         review.Reason = reason;
-        review.Status = review.Status is CurrentResultReviewStatuses.Resolved or CurrentResultReviewStatuses.Ignored
+        if (reopenIgnored)
+        {
+            review.ResolutionAction = null;
+            review.ResolutionNote = null;
+            review.ResolvedAtUtc = null;
+        }
+        if (review.ResolutionAction == "merge")
+        {
+            review.ResolutionAction = null;
+            review.ResolutionNote = null;
+        }
+        review.Status = !reopenIgnored && (review.Status is CurrentResultReviewStatuses.Resolved or CurrentResultReviewStatuses.Ignored)
             ? review.Status
             : CurrentResultReviewStatuses.Open;
         review.SuggestedCompetitionName = mapping.SuggestedName;
@@ -482,12 +679,18 @@ public sealed class CurrentResultsIngestionService(
         desired ??= SupportedCompetitionName(candidate.CountryName, candidate.CompetitionName);
         var competitions = await dbContext.Competitions
             .Include(x => x.Aliases)
-            .Where(x => x.IsActive)
             .ToListAsync(cancellationToken);
 
+        var normalizedObservedName = NormalizeName(candidate.CompetitionName);
         var matches = competitions.Where(x =>
             (desired is not null && string.Equals(x.Name, desired, StringComparison.OrdinalIgnoreCase) && CountryMatches(x.CountryCode, countryCode)) ||
-            x.Aliases.Any(alias => alias.Source == provider.Source && string.Equals(alias.AliasName, candidate.CompetitionName, StringComparison.OrdinalIgnoreCase))).ToList();
+            (NormalizeName(x.Name) == normalizedObservedName && CountryMatches(x.CountryCode, countryCode)) ||
+            x.Aliases.Any(alias =>
+                alias.Source == provider.Source &&
+                ((!string.IsNullOrWhiteSpace(candidate.SourceCompetitionId) &&
+                  !string.IsNullOrWhiteSpace(alias.SourceCompetitionId) &&
+                  string.Equals(alias.SourceCompetitionId, candidate.SourceCompetitionId, StringComparison.OrdinalIgnoreCase)) ||
+                 NormalizeName(alias.AliasName) == normalizedObservedName))).ToList();
 
         if (matches.Count == 1)
         {
@@ -496,7 +699,7 @@ public sealed class CurrentResultsIngestionService(
 
         return new CompetitionMapping(
             null,
-            matches.Count > 1 ? CurrentResultReviewReasons.AmbiguousCompetition : CurrentResultReviewReasons.UnsupportedCompetition,
+            matches.Count > 1 ? CurrentResultReviewReasons.AmbiguousCompetition : CurrentResultReviewReasons.UnknownCompetition,
             desired,
             countryCode);
     }
@@ -597,7 +800,7 @@ public sealed class CurrentResultsIngestionService(
     }
 
     private static CurrentResultsRunSummary ToSummary(CurrentResultsRun run, IReadOnlyCollection<string> deferredPools) =>
-        new(run.Id, run.FromDate, run.ToDate, run.PagesRead, run.CandidatesRead, run.GamesUpserted, run.ReviewsOpened, run.EloPoolsQueued, deferredPools, run.Status, run.ErrorMessage);
+        new(run.Id, run.FromDate, run.ToDate, run.PagesRead, run.CandidatesRead, run.GamesUpserted, run.ReviewsOpened, run.UnsupportedSkipped, run.EloPoolsQueued, deferredPools, run.Status, run.ErrorMessage);
 
     private static string? SupportedCompetitionName(string country, string competition)
     {
@@ -655,5 +858,5 @@ public sealed class CurrentResultsIngestionService(
     private sealed record CompetitionMapping(Competition? Competition, string? Reason, string? SuggestedName, string? SuggestedCountryCode);
     private sealed record TeamResolution(Team? Team, bool Ambiguous);
     private sealed record PlannedFixtureMatch(Game? Game, bool Ambiguous);
-    private sealed record UpsertOutcome(bool GameChanged, bool ReviewOpened, bool EloChanged, string? EloPoolKey);
+    private sealed record UpsertOutcome(bool GameChanged, bool ReviewOpened, bool EloChanged, bool UnsupportedSkipped, string? EloPoolKey);
 }

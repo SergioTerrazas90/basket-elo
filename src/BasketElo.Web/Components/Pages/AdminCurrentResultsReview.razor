@@ -2,6 +2,8 @@
 @attribute [Authorize(Roles = "admin")]
 @rendermode InteractiveServer
 @using BasketElo.Domain.CurrentResults
+@using BasketElo.Domain.Competitions
+@using BasketElo.Domain.Entities
 @inject HttpClient Http
 
 <PageTitle>Current Results Review</PageTitle>
@@ -18,6 +20,54 @@
             <button type="button" class="btn btn-primary" @onclick="LoadAsync" disabled="@isBusy">Refresh</button>
         </div>
     </section>
+
+    @if (unmatchedCompetitions is { Count: > 0 })
+    {
+        <section class="card border-warning mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                    <div>
+                        <p class="eyebrow text-warning-emphasis">New unmatched competition</p>
+                        <h2 class="h4 mb-1">Decide how these competitions should be handled</h2>
+                        <p class="text-muted mb-0">Merge a source competition into an existing canonical competition, or mark it unsupported to ignore all of its current-results candidates.</p>
+                    </div>
+                    <NavLink class="btn btn-outline-secondary" href="admin/competitions">Manage competitions</NavLink>
+                </div>
+
+                <div class="d-flex flex-column gap-3">
+                    @foreach (var unmatched in unmatchedCompetitions)
+                    {
+                        var key = UnmatchedKey(unmatched);
+                        <div class="border rounded p-3">
+                            <div class="d-flex justify-content-between align-items-start gap-3">
+                                <div>
+                                    <strong>@unmatched.CompetitionName</strong>
+                                    <div class="small text-muted">@unmatched.CountryName · @unmatched.Source@(string.IsNullOrWhiteSpace(unmatched.SourceCompetitionId) ? string.Empty : $" · ID {unmatched.SourceCompetitionId}") · @unmatched.ReviewCount review(s)</div>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => IgnoreUnmatchedAsync(unmatched)" disabled="@isBusy">Don't handle</button>
+                            </div>
+                            <div class="d-flex flex-wrap align-items-end gap-2 mt-3">
+                                <div class="flex-grow-1">
+                                    <label class="form-label" for="merge-@key">Merge into existing competition</label>
+                                    <select id="merge-@key" class="form-select" value="@GetSelectedCompetition(key)" @onchange="args => SetSelectedCompetition(key, args)">
+                                        <option value="@Guid.Empty">Choose a supported competition...</option>
+                                        @foreach (var option in competitionOptions ?? [])
+                                        {
+                                            if (option.SupportPolicy == CompetitionSupportPolicies.Supported)
+                                            {
+                                                <option value="@option.Id">@option.Name@(string.IsNullOrWhiteSpace(option.CountryCode) ? string.Empty : $" ({option.CountryCode})")</option>
+                                            }
+                                        }
+                                    </select>
+                                </div>
+                                <button type="button" class="btn btn-primary" @onclick="() => MergeUnmatchedAsync(unmatched)" disabled="@isBusy">Merge and save alias</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </section>
+    }
 
     <section class="card mb-4">
         <div class="card-body d-flex flex-wrap align-items-end gap-3">
@@ -135,8 +185,11 @@
 
 @code {
     private IReadOnlyList<CurrentResultReviewDto>? reviews;
+    private IReadOnlyList<CurrentResultsUnmatchedCompetitionDto>? unmatchedCompetitions;
+    private IReadOnlyList<CompetitionAdminOption>? competitionOptions;
     private readonly Dictionary<Guid, IReadOnlyList<CurrentResultReviewMatchDto>> matchesByReview = [];
     private readonly Dictionary<Guid, Guid> selectedGameByReview = [];
+    private readonly Dictionary<string, Guid> selectedCompetitionByUnmatched = [];
     private Guid? expandedReviewId;
     private string statusFilter = CurrentResultReviewStatuses.Open;
     private string? message;
@@ -153,6 +206,9 @@
         {
             var query = statusFilter == "all" ? "" : $"?status={Uri.EscapeDataString(statusFilter)}";
             reviews = await Http.GetFromJsonAsync<IReadOnlyList<CurrentResultReviewDto>>($"api/current-results/reviews{query}") ?? [];
+            unmatchedCompetitions = await Http.GetFromJsonAsync<IReadOnlyList<CurrentResultsUnmatchedCompetitionDto>>("api/current-results/reviews/unmatched-competitions") ?? [];
+            competitionOptions = await Http.GetFromJsonAsync<IReadOnlyList<CompetitionAdminOption>>("api/admin/competitions/options") ?? [];
+            selectedCompetitionByUnmatched.Clear();
             matchesByReview.Clear();
             selectedGameByReview.Clear();
             expandedReviewId = null;
@@ -203,6 +259,63 @@
 
     private async Task IgnoreAsync(Guid reviewId) =>
         await ResolveAsync(reviewId, new CurrentResultReviewResolutionRequest("ignore", null, "Ignored from Current Results Review."));
+
+    private async Task MergeUnmatchedAsync(CurrentResultsUnmatchedCompetitionDto unmatched)
+    {
+        var key = UnmatchedKey(unmatched);
+        if (!selectedCompetitionByUnmatched.TryGetValue(key, out var targetId) || targetId == Guid.Empty)
+        {
+            SetMessage("Choose a supported competition before merging.", "alert-warning");
+            return;
+        }
+
+        await PostUnmatchedDecisionAsync(
+            "api/current-results/reviews/unmatched-competitions/merge",
+            new MergeUnmatchedCompetitionRequest(unmatched.Source, unmatched.SourceCompetitionId, unmatched.CountryName, unmatched.CompetitionName, targetId),
+            "Competition alias saved. Rerun current-results to process these candidates.");
+    }
+
+    private async Task IgnoreUnmatchedAsync(CurrentResultsUnmatchedCompetitionDto unmatched) =>
+        await PostUnmatchedDecisionAsync(
+            "api/current-results/reviews/unmatched-competitions/ignore",
+            new IgnoreUnmatchedCompetitionRequest(unmatched.Source, unmatched.SourceCompetitionId, unmatched.CountryName, unmatched.CompetitionName),
+            "Competition marked unsupported and its current-results reviews were ignored.");
+
+    private async Task PostUnmatchedDecisionAsync(string endpoint, object request, string successMessage)
+    {
+        isBusy = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync(endpoint, request);
+            if (!response.IsSuccessStatusCode)
+            {
+                SetMessage(await response.Content.ReadAsStringAsync(), "alert-danger");
+                return;
+            }
+
+            SetMessage(successMessage, "alert-success");
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            SetMessage($"Could not update unmatched competition: {exception.Message}", "alert-danger");
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static string UnmatchedKey(CurrentResultsUnmatchedCompetitionDto unmatched) =>
+        string.Join("|", unmatched.Source, unmatched.SourceCompetitionId ?? string.Empty, unmatched.CountryName, unmatched.CompetitionName);
+
+    private Guid GetSelectedCompetition(string key) =>
+        selectedCompetitionByUnmatched.GetValueOrDefault(key, Guid.Empty);
+
+    private void SetSelectedCompetition(string key, ChangeEventArgs args)
+    {
+        selectedCompetitionByUnmatched[key] = Guid.TryParse(args.Value?.ToString(), out var value) ? value : Guid.Empty;
+    }
 
     private async Task ResolveAsync(Guid reviewId, CurrentResultReviewResolutionRequest request)
     {

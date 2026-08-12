@@ -43,6 +43,31 @@ public class LiveScoreDailyResultsProviderTests
     }
 
     [Fact]
+    public async Task FetchAsync_UsesParentCompetitionForGroupedHeaders()
+    {
+        const string html = """
+            <html><body><div class="group">
+              <div class="Pa"><span><a href="/basketball/asia-u18-championship/"><span class="Sa">Asia U18 Championship</span></a> - <a href="/basketball/asia-u18-championship/group-a/"><span class="Ta">Group A</span></a></span><span class="Qa">August 13</span></div>
+              <div class="Xe"><button data-eventId="1854829"></button><span class="Ih">05:00</span><div class="nf"><div class="vf">Australia U18</div><div class="vf">Thailand U18</div></div><div class="rf"></div></div>
+            </div></body></html>
+            """;
+        using var client = new HttpClient(new FixtureHandler(html))
+        {
+            BaseAddress = new Uri("https://www.livescores.com")
+        };
+        var provider = new LiveScoreDailyResultsProvider(
+            client,
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC" }));
+
+        var result = await provider.FetchAsync(new DateOnly(2026, 8, 13), CancellationToken.None);
+
+        var candidate = Assert.Single(result.Candidates);
+        Assert.Equal("Asia U18 Championship", candidate.CompetitionName);
+        Assert.Equal("Group A", candidate.StageName);
+        Assert.Equal("Asia U18 Championship", candidate.CountryName);
+    }
+
+    [Fact]
     public async Task FetchAsync_RejectsDisabledProvider()
     {
         using var client = new HttpClient(new FixtureHandler("<html />")) { BaseAddress = new Uri("https://www.livescores.com") };

@@ -18,6 +18,7 @@ public static class CurrentResultReviewStatuses
 
 public static class CurrentResultReviewReasons
 {
+    public const string UnknownCompetition = "unknown_competition";
     public const string UnsupportedCompetition = "unsupported_competition";
     public const string AmbiguousCompetition = "ambiguous_competition";
     public const string UnresolvedHomeTeam = "unresolved_home_team";
@@ -46,7 +47,8 @@ public sealed record CurrentResultCandidate(
     string Status,
     string RawStatus,
     string SourceRevision,
-    string ParserVersion);
+    string ParserVersion,
+    string? SourceCompetitionId = null);
 
 public sealed record CurrentResultFetchResult(
     DateOnly Date,
@@ -62,6 +64,7 @@ public sealed record CurrentResultsRunSummary(
     int CandidatesRead,
     int GamesUpserted,
     int ReviewsOpened,
+    int UnsupportedSkipped,
     int EloPoolsQueued,
     IReadOnlyCollection<string> DeferredEloPools,
     string Status,
@@ -70,6 +73,7 @@ public sealed record CurrentResultsRunSummary(
 public sealed record CurrentResultReviewDto(
     Guid Id,
     string SourceGameId,
+    string? SourceCompetitionId,
     DateOnly SourceDate,
     string? SourceUrl,
     string CountryName,
@@ -90,6 +94,28 @@ public sealed record CurrentResultReviewDto(
     string? ResolutionNote,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);
+
+public sealed record CurrentResultsUnmatchedCompetitionDto(
+    string Source,
+    string? SourceCompetitionId,
+    string CountryName,
+    string CompetitionName,
+    int ReviewCount,
+    DateTime FirstSeenUtc,
+    DateTime LastSeenUtc);
+
+public sealed record MergeUnmatchedCompetitionRequest(
+    string Source,
+    string? SourceCompetitionId,
+    string CountryName,
+    string CompetitionName,
+    Guid TargetCompetitionId);
+
+public sealed record IgnoreUnmatchedCompetitionRequest(
+    string Source,
+    string? SourceCompetitionId,
+    string CountryName,
+    string CompetitionName);
 
 public sealed record CurrentResultReviewMatchDto(
     Guid GameId,

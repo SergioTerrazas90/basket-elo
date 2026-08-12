@@ -14,4 +14,15 @@ public interface ICurrentResultsIngestionService
         Guid reviewId,
         CurrentResultReviewResolutionRequest request,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<CurrentResultsUnmatchedCompetitionDto>> GetUnmatchedCompetitionsAsync(
+        CancellationToken cancellationToken);
+
+    Task<int> MergeUnmatchedCompetitionAsync(
+        MergeUnmatchedCompetitionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<int> IgnoreUnmatchedCompetitionAsync(
+        IgnoreUnmatchedCompetitionRequest request,
+        CancellationToken cancellationToken);
 }

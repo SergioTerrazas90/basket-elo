@@ -11,6 +11,7 @@ public class CurrentResultsRun
     public int CandidatesRead { get; set; }
     public int GamesUpserted { get; set; }
     public int ReviewsOpened { get; set; }
+    public int UnsupportedSkipped { get; set; }
     public int EloPoolsQueued { get; set; }
     public string? DeferredEloPoolsJson { get; set; }
     public string? ErrorMessage { get; set; }

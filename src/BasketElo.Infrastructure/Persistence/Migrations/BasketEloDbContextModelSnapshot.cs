@@ -297,6 +297,11 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("SupportPolicy")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
                     b.Property<int>("Tier")
                         .HasColumnType("integer");
 
@@ -346,7 +351,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompetitionId", "AliasName");
 
-                    b.HasIndex("Source", "SourceCompetitionId")
+                    b.HasIndex("Source", "SourceCompetitionId");
+
+                    b.HasIndex("Source", "SourceCompetitionId", "AliasName")
                         .IsUnique();
 
                     b.ToTable("competition_aliases", (string)null);
@@ -407,6 +414,11 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("ResolutionAction")
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
@@ -415,18 +427,13 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                    b.Property<DateTime?>("ResolvedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ResultStatus")
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("ResolvedAtUtc")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("RunId")
                         .HasColumnType("uuid");
@@ -435,6 +442,10 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<string>("SourceCompetitionId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
 
                     b.Property<DateOnly>("SourceDate")
                         .HasColumnType("date");
@@ -540,6 +551,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
                     b.Property<DateOnly>("ToDate")
                         .HasColumnType("date");
+
+                    b.Property<int>("UnsupportedSkipped")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 

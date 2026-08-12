@@ -559,7 +559,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
                 continue;
             }
 
-            var scoreMatches = Regex.Matches(line, @"(?<!\d)(?<home>\d{1,3})\s*[-â€“â€”]\s*(?<away>\d{1,3})(?!\d)");
+            var scoreMatches = Regex.Matches(line, @"(?<!\d)(?<home>\d{1,3})\s*[-–—]\s*(?<away>\d{1,3})(?!\d)");
             if (scoreMatches.Count == 0)
             {
                 continue;
@@ -710,8 +710,8 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
 
     private static IReadOnlyList<DateTime> ExtractDates(string text, int startYear, int endYear)
     {
-        var cleaned = CleanWikiText(text).Replace("Âº", string.Empty, StringComparison.Ordinal)
-            .Replace("Â°", string.Empty, StringComparison.Ordinal);
+        var cleaned = CleanWikiText(text).Replace("º", string.Empty, StringComparison.Ordinal)
+            .Replace("°", string.Empty, StringComparison.Ordinal);
         var values = new List<(int Position, DateTime Date)>();
         foreach (Match match in Regex.Matches(
                      cleaned,
@@ -895,7 +895,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
                 continue;
             }
 
-            if (braceDepth == 0 && linkDepth == 0 && value[index] is '-' or 'â€“' or 'â€”')
+            if (braceDepth == 0 && linkDepth == 0 && value[index] is '-' or '–' or '—')
             {
                 first = value[..index].Trim();
                 second = value[(index + 1)..].Trim();
@@ -917,7 +917,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
     private static bool TryParseScorePair(string value, out (short Home, short Away) score)
     {
         score = default;
-        var match = Regex.Match(CleanWikiText(value), @"(?<!\d)(?<home>\d{1,3})\s*[-â€“â€”]\s*(?<away>\d{1,3})(?!\d)");
+        var match = Regex.Match(CleanWikiText(value), @"(?<!\d)(?<home>\d{1,3})\s*[-–—]\s*(?<away>\d{1,3})(?!\d)");
         if (!match.Success ||
             !short.TryParse(match.Groups["home"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var home) ||
             !short.TryParse(match.Groups["away"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var away))

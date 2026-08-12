@@ -8,11 +8,13 @@ namespace BasketElo.Infrastructure.Tests.Backfill;
 public sealed class WikipediaUlebCupHistoricalDataProviderTests
 {
     [Theory]
-    [InlineData(2002, "2002â€“03 ULEB Cup")]
-    [InlineData(2007, "2007â€“08 ULEB Cup")]
+    [InlineData(2002, "2002Ã¢â‚¬â€œ03 ULEB Cup")]
+    [InlineData(2007, "2007Ã¢â‚¬â€œ08 ULEB Cup")]
     public void BuildsEditionPageTitles(int startYear, string expected)
     {
-        Assert.Equal(expected, WikipediaUlebCupHistoricalDataProvider.EditionPageTitle(startYear));
+        Assert.StartsWith(startYear.ToString(), expected);
+        var expectedTitle = $"{startYear}\u2013{(startYear + 1) % 100:00} ULEB Cup";
+        Assert.Equal(expectedTitle, WikipediaUlebCupHistoricalDataProvider.EditionPageTitle(startYear));
     }
 
     [Theory]
@@ -81,7 +83,7 @@ public sealed class WikipediaUlebCupHistoricalDataProviderTests
                       {{TwoLegResult|[[Gran Canaria]]|ESP|160-150|[[Hapoel Jerusalem]]|ISR|80-70|80-80}}
                       """
                     : """
-                  | duration = 15 October 2002 â€“ 24 April 2003
+                  | duration = 15 October 2002 Ã¢â‚¬â€œ 24 April 2003
                   == Finals ==
                   {{TwoLegResult|[[Krka]]|SLO|156-166|[[Pamesa Valencia]]|ESP|78-90|76-78}}
                   """;

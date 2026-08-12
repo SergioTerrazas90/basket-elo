@@ -79,9 +79,9 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         var endYear = startYear + 1;
         return startYear switch
         {
-            1971 => "1972 FIBA KoraÄ‡ Cup",
-            2001 => "2001â€“02 FIBA KoraÄ‡ Cup",
-            >= 1972 and <= 2000 => $"{startYear}â€“{endYear % 100:00} FIBA KoraÄ‡ Cup",
+            1971 => "1972 FIBA KoraÃ„â€¡ Cup",
+            2001 => "2001Ã¢â‚¬â€œ02 FIBA KoraÃ„â€¡ Cup",
+            >= 1972 and <= 2000 => $"{startYear}Ã¢â‚¬â€œ{endYear % 100:00} FIBA KoraÃ„â€¡ Cup",
             _ => throw new ArgumentOutOfRangeException(nameof(startYear), startYear, "Wikipedia coverage is configured for 1971-2001.")
         };
     }
@@ -454,7 +454,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         var ordinal = 0;
         foreach (Match match in Regex.Matches(
             wikitext,
-            @"(?is)(?:partido\s+de\s+desempate|tercer\s+partido).*?(?<home>\[\[[^\]]+\]\])\s*-\s*(?<away>\[\[[^\]]+\]\])\s+(?<score>\d{1,3}\s*[-Ã¢â‚¬â€œÃ¢â‚¬â€]\s*\d{1,3})",
+            @"(?is)(?:partido\s+de\s+desempate|tercer\s+partido).*?(?<home>\[\[[^\]]+\]\])\s*-\s*(?<away>\[\[[^\]]+\]\])\s+(?<score>\d{1,3}\s*[-ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â]\s*\d{1,3})",
             RegexOptions.IgnoreCase))
         {
             if (!TryParseScorePair(match.Groups["score"].Value, out var score))
@@ -485,7 +485,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
         GameAccumulator accumulator)
     {
         var ordinal = 0;
-        const string scorePattern = @"\d{1,3}\s*[^0-9\s]\s*\d{1,3}";
+        const string scorePattern = @"\d{1,3}\s*[^0-9\s]+\s*\d{1,3}";
         var pattern = $@"(?is)\bun\s+partido\s+de\s+desempate.*?(?<home>\[\[[^\]]+\]\])\s*-\s*(?<away>\[\[[^\]]+\]\])\s+(?<score>{scorePattern})";
         foreach (Match match in Regex.Matches(wikitext, pattern, RegexOptions.IgnoreCase))
         {
@@ -867,7 +867,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
     private static bool IsMatrixBye(string value)
     {
         var cleaned = CleanWikiText(value);
-        return cleaned is "â€”" or "â€“" or "Ã¢â‚¬â€" or "Ã¢â‚¬â€œ" or "-" or "bye" or "BYE";
+        return cleaned is "Ã¢â‚¬â€" or "Ã¢â‚¬â€œ" or "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â" or "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“" or "-" or "bye" or "BYE";
     }
 
     private static IReadOnlyList<HtmlNode> GetHtmlCells(HtmlNode row)
@@ -989,7 +989,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
     private static PageContext FindContext(string text, int index, int startYear, int endYear, DateTime fallbackDate)
     {
         var prefix = text[..Math.Min(index, text.Length)];
-        var headings = Regex.Matches(prefix, @"(?m)^(?<marks>={2,4})\s*(?<text>.*?)\s*\k<marks>$").Cast<Match>().ToList();
+        var headings = Regex.Matches(prefix, @"(?m)^[ \t]*(?<marks>={2,4})[ \t]*(?<text>.*?)[ \t\r]*\k<marks>[ \t\r]*$").Cast<Match>().ToList();
         var phaseHeading = headings.LastOrDefault(match => match.Groups["marks"].Value.Length == 2);
         var roundHeading = headings.LastOrDefault(match => match.Groups["marks"].Value.Length >= 3) ?? phaseHeading;
         var phase = phaseHeading is null ? "Final phase" : CleanWikiText(phaseHeading.Groups["text"].Value);
@@ -1026,7 +1026,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
                 dates.Add(new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc));
             }
         }
-        foreach (Match match in Regex.Matches(cleaned, @"(?<!\d)(?<day>\d{1,2})\s+(?:(?:de)\s+)?(?<month>[A-Za-zÃ¡Ã©Ã­Ã³Ãº]+)(?:\s+(?:(?:de)\s+)?(?<year>(?:19|20)\d{2}))?", RegexOptions.IgnoreCase))
+        foreach (Match match in Regex.Matches(cleaned, @"(?<!\d)(?<day>\d{1,2})\s+(?:(?:de)\s+)?(?<month>[A-Za-zÃƒÂ¡ÃƒÂ©ÃƒÂ­ÃƒÂ³ÃƒÂº]+)(?:\s+(?:(?:de)\s+)?(?<year>(?:19|20)\d{2}))?", RegexOptions.IgnoreCase))
         {
             if (!MonthNumbers.TryGetValue(match.Groups["month"].Value, out var month) || !int.TryParse(match.Groups["day"].Value, out var day))
             {
@@ -1112,7 +1112,7 @@ internal static class WikipediaFibaEuropeanChampionsCupParser
     {
         score = default;
         var cleaned = CleanWikiText(value).Replace("*", string.Empty, StringComparison.Ordinal);
-        var match = Regex.Match(cleaned, @"(?<!\d)(?<home>\d{1,3})\s*[^0-9\s]\s*(?<away>\d{1,3})(?!\d)");
+        var match = Regex.Match(cleaned, @"(?<!\d)(?<home>\d{1,3})\s*[^0-9\s]+\s*(?<away>\d{1,3})(?!\d)");
         if (!match.Success || !short.TryParse(match.Groups["home"].Value, out var home) || !short.TryParse(match.Groups["away"].Value, out var away))
         {
             return false;

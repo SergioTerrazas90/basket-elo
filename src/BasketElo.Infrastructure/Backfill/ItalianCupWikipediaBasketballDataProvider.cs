@@ -559,7 +559,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
                 continue;
             }
 
-            var scoreMatches = Regex.Matches(line, @"(?<!\d)(?<home>\d{1,3})\s*[-–—]\s*(?<away>\d{1,3})(?!\d)");
+            var scoreMatches = Regex.Matches(line, @"(?<!\d)(?<home>\d{1,3})\s*[-â€“â€”]\s*(?<away>\d{1,3})(?!\d)");
             if (scoreMatches.Count == 0)
             {
                 continue;
@@ -609,7 +609,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
     private static IReadOnlyList<IReadOnlyList<string>> ParseTableRows(string body)
     {
         var result = new List<IReadOnlyList<string>>();
-        foreach (var row in Regex.Split(body, @"(?m)^\|-.*$").Skip(1))
+        foreach (var row in Regex.Split(body, @"(?m)^\|-.*$"))
         {
             var cells = new List<string>();
             foreach (var rawLine in row.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
@@ -662,7 +662,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
         DateTime fallbackDate)
     {
         var prefix = wikitext[..Math.Min(index, wikitext.Length)];
-        var headings = Regex.Matches(prefix, @"(?m)^(?<marks>={2,4})\s*(?<text>.*?)\s*\k<marks>$")
+        var headings = Regex.Matches(prefix, @"(?m)^[ \t]*(?<marks>={2,4})[ \t]*(?<text>.*?)[ \t\r]*\k<marks>[ \t\r]*$")
             .Cast<Match>()
             .ToList();
         var phaseHeading = headings.LastOrDefault(match => match.Groups["marks"].Value.Length == 2);
@@ -710,8 +710,8 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
 
     private static IReadOnlyList<DateTime> ExtractDates(string text, int startYear, int endYear)
     {
-        var cleaned = CleanWikiText(text).Replace("º", string.Empty, StringComparison.Ordinal)
-            .Replace("°", string.Empty, StringComparison.Ordinal);
+        var cleaned = CleanWikiText(text).Replace("Âº", string.Empty, StringComparison.Ordinal)
+            .Replace("Â°", string.Empty, StringComparison.Ordinal);
         var values = new List<(int Position, DateTime Date)>();
         foreach (Match match in Regex.Matches(
                      cleaned,
@@ -728,6 +728,8 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
                      RegexOptions.IgnoreCase))
         {
             AddDate(match.Index, match.Groups["day"].Value, match.Groups["month"].Value,
+                match.Groups["year"].Value, startYear, endYear, values);
+            AddDate(match.Index + match.Groups["day2"].Index, match.Groups["day2"].Value, match.Groups["month"].Value,
                 match.Groups["year"].Value, startYear, endYear, values);
         }
 
@@ -893,7 +895,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
                 continue;
             }
 
-            if (braceDepth == 0 && linkDepth == 0 && value[index] is '-' or '–' or '—')
+            if (braceDepth == 0 && linkDepth == 0 && value[index] is '-' or 'â€“' or 'â€”')
             {
                 first = value[..index].Trim();
                 second = value[(index + 1)..].Trim();
@@ -915,7 +917,7 @@ public sealed class ItalianCupWikipediaBasketballDataProvider(
     private static bool TryParseScorePair(string value, out (short Home, short Away) score)
     {
         score = default;
-        var match = Regex.Match(CleanWikiText(value), @"(?<!\d)(?<home>\d{1,3})\s*[-–—]\s*(?<away>\d{1,3})(?!\d)");
+        var match = Regex.Match(CleanWikiText(value), @"(?<!\d)(?<home>\d{1,3})\s*[-â€“â€”]\s*(?<away>\d{1,3})(?!\d)");
         if (!match.Success ||
             !short.TryParse(match.Groups["home"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var home) ||
             !short.TryParse(match.Groups["away"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var away))

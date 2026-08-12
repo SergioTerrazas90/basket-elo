@@ -41,6 +41,27 @@
     line-height: 0.98;
 }
 
+.team-title-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.team-title-line h1 {
+    margin-bottom: 0;
+}
+
+.national-team-badge {
+    padding: 0.18rem 0.5rem;
+    border: 1px solid rgba(36, 92, 122, 0.28);
+    border-radius: var(--radius-pill);
+    background: var(--status-info-bg);
+    color: var(--status-info-text);
+    font-size: 0.72rem;
+    font-weight: 850;
+}
+
 .eyebrow {
     margin: 0 0 0.3rem;
     color: var(--color-accent-dark);

@@ -27,9 +27,9 @@
     <section class="method-section formula-section" aria-labelledby="formula-heading">
         <div class="section-heading-wide"><p class="eyebrow">One game, step by step</p><h2 id="formula-heading">What the numbers are doing.</h2><p>Here is a simplified example using the public adjusted ruleset. It shows the shape of the calculation without hiding the important assumptions behind notation.</p></div>
         <div class="formula-grid">
-            <div class="formula-card"><span>1 · Add the home edge</span><code>1,600 + 70 − 1,500 = 170</code><p>A 1,600-rated home team playing a 1,500-rated away team has an effective difference of 170 points.</p></div>
-            <div class="formula-card"><span>2 · Calculate the expected result</span><code>170-point difference → about 73%</code><p>Using a probability scale of 400, the model gives the home team an expected result of roughly 73%.</p></div>
-            <div class="formula-card"><span>3 · Update the ratings</span><code>20 × (1 − 0.73) = +5.4</code><p>If the home team wins, its normal change is about +5.4 points. Margin adjustment and competition weight can then modify that number.</p></div>
+            <div class="formula-card"><span>1 Â· Add the home edge</span><code>1,600 + 70 âˆ’ 1,500 = 170</code><p>A 1,600-rated home team playing a 1,500-rated away team has an effective difference of 170 points.</p></div>
+            <div class="formula-card"><span>2 Â· Calculate the expected result</span><code>170-point difference â†’ about 73%</code><p>Using a probability scale of 400, the model gives the home team an expected result of roughly 73%.</p></div>
+            <div class="formula-card"><span>3 Â· Update the ratings</span><code>20 Ã— (1 âˆ’ 0.73) = +5.4</code><p>If the home team wins, its normal change is about +5.4 points. Margin adjustment and competition weight can then modify that number.</p></div>
         </div>
     </section>
 
@@ -48,6 +48,16 @@
     <section class="method-section method-panel" aria-labelledby="implementation-heading">
         <div><p class="eyebrow">Under the hood</p><h2 id="implementation-heading">The implementation is versioned, too.</h2></div>
         <div class="method-copy"><p>Every rating is tied to a ruleset version. That means we can rebuild a history with a new formula without silently mixing it with ratings produced by an older one. It also makes experiments reproducible: the inputs, scope, seasons, and parameters can be reviewed alongside the result.</p><p>As the dataset grows, Model Lab gives us a place to test whether different settings improve the evidence.</p><a class="btn btn-primary" href="model-lab">Explore Model Lab</a></div>
+    </section>
+
+    <section class="method-section method-panel" aria-labelledby="identity-nightmare-heading">
+        <div><p class="eyebrow">A real data problem</p><h2 id="identity-nightmare-heading">The RadniÄki continuity nightmare.</h2></div>
+        <div class="method-copy">
+            <p>Team identity is often harder than the rating formula. Sources do not always describe the same thing at the same level: one provider may reuse a name or ID across decades, while historical sources distinguish clubs that happen to share a city and a sponsor.</p>
+            <p>RadniÄki in Serbia is a good example. The database had one catch-all <em>Radnicki</em> record with 755 games, but those games belonged to several different clubs. Wikipedia timelines, source aliases, competitions, seasons, and even venue evidence had to be considered together. For example, PearlBasket identifies early games as being played in Belgrade, supporting <a href="https://en.wikipedia.org/wiki/BKK_Radni%C4%8Dki">BKK RadniÄki</a>, while <a href="https://en.wikipedia.org/wiki/KK_Radni%C4%8Dki_KG_06">RadniÄki KG 06</a> accounts for the 2006â€“07 and 2008â€“09 BIBL games.</p>
+            <p>The final correction moved 328 games to RadniÄki Beograd, 32 to KG 06, 243 to the separate <a href="https://en.wikipedia.org/wiki/KK_Radni%C4%8Dki_Kragujevac_(2009%E2%80%932014)">RadniÄki Kragujevac (2009â€“2014)</a>, and 152 to <a href="https://en.wikipedia.org/wiki/KK_SPD_Radni%C4%8Dki">SPD RadniÄki (2015â€“present)</a>. The old 1950â€“2004 Kragujevac club and the RadniÄki FMP/FMP chain remained separate entities.</p>
+            <p>The lesson is important for ELO: a shared name is not proof of continuity, and a source ID is not a historical club identity. We preserve provenance, use season and competition boundaries, document relocations and mergers, and only create predecessor/successor links where the evidence supports them. A refounded club may share a city, colours, or name with its predecessor while still needing a fresh rating history.</p>
+        </div>
     </section>
 
     <section class="method-note"><strong>A rating is a useful signal, not a verdict.</strong><span>It describes what the results support right now. Injuries, line-ups, travel, motivation, and future change can all sit outside the model.</span></section>

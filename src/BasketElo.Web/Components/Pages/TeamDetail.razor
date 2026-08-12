@@ -28,7 +28,13 @@
             <div>
                 <a class="back-link" href="@BackHref">Back to rankings</a>
                 <p class="eyebrow">@team.EloPoolName</p>
-                <h1>@team.TeamName</h1>
+                <div class="team-title-line">
+                    <h1>@team.TeamName</h1>
+                    @if (team.EloPoolKey == EloPoolKeys.NationalTeams)
+                    {
+                        <span class="national-team-badge">National team</span>
+                    }
+                </div>
                 <p class="intro">Adjusted ELO profile, recent rated games, and the team's continuous rating path.</p>
             </div>
             <div class="team-rank-card">

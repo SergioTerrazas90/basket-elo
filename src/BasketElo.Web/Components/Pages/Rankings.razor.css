@@ -464,6 +464,16 @@
     text-transform: uppercase;
 }
 
+.national-team-badge {
+    padding: 0.12rem 0.42rem;
+    border: 1px solid rgba(36, 92, 122, 0.28);
+    border-radius: var(--radius-pill);
+    background: var(--status-info-bg);
+    color: var(--status-info-text);
+    font-size: 0.68rem;
+    font-weight: 850;
+}
+
 .rank-cell {
     color: var(--color-brand-dark);
     font-size: 1.05rem;

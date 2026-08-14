@@ -127,7 +127,7 @@
     @if (showAdvancedFilters)
     {
         <section id="advanced-ranking-filters" class="advanced-filters" aria-label="Additional ranking filters">
-            @if (selectedPool != EloPoolKeys.Nba)
+            @if (HasCountryFilter)
             {
                 <div class="filter-field">
                     <label for="countryFilter">Country</label>
@@ -141,7 +141,7 @@
                 </div>
             }
 
-            @if (selectedPool == EloPoolKeys.EuropeClubs)
+            @if (HasCompetitionFilter)
             {
                 <div class="filter-field">
                     <label for="competitionFilter">Competition</label>
@@ -198,6 +198,7 @@
             <div class="results-context">
                 <span class="results-kicker">@((selectedView == "movers") ? "Movement view" : "Current rankings")</span>
                 <strong>@response.Summary.FilteredTeams <span>of @response.Summary.RatedTeams teams</span></strong>
+                <small class="results-scope-detail">@ScopeDetail()</small>
             </div>
             <dl class="snapshot-metadata">
                 <div>
@@ -304,7 +305,7 @@
                                         </td>
                                         @if (ShowsCountryColumn)
                                         {
-                                            <td><a class="context-link" href="@BrowseHref(country: row.Country)" @onclick:stopPropagation="true">@row.Country</a></td>
+                                            <td><a class="context-link" href="@RankingsContextHref(country: row.Country)" @onclick:stopPropagation="true">@row.Country</a></td>
                                         }
                                         <td class="numeric"><span class="@MovementClass(row.EloChange)">@FormatMovement(row.EloChange)</span></td>
                                         <td class="numeric">@row.StartElo.ToString("0")</td>
@@ -376,10 +377,6 @@
                         <h2>Ranking table</h2>
                         <p>@TableContextLabel()</p>
                     </div>
-                    @if (selectedPool != EloPoolKeys.Nba)
-                    {
-                        <a class="browse-context-link" href="@BrowseHref()">Browse countries and competitions</a>
-                    }
                     <div class="pager">
                         <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
                         <label class="page-jump" for="rankingsPageInput">
@@ -465,7 +462,7 @@
                                         }
                                         @if (ShowRankingColumn("country"))
                                         {
-                                            <td><a class="context-link" href="@BrowseHref(country: row.Country)" @onclick:stopPropagation="true">@row.Country</a></td>
+                                            <td><a class="context-link" href="@RankingsContextHref(country: row.Country)" @onclick:stopPropagation="true">@row.Country</a></td>
                                         }
                                         @if (ShowRankingColumn("elo"))
                                         {
@@ -1277,6 +1274,12 @@
     private bool HasActiveFilters
         => HasTeamSearch || HasAdvancedFilterValues;
 
+    private bool HasCountryFilter
+        => (response?.Filters.Countries.Count ?? 0) > 1 || !string.IsNullOrWhiteSpace(selectedCountry);
+
+    private bool HasCompetitionFilter
+        => (response?.Filters.Competitions.Count ?? 0) > 1 || !string.IsNullOrWhiteSpace(selectedCompetition);
+
     private int ActiveFilterCount
         => (HasTeamSearch ? 1 : 0)
             + (!string.IsNullOrWhiteSpace(selectedCountry) ? 1 : 0)
@@ -1583,13 +1586,15 @@
         return $"/teams/{teamId}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
     }
 
-    private string BrowseHref(string? country = null)
-        => Navigation.GetUriWithQueryParameters("/browse", new Dictionary<string, object?>
+    private string RankingsContextHref(string? country = null, string? competition = null)
+        => Navigation.GetUriWithQueryParameters("/rankings", new Dictionary<string, object?>
         {
             ["pool"] = selectedPool,
-            ["country"] = country,
-            ["competition"] = selectedCompetition,
-            ["season"] = selectedToSeason
+            ["country"] = country ?? selectedCountry,
+            ["competition"] = competition ?? selectedCompetition,
+            ["fromSeason"] = selectedFromSeason,
+            ["toSeason"] = selectedToSeason,
+            ["teams"] = IsHistoricalTeamScope ? selectedTeamScope : null
         });
 
     private IReadOnlyList<EloTeamEvolutionSeries> EvolutionSeries
@@ -1622,6 +1627,30 @@
                 : "rated teams";
 
         return $"Showing {rangeStart}-{rangeEnd} of {response.TotalCount} {scope}. Page {response.Page} of {response.TotalPages}.";
+    }
+
+    private string ScopeDetail()
+    {
+        var details = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(selectedCountry))
+        {
+            details.Add(selectedCountry);
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedCompetition))
+        {
+            details.Add(selectedCompetition);
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedFromSeason) || !string.IsNullOrWhiteSpace(selectedToSeason))
+        {
+            details.Add($"{selectedFromSeason ?? "All history"} to {selectedToSeason ?? "Current"}");
+        }
+
+        return details.Count == 0
+            ? $"{PoolHeading()} · all available {TeamScopeNoun().ToLowerInvariant()}"
+            : string.Join(" · ", details);
     }
 
     private bool IsArchiveMode

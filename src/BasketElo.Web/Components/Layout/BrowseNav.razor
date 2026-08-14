@@ -26,7 +26,7 @@
                 if (browseResponses.TryGetValue(pool.Key, out var response))
                 {
                     <details class="nav-pool" open="@(pool.Key == selectedPool)">
-                        <summary class="nav-pool-summary">
+                        <summary class="nav-pool-summary" @onclick="() => SelectPool(pool.Key)" @onclick:stopPropagation="true">
                             <span class="nav-tree-label">@pool.DisplayName</span>
                             <span class="nav-tree-count">@response.Competitions.Count</span>
                             <span class="nav-tree-chevron" aria-hidden="true"></span>
@@ -54,7 +54,7 @@
                                             <div class="nav-tree-children">
                                                 @foreach (var competition in CompetitionsFor(response, country))
                                                 {
-                                                    @CompetitionNode(competition, pool.Key)
+                                                    @CompetitionNode(competition, pool.Key, pool.Key == selectedPool)
                                                 }
                                             </div>
                                         </details>
@@ -71,7 +71,7 @@
                                 <div class="nav-tree-children">
                                     @foreach (var competition in response.Competitions)
                                     {
-                                        @CompetitionNode(competition, pool.Key)
+                                        @CompetitionNode(competition, pool.Key, pool.Key == selectedPool)
                                     }
                                 </div>
                             </details>
@@ -99,7 +99,7 @@
         await LoadDirectoriesAsync();
     }
 
-    private RenderFragment CompetitionNode(EloBrowseCompetition competition, string poolKey) => builder =>
+    private RenderFragment CompetitionNode(EloBrowseCompetition competition, string poolKey, bool includeTeams) => builder =>
     {
         var sequence = 0;
         builder.OpenElement(sequence++, "details");
@@ -119,17 +119,20 @@
         builder.AddAttribute(sequence++, "aria-hidden", "true");
         builder.CloseElement();
         builder.CloseElement();
-        builder.OpenElement(sequence++, "div");
-        builder.AddAttribute(sequence++, "class", "nav-tree-children nav-team-children");
-        foreach (var team in competition.Teams)
+        if (includeTeams)
         {
-            builder.OpenElement(sequence++, "a");
-            builder.AddAttribute(sequence++, "class", "nav-tree-team");
-            builder.AddAttribute(sequence++, "href", TeamHref(team, poolKey));
-            builder.AddContent(sequence++, team.Name);
+            builder.OpenElement(sequence++, "div");
+            builder.AddAttribute(sequence++, "class", "nav-tree-children nav-team-children");
+            foreach (var team in competition.Teams)
+            {
+                builder.OpenElement(sequence++, "a");
+                builder.AddAttribute(sequence++, "class", "nav-tree-team");
+                builder.AddAttribute(sequence++, "href", TeamHref(team, poolKey));
+                builder.AddContent(sequence++, team.Name);
+                builder.CloseElement();
+            }
             builder.CloseElement();
         }
-        builder.CloseElement();
         builder.CloseElement();
     };
 
@@ -171,6 +174,12 @@
         => response.Competitions.Where(competition =>
             string.Equals(competition.CountryCode, country.CountryCode, StringComparison.OrdinalIgnoreCase) ||
             (string.IsNullOrWhiteSpace(competition.CountryCode) && string.Equals(competition.Country, country.Name, StringComparison.OrdinalIgnoreCase)));
+
+    private void SelectPool(string poolKey)
+    {
+        selectedPool = poolKey;
+        StateHasChanged();
+    }
 
     private string BrowseHref(string poolKey, string? country = null, string? competition = null)
         => Navigation.GetUriWithQueryParameters("browse", new Dictionary<string, object?>

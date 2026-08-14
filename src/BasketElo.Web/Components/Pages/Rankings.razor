@@ -370,36 +370,16 @@
 
         @if (selectedView == "rankings")
         {
-            <section class="dot-plot-section" aria-labelledby="ranking-shape-title">
-                <div class="section-head compact-section-head">
-                    <div>
-                        <h2 id="ranking-shape-title">Rating shape</h2>
-                        <p>Top teams in this snapshot. The dot position shows relative ELO, while rank stays fixed at left.</p>
-                    </div>
-                    @if (selectedPool != EloPoolKeys.Nba)
-                    {
-                        <a class="browse-context-link" href="@BrowseHref()">Browse countries and competitions</a>
-                    }
-                </div>
-                <div class="dot-plot" role="img" aria-label="Relative ELO dot plot for the current rankings">
-                    @foreach (var row in response.Rankings.Take(12))
-                    {
-                        <div class="dot-plot-row">
-                            <span class="dot-plot-rank">@row.Rank</span>
-                            <span class="dot-plot-label">@row.TeamName</span>
-                            <span class="dot-plot-track"><span class="dot-plot-dot" style="left: @DotPosition(row)%"></span></span>
-                            <strong class="dot-plot-value">@row.Elo.ToString("0")</strong>
-                        </div>
-                    }
-                </div>
-            </section>
-
             <section class="rankings-table-section">
                 <div class="section-head">
                     <div>
                         <h2>Ranking table</h2>
                         <p>@TableContextLabel()</p>
                     </div>
+                    @if (selectedPool != EloPoolKeys.Nba)
+                    {
+                        <a class="browse-context-link" href="@BrowseHref()">Browse countries and competitions</a>
+                    }
                     <div class="pager">
                         <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
                         <label class="page-jump" for="rankingsPageInput">
@@ -765,6 +745,10 @@
         fullEvolution = null;
 
         await RefreshAsync();
+        if (selectedView == "graph")
+        {
+            await LoadChartAsync();
+        }
     }
 
     private async Task ApplyFiltersAsync()
@@ -1327,19 +1311,6 @@
             "movers" => "Biggest Movers",
             _ => "Rankings"
         };
-
-    private int DotPosition(EloRankingRow row)
-    {
-        var values = response?.Rankings.Select(x => x.Elo).ToList() ?? [];
-        if (values.Count < 2)
-        {
-            return 50;
-        }
-
-        var minimum = values.Min();
-        var maximum = values.Max();
-        return (int)Math.Round((double)((row.Elo - minimum) / (maximum - minimum)) * 100, MidpointRounding.AwayFromZero);
-    }
 
     private string TeamScopeClass(string teamScope)
         => selectedTeamScope == teamScope ? "franchise-scope-option active" : "franchise-scope-option";

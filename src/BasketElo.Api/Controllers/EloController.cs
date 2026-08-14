@@ -1,7 +1,3 @@
-Exit code: 0
-Wall time: 0.2 seconds
-Total output lines: 2533
-Output:
 using BasketElo.Api.Auth;
 using BasketElo.Api.Elo;
 using BasketElo.Domain.Elo;
@@ -472,7 +468,1532 @@ public class EloController(
                     response.EloPoolKey,
                     response.RulesetVersion,
                     response.TeamScope,
-                    coun…15697 tokens truncated…Violation };
+                    country,
+                    competition,
+                    season,
+                    tournamentCycle,
+                    fromUtc,
+                    toUtc,
+                    asOfDate,
+                    minimumGames,
+                    team,
+                    response.Page,
+                    response.PageSize);
+                responseCache.Set(responseKey, response, response.EloPoolKey, response.RulesetVersion);
+            }
+
+            return uncachedResult;
+        }
+
+        return await GetRankingsUncached(
+            rulesetVersion,
+            pool,
+            country,
+            competition,
+            season,
+            tournamentCycle,
+            fromUtc,
+            toUtc,
+            asOfDate,
+            minGames,
+            team,
+            teams,
+            page,
+            pageSize,
+            cancellationToken);
+    }
+
+    private async Task<ActionResult<EloRankingsResponse>> GetRankingsUncached(
+        [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
+        [FromQuery] string? country,
+        [FromQuery] string? competition,
+        [FromQuery] string? season,
+        [FromQuery] string? tournamentCycle,
+        [FromQuery] DateTime? fromUtc,
+        [FromQuery] DateTime? toUtc,
+        [FromQuery] DateTime? asOfDate,
+        [FromQuery] int? minGames,
+        [FromQuery] string? team,
+        [FromQuery] string? teams = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
+        var teamScope = EloTeamScopes.Normalize(teams);
+        var activeTeamsOnly = UsesTeamScope(poolKey) && teamScope == EloTeamScopes.Current;
+        if (!await CompetitionBelongsToPoolAsync(competition, poolKey, cancellationToken))
+        {
+            return BadRequest($"Competition '{competition}' does not belong to ELO pool '{poolKey}'.");
+        }
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
+        if (selectedRuleset is null)
+        {
+            return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
+        }
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 10, 100);
+        var minimumGames = Math.Max(0, minGames ?? 0);
+        var currentEuropeanTeamIds = poolKey == EloPoolKeys.EuropeClubs
+            ? await GetCurrentEuropeanTeamIdsAsync(competition, cancellationToken)
+            : null;
+        var currentNationalTeamIds = poolKey == EloPoolKeys.NationalTeams
+            ? await GetCurrentNationalTeamIdsAsync(competition, cancellationToken)
+            : null;
+
+        if (asOfDate.HasValue)
+        {
+            var requestedAsOfUtc = DateTime.SpecifyKind(asOfDate.Value.Date, DateTimeKind.Utc);
+            var cutoffUtc = requestedAsOfUtc.AddDays(1).AddTicks(-1);
+
+            var archiveHistoryRows = await dbContext.RatingHistories
+                .AsNoTracking()
+                .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset && x.GameDateTimeUtc <= cutoffUtc)
+                .Select(x => new HistoricalRankingRow(
+                    x.TeamId,
+                    x.Team.CanonicalName,
+                    x.Team.CountryCode,
+                    x.Team.IsActive,
+                    x.GameId,
+                    x.GameDateTimeUtc,
+                    x.PostElo,
+                    x.GamesPlayedBefore + 1))
+                .ToListAsync(cancellationToken);
+
+            var globalArchiveRatings = archiveHistoryRows
+                .Where(x => !activeTeamsOnly || IsCurrentTeam(poolKey, x.TeamId, currentEuropeanTeamIds, currentNationalTeamIds, x.IsActive))
+                .GroupBy(x => x.TeamId)
+                .Select(group =>
+                {
+                    var latest = group
+                        .OrderByDescending(x => x.GameDateTimeUtc)
+                        .ThenByDescending(x => x.GameId)
+                        .First();
+                    return latest with
+                    {
+                        IsActive = IsCurrentTeam(poolKey, latest.TeamId, currentEuropeanTeamIds, currentNationalTeamIds, latest.IsActive)
+                    };
+                })
+                .OrderByDescending(x => x.Elo)
+                .ThenBy(x => x.TeamName)
+                .ToList();
+
+            var archiveGlobalRanks = globalArchiveRatings
+                .Select((rating, index) => new { rating.TeamId, Rank = index + 1 })
+                .ToDictionary(x => x.TeamId, x => x.Rank);
+
+            var archiveFilteredTeamIds = globalArchiveRatings.Select(x => x.TeamId).ToHashSet();
+
+            if (!string.IsNullOrWhiteSpace(country))
+            {
+                archiveFilteredTeamIds.IntersectWith(globalArchiveRatings
+                    .Where(x => IsCountryMatch(x.CountryCode, country))
+                    .Select(x => x.TeamId));
+            }
+
+            if (!string.IsNullOrWhiteSpace(team))
+            {
+                archiveFilteredTeamIds.IntersectWith(globalArchiveRatings
+                    .Where(x => x.TeamName.Contains(team, StringComparison.OrdinalIgnoreCase))
+                    .Select(x => x.TeamId));
+            }
+
+            if (minimumGames > 0)
+            {
+                archiveFilteredTeamIds.IntersectWith(globalArchiveRatings
+                    .Where(x => x.GamesPlayed >= minimumGames)
+                    .Select(x => x.TeamId));
+            }
+
+            if (HasHistoryFilter(competition, season, tournamentCycle, fromUtc, toUtc))
+            {
+                var historyTeamIds = await BuildHistoryFilterQuery(poolKey, selectedRuleset, competition, season, tournamentCycle, fromUtc, toUtc)
+                    .Where(x => x.GameDateTimeUtc <= cutoffUtc)
+                    .Select(x => x.TeamId)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+
+                archiveFilteredTeamIds.IntersectWith(historyTeamIds);
+            }
+
+            var archiveFilteredRatings = globalArchiveRatings
+                .Where(x => archiveFilteredTeamIds.Contains(x.TeamId))
+                .OrderByDescending(x => x.Elo)
+                .ThenBy(x => x.TeamName)
+                .ToList();
+
+            var archiveRecentMovement = await GetRecentMovementAsync(
+                poolKey,
+                selectedRuleset,
+                archiveFilteredRatings.Select(x => x.TeamId).ToList(),
+                cutoffUtc,
+                cancellationToken);
+
+            var archiveFilteredCount = archiveFilteredRatings.Count;
+            var archiveTotalPages = Math.Max(1, (int)Math.Ceiling(archiveFilteredCount / (double)pageSize));
+            page = Math.Min(page, archiveTotalPages);
+
+            var archivePageRatings = archiveFilteredRatings
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            var archiveRows = archivePageRatings
+                .Select((rating, index) => new EloRankingRow(
+                    rating.TeamId,
+                    ((page - 1) * pageSize) + index + 1,
+                    archiveGlobalRanks[rating.TeamId],
+                    rating.TeamName,
+                    DisplayCountryFromCode(rating.CountryCode),
+                    rating.Elo,
+                    rating.GamesPlayed,
+                    archiveRecentMovement.GetValueOrDefault(rating.TeamId),
+                    rating.GameDateTimeUtc,
+                    rating.IsActive))
+                .ToList();
+
+            var latestRatedGameUtc = globalArchiveRatings.Count == 0
+                ? null
+                : globalArchiveRatings.Max(x => (DateTime?)x.GameDateTimeUtc);
+
+            return Ok(new EloRankingsResponse(
+                poolKey,
+                EloPoolKeys.DisplayName(poolKey),
+                selectedRuleset,
+                teamScope,
+                archiveRows,
+                await BuildRankingFilterOptionsAsync(poolKey, selectedRuleset, cancellationToken),
+                new EloRankingSummary(
+                    globalArchiveRatings.Count,
+                    archiveFilteredCount,
+                    latestRatedGameUtc,
+                    globalArchiveRatings.FirstOrDefault()?.TeamName,
+                    globalArchiveRatings.FirstOrDefault()?.Elo,
+                    IsFiltered(country, competition, season, tournamentCycle, fromUtc, toUtc, minimumGames, team)),
+                new EloRankingArchiveMetadata(
+                    "archive",
+                    requestedAsOfUtc,
+                    latestRatedGameUtc,
+                    globalArchiveRatings.Count == 0 ? "No rating history exists at or before the selected date." : null),
+                page,
+                pageSize,
+                archiveFilteredCount,
+                archiveTotalPages));
+        }
+
+        var globalRatingsQuery = dbContext.TeamRatings
+            .AsNoTracking()
+            .Include(x => x.Team)
+            .Include(x => x.LastGame)
+            .Where(x =>
+                x.EloPoolKey == poolKey &&
+                x.RulesetVersion == selectedRuleset);
+        if (activeTeamsOnly)
+        {
+            globalRatingsQuery = poolKey == EloPoolKeys.Nba
+                ? globalRatingsQuery.Where(x => x.Team.IsActive)
+                : globalRatingsQuery.Where(x => (poolKey == EloPoolKeys.EuropeClubs
+                    ? currentEuropeanTeamIds!.Contains(x.TeamId)
+                    : currentNationalTeamIds!.Contains(x.TeamId)));
+        }
+
+        var globalRatings = await globalRatingsQuery
+            .OrderByDescending(x => x.Elo)
+            .ThenBy(x => x.Team.CanonicalName)
+            .ToListAsync(cancellationToken);
+
+        var globalRanks = globalRatings
+            .Select((rating, index) => new { rating.TeamId, Rank = index + 1 })
+            .ToDictionary(x => x.TeamId, x => x.Rank);
+
+        var filteredTeamIds = globalRatings.Select(x => x.TeamId).ToHashSet();
+
+        if (!string.IsNullOrWhiteSpace(country))
+        {
+            filteredTeamIds.IntersectWith(globalRatings
+                .Where(x => IsCountryMatch(x.Team.CountryCode, country))
+                .Select(x => x.TeamId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(team))
+        {
+            filteredTeamIds.IntersectWith(globalRatings
+                .Where(x => x.Team.CanonicalName.Contains(team, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.TeamId));
+        }
+
+        if (minimumGames > 0)
+        {
+            filteredTeamIds.IntersectWith(globalRatings
+                .Where(x => x.GamesPlayed >= minimumGames)
+                .Select(x => x.TeamId));
+        }
+
+        if (HasHistoryFilter(competition, season, tournamentCycle, fromUtc, toUtc))
+        {
+            var historyTeamIds = await BuildHistoryFilterQuery(poolKey, selectedRuleset, competition, season, tournamentCycle, fromUtc, toUtc)
+                .Select(x => x.TeamId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            filteredTeamIds.IntersectWith(historyTeamIds);
+        }
+
+        var filteredRatings = globalRatings
+            .Where(x => filteredTeamIds.Contains(x.TeamId))
+            .OrderByDescending(x => x.Elo)
+            .ThenBy(x => x.Team.CanonicalName)
+            .ToList();
+
+        var recentMovement = await GetRecentMovementAsync(
+            poolKey,
+            selectedRuleset,
+            filteredRatings.Select(x => x.TeamId).ToList(),
+            null,
+            cancellationToken);
+
+        var filteredCount = filteredRatings.Count;
+        var totalPages = Math.Max(1, (int)Math.Ceiling(filteredCount / (double)pageSize));
+        page = Math.Min(page, totalPages);
+
+        var pageRatings = filteredRatings
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var rows = pageRatings
+            .Select((rating, index) => new EloRankingRow(
+                rating.TeamId,
+                ((page - 1) * pageSize) + index + 1,
+                globalRanks[rating.TeamId],
+                rating.Team.CanonicalName,
+                DisplayCountryFromCode(rating.Team.CountryCode),
+                rating.Elo,
+                rating.GamesPlayed,
+                recentMovement.GetValueOrDefault(rating.TeamId),
+                rating.LastGame?.GameDateTimeUtc,
+                IsCurrentTeam(poolKey, rating.TeamId, currentEuropeanTeamIds, currentNationalTeamIds, rating.Team.IsActive)))
+            .ToList();
+
+        return Ok(new EloRankingsResponse(
+            poolKey,
+            EloPoolKeys.DisplayName(poolKey),
+            selectedRuleset,
+            teamScope,
+            rows,
+            await BuildRankingFilterOptionsAsync(poolKey, selectedRuleset, cancellationToken),
+            new EloRankingSummary(
+                globalRatings.Count,
+                filteredCount,
+                globalRatings.Select(x => x.LastGame?.GameDateTimeUtc).Where(x => x.HasValue).Max(),
+                globalRatings.FirstOrDefault()?.Team.CanonicalName,
+                globalRatings.FirstOrDefault()?.Elo,
+                IsFiltered(country, competition, season, tournamentCycle, fromUtc, toUtc, minimumGames, team)),
+            new EloRankingArchiveMetadata("current", null, null, null),
+            page,
+            pageSize,
+            filteredCount,
+            totalPages));
+    }
+
+    [HttpGet("rankings/evolution")]
+    public async Task<ActionResult<EloRankingsEvolutionResponse>> GetRankingEvolution(
+        [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
+        [FromQuery] string? teamIds,
+        [FromQuery] string? competition,
+        [FromQuery] string? season,
+        [FromQuery] string? tournamentCycle,
+        [FromQuery] DateTime? fromUtc,
+        [FromQuery] DateTime? toUtc,
+        [FromQuery] int pointsPerTeam = EloEvolutionLimits.DefaultPointsPerTeam,
+        CancellationToken cancellationToken = default)
+    {
+        season = NormalizeSeasonFilterInput(season);
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
+        if (!await CompetitionBelongsToPoolAsync(competition, poolKey, cancellationToken))
+        {
+            return BadRequest($"Competition '{competition}' does not belong to ELO pool '{poolKey}'.");
+        }
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
+        if (selectedRuleset is null)
+        {
+            return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
+        }
+
+        var selectedTeamIds = ParseTeamIds(teamIds).Take(20).ToList();
+        if (selectedTeamIds.Count == 0)
+        {
+            return Ok(new EloRankingsEvolutionResponse(poolKey, selectedRuleset, []));
+        }
+
+        pointsPerTeam = EloEvolutionLimits.NormalizePointsPerTeam(pointsPerTeam);
+        var canCacheDefaultEvolution = IsDefaultResponseCachePool(poolKey) &&
+            selectedRuleset == EloRulesetVersions.Default &&
+            !string.IsNullOrWhiteSpace(teamIds) &&
+            string.IsNullOrWhiteSpace(competition) &&
+            string.IsNullOrWhiteSpace(season) &&
+            string.IsNullOrWhiteSpace(tournamentCycle) &&
+            !fromUtc.HasValue &&
+            !toUtc.HasValue &&
+            pointsPerTeam == EloEvolutionLimits.DefaultPointsPerTeam &&
+            await IsDefaultEvolutionTeamSetAsync(poolKey, selectedRuleset, selectedTeamIds, cancellationToken);
+        var evolutionCacheKey = canCacheDefaultEvolution
+            ? EloResponseCache.EvolutionKey(poolKey, selectedRuleset, selectedTeamIds, competition, season, tournamentCycle, fromUtc, toUtc, pointsPerTeam)
+            : null;
+        if (evolutionCacheKey is not null &&
+            responseCache.TryGet<EloRankingsEvolutionResponse>(evolutionCacheKey, out var cachedEvolution) &&
+            cachedEvolution is not null)
+        {
+            return Ok(cachedEvolution);
+        }
+
+        var cutoffUtc = toUtc.HasValue
+            ? DateTime.SpecifyKind(toUtc.Value.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1)
+            : DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc);
+        var startUtc = fromUtc.HasValue
+            ? DateTime.SpecifyKind(fromUtc.Value.Date, DateTimeKind.Utc)
+            : new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var hasCompetitionFilter = !string.IsNullOrWhiteSpace(competition);
+        var hasSeasonFilter = !string.IsNullOrWhiteSpace(season);
+        var hasCycleFilter = !string.IsNullOrWhiteSpace(tournamentCycle);
+
+        var rows = await dbContext.Database
+            .SqlQueryRaw<EvolutionHistorySqlRow>(
+                """
+                WITH ranked AS (
+                    SELECT
+                        rh."TeamId",
+                        t."CanonicalName" AS "TeamName",
+                        rh."GameDateTimeUtc",
+                        rh."PostElo" AS "Elo",
+                        rh."EloDelta",
+                        rh."RatingPositionAfter" AS "Rank",
+                        row_number() OVER (
+                            PARTITION BY rh."TeamId"
+                            ORDER BY rh."GameDateTimeUtc", rh."PostElo"
+                        ) AS "RowNumber",
+                        count(*) OVER (PARTITION BY rh."TeamId") AS "TotalRows"
+                    FROM rating_history rh
+                    INNER JOIN teams t ON t."Id" = rh."TeamId"
+                    INNER JOIN games g ON g."Id" = rh."GameId"
+                    INNER JOIN seasons s ON s."Id" = g."SeasonId"
+                    INNER JOIN competitions c ON c."Id" = g."CompetitionId"
+                    LEFT JOIN tournament_cycles tc ON tc."Id" = g."TournamentCycleId"
+                    WHERE rh."EloPoolKey" = @poolKey
+                      AND rh."RulesetVersion" = @rulesetVersion
+                      AND rh."TeamId" = ANY(@teamIds)
+                      AND rh."GameDateTimeUtc" >= @startUtc
+                      AND rh."GameDateTimeUtc" <= @cutoffUtc
+                      AND (@hasCompetitionFilter = false OR c."Name" = @competition)
+                      AND (@hasSeasonFilter = false OR s."Label" = @season OR s."Label" = split_part(@season, '-', 1))
+                      AND (@hasCycleFilter = false OR tc."Key" = @tournamentCycle)
+                ), bucketed AS (
+                    SELECT
+                        *,
+                        CASE
+                            WHEN "TotalRows" <= @pointsPerTeam THEN "RowNumber"
+                            ELSE round(
+                                ("RowNumber" - 1) * (@pointsPerTeam - 1)::numeric /
+                                ("TotalRows" - 1)
+                            )::bigint
+                        END AS "SampleBucket"
+                    FROM ranked
+                ), sampled AS (
+                    SELECT DISTINCT ON ("TeamId", "SampleBucket")
+                        "TeamId", "TeamName", "GameDateTimeUtc", "Elo", "EloDelta", "Rank", "TotalRows"
+                    FROM bucketed
+                    ORDER BY
+                        "TeamId",
+                        "SampleBucket",
+                        abs(
+                            ("RowNumber" - 1)::numeric -
+                            "SampleBucket" * ("TotalRows" - 1)::numeric /
+                            greatest(@pointsPerTeam - 1, 1)
+                        )
+                )
+                SELECT "TeamId", "TeamName", "GameDateTimeUtc", "Elo", "EloDelta", "Rank", "TotalRows"
+                FROM sampled
+                ORDER BY "TeamId", "GameDateTimeUtc", "Elo"
+                """,
+                new NpgsqlParameter("poolKey", poolKey),
+                new NpgsqlParameter("rulesetVersion", selectedRuleset),
+                new NpgsqlParameter("teamIds", selectedTeamIds.ToArray()) { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid },
+                new NpgsqlParameter("startUtc", startUtc),
+                new NpgsqlParameter("cutoffUtc", cutoffUtc),
+                new NpgsqlParameter("hasCompetitionFilter", hasCompetitionFilter),
+                new NpgsqlParameter("competition", competition ?? string.Empty),
+                new NpgsqlParameter("hasSeasonFilter", hasSeasonFilter),
+                new NpgsqlParameter("season", season?.Trim() ?? string.Empty),
+                new NpgsqlParameter("hasCycleFilter", hasCycleFilter),
+                new NpgsqlParameter("tournamentCycle", tournamentCycle?.Trim() ?? string.Empty),
+                new NpgsqlParameter("pointsPerTeam", pointsPerTeam))
+            .ToListAsync(cancellationToken);
+
+        var series = rows
+            .GroupBy(x => new { x.TeamId, x.TeamName })
+            .Select(group => new EloTeamEvolutionSeries(
+                group.Key.TeamId,
+                group.Key.TeamName,
+                group
+                    .OrderBy(x => x.GameDateTimeUtc)
+                    .ThenBy(x => x.Elo)
+                    .Select(x => new EloTeamEvolutionPoint(x.GameDateTimeUtc, x.Elo, x.EloDelta, x.Rank))
+                    .ToList(),
+                checked((int)group.First().TotalRows)))
+            .OrderBy(x => selectedTeamIds.IndexOf(x.TeamId))
+            .ToList();
+
+        var response = new EloRankingsEvolutionResponse(poolKey, selectedRuleset, series);
+        if (evolutionCacheKey is not null)
+        {
+            responseCache.Set(evolutionCacheKey, response, poolKey, selectedRuleset);
+        }
+
+        return Ok(response);
+    }
+
+    [HttpGet("rankings/movers")]
+    public async Task<ActionResult<EloMoversResponse>> GetMovers(
+        [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
+        [FromQuery] string? direction,
+        [FromQuery] int windowDays = 30,
+        [FromQuery] string? country = null,
+        [FromQuery] string? competition = null,
+        [FromQuery] string? season = null,
+        [FromQuery] string? tournamentCycle = null,
+        [FromQuery] DateTime? fromUtc = null,
+        [FromQuery] DateTime? toUtc = null,
+        [FromQuery] int? minGames = null,
+        [FromQuery] string? team = null,
+        [FromQuery] string? teams = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 25,
+        CancellationToken cancellationToken = default)
+    {
+        season = NormalizeSeasonFilterInput(season);
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
+        var teamScope = EloTeamScopes.Normalize(teams);
+        var activeTeamsOnly = UsesTeamScope(poolKey) && teamScope == EloTeamScopes.Current;
+        if (!await CompetitionBelongsToPoolAsync(competition, poolKey, cancellationToken))
+        {
+            return BadRequest($"Competition '{competition}' does not belong to ELO pool '{poolKey}'.");
+        }
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
+        if (selectedRuleset is null)
+        {
+            return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
+        }
+
+        var normalizedDirection = string.Equals(direction, "fallers", StringComparison.OrdinalIgnoreCase)
+            ? "fallers"
+            : "risers";
+        windowDays = Math.Clamp(windowDays, 7, 3650);
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 10, 100);
+        var minimumGames = Math.Max(0, minGames ?? 0);
+        var currentEuropeanTeamIds = poolKey == EloPoolKeys.EuropeClubs
+            ? await GetCurrentEuropeanTeamIdsAsync(competition, cancellationToken)
+            : null;
+        var currentNationalTeamIds = poolKey == EloPoolKeys.NationalTeams
+            ? await GetCurrentNationalTeamIdsAsync(competition, cancellationToken)
+            : null;
+
+        var latestGameUtc = await dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
+            .MaxAsync(x => (DateTime?)x.GameDateTimeUtc, cancellationToken);
+
+        if (latestGameUtc is null)
+        {
+            var now = DateTime.UtcNow;
+            return Ok(new EloMoversResponse(
+                poolKey,
+                selectedRuleset,
+                teamScope,
+                normalizedDirection,
+                now.AddDays(-windowDays),
+                now,
+                [],
+                new EloMoversSummary(0, 0, 0, IsFiltered(country, competition, season, tournamentCycle, fromUtc, toUtc, minimumGames, team)),
+                1,
+                pageSize,
+                0,
+                1));
+        }
+
+        var windowEnd = toUtc.HasValue
+            ? DateTime.SpecifyKind(toUtc.Value.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1)
+            : latestGameUtc.Value;
+        var windowStart = fromUtc.HasValue
+            ? DateTime.SpecifyKind(fromUtc.Value.Date, DateTimeKind.Utc)
+            : windowEnd.AddDays(-windowDays);
+
+        if (windowStart > windowEnd)
+        {
+            return BadRequest("fromUtc must be before toUtc.");
+        }
+
+        var currentRatingsQuery = dbContext.TeamRatings
+            .AsNoTracking()
+            .Include(x => x.Team)
+            .Where(x =>
+                x.EloPoolKey == poolKey &&
+                x.RulesetVersion == selectedRuleset);
+        if (activeTeamsOnly)
+        {
+            currentRatingsQuery = poolKey == EloPoolKeys.Nba
+                ? currentRatingsQuery.Where(x => x.Team.IsActive)
+                : currentRatingsQuery.Where(x => (poolKey == EloPoolKeys.EuropeClubs
+                    ? currentEuropeanTeamIds!.Contains(x.TeamId)
+                    : currentNationalTeamIds!.Contains(x.TeamId)));
+        }
+
+        var currentRatings = await currentRatingsQuery
+            .ToListAsync(cancellationToken);
+
+        var filteredTeamIds = currentRatings.Select(x => x.TeamId).ToHashSet();
+
+        if (!string.IsNullOrWhiteSpace(country))
+        {
+            filteredTeamIds.IntersectWith(currentRatings
+                .Where(x => IsCountryMatch(x.Team.CountryCode, country))
+                .Select(x => x.TeamId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(team))
+        {
+            filteredTeamIds.IntersectWith(currentRatings
+                .Where(x => x.Team.CanonicalName.Contains(team, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.TeamId));
+        }
+
+        if (minimumGames > 0)
+        {
+            filteredTeamIds.IntersectWith(currentRatings
+                .Where(x => x.GamesPlayed >= minimumGames)
+                .Select(x => x.TeamId));
+        }
+
+        var ratingByTeam = currentRatings.ToDictionary(x => x.TeamId);
+        var movementQuery = dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x =>
+                x.EloPoolKey == poolKey &&
+                x.RulesetVersion == selectedRuleset &&
+                filteredTeamIds.Contains(x.TeamId) &&
+                x.GameDateTimeUtc >= windowStart &&
+                x.GameDateTimeUtc <= windowEnd);
+
+        if (!string.IsNullOrWhiteSpace(competition))
+        {
+            movementQuery = movementQuery.Where(x => x.Game.Competition.Name == competition);
+        }
+
+        if (!string.IsNullOrWhiteSpace(season))
+        {
+            movementQuery = ApplySeasonFilter(movementQuery, season);
+        }
+
+        if (!string.IsNullOrWhiteSpace(tournamentCycle))
+        {
+            movementQuery = movementQuery.Where(x => x.Game.TournamentCycle != null && x.Game.TournamentCycle.Key == tournamentCycle.Trim());
+        }
+
+        var movementRows = await movementQuery
+            .Select(x => new MoverHistoryRow(
+                x.TeamId,
+                x.Team.CanonicalName,
+                x.Team.CountryCode,
+                x.GameId,
+                x.GameDateTimeUtc,
+                x.PreElo,
+                x.PostElo,
+                x.EloDelta))
+            .ToListAsync(cancellationToken);
+
+        var movers = movementRows
+            .GroupBy(x => new { x.TeamId, x.TeamName, x.CountryCode })
+            .Select(group =>
+            {
+                var ordered = group.OrderBy(x => x.GameDateTimeUtc).ThenBy(x => x.GameId).ToList();
+                var latest = ordered[^1];
+                var currentElo = ratingByTeam.TryGetValue(group.Key.TeamId, out var currentRating)
+                    ? currentRating.Elo
+                    : latest.PostElo;
+
+                return new
+                {
+                    group.Key.TeamId,
+                    group.Key.TeamName,
+                    Country = DisplayCountryFromCode(group.Key.CountryCode),
+                    CurrentElo = currentElo,
+                    StartElo = ordered[0].PreElo,
+                    EndElo = latest.PostElo,
+                    EloChange = ordered.Sum(x => x.EloDelta),
+                    GamesInWindow = ordered.Count,
+                    FirstGameUtc = ordered[0].GameDateTimeUtc,
+                    LastGameUtc = latest.GameDateTimeUtc
+                };
+            })
+            .Where(x => x.GamesInWindow > 0)
+            .ToList();
+
+        movers = normalizedDirection == "fallers"
+            ? movers.OrderBy(x => x.EloChange).ThenBy(x => x.TeamName).ToList()
+            : movers.OrderByDescending(x => x.EloChange).ThenBy(x => x.TeamName).ToList();
+
+        var totalCount = movers.Count;
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+        page = Math.Min(page, totalPages);
+        var pageRows = movers
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select((row, index) => new EloMoverRow(
+                row.TeamId,
+                ((page - 1) * pageSize) + index + 1,
+                row.TeamName,
+                row.Country,
+                row.CurrentElo,
+                row.StartElo,
+                row.EndElo,
+                row.EloChange,
+                row.GamesInWindow,
+                row.FirstGameUtc,
+                row.LastGameUtc,
+                IsCurrentTeam(
+                    poolKey,
+                    row.TeamId,
+                    currentEuropeanTeamIds,
+                    currentNationalTeamIds,
+                    ratingByTeam.GetValueOrDefault(row.TeamId)?.Team.IsActive ?? true)))
+            .ToList();
+
+        return Ok(new EloMoversResponse(
+            poolKey,
+            selectedRuleset,
+            teamScope,
+            normalizedDirection,
+            windowStart,
+            windowEnd,
+            pageRows,
+            new EloMoversSummary(
+                movers.Count,
+                filteredTeamIds.Count,
+                movementRows.Select(x => x.GameId).Distinct().Count(),
+                IsFiltered(country, competition, season, tournamentCycle, fromUtc, toUtc, minimumGames, team)),
+            page,
+            pageSize,
+            totalCount,
+            totalPages));
+    }
+
+    [HttpGet("results")]
+    public async Task<ActionResult<EloResultsResponse>> GetResults(
+        [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
+        [FromQuery] string? country,
+        [FromQuery] string? competition,
+        [FromQuery] DateTime? fromUtc,
+        [FromQuery] DateTime? toUtc,
+        [FromQuery] string? team,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
+
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
+        if (selectedRuleset is null)
+        {
+            return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
+        }
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 10, 50);
+
+        var competitionRows = await dbContext.Competitions
+            .AsNoTracking()
+            .Where(x => x.IsActive && x.EloPoolKey == poolKey)
+            .Select(x => new { x.Id, x.Name, x.CountryCode })
+            .ToListAsync(cancellationToken);
+
+        var competitionIds = competitionRows
+            .Where(x => string.IsNullOrWhiteSpace(competition) ||
+                string.Equals(x.Name, competition.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrWhiteSpace(country) || IsCountryMatch(x.CountryCode, country!))
+            .Select(x => x.Id)
+            .ToList();
+
+        if (competitionIds.Count == 0)
+        {
+            return Ok(new EloResultsResponse(poolKey, selectedRuleset, [], page, pageSize, 0, 1));
+        }
+
+        var query = dbContext.Games
+            .AsNoTracking()
+            .Where(x => competitionIds.Contains(x.CompetitionId) &&
+                x.HomeScore.HasValue && x.AwayScore.HasValue);
+
+        if (fromUtc.HasValue)
+        {
+            query = query.Where(x => x.GameDateTimeUtc >= fromUtc.Value);
+        }
+
+        if (toUtc.HasValue)
+        {
+            query = query.Where(x => x.GameDateTimeUtc <= toUtc.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(team))
+        {
+            var teamTerm = team.Trim();
+            query = query.Where(x => x.HomeTeam.CanonicalName.Contains(teamTerm) ||
+                x.AwayTeam.CanonicalName.Contains(teamTerm));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+        page = Math.Min(page, totalPages);
+
+        var resultRows = await query
+            .OrderByDescending(x => x.GameDateTimeUtc)
+            .ThenByDescending(x => x.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(x => new
+            {
+                x.Id,
+                x.GameDateTimeUtc,
+                Competition = x.Competition.Name,
+                CountryCode = x.Competition.CountryCode,
+                Season = x.Season.Label,
+                x.CompetitionPhase,
+                HomeTeam = x.HomeTeam.CanonicalName,
+                AwayTeam = x.AwayTeam.CanonicalName,
+                x.HomeScore,
+                x.AwayScore
+            })
+            .ToListAsync(cancellationToken);
+
+        var rows = resultRows
+            .Select(x => new EloResultRow(
+                x.Id,
+                x.GameDateTimeUtc,
+                x.Competition,
+                DisplayCountryFromCode(x.CountryCode),
+                x.Season,
+                x.CompetitionPhase,
+                x.HomeTeam,
+                x.AwayTeam,
+                x.HomeScore,
+                x.AwayScore))
+            .ToList();
+
+        return Ok(new EloResultsResponse(poolKey, selectedRuleset, rows, page, pageSize, totalCount, totalPages));
+    }
+
+    [HttpGet("games/{gameId:guid}/explanation")]
+    [RequireInternalUser]
+    public async Task<ActionResult<EloGameExplanationResponse>> GetGameExplanation(
+        Guid gameId,
+        [FromQuery] string? rulesetVersion,
+        CancellationToken cancellationToken = default)
+    {
+        var game = await dbContext.Games
+            .AsNoTracking()
+            .Include(x => x.Competition)
+            .Include(x => x.Season)
+            .Include(x => x.HomeTeam)
+            .Include(x => x.AwayTeam)
+            .SingleOrDefaultAsync(x => x.Id == gameId, cancellationToken);
+
+        if (game is null)
+        {
+            return NotFound();
+        }
+
+        var poolKey = game.Competition.EloPoolKey;
+        if (string.IsNullOrWhiteSpace(poolKey))
+        {
+            return Conflict("The game's competition is not assigned to an ELO pool.");
+        }
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
+        if (selectedRuleset is null)
+        {
+            return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
+        }
+
+        var ruleset = EloCalculator.GetRulesetParameters(selectedRuleset);
+        var histories = await dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x => x.GameId == gameId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
+            .Select(x => new GameExplanationHistoryRow(
+                x.TeamId,
+                x.Team.CanonicalName,
+                x.PreElo,
+                x.PostElo,
+                x.EloDelta,
+                x.ExpectedScore,
+                x.ActualScore,
+                x.KFactorUsed,
+                x.MarginMultiplier,
+                x.CompetitionWeight,
+                x.GamesPlayedBefore,
+                x.RatingPositionAfter))
+            .ToListAsync(cancellationToken);
+
+        var homeHistory = histories.SingleOrDefault(x => x.TeamId == game.HomeTeamId);
+        var awayHistory = histories.SingleOrDefault(x => x.TeamId == game.AwayTeamId);
+        var isRated = homeHistory is not null && awayHistory is not null;
+
+        return Ok(new EloGameExplanationResponse(
+            game.Id,
+            poolKey,
+            selectedRuleset,
+            game.GameDateTimeUtc,
+            game.Competition.Name,
+            game.Season.Label,
+            game.HomeTeam.CanonicalName,
+            game.AwayTeam.CanonicalName,
+            game.HomeScore,
+            game.AwayScore,
+            game.Status,
+            isRated,
+            isRated ? null : "This game does not have rating history for the selected ruleset.",
+            homeHistory is null ? null : ToGameTeamExplanation(homeHistory, true),
+            awayHistory is null ? null : ToGameTeamExplanation(awayHistory, false),
+            new EloGameRulesetExplanation(
+                ruleset.BaseRating,
+                ruleset.KFactor,
+                ruleset.HomeAdvantageElo,
+                ruleset.PointsPerEloMargin,
+                ruleset.CompetitionWeight,
+                ruleset.UsesMarginAdjustment)));
+    }
+
+    [HttpGet("teams/{teamId:guid}")]
+    [RequireInternalUser]
+    public async Task<ActionResult<EloTeamDetailResponse>> GetTeam(
+        Guid teamId,
+        [FromQuery] string? rulesetVersion,
+        [FromQuery] string? pool,
+        [FromQuery] int gamesPage = 1,
+        [FromQuery] int gamesPageSize = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
+        var selectedRuleset = await ResolveReadableRulesetAsync(rulesetVersion, poolKey, cancellationToken);
+        if (selectedRuleset is null)
+        {
+            return BadRequest($"Unsupported ELO ruleset '{rulesetVersion}'.");
+        }
+        var currentEuropeanTeamIds = poolKey == EloPoolKeys.EuropeClubs
+            ? await GetCurrentEuropeanTeamIdsAsync(null, cancellationToken)
+            : null;
+        var currentNationalTeamIds = poolKey == EloPoolKeys.NationalTeams
+            ? await GetCurrentNationalTeamIdsAsync(null, cancellationToken)
+            : null;
+
+        gamesPage = Math.Max(1, gamesPage);
+        gamesPageSize = Math.Clamp(gamesPageSize, 10, 100);
+
+        var rating = await dbContext.TeamRatings
+            .AsNoTracking()
+            .Include(x => x.Team)
+            .Include(x => x.LastGame)
+            .SingleOrDefaultAsync(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset, cancellationToken);
+
+        if (rating is null)
+        {
+            return NotFound();
+        }
+
+        var globalRankQuery = dbContext.TeamRatings
+            .AsNoTracking()
+            .Where(x =>
+                x.EloPoolKey == poolKey &&
+                x.RulesetVersion == selectedRuleset &&
+                x.Elo > rating.Elo);
+        if (UsesTeamScope(poolKey))
+        {
+            globalRankQuery = poolKey == EloPoolKeys.Nba
+                ? globalRankQuery.Where(x => x.Team.IsActive)
+                : globalRankQuery.Where(x => (poolKey == EloPoolKeys.EuropeClubs
+                    ? currentEuropeanTeamIds!.Contains(x.TeamId)
+                    : currentNationalTeamIds!.Contains(x.TeamId)));
+        }
+
+        var globalRank = await globalRankQuery.CountAsync(cancellationToken) + 1;
+
+        var recentMovement = (await GetRecentMovementAsync(poolKey, selectedRuleset, [teamId], null, cancellationToken))
+            .GetValueOrDefault(teamId);
+
+        var competitionRows = await dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
+            .Include(x => x.Game)
+            .ThenInclude(x => x.Competition)
+            .Select(x => x.Game.Competition.Name)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToListAsync(cancellationToken);
+
+        var teamGamesQuery = dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset);
+
+        var gamesTotalCount = await teamGamesQuery.CountAsync(cancellationToken);
+        var gamesTotalPages = Math.Max(1, (int)Math.Ceiling(gamesTotalCount / (double)gamesPageSize));
+        gamesPage = Math.Min(gamesPage, gamesTotalPages);
+
+        var recentGames = await teamGamesQuery
+            .Include(x => x.Game)
+            .ThenInclude(x => x.Competition)
+            .Include(x => x.Game)
+            .ThenInclude(x => x.Season)
+            .Include(x => x.Game)
+            .ThenInclude(x => x.HomeTeam)
+            .Include(x => x.Game)
+            .ThenInclude(x => x.AwayTeam)
+            .OrderByDescending(x => x.GameDateTimeUtc)
+            .ThenByDescending(x => x.Id)
+            .Skip((gamesPage - 1) * gamesPageSize)
+            .Take(gamesPageSize)
+            .Select(x => new EloTeamGameDto(
+                x.GameId,
+                x.GameDateTimeUtc,
+                x.Game.Competition.Name,
+                x.Game.Season.Label,
+                x.OpponentTeamId == x.Game.HomeTeamId ? x.Game.HomeTeam.CanonicalName : x.Game.AwayTeam.CanonicalName,
+                x.TeamId == x.Game.HomeTeamId,
+                x.TeamId == x.Game.HomeTeamId ? x.Game.HomeScore : x.Game.AwayScore,
+                x.TeamId == x.Game.HomeTeamId ? x.Game.AwayScore : x.Game.HomeScore,
+                x.PreElo,
+                x.PostElo,
+                x.EloDelta))
+            .ToListAsync(cancellationToken);
+
+        var historyRows = await dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
+            .OrderBy(x => x.GameDateTimeUtc)
+            .ThenBy(x => x.Id)
+            .Select(x => new EloRatingHistoryPoint(
+                x.GameDateTimeUtc,
+                x.PostElo,
+                x.EloDelta,
+                x.RatingPositionAfter))
+            .ToListAsync(cancellationToken);
+        var sampledHistoryRows = EloEvolutionLimits.EvenlySample(historyRows);
+
+        var formRows = await GetTeamFormRowsAsync(teamId, poolKey, selectedRuleset, cancellationToken);
+
+        return Ok(new EloTeamDetailResponse(
+            rating.TeamId,
+            rating.Team.CanonicalName,
+            DisplayCountryFromCode(rating.Team.CountryCode),
+            poolKey,
+            EloPoolKeys.DisplayName(poolKey),
+            selectedRuleset,
+            rating.Elo,
+            globalRank,
+            rating.GamesPlayed,
+            recentMovement,
+            rating.LastGame?.GameDateTimeUtc,
+            IsCurrentTeam(poolKey, rating.TeamId, currentEuropeanTeamIds, currentNationalTeamIds, rating.Team.IsActive),
+            GetFranchiseIdentityEvents(poolKey, rating.Team.CanonicalName),
+            competitionRows,
+            recentGames,
+            gamesPage,
+            gamesPageSize,
+            gamesTotalCount,
+            gamesTotalPages,
+            BuildTeamFormSummaries(formRows),
+            sampledHistoryRows));
+    }
+
+    [HttpPost("rebuilds")]
+    [RequireInternalAdmin]
+    public async Task<ActionResult<IReadOnlyList<EloRebuildRunDto>>> Rebuild(
+        [FromBody] EloRebuildRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var requestedRuleset = request?.RulesetVersion;
+        var poolKey = ResolvePoolOrDefault(request?.PoolKey);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{request?.PoolKey}'.");
+        }
+
+        var poolHasCompetitions = await dbContext.Competitions
+            .AnyAsync(x => x.EloPoolKey == poolKey, cancellationToken);
+        if (!poolHasCompetitions && poolKey != EloPoolKeys.NationalTeams)
+        {
+            return BadRequest($"ELO pool '{poolKey}' has no assigned competitions.");
+        }
+
+        IReadOnlyList<string> rulesets;
+        if (string.IsNullOrWhiteSpace(requestedRuleset) ||
+            string.Equals(requestedRuleset, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            rulesets = EloRulesetVersions.All;
+        }
+        else
+        {
+            var normalized = requestedRuleset.Trim().ToLowerInvariant();
+            if (!EloRulesetVersions.All.Contains(normalized))
+            {
+                return BadRequest($"Unsupported ELO ruleset '{requestedRuleset}'.");
+            }
+
+            rulesets = [normalized];
+        }
+
+        var activeRulesets = await dbContext.EloRebuildRuns
+            .Where(x => rulesets.Contains(x.RulesetVersion) &&
+                x.EloPoolKey == poolKey &&
+                (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running))
+            .Select(x => x.RulesetVersion)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        if (activeRulesets.Count > 0)
+        {
+            return Conflict($"An ELO rebuild is already queued or running for: {string.Join(", ", activeRulesets)}.");
+        }
+
+        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(poolKey, cancellationToken);
+        if (identityGate is not null)
+        {
+            return identityGate;
+        }
+
+        var queuedAtUtc = DateTime.UtcNow;
+        var runs = rulesets.Select(ruleset => new EloRebuildRun
+        {
+            Id = Guid.NewGuid(),
+            EloPoolKey = poolKey,
+            RulesetVersion = ruleset,
+            CompetitionName = string.Empty,
+            Status = EloRebuildRunStatus.Pending,
+            QueuedAtUtc = queuedAtUtc,
+            CreatedAtUtc = queuedAtUtc
+        }).ToList();
+
+        dbContext.EloRebuildRuns.AddRange(runs);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            return Conflict($"An ELO rebuild is already queued or running in '{poolKey}' for: {string.Join(", ", rulesets)}.");
+        }
+
+        return Accepted(runs.Select(ToDto).ToList());
+    }
+
+    [HttpPost("rebuilds/{runId:guid}/cancel")]
+    [RequireInternalAdmin]
+    public async Task<ActionResult<EloRebuildRunDto>> CancelRebuild(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        var run = await dbContext.EloRebuildRuns.SingleOrDefaultAsync(x => x.Id == runId, cancellationToken);
+        if (run is null)
+        {
+            return NotFound();
+        }
+
+        if (run.Status != EloRebuildRunStatus.Pending)
+        {
+            return Conflict($"Only pending rebuilds can be canceled. Run '{runId}' is {run.Status}.");
+        }
+
+        run.Status = EloRebuildRunStatus.Canceled;
+        run.FinishedAtUtc = DateTime.UtcNow;
+        run.Notes = "Canceled by an internal admin operator before the worker started it.";
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await PublishNotificationAsync(run, cancellationToken);
+
+        return Ok(ToDto(run));
+    }
+
+    [HttpPost("rebuilds/{runId:guid}/retry")]
+    [RequireInternalAdmin]
+    public async Task<ActionResult<EloRebuildRunDto>> RetryRebuild(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        var sourceRun = await dbContext.EloRebuildRuns
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == runId, cancellationToken);
+        if (sourceRun is null)
+        {
+            return NotFound();
+        }
+
+        if (sourceRun.Status is not (EloRebuildRunStatus.Failed or EloRebuildRunStatus.Canceled or EloRebuildRunStatus.Blocked))
+        {
+            return Conflict($"Only failed, canceled, or blocked rebuilds can be retried. Run '{runId}' is {sourceRun.Status}.");
+        }
+
+        var activeExists = await dbContext.EloRebuildRuns.AnyAsync(x =>
+            x.EloPoolKey == sourceRun.EloPoolKey &&
+            x.RulesetVersion == sourceRun.RulesetVersion &&
+            (x.Status == EloRebuildRunStatus.Pending || x.Status == EloRebuildRunStatus.Running),
+            cancellationToken);
+        if (activeExists)
+        {
+            return Conflict($"An ELO rebuild is already queued or running for: {sourceRun.RulesetVersion}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(sourceRun.EloPoolKey))
+        {
+            return Conflict("Legacy rebuild runs without an ELO pool cannot be retried. Queue a new pool rebuild instead.");
+        }
+
+        var identityGate = await EnsureIdentityHealthAllowsRebuildAsync(sourceRun.EloPoolKey, cancellationToken);
+        if (identityGate is not null)
+        {
+            return identityGate;
+        }
+
+        var queuedAtUtc = DateTime.UtcNow;
+        var retryRun = new EloRebuildRun
+        {
+            Id = Guid.NewGuid(),
+            EloPoolKey = sourceRun.EloPoolKey,
+            RulesetVersion = sourceRun.RulesetVersion,
+            CompetitionName = string.Empty,
+            Status = EloRebuildRunStatus.Pending,
+            QueuedAtUtc = queuedAtUtc,
+            CreatedAtUtc = queuedAtUtc,
+            Notes = $"Retry queued from rebuild run {sourceRun.Id}."
+        };
+
+        dbContext.EloRebuildRuns.Add(retryRun);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            return Conflict($"An ELO rebuild is already queued or running for: {sourceRun.RulesetVersion}.");
+        }
+
+        return Accepted(ToDto(retryRun));
+    }
+
+    private static EloRulesetCatalogResponse BuildRulesetCatalog()
+        => new(EloRulesetVersions.Default, EloRulesetVersions.All);
+
+    private async Task<ConflictObjectResult?> EnsureIdentityHealthAllowsRebuildAsync(
+        string poolKey,
+        CancellationToken cancellationToken)
+    {
+        var identityRun = await identityHealthCheckService.RunAsync(
+            new IdentityHealthCheckRequest { EloPoolKey = poolKey },
+            cancellationToken);
+        if (identityRun.UnresolvedBlockersCount > 0)
+        {
+            return Conflict(new
+            {
+                message = "ELO rebuild is blocked by unresolved identity health blockers.",
+                identityRunId = identityRun.Id,
+                identityRun.ScopeKey,
+                identityRun.UnresolvedBlockersCount
+            });
+        }
+
+        return null;
+    }
+
+    private static string? ResolveRulesetOrDefault(string? rulesetVersion)
+    {
+        if (string.IsNullOrWhiteSpace(rulesetVersion))
+        {
+            return EloRulesetVersions.Default;
+        }
+
+        var normalized = rulesetVersion.Trim().ToLowerInvariant();
+        return EloRulesetVersions.All.Contains(normalized) ? normalized : null;
+    }
+
+    private static bool IsDefaultRankingsRequest(
+        string? rulesetVersion,
+        string? pool,
+        string? country,
+        string? competition,
+        string? season,
+        string? tournamentCycle,
+        DateTime? fromUtc,
+        DateTime? toUtc,
+        DateTime? asOfDate,
+        int minimumGames,
+        string? team,
+        string teamScope,
+        int page,
+        int pageSize)
+        => string.IsNullOrWhiteSpace(rulesetVersion) &&
+            IsDefaultResponseCachePool(ResolvePoolOrDefault(pool)) &&
+            string.IsNullOrWhiteSpace(country) &&
+            string.IsNullOrWhiteSpace(competition) &&
+            string.IsNullOrWhiteSpace(season) &&
+            string.IsNullOrWhiteSpace(tournamentCycle) &&
+            !fromUtc.HasValue &&
+            !toUtc.HasValue &&
+            !asOfDate.HasValue &&
+            minimumGames == 0 &&
+            string.IsNullOrWhiteSpace(team) &&
+            teamScope == EloTeamScopes.Current &&
+            page == 1 &&
+            pageSize == 50;
+
+    private static bool IsDefaultResponseCachePool(string? poolKey)
+        => poolKey is EloPoolKeys.Default or EloPoolKeys.EuropeClubs;
+
+    private static bool UsesTeamScope(string poolKey)
+        => poolKey is EloPoolKeys.Nba or EloPoolKeys.EuropeClubs or EloPoolKeys.NationalTeams;
+
+    private async Task<HashSet<Guid>> GetCurrentEuropeanTeamIdsAsync(
+        string? competitionName,
+        CancellationToken cancellationToken)
+    {
+        var latestGameUtc = await dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x =>
+                x.EloPoolKey == EloPoolKeys.EuropeClubs &&
+                (string.IsNullOrWhiteSpace(competitionName) || x.Game.Competition.Name == competitionName))
+            .Select(x => (DateTime?)x.GameDateTimeUtc)
+            .MaxAsync(cancellationToken);
+
+        if (latestGameUtc is null)
+        {
+            return await GetCurrentEuropeanTeamIdsFromGamesAsync(competitionName, cancellationToken);
+        }
+
+        var seasonStartYear = latestGameUtc.Value.Month >= 7
+            ? latestGameUtc.Value.Year
+            : latestGameUtc.Value.Year - 1;
+        var latestSeasonStartUtc = new DateTime(seasonStartYear, 7, 1, 0, 0, 0, DateTimeKind.Utc);
+        var latestSeasonTeamIds = await dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x =>
+                x.EloPoolKey == EloPoolKeys.EuropeClubs &&
+                (string.IsNullOrWhiteSpace(competitionName) || x.Game.Competition.Name == competitionName) &&
+                x.GameDateTimeUtc >= latestSeasonStartUtc &&
+                x.GameDateTimeUtc <= latestGameUtc.Value)
+            .Select(x => x.TeamId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return latestSeasonTeamIds.ToHashSet();
+    }
+
+    private async Task<HashSet<Guid>> GetCurrentEuropeanTeamIdsFromGamesAsync(
+        string? competitionName,
+        CancellationToken cancellationToken)
+    {
+        var latestGameUtc = await dbContext.Games
+            .AsNoTracking()
+            .Where(x =>
+                x.Competition.EloPoolKey == EloPoolKeys.EuropeClubs &&
+                (string.IsNullOrWhiteSpace(competitionName) || x.Competition.Name == competitionName))
+            .Select(x => (DateTime?)x.GameDateTimeUtc)
+            .MaxAsync(cancellationToken);
+
+        if (latestGameUtc is null)
+        {
+            return [];
+        }
+
+        var seasonStartYear = latestGameUtc.Value.Month >= 7
+            ? latestGameUtc.Value.Year
+            : latestGameUtc.Value.Year - 1;
+        var latestSeasonStartUtc = new DateTime(seasonStartYear, 7, 1, 0, 0, 0, DateTimeKind.Utc);
+        var latestSeasonGames = dbContext.Games
+            .AsNoTracking()
+            .Where(x =>
+                x.Competition.EloPoolKey == EloPoolKeys.EuropeClubs &&
+                (string.IsNullOrWhiteSpace(competitionName) || x.Competition.Name == competitionName) &&
+                x.GameDateTimeUtc >= latestSeasonStartUtc &&
+                x.GameDateTimeUtc <= latestGameUtc.Value);
+        var homeTeamIds = await latestSeasonGames
+            .Select(x => x.HomeTeamId)
+            .ToListAsync(cancellationToken);
+        var awayTeamIds = await latestSeasonGames
+            .Select(x => x.AwayTeamId)
+            .ToListAsync(cancellationToken);
+
+        return homeTeamIds
+            .Concat(awayTeamIds)
+            .ToHashSet();
+    }
+
+    private async Task<HashSet<Guid>> GetCurrentNationalTeamIdsAsync(
+        string? competitionName,
+        CancellationToken cancellationToken)
+    {
+        _ = competitionName;
+        var ratedTeams = await dbContext.TeamRatings
+            .AsNoTracking()
+            .Where(x => x.EloPoolKey == EloPoolKeys.NationalTeams)
+            .Select(x => new { x.TeamId, x.Team.CanonicalName, x.Team.CountryCode })
+            .ToListAsync(cancellationToken);
+
+        return ratedTeams
+            .Where(x => !InternationalTeamCatalog.IsHistoricalIdentity(x.CanonicalName, x.CountryCode))
+            .Select(x => x.TeamId)
+            .ToHashSet();
+    }
+
+    private static bool IsCurrentTeam(
+        string poolKey,
+        Guid teamId,
+        IReadOnlySet<Guid>? currentEuropeanTeamIds,
+        IReadOnlySet<Guid>? currentNationalTeamIds,
+        bool teamIsActive)
+        => poolKey == EloPoolKeys.EuropeClubs
+            ? currentEuropeanTeamIds?.Contains(teamId) == true
+            : poolKey == EloPoolKeys.NationalTeams
+                ? currentNationalTeamIds?.Contains(teamId) == true
+            : teamIsActive;
+
+    private async Task<bool> IsDefaultEvolutionTeamSetAsync(
+        string poolKey,
+        string rulesetVersion,
+        IReadOnlyList<Guid> selectedTeamIds,
+        CancellationToken cancellationToken)
+    {
+        var defaultTeamRatingsQuery = dbContext.TeamRatings
+            .AsNoTracking()
+            .Where(x =>
+                x.EloPoolKey == poolKey &&
+                x.RulesetVersion == rulesetVersion);
+        if (poolKey == EloPoolKeys.Nba)
+        {
+            defaultTeamRatingsQuery = defaultTeamRatingsQuery.Where(x => x.Team.IsActive);
+        }
+        else if (poolKey == EloPoolKeys.EuropeClubs)
+        {
+            var currentEuropeanTeamIds = await GetCurrentEuropeanTeamIdsAsync(null, cancellationToken);
+            defaultTeamRatingsQuery = defaultTeamRatingsQuery.Where(x => currentEuropeanTeamIds.Contains(x.TeamId));
+        }
+        else if (poolKey == EloPoolKeys.NationalTeams)
+        {
+            var currentNationalTeamIds = await GetCurrentNationalTeamIdsAsync(null, cancellationToken);
+            defaultTeamRatingsQuery = defaultTeamRatingsQuery.Where(x => currentNationalTeamIds.Contains(x.TeamId));
+        }
+
+        var defaultTeamIds = await defaultTeamRatingsQuery
+            .OrderByDescending(x => x.Elo)
+            .ThenBy(x => x.Team.CanonicalName)
+            .Take(20)
+            .Select(x => x.TeamId)
+            .ToListAsync(cancellationToken);
+
+        return defaultTeamIds.SequenceEqual(selectedTeamIds);
+    }
+
+    private static string? ResolvePoolOrDefault(string? poolKey)
+    {
+        var resolved = string.IsNullOrWhiteSpace(poolKey)
+            ? EloPoolKeys.Default
+            : poolKey.Trim().ToLowerInvariant();
+        return EloPoolKeys.IsSupported(resolved) ? resolved : null;
+    }
+
+    private async Task<bool> CompetitionBelongsToPoolAsync(
+        string? competition,
+        string poolKey,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(competition) ||
+            await dbContext.Competitions.AsNoTracking().AnyAsync(
+                x => x.Name == competition && x.EloPoolKey == poolKey,
+                cancellationToken);
+    }
+
+    private async Task<string?> ResolveReadableRulesetAsync(
+        string? rulesetVersion,
+        string poolKey,
+        CancellationToken cancellationToken)
+    {
+        var resolved = ResolveRulesetOrDefault(rulesetVersion);
+        if (resolved is null)
+        {
+            return null;
+        }
+
+        if (await dbContext.TeamRatings.AsNoTracking().AnyAsync(
+            x => x.EloPoolKey == poolKey && x.RulesetVersion == resolved,
+            cancellationToken))
+        {
+            return resolved;
+        }
+
+        if (string.IsNullOrWhiteSpace(rulesetVersion) &&
+            await dbContext.TeamRatings.AsNoTracking().AnyAsync(
+                x => x.EloPoolKey == poolKey && x.RulesetVersion == EloRulesetVersions.PointMarginEloV1,
+                cancellationToken))
+        {
+            return EloRulesetVersions.PointMarginEloV1;
+        }
+
+        return resolved;
+    }
+
+    private static EloRebuildRunDto ToDto(EloRebuildRun run)
+        => new(
+            run.Id,
+            run.EloPoolKey,
+            run.RulesetVersion,
+            run.CompetitionName,
+            run.Status,
+            run.GamesProcessed,
+            run.TeamsRated,
+            run.QueuedAtUtc,
+            run.StartedAtUtc,
+            run.FinishedAtUtc,
+            run.FromGameDateTimeUtc,
+            run.Notes);
+
+    private Task PublishNotificationAsync(EloRebuildRun run, CancellationToken cancellationToken)
+        => notificationPublisher.PublishAsync(
+            new EloRebuildRunNotification(
+                run.Id,
+                run.EloPoolKey,
+                run.RulesetVersion,
+                run.Status,
+                DateTime.UtcNow),
+            cancellationToken);
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException exception)
+        => exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
     private static EloGameTeamExplanation ToGameTeamExplanation(GameExplanationHistoryRow history, bool wasHome)
         => new(
@@ -977,36 +2498,3 @@ public class EloController(
         ["USA"] = "United States",
         ["US"] = "United States"
     };
-
-    private static readonly IReadOnlyDictionary<string, string> CountryNames = BuildCountryNameLookup();
-
-    private static IReadOnlyDictionary<string, string> BuildCountryNameLookup()
-    {
-        var countries = new Dictionary<string, string>(CountryNameOverrides, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var culture in CultureInfo.GetCultures(CultureTypes.SpecificCultures))
-        {
-            RegionInfo region;
-            try
-            {
-                region = new RegionInfo(culture.Name);
-            }
-            catch (ArgumentException)
-            {
-                continue;
-            }
-
-            countries.TryAdd(region.TwoLetterISORegionName, region.EnglishName);
-            countries.TryAdd(region.ThreeLetterISORegionName, region.EnglishName);
-            countries.TryAdd(region.EnglishName.ToUpperInvariant(), region.EnglishName);
-        }
-
-        foreach (var overrideEntry in CountryNameOverrides)
-        {
-            countries[overrideEntry.Key] = overrideEntry.Value;
-        }
-
-        return countries;
-    }
-}
-

@@ -1,7 +1,3 @@
-Exit code: 0
-Wall time: 0.2 seconds
-Total output lines: 1956
-Output:
 @page "/"
 @page "/rankings"
 @page "/movers"
@@ -81,7 +77,7 @@ Output:
             {
                 <span class="filter-count" aria-label="@($"{ActiveFilterCount} active filters")">@ActiveFilterCount</span>
             }
-            <span class="filter-toggle-icon" aria-hidden="true">@(showAdvancedFilters ? "âˆ’" : "+")</span>
+            <span class="filter-toggle-icon" aria-hidden="true">@(showAdvancedFilters ? "−" : "+")</span>
         </button>
 
         @if (HasActiveFilters)
@@ -98,31 +94,31 @@ Output:
             @if (!string.IsNullOrWhiteSpace(teamSearch))
             {
                 <button type="button" class="filter-chip" @onclick="ClearTeamSearch">
-                    Team: @teamSearch <span aria-hidden="true">Ã—</span>
+                    Team: @teamSearch <span aria-hidden="true">×</span>
                 </button>
             }
             @if (!string.IsNullOrWhiteSpace(selectedCountry))
             {
                 <button type="button" class="filter-chip" @onclick="ClearCountryFilterAsync">
-                    Country: @selectedCountry <span aria-hidden="true">Ã—</span>
+                    Country: @selectedCountry <span aria-hidden="true">×</span>
                 </button>
             }
             @if (!string.IsNullOrWhiteSpace(selectedCompetition))
             {
                 <button type="button" class="filter-chip" @onclick="ClearCompetitionFilterAsync">
-                    Competition: @selectedCompetition <span aria-hidden="true">Ã—</span>
+                    Competition: @selectedCompetition <span aria-hidden="true">×</span>
                 </button>
             }
             @if (!string.IsNullOrWhiteSpace(selectedFromSeason) || !string.IsNullOrWhiteSpace(selectedToSeason))
             {
                 <button type="button" class="filter-chip" @onclick="ClearSeasonFilterAsync">
-                    Seasons: @(selectedFromSeason ?? "All") â€“ @(selectedToSeason ?? "Current") <span aria-hidden="true">Ã—</span>
+                    Seasons: @(selectedFromSeason ?? "All") – @(selectedToSeason ?? "Current") <span aria-hidden="true">×</span>
                 </button>
             }
             @if (minimumGames > 0)
             {
                 <button type="button" class="filter-chip" @onclick="ClearMinimumGamesFilterAsync">
-                    Min games: @minimumGames <span aria-hidden="true">Ã—</span>
+                    Min games: @minimumGames <span aria-hidden="true">×</span>
                 </button>
             }
         </div>
@@ -360,9 +356,9 @@ Output:
                                 {
                                     <tr>
                                         <td>@FormatDate(row.GameDateTimeUtc)</td>
-                                        <td><strong>@row.Competition</strong><span class="result-meta">@row.Country Â· @row.Season</span></td>
+                                        <td><strong>@row.Competition</strong><span class="result-meta">@row.Country · @row.Season</span></td>
                                         <td>@row.HomeTeam <span class="result-separator">vs</span> @row.AwayTeam</td>
-                                        <td class="numeric result-score">@row.HomeScoreâ€“@row.AwayScore</td>
+                                        <td class="numeric result-score">@row.HomeScore–@row.AwayScore</td>
                                     </tr>
                                 }
                             }
@@ -393,7 +389,1034 @@ Output:
                             <span class="dot-plot-label">@row.TeamName</span>
                             <span class="dot-plot-track"><span class="dot-plot-dot" style="left: @DotPosition(row)%"></span></span>
                             <strong class="dot-plot-value">@row.Elo.ToString("0")</strong>
-                        </div…10111 tokens truncated…  {
+                        </div>
+                    }
+                </div>
+            </section>
+
+            <section class="rankings-table-section">
+                <div class="section-head">
+                    <div>
+                        <h2>Ranking table</h2>
+                        <p>@TableContextLabel()</p>
+                    </div>
+                    <div class="pager">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
+                        <label class="page-jump" for="rankingsPageInput">
+                            <span>Page</span>
+                            <input id="rankingsPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                        </label>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
+                    </div>
+                </div>
+
+                <div class="table-responsive ranking-table-wrap">
+                    <table class="table table-hover align-middle ranking-table @(ShowsGlobalRank ? "with-global-rank" : string.Empty)">
+                        <thead>
+                            <tr>
+                                @if (ShowRankingColumn("rank"))
+                                {
+                                    <th class="sticky-column rank-column" scope="col">Rank</th>
+                                }
+                                @if (ShowRankingColumn("globalRank"))
+                                {
+                                    <th class="sticky-column global-rank-column" scope="col">Global rank</th>
+                                }
+                                @if (ShowRankingColumn("team"))
+                                {
+                                    <th class="sticky-column team-column" scope="col">Team</th>
+                                }
+                                @if (ShowRankingColumn("country"))
+                                {
+                                    <th scope="col">Country</th>
+                                }
+                                @if (ShowRankingColumn("elo"))
+                                {
+                                    <th class="numeric" scope="col">ELO</th>
+                                }
+                                @if (ShowRankingColumn("games"))
+                                {
+                                    <th class="numeric" scope="col">Games</th>
+                                }
+                                @if (ShowRankingColumn("movement"))
+                                {
+                                    <th class="numeric" scope="col">Last</th>
+                                }
+                                @if (ShowRankingColumn("lastGame"))
+                                {
+                                    <th scope="col">Last game</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (response.Rankings.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="@RankingTableColumnCount" class="empty-state">@(selectedPool == EloPoolKeys.NationalTeams ? "National team ratings are not available yet." : "No teams match the current filters.")</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var row in response.Rankings)
+                                {
+                                    <tr class="team-row" tabindex="0" @onclick="() => OpenTeam(row.TeamId)" @onkeydown="args => OpenTeamFromKeyboard(args, row.TeamId)">
+                                        @if (ShowRankingColumn("rank"))
+                                        {
+                                            <td class="rank-cell sticky-column rank-column">#@row.Rank</td>
+                                        }
+                                        @if (ShowRankingColumn("globalRank"))
+                                        {
+                                            <td class="muted-rank sticky-column global-rank-column">#@row.GlobalRank</td>
+                                        }
+                                        @if (ShowRankingColumn("team"))
+                                        {
+                                            <td class="sticky-column team-column">
+                                            <div class="team-identity-cell">
+                                                <div>
+                                                    <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
+                                                    @if (!row.IsActive)
+                                                    {
+                                                        <span class="franchise-status">@HistoricalTeamLabel()</span>
+                                                    }
+                                                </div>
+                                            </div>
+                                            </td>
+                                        }
+                                        @if (ShowRankingColumn("country"))
+                                        {
+                                            <td><a class="context-link" href="@BrowseHref(country: row.Country)" @onclick:stopPropagation="true">@row.Country</a></td>
+                                        }
+                                        @if (ShowRankingColumn("elo"))
+                                        {
+                                            <td class="numeric rating">@row.Elo.ToString("0")</td>
+                                        }
+                                        @if (ShowRankingColumn("games"))
+                                        {
+                                            <td class="numeric">@row.GamesPlayed</td>
+                                        }
+                                        @if (ShowRankingColumn("movement"))
+                                        {
+                                            <td class="numeric">
+                                                <span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span>
+                                            </td>
+                                        }
+                                        @if (ShowRankingColumn("lastGame"))
+                                        {
+                                            <td>@FormatDate(row.LastGameUtc)</td>
+                                        }
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
+        @if ((selectedView == "rankings" || selectedView == "graph") && response.Rankings.Count > 0)
+        {
+            <section class="evolution-section">
+                <div class="section-head">
+                    <div>
+                        <h2>@(selectedView == "graph" ? "ELO evolution" : "Explore the graph")</h2>
+                        <p>@EvolutionContextLabel()</p>
+                    </div>
+                    @if (selectedView == "rankings")
+                    {
+                        <button type="button"
+                                class="btn btn-sm btn-outline-secondary"
+                                aria-expanded="@isChartVisible"
+                                aria-controls="ranking-evolution-panel"
+                                @onclick="ToggleChartAsync">
+                            @(isChartVisible ? "Hide chart" : "Show chart")
+                        </button>
+                    }
+                </div>
+
+                @if (isChartVisible || selectedView == "graph")
+                {
+                    <div id="ranking-evolution-panel" class="evolution-panel" role="region" aria-label="ELO evolution chart">
+                        @if (isChartLoading)
+                        {
+                            <div class="loading-panel">Loading chart...</div>
+                        }
+                        else
+                        {
+                            <div class="@EvolutionChartClass" role="img" aria-label="ELO evolution for teams in the current ranking table">
+                                @if (EvolutionSeries.Count < 1 || EvolutionSeries.All(x => x.Points.Count < 2))
+                                {
+                                    <div class="empty-state">Not enough rated games for an evolution chart yet.</div>
+                                }
+                                else
+                                {
+                                    <EloEvolutionChart @key="activeRankingsCacheKey"
+                                                       Series="@evolutionChartSeries"
+                                                       EnableRangeNavigation="true"
+                                                       ShowLegend="false"
+                                                       SharedTooltip="false"
+                                                       HeightPixels="@ChartHeightPixels"
+                                                       DataRevision="@evolutionDataRevision"
+                                                       IsRefining="@isEvolutionRefining"
+                                                       ViewportRefinementRequested="@QueueEvolutionRefinementAsync"
+                                                       FullRangeRequested="@RestoreFullEvolutionAsync" />
+
+                                    <div class="evolution-legend legacy-links" aria-label="ELO evolution chart team links">
+                                        @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
+                                        {
+                                            <a href="@BuildTeamHref(item.series.TeamId)">
+                                                <span style="background: @ChartColor(item.index)"></span>
+                                                @item.series.TeamName
+                                            </a>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div class="chart-actions">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ToggleChartSize">
+                                    @(isChartExpanded ? "Compact chart" : "Expand chart")
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+        }
+
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "pool")]
+    public string? Pool { get; set; }
+
+    [SupplyParameterFromQuery(Name = "country")]
+    public string? Country { get; set; }
+
+    [SupplyParameterFromQuery(Name = "competition")]
+    public string? Competition { get; set; }
+
+    [SupplyParameterFromQuery(Name = "season")]
+    public string? Season { get; set; }
+
+    [SupplyParameterFromQuery(Name = "fromSeason")]
+    public string? FromSeason { get; set; }
+
+    [SupplyParameterFromQuery(Name = "toSeason")]
+    public string? ToSeason { get; set; }
+
+    [SupplyParameterFromQuery(Name = "from")]
+    public DateTime? From { get; set; }
+
+    [SupplyParameterFromQuery(Name = "to")]
+    public DateTime? To { get; set; }
+
+    [SupplyParameterFromQuery(Name = "minGames")]
+    public int? MinGames { get; set; }
+
+    [SupplyParameterFromQuery(Name = "team")]
+    public string? Team { get; set; }
+
+    [SupplyParameterFromQuery(Name = "teams")]
+    public string? Teams { get; set; }
+
+    [SupplyParameterFromQuery(Name = "view")]
+    public string? View { get; set; }
+
+    [SupplyParameterFromQuery(Name = "movement")]
+    public string? Movement { get; set; }
+
+    [SupplyParameterFromQuery(Name = "windowDays")]
+    public int? WindowDays { get; set; }
+
+    [SupplyParameterFromQuery(Name = "page")]
+    public int? Page { get; set; }
+
+    private EloRankingsResponse? response;
+    private EloMoversResponse? movers;
+    private EloResultsResponse? results;
+    private EloRankingsEvolutionResponse? evolution;
+    private EloRankingsEvolutionResponse? fullEvolution;
+    private EloRankingsResponse? evolutionRankings;
+    private IReadOnlyList<EloChartSeries> evolutionChartSeries = [];
+    private bool isBusy;
+    private bool isChartExpanded;
+    private bool isChartVisible;
+    private bool isChartLoading;
+    private bool showAdvancedFilters;
+    private string? errorMessage;
+    private string? selectedCountry;
+    private string? selectedCompetition;
+    private string selectedPool = EloPoolKeys.Default;
+    private string selectedTeamScope = EloTeamScopes.Current;
+    private string? selectedFromSeason;
+    private string? selectedToSeason;
+    private string? teamSearch;
+    private int minimumGames;
+    private int page = 1;
+    private int requestedPage = 1;
+    private string selectedView = "rankings";
+    private string selectedMoverDirection = "risers";
+    private int selectedWindowDays = 30;
+    private string? lastLoadedUri;
+    private string? lastRankingsApiUri;
+    private string? lastMoversApiUri;
+    private string? lastResultsApiUri;
+    private string? lastEvolutionRankingsApiUri;
+    private string? lastEvolutionApiUri;
+    private RankingsClientCacheKey? activeRankingsCacheKey;
+    private long evolutionDataRevision;
+    private bool isEvolutionRefining;
+    private readonly Dictionary<Guid, int> evolutionVisibleRatedPointCounts = new();
+    private CancellationTokenSource? evolutionRefinementCancellation;
+    private readonly Dictionary<RankingsClientCacheKey, RankingsClientCacheEntry> rankingsClientCache = new();
+    private readonly Dictionary<string, EloRankingsEvolutionResponse> evolutionRangeCache = new(StringComparer.Ordinal);
+    private readonly Queue<string> evolutionRangeCacheOrder = new();
+
+    private const int EvolutionRefinementDebounceMilliseconds = 600;
+    private const int EvolutionRangeCacheLimit = 8;
+
+    private sealed record RankingsClientCacheKey(
+        string Pool,
+        string View,
+        string RankingsUri,
+        string MoverDirection,
+        int MoverWindowDays);
+
+    private sealed class RankingsClientCacheEntry
+    {
+        public EloRankingsResponse? Rankings { get; set; }
+        public EloMoversResponse? Movers { get; set; }
+        public EloResultsResponse? Results { get; set; }
+        public EloRankingsEvolutionResponse? Evolution { get; set; }
+        public EloRankingsEvolutionResponse? FullEvolution { get; set; }
+        public EloRankingsResponse? EvolutionRankings { get; set; }
+        public IReadOnlyList<EloChartSeries> EvolutionChartSeries { get; set; } = [];
+        public Dictionary<Guid, int> EvolutionVisibleRatedPointCounts { get; set; } = new();
+        public string? RankingsApiUri { get; set; }
+        public string? MoversApiUri { get; set; }
+        public string? ResultsApiUri { get; set; }
+        public string? EvolutionRankingsApiUri { get; set; }
+        public string? EvolutionApiUri { get; set; }
+        public long EvolutionDataRevision { get; set; }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var currentUri = Navigation.Uri;
+        if (currentUri == lastLoadedUri)
+        {
+            return;
+        }
+
+        CaptureActiveRankingsCacheEntry();
+
+        selectedPool = EloPoolKeys.IsSupported(Pool?.Trim().ToLowerInvariant() ?? string.Empty)
+            ? Pool!.Trim().ToLowerInvariant()
+            : EloPoolKeys.Default;
+        selectedTeamScope = SupportsTeamScope
+            ? EloTeamScopes.Normalize(Teams)
+            : EloTeamScopes.Current;
+        selectedCountry = Country;
+        selectedCompetition = Competition;
+        selectedFromSeason = FromSeason;
+        selectedToSeason = ToSeason;
+        if (!string.IsNullOrWhiteSpace(Season) && string.IsNullOrWhiteSpace(selectedFromSeason) && string.IsNullOrWhiteSpace(selectedToSeason))
+        {
+            selectedFromSeason = Season;
+            selectedToSeason = Season;
+        }
+        else
+        {
+            ApplyLegacyDateRange();
+        }
+        minimumGames = Math.Max(0, MinGames ?? 0);
+        teamSearch = Team;
+        var currentPath = Navigation.ToBaseRelativePath(currentUri).Split('?', 2)[0].Trim('/');
+        var isMoversRoute = string.Equals(currentPath, "movers", StringComparison.OrdinalIgnoreCase);
+        selectedView = isMoversRoute || string.Equals(View, "movers", StringComparison.OrdinalIgnoreCase)
+            ? "movers"
+            : View?.Trim().ToLowerInvariant() switch
+            {
+                "results" => "results",
+                "graph" => "graph",
+                _ => "rankings"
+            };
+        selectedMoverDirection = string.Equals(Movement, "fallers", StringComparison.OrdinalIgnoreCase) ? "fallers" : "risers";
+        selectedWindowDays = WindowDays is 7 or 30 or 90 ? WindowDays.Value : 30;
+        showAdvancedFilters = HasAdvancedFilterValues;
+        isChartVisible = selectedView == "graph";
+        isChartExpanded = false;
+        isChartLoading = false;
+        page = Math.Max(1, Page ?? 1);
+        requestedPage = page;
+        lastLoadedUri = currentUri;
+        CancelEvolutionRefinement();
+        evolutionRangeCache.Clear();
+        evolutionRangeCacheOrder.Clear();
+
+        activeRankingsCacheKey = null;
+        response = null;
+        movers = null;
+        results = null;
+        evolution = null;
+        evolutionRankings = null;
+        evolutionChartSeries = [];
+        fullEvolution = null;
+
+        await RefreshAsync();
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        await RefreshSelectionAsync(1);
+    }
+
+    private async Task ResetFiltersAsync()
+    {
+        selectedTeamScope = EloTeamScopes.Current;
+        selectedCountry = null;
+        selectedCompetition = null;
+        selectedFromSeason = null;
+        selectedToSeason = null;
+        minimumGames = 0;
+        teamSearch = null;
+        await RefreshSelectionAsync(1);
+    }
+
+    private Task SelectTeamScopeAsync(string teamScope)
+    {
+        selectedTeamScope = EloTeamScopes.Normalize(teamScope);
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private Task SelectPoolAsync(string poolKey)
+    {
+        selectedPool = EloPoolKeys.Normalize(poolKey);
+        selectedTeamScope = EloTeamScopes.Current;
+        selectedCountry = null;
+        selectedCompetition = null;
+        selectedFromSeason = null;
+        selectedToSeason = null;
+        minimumGames = 0;
+        teamSearch = null;
+        page = 1;
+        lastRankingsApiUri = null;
+        lastMoversApiUri = null;
+        lastEvolutionRankingsApiUri = null;
+        lastEvolutionApiUri = null;
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private async Task ClearTeamSearch()
+    {
+        teamSearch = null;
+        await RefreshSelectionAsync(1);
+    }
+
+    private async Task ClearCountryFilterAsync()
+    {
+        selectedCountry = null;
+        await RefreshSelectionAsync(1);
+    }
+
+    private async Task ClearCompetitionFilterAsync()
+    {
+        selectedCompetition = null;
+        await RefreshSelectionAsync(1);
+    }
+
+    private async Task ClearSeasonFilterAsync()
+    {
+        selectedFromSeason = null;
+        selectedToSeason = null;
+        await RefreshSelectionAsync(1);
+    }
+
+    private async Task ClearMinimumGamesFilterAsync()
+    {
+        minimumGames = 0;
+        await RefreshSelectionAsync(1);
+    }
+
+    private void ToggleAdvancedFilters()
+        => showAdvancedFilters = !showAdvancedFilters;
+
+    private Task SelectViewAsync(string view)
+    {
+        selectedView = view is "results" or "graph" ? view : "rankings";
+        page = 1;
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private Task ChangeMoverDirectionAsync(ChangeEventArgs args)
+    {
+        selectedMoverDirection = string.Equals(args.Value?.ToString(), "fallers", StringComparison.OrdinalIgnoreCase)
+            ? "fallers"
+            : "risers";
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private Task ChangeMoverWindowAsync(ChangeEventArgs args)
+    {
+        selectedWindowDays = int.TryParse(args.Value?.ToString(), out var value) && value is 7 or 30 or 90
+            ? value
+            : 30;
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private async Task ToggleChartAsync()
+    {
+        isChartVisible = !isChartVisible;
+        if (!isChartVisible)
+        {
+            return;
+        }
+
+        await LoadChartAsync();
+    }
+
+    private async Task LoadChartAsync()
+    {
+        if (isChartLoading || evolution is not null || response is null)
+        {
+            return;
+        }
+
+        isChartLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            evolutionRankings = await FetchEvolutionRankingsAsync();
+            evolution = await FetchEvolutionAsync();
+            fullEvolution = evolution;
+            RebuildEvolutionChartSeries();
+            CaptureActiveRankingsCacheEntry();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load chart: {ex.Message}";
+        }
+        finally
+        {
+            isChartLoading = false;
+        }
+    }
+
+    private void ToggleChartSize()
+    {
+        isChartExpanded = !isChartExpanded;
+    }
+
+    private async Task PreviousPageAsync()
+    {
+        await RefreshSelectionAsync(Math.Max(1, CurrentPage - 1));
+    }
+
+    private async Task NextPageAsync()
+    {
+        await RefreshSelectionAsync(Math.Min(CurrentTotalPages, CurrentPage + 1));
+    }
+
+    private async Task GoToRequestedPageAsync()
+    {
+        await RefreshSelectionAsync(ClampRequestedPage(requestedPage, CurrentTotalPages));
+    }
+
+    private async Task HandlePageInputKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await GoToRequestedPageAsync();
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        isBusy = true;
+        errorMessage = null;
+
+        try
+        {
+            var rankingsUri = BuildApiUri();
+            var cacheKey = BuildRankingsClientCacheKey(rankingsUri);
+            if (rankingsClientCache.TryGetValue(cacheKey, out var cachedEntry))
+            {
+                RestoreRankingsCacheEntry(cacheKey, cachedEntry);
+                return;
+            }
+
+            if (response is null ||
+                !string.Equals(rankingsUri, lastRankingsApiUri, StringComparison.Ordinal) ||
+                activeRankingsCacheKey != cacheKey)
+            {
+                response = await Http.GetFromJsonAsync<EloRankingsResponse>(rankingsUri);
+                lastRankingsApiUri = rankingsUri;
+            }
+
+            if (response is not null)
+            {
+                page = response.Page;
+                requestedPage = response.Page;
+            }
+
+            if (selectedView == "movers")
+            {
+                var moversUri = BuildMoversApiUri();
+                if (movers is null || !string.Equals(moversUri, lastMoversApiUri, StringComparison.Ordinal))
+                {
+                    movers = await Http.GetFromJsonAsync<EloMoversResponse>(moversUri);
+                    lastMoversApiUri = moversUri;
+                }
+
+                if (movers is not null)
+                {
+                    page = movers.Page;
+                    requestedPage = movers.Page;
+                }
+            }
+            else if (selectedView == "results")
+            {
+                var resultsUri = BuildResultsApiUri();
+                if (results is null || !string.Equals(resultsUri, lastResultsApiUri, StringComparison.Ordinal))
+                {
+                    results = await Http.GetFromJsonAsync<EloResultsResponse>(resultsUri);
+                    lastResultsApiUri = resultsUri;
+                }
+
+                if (results is not null)
+                {
+                    page = results.Page;
+                    requestedPage = results.Page;
+                }
+            }
+            else
+            {
+                // Chart data is intentionally deferred until the user opens the chart.
+                // The ranking response must remain the first meaningful data surface.
+            }
+
+            StoreRankingsCacheEntry(cacheKey);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load rankings: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private RankingsClientCacheKey BuildRankingsClientCacheKey(string rankingsUri)
+        => new(
+            selectedPool,
+            selectedView,
+            rankingsUri,
+            selectedView == "movers" ? selectedMoverDirection : string.Empty,
+            selectedView == "movers" ? selectedWindowDays : 0);
+
+    private void CaptureActiveRankingsCacheEntry()
+    {
+        if (activeRankingsCacheKey is null ||
+            !rankingsClientCache.TryGetValue(activeRankingsCacheKey, out var entry))
+        {
+            return;
+        }
+
+        entry.Rankings = response;
+        entry.Movers = movers;
+        entry.Results = results;
+        entry.Evolution = evolution;
+        entry.FullEvolution = fullEvolution;
+        entry.EvolutionRankings = evolutionRankings;
+        entry.EvolutionChartSeries = evolutionChartSeries.ToList();
+        entry.EvolutionVisibleRatedPointCounts = new(evolutionVisibleRatedPointCounts);
+        entry.RankingsApiUri = lastRankingsApiUri;
+        entry.MoversApiUri = lastMoversApiUri;
+        entry.ResultsApiUri = lastResultsApiUri;
+        entry.EvolutionRankingsApiUri = lastEvolutionRankingsApiUri;
+        entry.EvolutionApiUri = lastEvolutionApiUri;
+        entry.EvolutionDataRevision = evolutionDataRevision;
+    }
+
+    private void StoreRankingsCacheEntry(RankingsClientCacheKey cacheKey)
+    {
+        var entry = rankingsClientCache.TryGetValue(cacheKey, out var existing)
+            ? existing
+            : new RankingsClientCacheEntry();
+
+        entry.Rankings = response;
+        entry.Movers = movers;
+        entry.Results = results;
+        entry.Evolution = evolution;
+        entry.FullEvolution = fullEvolution;
+        entry.EvolutionRankings = evolutionRankings;
+        entry.EvolutionChartSeries = evolutionChartSeries.ToList();
+        entry.EvolutionVisibleRatedPointCounts = new(evolutionVisibleRatedPointCounts);
+        entry.RankingsApiUri = lastRankingsApiUri;
+        entry.MoversApiUri = lastMoversApiUri;
+        entry.ResultsApiUri = lastResultsApiUri;
+        entry.EvolutionRankingsApiUri = lastEvolutionRankingsApiUri;
+        entry.EvolutionApiUri = lastEvolutionApiUri;
+        entry.EvolutionDataRevision = evolutionDataRevision;
+
+        rankingsClientCache[cacheKey] = entry;
+        activeRankingsCacheKey = cacheKey;
+    }
+
+    private void RestoreRankingsCacheEntry(
+        RankingsClientCacheKey cacheKey,
+        RankingsClientCacheEntry entry)
+    {
+        response = entry.Rankings;
+        movers = entry.Movers;
+        results = entry.Results;
+        evolution = entry.Evolution;
+        fullEvolution = entry.FullEvolution;
+        evolutionRankings = entry.EvolutionRankings;
+        evolutionChartSeries = entry.EvolutionChartSeries.ToList();
+        evolutionVisibleRatedPointCounts.Clear();
+        foreach (var item in entry.EvolutionVisibleRatedPointCounts)
+        {
+            evolutionVisibleRatedPointCounts[item.Key] = item.Value;
+        }
+
+        lastRankingsApiUri = entry.RankingsApiUri;
+        lastMoversApiUri = entry.MoversApiUri;
+        lastResultsApiUri = entry.ResultsApiUri;
+        lastEvolutionRankingsApiUri = entry.EvolutionRankingsApiUri;
+        lastEvolutionApiUri = entry.EvolutionApiUri;
+        evolutionDataRevision = entry.EvolutionDataRevision;
+        activeRankingsCacheKey = cacheKey;
+
+        if (response is not null)
+        {
+            page = response.Page;
+            requestedPage = response.Page;
+        }
+        else if (movers is not null)
+        {
+            page = movers.Page;
+            requestedPage = movers.Page;
+        }
+        else if (results is not null)
+        {
+            page = results.Page;
+            requestedPage = results.Page;
+        }
+    }
+
+    private void NavigateToRankings(int targetPage)
+    {
+        NormalizeSelectedSeasonRange();
+        targetPage = ClampRequestedPage(targetPage, CurrentTotalPages);
+        page = targetPage;
+        lastLoadedUri = null;
+
+        Navigation.NavigateTo(BuildRankingsHref(targetPage));
+    }
+
+    private async Task RefreshSelectionAsync(int targetPage)
+    {
+        NormalizeSelectedSeasonRange();
+        page = ClampRequestedPage(targetPage, CurrentTotalPages);
+        requestedPage = page;
+        lastRankingsApiUri = null;
+        lastMoversApiUri = null;
+        lastResultsApiUri = null;
+        lastEvolutionRankingsApiUri = null;
+        lastEvolutionApiUri = null;
+        movers = null;
+        results = null;
+        evolution = null;
+        fullEvolution = null;
+        evolutionRankings = null;
+        evolutionChartSeries = [];
+        isChartVisible = false;
+        isChartExpanded = false;
+        isChartLoading = false;
+        CancelEvolutionRefinement();
+        await RefreshAsync();
+        if (selectedView == "graph")
+        {
+            await LoadChartAsync();
+        }
+    }
+
+    private string BuildRankingsHref(int targetPage)
+    {
+        var view = string.Equals(selectedView, "movers", StringComparison.OrdinalIgnoreCase)
+            ? "movers"
+            : selectedView;
+        var route = view == "movers" ? "/movers" : "/rankings";
+
+        var query = new Dictionary<string, object?>
+        {
+            ["pool"] = selectedPool == EloPoolKeys.Default ? null : selectedPool,
+            ["teams"] = SupportsTeamScope && selectedTeamScope == EloTeamScopes.Historical
+                ? selectedTeamScope
+                : null,
+            ["movement"] = view == "movers" ? selectedMoverDirection : null,
+            ["windowDays"] = view == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
+            ["country"] = selectedCountry,
+            ["competition"] = selectedCompetition,
+            ["fromSeason"] = selectedFromSeason,
+            ["toSeason"] = selectedToSeason,
+            ["minGames"] = minimumGames > 0 ? minimumGames : null,
+            ["team"] = teamSearch,
+            ["view"] = view == "rankings" ? null : view,
+            ["page"] = targetPage > 1 ? targetPage : null
+        };
+
+        return Navigation.GetUriWithQueryParameters(route, query);
+    }
+
+    private static int ClampRequestedPage(int value, int totalPages)
+        => Math.Clamp(value, 1, Math.Max(1, totalPages));
+
+    private void ApplyLegacyDateRange()
+    {
+        if (string.IsNullOrWhiteSpace(selectedFromSeason) && From.HasValue)
+        {
+            selectedFromSeason = GetSeasonLabelForDate(From.Value);
+        }
+
+        if (string.IsNullOrWhiteSpace(selectedToSeason) && To.HasValue)
+        {
+            selectedToSeason = GetSeasonLabelForDate(To.Value);
+        }
+    }
+
+    private void NormalizeSelectedSeasonRange()
+    {
+        if (TryParseSeasonStartYear(selectedFromSeason, out var fromYear) &&
+            TryParseSeasonStartYear(selectedToSeason, out var toYear) &&
+            fromYear > toYear)
+        {
+            (selectedFromSeason, selectedToSeason) = (selectedToSeason, selectedFromSeason);
+        }
+    }
+
+    private (DateTime? FromUtc, DateTime? ToUtc, DateTime? AsOfUtc) GetSelectedSeasonDateRange()
+    {
+        NormalizeSelectedSeasonRange();
+
+        var fromUtc = TryGetSeasonStart(selectedFromSeason, out var seasonStart)
+            ? seasonStart
+            : (DateTime?)null;
+        var toDate = TryGetSeasonEndDate(selectedToSeason, out var seasonEndDate)
+            ? seasonEndDate
+            : (DateTime?)null;
+        var toUtc = NormalizeInclusiveDateEnd(toDate);
+
+        return (fromUtc, toUtc, toDate);
+    }
+
+    private static bool TryGetSeasonStart(string? season, out DateTime startUtc)
+    {
+        startUtc = default;
+        if (!TryParseSeasonStartYear(season, out var startYear))
+        {
+            return false;
+        }
+
+        startUtc = new DateTime(startYear, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        return true;
+    }
+
+    private static bool TryGetSeasonEndDate(string? season, out DateTime endDateUtc)
+    {
+        endDateUtc = default;
+        if (!TryParseSeasonStartYear(season, out var startYear))
+        {
+            return false;
+        }
+
+        endDateUtc = new DateTime(startYear + 1, 7, 31, 0, 0, 0, DateTimeKind.Utc);
+        return true;
+    }
+
+    private static bool TryParseSeasonStartYear(string? season, out int startYear)
+    {
+        startYear = default;
+        if (string.IsNullOrWhiteSpace(season))
+        {
+            return false;
+        }
+
+        var parts = season.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 2 &&
+               int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out startYear) &&
+               int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var endYear) &&
+               endYear == startYear + 1;
+    }
+
+    private static string GetSeasonLabelForDate(DateTime value)
+    {
+        var date = value.Date;
+        return date.Month >= 8
+            ? $"{date.Year}-{date.Year + 1}"
+            : $"{date.Year - 1}-{date.Year}";
+    }
+
+    private int CurrentPage => selectedView switch
+    {
+        "movers" => movers?.Page ?? page,
+        "results" => results?.Page ?? page,
+        _ => response?.Page ?? page
+    };
+
+    private int CurrentTotalPages => selectedView switch
+    {
+        "movers" => Math.Max(1, movers?.TotalPages ?? 1),
+        "results" => Math.Max(1, results?.TotalPages ?? 1),
+        _ => Math.Max(1, response?.TotalPages ?? 1)
+    };
+
+    private bool HasTeamSearch
+        => !string.IsNullOrWhiteSpace(teamSearch);
+
+    private bool HasAdvancedFilterValues
+        => !string.IsNullOrWhiteSpace(selectedCountry)
+            || !string.IsNullOrWhiteSpace(selectedCompetition)
+            || !string.IsNullOrWhiteSpace(selectedFromSeason)
+            || !string.IsNullOrWhiteSpace(selectedToSeason)
+            || minimumGames > 0;
+
+    private bool HasActiveFilters
+        => HasTeamSearch || HasAdvancedFilterValues;
+
+    private int ActiveFilterCount
+        => (HasTeamSearch ? 1 : 0)
+            + (!string.IsNullOrWhiteSpace(selectedCountry) ? 1 : 0)
+            + (!string.IsNullOrWhiteSpace(selectedCompetition) ? 1 : 0)
+            + (!string.IsNullOrWhiteSpace(selectedFromSeason) || !string.IsNullOrWhiteSpace(selectedToSeason) ? 1 : 0)
+            + (minimumGames > 0 ? 1 : 0);
+
+    private bool ShowRankingColumn(string column)
+        => column switch
+        {
+            "rank" or "team" or "elo" or "games" or "lastGame" => true,
+            "movement" => true,
+            "country" => ShowsCountryColumn,
+            "globalRank" => response?.Summary.IsFiltered == true,
+            _ => false
+        };
+
+    private bool ShowsGlobalRank
+        => ShowRankingColumn("globalRank");
+
+    private string PoolTabClass(string poolKey)
+        => selectedPool == poolKey ? "pool-tab active" : "pool-tab";
+
+    private string ViewTabClass(string view)
+        => selectedView == view ? "view-tab active" : "view-tab";
+
+    private string ViewTitle()
+        => selectedView switch
+        {
+            "results" => "Results",
+            "graph" => "Graph",
+            "movers" => "Biggest Movers",
+            _ => "Rankings"
+        };
+
+    private int DotPosition(EloRankingRow row)
+    {
+        var values = response?.Rankings.Select(x => x.Elo).ToList() ?? [];
+        if (values.Count < 2)
+        {
+            return 50;
+        }
+
+        var minimum = values.Min();
+        var maximum = values.Max();
+        return (int)Math.Round((double)((row.Elo - minimum) / (maximum - minimum)) * 100, MidpointRounding.AwayFromZero);
+    }
+
+    private string TeamScopeClass(string teamScope)
+        => selectedTeamScope == teamScope ? "franchise-scope-option active" : "franchise-scope-option";
+
+    private string EvolutionChartClass
+        => isChartExpanded ? "evolution-chart expanded" : "evolution-chart";
+
+    private int ChartHeightPixels => isChartExpanded ? 560 : 340;
+
+    private string BuildApiUri()
+    {
+        var seasonRange = GetSelectedSeasonDateRange();
+        var query = new List<string>
+        {
+            "pageSize=50",
+            $"page={page}",
+            $"pool={Uri.EscapeDataString(selectedPool)}"
+        };
+
+        Append(query, "country", selectedCountry);
+        Append(query, "competition", selectedCompetition);
+        Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
+        Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
+        Append(query, "asOfDate", seasonRange.AsOfUtc?.ToString("O"));
+        Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
+        Append(query, "team", teamSearch);
+        Append(query, "teams", SupportsTeamScope ? selectedTeamScope : null);
+
+        return $"api/elo/rankings?{string.Join("&", query)}";
+    }
+
+    private string BuildResultsApiUri()
+    {
+        var seasonRange = GetSelectedSeasonDateRange();
+        var query = new List<string>
+        {
+            "pageSize=25",
+            $"page={page}",
+            $"pool={Uri.EscapeDataString(selectedPool)}"
+        };
+
+        Append(query, "rulesetVersion", response?.RulesetVersion);
+        Append(query, "country", selectedCountry);
+        Append(query, "competition", selectedCompetition);
+        Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
+        Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
+        Append(query, "team", teamSearch);
+
+        return $"api/elo/results?{string.Join("&", query)}";
+    }
+
+    private string BuildMoversApiUri()
+    {
+        var seasonRange = GetSelectedSeasonDateRange();
+        var query = new List<string>
+        {
+            "pageSize=25",
+            $"page={page}",
+            $"pool={Uri.EscapeDataString(selectedPool)}",
+            $"direction={Uri.EscapeDataString(selectedMoverDirection)}",
+            $"windowDays={selectedWindowDays}"
+        };
+
+        Append(query, "rulesetVersion", response?.RulesetVersion);
+        Append(query, "country", selectedCountry);
+        Append(query, "competition", selectedCompetition);
+        Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
+        Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
+        Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
+        Append(query, "team", teamSearch);
+        Append(query, "teams", SupportsTeamScope ? selectedTeamScope : null);
+
+        return $"api/elo/rankings/movers?{string.Join("&", query)}";
+    }
+
+    private async Task<EloRankingsEvolutionResponse?> FetchEvolutionAsync()
+    {
         if (evolutionRankings is null || evolutionRankings.Rankings.Count == 0)
         {
             return null;
@@ -725,209 +1748,3 @@ Output:
 
     private string MoversTitle()
         => selectedMoverDirection == "fallers" ? "Biggest fallers" : "Biggest risers";
-
-    private string MoversContextLabel()
-    {
-        if (movers is null)
-        {
-            return "Loading rating movement.";
-        }
-
-        var rangeStart = movers.TotalCount == 0 ? 0 : ((movers.Page - 1) * movers.PageSize) + 1;
-        var rangeEnd = Math.Min(movers.TotalCount, movers.Page * movers.PageSize);
-
-        return $"Showing {rangeStart}-{rangeEnd} of {movers.TotalCount} teams from {FormatDate(movers.WindowStartUtc)} to {FormatDate(movers.WindowEndUtc)}.";
-    }
-
-    private void RebuildEvolutionChartSeries(bool resetViewport = true)
-    {
-        var visibleTeamIds = evolutionRankings?.Rankings
-            .Select(row => row.TeamId)
-            .ToHashSet() ?? [];
-        var refinedSeriesByTeam = EvolutionSeries
-            .ToDictionary(series => series.TeamId);
-        var baseSeries = (fullEvolution ?? evolution)?.Series
-            .Where(series => visibleTeamIds.Contains(series.TeamId))
-            .ToList() ?? [];
-        if (resetViewport)
-        {
-            evolutionVisibleRatedPointCounts.Clear();
-            foreach (var series in baseSeries)
-            {
-                evolutionVisibleRatedPointCounts[series.TeamId] = series.RatedPointCount;
-            }
-        }
-
-        evolutionChartSeries = baseSeries
-            .Select((series, index) =>
-            {
-                var color = ChartColor(index);
-                var points = ToChartPoints(series.Points, series.TeamName, color);
-                if (refinedSeriesByTeam.TryGetValue(series.TeamId, out var refined))
-                {
-                    points = EloChartData.MergePoints(
-                        points,
-                        ToChartPoints(refined.Points, refined.TeamName, color));
-                }
-
-                var ratedPointCount = series.RatedPointCount > 0
-                    ? series.RatedPointCount
-                    : points.Count;
-                var visibleRatedPointCount = evolutionVisibleRatedPointCounts.TryGetValue(series.TeamId, out var visibleCount)
-                    ? visibleCount
-                    : ratedPointCount;
-                return new EloChartSeries(
-                    series.TeamId,
-                    series.TeamName,
-                    color,
-                    points,
-                    ratedPointCount,
-                    visibleRatedPointCount);
-            })
-            .ToList();
-        if (resetViewport)
-        {
-            evolutionDataRevision++;
-        }
-    }
-
-    private static IReadOnlyList<EloChartPoint> ToChartPoints(
-        IReadOnlyCollection<EloTeamEvolutionPoint> points,
-        string teamName,
-        string color)
-        => points
-            .OrderBy(point => point.GameDateTimeUtc)
-            .Select(point => new EloChartPoint(
-                        point.GameDateTimeUtc,
-                        point.Elo,
-                        teamName,
-                        color))
-            .ToList();
-
-    private static EloRankingsEvolutionResponse MergeEvolutionData(
-        EloRankingsEvolutionResponse? baseEvolution,
-        EloRankingsEvolutionResponse refinedEvolution)
-    {
-        if (baseEvolution is null)
-        {
-            return refinedEvolution;
-        }
-
-        var refinedByTeam = refinedEvolution.Series
-            .ToDictionary(series => series.TeamId);
-        var mergedSeries = baseEvolution.Series
-            .Select(series => refinedByTeam.TryGetValue(series.TeamId, out var refined)
-                ? series with { Points = MergeEvolutionPoints(series.Points, refined.Points) }
-                : series)
-            .ToList();
-
-        return baseEvolution with { Series = mergedSeries };
-    }
-
-    private static IReadOnlyList<EloTeamEvolutionPoint> MergeEvolutionPoints(
-        IReadOnlyCollection<EloTeamEvolutionPoint> basePoints,
-        IReadOnlyCollection<EloTeamEvolutionPoint> refinedPoints)
-    {
-        var refinedDates = refinedPoints
-            .Select(point => point.GameDateTimeUtc)
-            .ToHashSet();
-
-        return basePoints
-            .Where(point => !refinedDates.Contains(point.GameDateTimeUtc))
-            .Concat(refinedPoints)
-            .OrderBy(point => point.GameDateTimeUtc)
-            .ToList();
-    }
-
-    public void Dispose()
-    {
-        CancelEvolutionRefinement();
-    }
-
-    private static string ChartColor(int index)
-    {
-        string[] colors =
-        [
-            "#245c7a",
-            "#d88722",
-            "#1f7a68",
-            "#b55431",
-            "#7456a6",
-            "#2f6f9f",
-            "#8d6a22",
-            "#9b3f62",
-            "#4f6f52",
-            "#c46f2f",
-            "#476a9d",
-            "#7a5a3d",
-            "#178078",
-            "#8f5c2d",
-            "#5b6f94",
-            "#a64632",
-            "#3f7a4f",
-            "#805ca0",
-            "#946821",
-            "#416b75"
-        ];
-
-        return colors[index % colors.Length];
-    }
-
-    private static void AppendLabel(List<string> labels, string? value)
-    {
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            labels.Add(value);
-        }
-    }
-
-    private void OpenTeam(Guid teamId)
-        => Navigation.NavigateTo(BuildTeamHref(teamId));
-
-    private void OpenTeamFromKeyboard(KeyboardEventArgs args, Guid teamId)
-    {
-        if (args.Key is "Enter" or " ")
-        {
-            OpenTeam(teamId);
-        }
-    }
-
-    private static void Append(List<string> query, string key, string? value)
-    {
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            query.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
-        }
-    }
-
-    private static DateTime? NormalizeDate(DateTime? value)
-        => value.HasValue
-            ? DateTime.SpecifyKind(value.Value.Date, DateTimeKind.Utc)
-            : null;
-
-    private static DateTime? NormalizeInclusiveDateEnd(DateTime? value)
-        => NormalizeDate(value)?.AddDays(1).AddTicks(-1);
-
-    private static string FormatRating(decimal? value)
-        => value.HasValue ? value.Value.ToString("0") : "-";
-
-    private static string FormatDate(DateTime? value)
-        => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";
-
-    private static string FormatMovement(decimal value)
-        => value switch
-        {
-            > 0 => $"+{value:0}",
-            < 0 => value.ToString("0"),
-            _ => "0"
-        };
-
-    private static string MovementClass(decimal value)
-        => value switch
-        {
-            > 0 => "movement-up",
-            < 0 => "movement-down",
-            _ => "movement-flat"
-        };
-}
-

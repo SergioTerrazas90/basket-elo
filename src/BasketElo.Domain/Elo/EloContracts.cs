@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.2 seconds
-Output:
 namespace BasketElo.Domain.Elo;
 
 public static class EloRulesetVersions
@@ -360,4 +357,3 @@ public interface IEloRebuildService
 {
     Task<EloRebuildResult> RebuildAsync(Guid runId, CancellationToken cancellationToken);
 }
-

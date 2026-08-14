@@ -1,12 +1,14 @@
 using BasketElo.Infrastructure;
 using BasketElo.Infrastructure.Persistence;
+using BasketElo.Domain.Elo;
 using BasketElo.Api.Elo;
+using BasketElo.Api.Controllers;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddControllersAsServices();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<EloResponseCache>();
@@ -21,6 +23,12 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
     await dbContext.Database.MigrateAsync();
+
+    var eloController = scope.ServiceProvider.GetRequiredService<EloController>();
+    foreach (var pool in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
+    {
+        await eloController.GetBrowse(pool.Key, null, null, null, 100);
+    }
 }
 
 app.UseSwagger();
@@ -36,3 +44,4 @@ app.MapControllers();
 app.MapHealthChecks("/health");
 
 app.Run();
+

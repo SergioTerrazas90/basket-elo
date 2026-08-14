@@ -1,26 +1,26 @@
 .brand-row {
-    min-height: 5.25rem;
-    padding: 1.05rem 1rem 0.9rem;
+    min-height: 4.35rem;
+    padding: 0.8rem 0.8rem 0.7rem;
 }
 
 .brand-lockup {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.6rem;
 }
 
 .brand-mark {
     display: inline-flex;
     flex: 0 0 auto;
-    width: 2.65rem;
-    height: 2.65rem;
+    width: 2.35rem;
+    height: 2.35rem;
     align-items: center;
     justify-content: center;
     border: 1px solid rgba(255, 250, 240, 0.28);
     border-radius: var(--radius-md);
     background: linear-gradient(145deg, rgba(255, 250, 240, 0.2), rgba(216, 135, 34, 0.26));
     color: var(--color-inverse);
-    font-size: 0.92rem;
+    font-size: 0.84rem;
     font-weight: 900;
     text-decoration: none;
     box-shadow: inset 0 1px 0 rgba(255, 250, 240, 0.24);
@@ -45,10 +45,10 @@
 
 .navbar-toggler {
     position: absolute;
-    top: 1.25rem;
-    right: 1rem;
-    width: 2.65rem;
-    height: 2.35rem;
+    top: 0.95rem;
+    right: 0.8rem;
+    width: 2.35rem;
+    height: 2.15rem;
     appearance: none;
     border: 1px solid rgba(255, 250, 240, 0.24);
     border-radius: var(--radius-md);
@@ -60,6 +60,12 @@
     background-color: rgba(255, 250, 240, 0.22);
 }
 
+.navbar-toggler:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 0.18rem rgba(216, 135, 34, 0.28);
+}
+
 .nav-scrollable {
     display: none;
 }
@@ -69,7 +75,7 @@
 }
 
 .nav-section {
-    padding: 1rem 1rem 0.45rem;
+    padding: 0.8rem 0.8rem 0.35rem;
     color: rgba(255, 250, 240, 0.48);
     font-size: 0.68rem;
     font-weight: 850;
@@ -78,23 +84,24 @@
 }
 
 .nav-item {
-    padding-bottom: 0.35rem;
+    padding: 0 0.7rem 0.18rem;
 }
 
 .nav-item:last-of-type {
-    padding-bottom: 1rem;
+    padding-bottom: 0.8rem;
 }
 
 .nav-item ::deep .nav-link {
     display: flex;
     width: 100%;
-    min-height: 2.85rem;
+    min-height: 2.5rem;
     align-items: center;
-    gap: 0.7rem;
+    gap: 0.6rem;
     border: 1px solid transparent;
     border-radius: var(--radius-md);
     color: rgba(255, 250, 240, 0.78);
-    font-size: 0.92rem;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.86rem;
     font-weight: 760;
     line-height: 1.2;
     text-decoration: none;
@@ -111,6 +118,13 @@
     border-color: rgba(255, 250, 240, 0.16);
     background: rgba(255, 250, 240, 0.1);
     color: var(--color-inverse);
+}
+
+.brand-mark:focus-visible,
+.navbar-brand:focus-visible,
+.nav-item ::deep .nav-link:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
 }
 
 .nav-icon {
@@ -240,19 +254,33 @@
 
     .nav-scrollable {
         display: block;
-        height: calc(100vh - 5.25rem);
+        height: calc(100vh - 4.35rem);
         overflow-y: auto;
-        padding-bottom: 1rem;
+        padding-bottom: 0.75rem;
     }
 }
 
 @media (max-width: 900px) {
     .brand-row {
-        min-height: 4.8rem;
-        padding-right: 4.5rem;
+        min-height: 4.1rem;
+        padding-right: 4rem;
     }
 
     .nav-scrollable {
-        padding-bottom: 1rem;
+        padding-bottom: 0.75rem;
+    }
+}
+
+@media (min-width: 901px) and (max-width: 1199px) {
+    .brand-row {
+        min-height: 4.1rem;
+    }
+
+    .nav-scrollable {
+        height: calc(100vh - 4.1rem);
+    }
+
+    .nav-item {
+        padding-inline: 0.55rem;
     }
 }

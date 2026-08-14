@@ -11,26 +11,17 @@
 }
 
 <div class="page">
-    <div class="sidebar">
+    <aside class="sidebar" aria-label="Primary navigation">
         <NavMenu />
-    </div>
+    </aside>
 
     <main class="app-main">
         <header class="top-row">
             <div class="top-context">
-                <span class="workspace-label">Basketball ratings workspace</span>
+                <span class="top-context-label">Basketball ratings</span>
                 <span class="workspace-dot"></span>
-                <span>Adjusted ELO, backfill operations, and model review</span>
+                <span class="top-context-detail">Explore current form and historical rankings</span>
             </div>
-            <nav class="quick-links" aria-label="Quick links">
-                <a href="rankings">Rankings</a>
-                <a href="model-lab">Model Lab</a>
-                <AuthorizeView Roles="admin">
-                    <Authorized>
-                        <a href="games">Games</a>
-                    </Authorized>
-                </AuthorizeView>
-            </nav>
             <AuthStatus />
         </header>
 

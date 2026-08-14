@@ -1748,3 +1748,208 @@
 
     private string MoversTitle()
         => selectedMoverDirection == "fallers" ? "Biggest fallers" : "Biggest risers";
+
+    private string MoversContextLabel()
+    {
+        if (movers is null)
+        {
+            return "Loading rating movement.";
+        }
+
+        var rangeStart = movers.TotalCount == 0 ? 0 : ((movers.Page - 1) * movers.PageSize) + 1;
+        var rangeEnd = Math.Min(movers.TotalCount, movers.Page * movers.PageSize);
+
+        return $"Showing {rangeStart}-{rangeEnd} of {movers.TotalCount} teams from {FormatDate(movers.WindowStartUtc)} to {FormatDate(movers.WindowEndUtc)}.";
+    }
+
+    private void RebuildEvolutionChartSeries(bool resetViewport = true)
+    {
+        var visibleTeamIds = evolutionRankings?.Rankings
+            .Select(row => row.TeamId)
+            .ToHashSet() ?? [];
+        var refinedSeriesByTeam = EvolutionSeries
+            .ToDictionary(series => series.TeamId);
+        var baseSeries = (fullEvolution ?? evolution)?.Series
+            .Where(series => visibleTeamIds.Contains(series.TeamId))
+            .ToList() ?? [];
+        if (resetViewport)
+        {
+            evolutionVisibleRatedPointCounts.Clear();
+            foreach (var series in baseSeries)
+            {
+                evolutionVisibleRatedPointCounts[series.TeamId] = series.RatedPointCount;
+            }
+        }
+
+        evolutionChartSeries = baseSeries
+            .Select((series, index) =>
+            {
+                var color = ChartColor(index);
+                var points = ToChartPoints(series.Points, series.TeamName, color);
+                if (refinedSeriesByTeam.TryGetValue(series.TeamId, out var refined))
+                {
+                    points = EloChartData.MergePoints(
+                        points,
+                        ToChartPoints(refined.Points, refined.TeamName, color));
+                }
+
+                var ratedPointCount = series.RatedPointCount > 0
+                    ? series.RatedPointCount
+                    : points.Count;
+                var visibleRatedPointCount = evolutionVisibleRatedPointCounts.TryGetValue(series.TeamId, out var visibleCount)
+                    ? visibleCount
+                    : ratedPointCount;
+                return new EloChartSeries(
+                    series.TeamId,
+                    series.TeamName,
+                    color,
+                    points,
+                    ratedPointCount,
+                    visibleRatedPointCount);
+            })
+            .ToList();
+        if (resetViewport)
+        {
+            evolutionDataRevision++;
+        }
+    }
+
+    private static IReadOnlyList<EloChartPoint> ToChartPoints(
+        IReadOnlyCollection<EloTeamEvolutionPoint> points,
+        string teamName,
+        string color)
+        => points
+            .OrderBy(point => point.GameDateTimeUtc)
+            .Select(point => new EloChartPoint(
+                        point.GameDateTimeUtc,
+                        point.Elo,
+                        teamName,
+                        color))
+            .ToList();
+
+    private static EloRankingsEvolutionResponse MergeEvolutionData(
+        EloRankingsEvolutionResponse? baseEvolution,
+        EloRankingsEvolutionResponse refinedEvolution)
+    {
+        if (baseEvolution is null)
+        {
+            return refinedEvolution;
+        }
+
+        var refinedByTeam = refinedEvolution.Series
+            .ToDictionary(series => series.TeamId);
+        var mergedSeries = baseEvolution.Series
+            .Select(series => refinedByTeam.TryGetValue(series.TeamId, out var refined)
+                ? series with { Points = MergeEvolutionPoints(series.Points, refined.Points) }
+                : series)
+            .ToList();
+
+        return baseEvolution with { Series = mergedSeries };
+    }
+
+    private static IReadOnlyList<EloTeamEvolutionPoint> MergeEvolutionPoints(
+        IReadOnlyCollection<EloTeamEvolutionPoint> basePoints,
+        IReadOnlyCollection<EloTeamEvolutionPoint> refinedPoints)
+    {
+        var refinedDates = refinedPoints
+            .Select(point => point.GameDateTimeUtc)
+            .ToHashSet();
+
+        return basePoints
+            .Where(point => !refinedDates.Contains(point.GameDateTimeUtc))
+            .Concat(refinedPoints)
+            .OrderBy(point => point.GameDateTimeUtc)
+            .ToList();
+    }
+
+    public void Dispose()
+    {
+        CancelEvolutionRefinement();
+    }
+
+    private static string ChartColor(int index)
+    {
+        string[] colors =
+        [
+            "#245c7a",
+            "#d88722",
+            "#1f7a68",
+            "#b55431",
+            "#7456a6",
+            "#2f6f9f",
+            "#8d6a22",
+            "#9b3f62",
+            "#4f6f52",
+            "#c46f2f",
+            "#476a9d",
+            "#7a5a3d",
+            "#178078",
+            "#8f5c2d",
+            "#5b6f94",
+            "#a64632",
+            "#3f7a4f",
+            "#805ca0",
+            "#946821",
+            "#416b75"
+        ];
+
+        return colors[index % colors.Length];
+    }
+
+    private static void AppendLabel(List<string> labels, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            labels.Add(value);
+        }
+    }
+
+    private void OpenTeam(Guid teamId)
+        => Navigation.NavigateTo(BuildTeamHref(teamId));
+
+    private void OpenTeamFromKeyboard(KeyboardEventArgs args, Guid teamId)
+    {
+        if (args.Key is "Enter" or " ")
+        {
+            OpenTeam(teamId);
+        }
+    }
+
+    private static void Append(List<string> query, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            query.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
+        }
+    }
+
+    private static DateTime? NormalizeDate(DateTime? value)
+        => value.HasValue
+            ? DateTime.SpecifyKind(value.Value.Date, DateTimeKind.Utc)
+            : null;
+
+    private static DateTime? NormalizeInclusiveDateEnd(DateTime? value)
+        => NormalizeDate(value)?.AddDays(1).AddTicks(-1);
+
+    private static string FormatRating(decimal? value)
+        => value.HasValue ? value.Value.ToString("0") : "-";
+
+    private static string FormatDate(DateTime? value)
+        => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";
+
+    private static string FormatMovement(decimal value)
+        => value switch
+        {
+            > 0 => $"+{value:0}",
+            < 0 => value.ToString("0"),
+            _ => "0"
+        };
+
+    private static string MovementClass(decimal value)
+        => value switch
+        {
+            > 0 => "movement-up",
+            < 0 => "movement-down",
+            _ => "movement-flat"
+        };
+}

@@ -39,7 +39,7 @@
         {
             <section class="browse-context-header">
                 <div>
-                    <a class="browse-back-link" href="@BrowseHref()">← All @selectedPoolName browsing</a>
+                    <a class="browse-back-link" href="@BrowseHref()">â† All @selectedPoolName browsing</a>
                     <p class="eyebrow">@ContextEyebrow()</p>
                     <h2>@ContextTitle()</h2>
                     <p class="context-coverage">@response.Context.CoverageMessage</p>
@@ -72,7 +72,7 @@
                             <a class="season-link @(string.Equals(Season, item.Label, StringComparison.OrdinalIgnoreCase) ? "active" : null)"
                                href="@BrowseHref(country: response.Context.Country, competition: response.Context.Competition, season: item.Label)">
                                 <strong>@item.Label</strong>
-                                <span>@item.GameCount games · @FormatDate(item.LatestGameUtc)</span>
+                                <span>@item.GameCount games Â· @FormatDate(item.LatestGameUtc)</span>
                             </a>
                         }
                     </div>
@@ -95,7 +95,7 @@
                             <div class="tier-card">
                                 <span>Tier @tier.Tier</span>
                                 <strong>@tier.TeamCount teams</strong>
-                                <small>@tier.CompetitionCount competition@(tier.CompetitionCount == 1 ? "" : "s") · @tier.GameCount games</small>
+                                <small>@tier.CompetitionCount competition@(tier.CompetitionCount == 1 ? "" : "s") Â· @tier.GameCount games</small>
                                 <small>Average ELO: @(tier.AverageElo?.ToString("0") ?? "Not enough ratings")</small>
                             </div>
                         }
@@ -123,7 +123,7 @@
                             {
                                 <a class="browse-team-row" href="@TeamHref(team.TeamId)">
                                     <span class="team-rank">#@team.Rank</span>
-                                    <span><strong>@team.Name</strong><small>@team.Country · @team.GamesPlayed games</small></span>
+                                    <span><strong>@team.Name</strong><small>@team.Country Â· @team.GamesPlayed games</small></span>
                                     <strong class="team-rating">@(team.Elo?.ToString("0") ?? "-")</strong>
                                 </a>
                             }
@@ -148,7 +148,7 @@
                             @foreach (var game in response.Context.RecentGames)
                             {
                                 <div class="browse-game-row">
-                                    <span>@FormatDate(game.GameDateTimeUtc)<small>@game.Season@(string.IsNullOrWhiteSpace(game.Phase) ? null : $" · {game.Phase}")</small></span>
+                                    <span>@FormatDate(game.GameDateTimeUtc)<small>@game.Season@(string.IsNullOrWhiteSpace(game.Phase) ? null : $" Â· {game.Phase}")</small></span>
                                     <strong>@game.HomeTeam <span>@FormatScore(game.HomeScore)</span></strong>
                                     <strong>@game.AwayTeam <span>@FormatScore(game.AwayScore)</span></strong>
                                 </div>
@@ -167,7 +167,7 @@
             </section>
 
             <section class="browse-section">
-                <div class="section-head">
+                <div id="browse-countries" class="section-head">
                     <div>
                         <p class="eyebrow">Geography</p>
                         <h2>Countries and regions</h2>
@@ -186,7 +186,7 @@
                             <a class="browse-card" href="@BrowseHref(country: item.Name)">
                                 <strong>@item.Name</strong>
                                 <span>@item.CompetitionCount competition@(item.CompetitionCount == 1 ? "" : "s")</span>
-                                <small>@item.TeamCount teams · @item.GameCount games · latest @FormatDate(item.LatestGameUtc)</small>
+                                <small>@item.TeamCount teams Â· @item.GameCount games Â· latest @FormatDate(item.LatestGameUtc)</small>
                             </a>
                         }
                     </div>
@@ -194,7 +194,7 @@
             </section>
 
             <section class="browse-section">
-                <div class="section-head">
+                <div id="browse-competitions" class="section-head">
                     <div>
                         <p class="eyebrow">Competitions</p>
                         <h2>League directory</h2>
@@ -205,7 +205,7 @@
                     @foreach (var item in response.Competitions)
                     {
                         <a class="competition-row" href="@BrowseHref(country: item.Country, competition: item.Name)">
-                            <span><strong>@item.Name</strong><small>@item.Country · @item.Type</small></span>
+                            <span><strong>@item.Name</strong><small>@item.Country Â· @item.Type</small></span>
                             <span class="competition-tier">Tier @item.Tier</span>
                             <span>@item.TeamCount teams</span>
                             <span>@item.GameCount games</span>
@@ -311,3 +311,4 @@
     private static string FormatScore(short? value)
         => value?.ToString() ?? "-";
 }
+

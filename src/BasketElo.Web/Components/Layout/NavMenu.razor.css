@@ -91,6 +91,80 @@
     padding-bottom: 0.8rem;
 }
 
+.nav-disclosure {
+    margin-bottom: 0.18rem;
+}
+
+.nav-disclosure-summary {
+    display: flex;
+    min-height: 2.5rem;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0.7rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    color: rgba(255, 250, 240, 0.92);
+    padding: 0.25rem 0.55rem;
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 820;
+    line-height: 1.2;
+    list-style: none;
+}
+
+.nav-disclosure-summary::-webkit-details-marker {
+    display: none;
+}
+
+.nav-disclosure-summary:hover,
+.nav-disclosure-summary:focus-visible {
+    border-color: rgba(255, 250, 240, 0.16);
+    background: rgba(255, 250, 240, 0.1);
+    color: var(--color-inverse);
+}
+
+.nav-disclosure-summary:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+}
+
+.nav-disclosure-chevron {
+    width: 0.42rem;
+    height: 0.42rem;
+    margin-left: auto;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg) translateY(-0.12rem);
+    transition: transform 140ms ease;
+}
+
+.nav-disclosure[open] .nav-disclosure-chevron {
+    transform: rotate(225deg) translate(-0.08rem, -0.08rem);
+}
+
+.nav-subitems {
+    margin: 0.05rem 0 0.45rem 1rem;
+    border-left: 1px solid rgba(255, 250, 240, 0.18);
+    padding-left: 0.35rem;
+}
+
+.nav-subitem {
+    padding-bottom: 0.08rem;
+}
+
+.nav-subitem ::deep .nav-link {
+    min-height: 2.1rem;
+    color: rgba(255, 250, 240, 0.68);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.nav-subitem ::deep .nav-link:hover,
+.nav-subitem ::deep .nav-link:focus-visible,
+.nav-subitem ::deep a.active {
+    color: var(--color-inverse);
+}
+
 .nav-item ::deep .nav-link {
     display: flex;
     width: 100%;
@@ -284,3 +358,4 @@
         padding-inline: 0.55rem;
     }
 }
+

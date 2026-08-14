@@ -5,6 +5,8 @@
 *.suo
 *.cache
 artifacts/
+tmp/
 .env
 .env.*
 !.env.example
+

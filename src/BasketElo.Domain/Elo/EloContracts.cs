@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.2 seconds
+Output:
 namespace BasketElo.Domain.Elo;
 
 public static class EloRulesetVersions
@@ -205,6 +208,27 @@ public sealed record EloMoversSummary(
     int WindowGames,
     bool IsFiltered);
 
+public sealed record EloResultsResponse(
+    string EloPoolKey,
+    string RulesetVersion,
+    IReadOnlyCollection<EloResultRow> Results,
+    int Page,
+    int PageSize,
+    int TotalCount,
+    int TotalPages);
+
+public sealed record EloResultRow(
+    Guid GameId,
+    DateTime GameDateTimeUtc,
+    string Competition,
+    string Country,
+    string Season,
+    string? Phase,
+    string HomeTeam,
+    string AwayTeam,
+    short? HomeScore,
+    short? AwayScore);
+
 public sealed record EloTeamEvolutionSeries(
     Guid TeamId,
     string TeamName,
@@ -336,3 +360,4 @@ public interface IEloRebuildService
 {
     Task<EloRebuildResult> RebuildAsync(Guid runId, CancellationToken cancellationToken);
 }
+

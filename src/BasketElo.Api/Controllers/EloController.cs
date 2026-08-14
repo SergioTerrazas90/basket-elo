@@ -54,6 +54,253 @@ public class EloController(
         return Ok(new EloPoolCatalogResponse(EloPoolKeys.Default, options));
     }
 
+    [HttpGet("browse")]
+    public async Task<ActionResult<EloBrowseResponse>> GetBrowse(
+        [FromQuery] string? pool,
+        [FromQuery] string? country,
+        [FromQuery] string? competition,
+        [FromQuery] string? season,
+        CancellationToken cancellationToken = default)
+    {
+        var poolKey = ResolvePoolOrDefault(pool);
+        if (poolKey is null)
+        {
+            return BadRequest($"Unsupported ELO pool '{pool}'.");
+        }
+
+        var competitionRows = await dbContext.Competitions
+            .AsNoTracking()
+            .Where(x => x.IsActive && x.EloPoolKey == poolKey)
+            .Select(x => new
+            {
+                x.Id,
+                x.Name,
+                x.Type,
+                x.CountryCode,
+                x.Tier,
+                x.SupportPolicy
+            })
+            .OrderBy(x => x.CountryCode)
+            .ThenBy(x => x.Tier)
+            .ThenBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        var competitionIds = competitionRows.Select(x => x.Id).ToList();
+        var gameStats = await dbContext.Games
+            .AsNoTracking()
+            .Where(x => competitionIds.Contains(x.CompetitionId))
+            .GroupBy(x => x.CompetitionId)
+            .Select(group => new
+            {
+                CompetitionId = group.Key,
+                GameCount = group.Count(),
+                LatestGameUtc = group.Max(x => (DateTime?)x.GameDateTimeUtc)
+            })
+            .ToListAsync(cancellationToken);
+        var gameStatsByCompetition = gameStats.ToDictionary(x => x.CompetitionId);
+
+        var teamRows = await dbContext.Games
+            .AsNoTracking()
+            .Where(x => competitionIds.Contains(x.CompetitionId))
+            .Select(x => new { x.CompetitionId, x.HomeTeamId, x.AwayTeamId })
+            .ToListAsync(cancellationToken);
+        var teamIdsByCompetition = teamRows
+            .GroupBy(x => x.CompetitionId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.SelectMany(x => new[] { x.HomeTeamId, x.AwayTeamId }).ToHashSet());
+
+        var seasonRows = await dbContext.Seasons
+            .AsNoTracking()
+            .Where(x => competitionIds.Contains(x.CompetitionId))
+            .Select(x => new { x.CompetitionId, x.Label })
+            .ToListAsync(cancellationToken);
+        var seasonsByCompetition = seasonRows
+            .GroupBy(x => x.CompetitionId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => x.Label).Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(x => x).ToList());
+
+        var competitionCatalog = competitionRows
+            .Select(row => new EloBrowseCompetition(
+                row.Name,
+                DisplayCountryFromCode(row.CountryCode),
+                row.CountryCode,
+                row.Type,
+                row.Tier,
+                teamIdsByCompetition.GetValueOrDefault(row.Id)?.Count ?? 0,
+                gameStatsByCompetition.GetValueOrDefault(row.Id)?.GameCount ?? 0,
+                gameStatsByCompetition.GetValueOrDefault(row.Id)?.LatestGameUtc,
+                seasonsByCompetition.GetValueOrDefault(row.Id) ?? [],
+                row.SupportPolicy))
+            .ToList();
+
+        var countries = competitionRows
+            .GroupBy(row => row.CountryCode ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new EloBrowseCountry(
+                DisplayCountryFromCode(group.Key),
+                string.IsNullOrWhiteSpace(group.Key) ? null : group.Key,
+                group.Count(),
+                group.SelectMany(row => teamIdsByCompetition.GetValueOrDefault(row.Id) ?? []).Distinct().Count(),
+                group.Sum(row => gameStatsByCompetition.GetValueOrDefault(row.Id)?.GameCount ?? 0),
+                group.Max(row => gameStatsByCompetition.GetValueOrDefault(row.Id)?.LatestGameUtc)))
+            .OrderBy(row => row.Name)
+            .ToList();
+
+        var selectedCompetitionRow = competitionRows.FirstOrDefault(row =>
+            !string.IsNullOrWhiteSpace(competition) &&
+            string.Equals(row.Name, competition.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            (string.IsNullOrWhiteSpace(country) || IsBrowseCountryMatch(row.CountryCode, country)));
+        var contextRows = selectedCompetitionRow is not null
+            ? competitionRows.Where(row => row.Id == selectedCompetitionRow.Id).ToList()
+            : !string.IsNullOrWhiteSpace(competition)
+                ? []
+                : competitionRows.Where(row => IsBrowseCountryMatch(row.CountryCode, country)).ToList();
+
+        EloBrowseContext? context = null;
+        if (!string.IsNullOrWhiteSpace(country) || !string.IsNullOrWhiteSpace(competition))
+        {
+            var contextCompetitionIds = contextRows.Select(row => row.Id).ToList();
+            var contextQuery = dbContext.Games
+                .AsNoTracking()
+                .Where(x => contextCompetitionIds.Contains(x.CompetitionId));
+            if (!string.IsNullOrWhiteSpace(season))
+            {
+                contextQuery = contextQuery.Where(x => x.Season.Label == season.Trim());
+            }
+
+            var contextAggregate = await contextQuery
+                .GroupBy(_ => 1)
+                .Select(group => new
+                {
+                    GameCount = group.Count(),
+                    FinishedGameCount = group.Count(x => x.HomeScore.HasValue && x.AwayScore.HasValue),
+                    FirstGameUtc = group.Min(x => (DateTime?)x.GameDateTimeUtc),
+                    LatestGameUtc = group.Max(x => (DateTime?)x.GameDateTimeUtc)
+                })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var contextSeasonRows = await contextQuery
+                .GroupBy(x => x.Season.Label)
+                .Select(group => new EloBrowseSeason(
+                    group.Key,
+                    group.Count(),
+                    group.Max(x => (DateTime?)x.GameDateTimeUtc)))
+                .OrderByDescending(x => x.Label)
+                .ToListAsync(cancellationToken);
+
+            var contextGameRows = await contextQuery
+                .OrderByDescending(x => x.GameDateTimeUtc)
+                .ThenByDescending(x => x.Id)
+                .Take(12)
+                .Select(x => new EloBrowseGame(
+                    x.Id,
+                    x.GameDateTimeUtc,
+                    x.Season.Label,
+                    x.CompetitionPhase,
+                    x.HomeTeam.CanonicalName,
+                    x.AwayTeam.CanonicalName,
+                    x.HomeScore,
+                    x.AwayScore,
+                    x.Status))
+                .ToListAsync(cancellationToken);
+
+            var contextTeamIds = await contextQuery
+                .SelectMany(x => new[] { x.HomeTeamId, x.AwayTeamId })
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            var contextRatings = await dbContext.TeamRatings
+                .AsNoTracking()
+                .Where(x => x.EloPoolKey == poolKey &&
+                    x.RulesetVersion == EloRulesetVersions.Default &&
+                    contextTeamIds.Contains(x.TeamId))
+                .Select(x => new
+                {
+                    x.TeamId,
+                    x.Elo,
+                    x.GamesPlayed,
+                    Name = x.Team.CanonicalName,
+                    CountryCode = x.Team.CountryCode
+                })
+                .OrderByDescending(x => x.Elo)
+                .ThenBy(x => x.Name)
+                .ToListAsync(cancellationToken);
+            var topTeams = contextRatings
+                .Select((row, index) => new EloBrowseTeam(
+                    row.TeamId,
+                    row.Name,
+                    DisplayCountryFromCode(row.CountryCode),
+                    row.Elo,
+                    row.GamesPlayed,
+                    index + 1))
+                .Take(12)
+                .ToList();
+
+            var tierSummaries = contextRows
+                .GroupBy(row => row.Tier)
+                .Select(group =>
+                {
+                    var tierCompetitionIds = group.Select(row => row.Id).ToHashSet();
+                    var tierTeamIds = teamRows
+                        .Where(row => tierCompetitionIds.Contains(row.CompetitionId))
+                        .SelectMany(row => new[] { row.HomeTeamId, row.AwayTeamId })
+                        .Distinct()
+                        .ToHashSet();
+                    var tierRatings = contextRatings.Where(row => tierTeamIds.Contains(row.TeamId)).Select(row => row.Elo).ToList();
+                    return new EloBrowseTierSummary(
+                        group.Key,
+                        group.Count(),
+                        tierTeamIds.Count,
+                        group.Sum(row => gameStatsByCompetition.GetValueOrDefault(row.Id)?.GameCount ?? 0),
+                        tierRatings.Count == 0 ? null : tierRatings.Average());
+                })
+                .OrderBy(row => row.Tier)
+                .ToList();
+
+            var contextCountry = selectedCompetitionRow is not null
+                ? DisplayCountryFromCode(selectedCompetitionRow.CountryCode)
+                : country?.Trim();
+            var contextCountryCode = selectedCompetitionRow?.CountryCode ??
+                contextRows.Select(row => row.CountryCode).FirstOrDefault(code => !string.IsNullOrWhiteSpace(code));
+            var contextCompetition = selectedCompetitionRow?.Name;
+            var contextSupportPolicy = contextRows.Count switch
+            {
+                0 => CompetitionSupportPolicies.Unsupported,
+                1 => contextRows[0].SupportPolicy,
+                _ when contextRows.All(row => row.SupportPolicy == CompetitionSupportPolicies.Supported) => CompetitionSupportPolicies.Supported,
+                _ => "mixed"
+            };
+            var coverageMessage = contextRows.Count == 0
+                ? "No imported competition coverage matches this context yet. Try another country or competition."
+                : $"{contextRows.Count} competition{(contextRows.Count == 1 ? string.Empty : "s")} in the {poolKey} rating pool; ratings use {EloRulesetVersions.Default}.";
+
+            context = new EloBrowseContext(
+                contextCountry,
+                contextCompetition,
+                contextCountryCode,
+                selectedCompetitionRow?.Type,
+                selectedCompetitionRow?.Tier,
+                contextSupportPolicy,
+                coverageMessage,
+                contextTeamIds.Count,
+                contextAggregate?.GameCount ?? 0,
+                contextAggregate?.FinishedGameCount ?? 0,
+                contextAggregate?.FirstGameUtc,
+                contextAggregate?.LatestGameUtc,
+                contextSeasonRows,
+                tierSummaries,
+                topTeams,
+                contextGameRows);
+        }
+
+        return Ok(new EloBrowseResponse(
+            poolKey,
+            EloPoolKeys.DisplayName(poolKey),
+            countries,
+            competitionCatalog,
+            context));
+    }
+
     [HttpGet("dashboard")]
     [RequireInternalAdmin]
     public async Task<ActionResult<EloDashboardResponse>> GetDashboard(
@@ -1979,6 +2226,11 @@ public class EloController(
 
     private static bool IsCountryMatch(string? countryCode, string country)
         => string.Equals(DisplayCountryFromCode(countryCode), country, StringComparison.OrdinalIgnoreCase) ||
+           CountryCodeCatalog.AreEquivalent(countryCode, country);
+
+    private static bool IsBrowseCountryMatch(string? countryCode, string? country)
+        => string.IsNullOrWhiteSpace(country) ||
+           string.Equals(DisplayCountryFromCode(countryCode), country.Trim(), StringComparison.OrdinalIgnoreCase) ||
            CountryCodeCatalog.AreEquivalent(countryCode, country);
 
     private static IQueryable<RatingHistory> ApplySeasonFilter(IQueryable<RatingHistory> query, string season)

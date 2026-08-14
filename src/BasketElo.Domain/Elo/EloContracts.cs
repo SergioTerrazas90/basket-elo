@@ -149,8 +149,12 @@ public static class EloNbaTeamScopes
 
 public sealed record EloRankingFilterOptions(
     IReadOnlyCollection<string> Countries,
-    IReadOnlyCollection<string> Competitions,
+    IReadOnlyCollection<EloRankingCompetitionOption> Competitions,
     IReadOnlyCollection<string> Seasons);
+
+public sealed record EloRankingCompetitionOption(
+    string Name,
+    string? Country);
 
 public sealed record EloRankingSummary(
     int RatedTeams,

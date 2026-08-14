@@ -11,77 +11,95 @@
         <span class="nav-disclosure-chevron" aria-hidden="true"></span>
     </summary>
     <div class="nav-subitems">
-        <div class="nav-item nav-subitem">
-            <NavLink class="nav-link" href="@BrowseHref()" Match="NavLinkMatch.All">Directory</NavLink>
-        </div>
-
         @if (directoryLoading)
         {
-            <div class="nav-tree-status">Loading directory...</div>
+            <div class="nav-tree-status">Loading directories...</div>
         }
         else if (!string.IsNullOrWhiteSpace(directoryError))
         {
             <div class="nav-tree-status nav-tree-status-error">Directory unavailable</div>
         }
-        else if (browseResponse is not null)
+        else
         {
-            <details class="nav-tree">
-                <summary class="nav-tree-summary">
-                    <span class="nav-tree-label">Countries</span>
-                    <span class="nav-tree-count">@browseResponse.Countries.Count</span>
-                    <span class="nav-tree-chevron" aria-hidden="true"></span>
-                </summary>
-                <div class="nav-tree-children">
-                    @foreach (var country in browseResponse.Countries)
-                    {
-                        <details class="nav-tree nav-tree-country">
-                            <summary class="nav-tree-summary">
-                                <span class="nav-tree-label">@country.Name</span>
-                                <span class="nav-tree-count">@country.CompetitionCount</span>
-                                <span class="nav-tree-chevron" aria-hidden="true"></span>
-                            </summary>
-                            <div class="nav-tree-children">
-                                @foreach (var competition in CompetitionsFor(country))
-                                {
-                                    @CompetitionNode(competition)
-                                }
+            @foreach (var pool in Pools)
+            {
+                if (browseResponses.TryGetValue(pool.Key, out var response))
+                {
+                    <details class="nav-pool" open="@(pool.Key == selectedPool)">
+                        <summary class="nav-pool-summary">
+                            <span class="nav-tree-label">@pool.DisplayName</span>
+                            <span class="nav-tree-count">@response.Competitions.Count</span>
+                            <span class="nav-tree-chevron" aria-hidden="true"></span>
+                        </summary>
+                        <div class="nav-pool-children">
+                            <div class="nav-item nav-subitem">
+                                <NavLink class="nav-link" href="@BrowseHref(pool.Key)" Match="NavLinkMatch.All">Directory</NavLink>
                             </div>
-                        </details>
-                    }
-                </div>
-            </details>
 
-            <details class="nav-tree">
-                <summary class="nav-tree-summary">
-                    <span class="nav-tree-label">Competitions</span>
-                    <span class="nav-tree-count">@browseResponse.Competitions.Count</span>
-                    <span class="nav-tree-chevron" aria-hidden="true"></span>
-                </summary>
-                <div class="nav-tree-children">
-                    @foreach (var competition in browseResponse.Competitions)
-                    {
-                        @CompetitionNode(competition)
-                    }
-                </div>
-            </details>
+                            <details class="nav-tree">
+                                <summary class="nav-tree-summary">
+                                    <span class="nav-tree-label">Countries</span>
+                                    <span class="nav-tree-count">@response.Countries.Count</span>
+                                    <span class="nav-tree-chevron" aria-hidden="true"></span>
+                                </summary>
+                                <div class="nav-tree-children">
+                                    @foreach (var country in response.Countries)
+                                    {
+                                        <details class="nav-tree nav-tree-country">
+                                            <summary class="nav-tree-summary">
+                                                <span class="nav-tree-label">@country.Name</span>
+                                                <span class="nav-tree-count">@country.CompetitionCount</span>
+                                                <span class="nav-tree-chevron" aria-hidden="true"></span>
+                                            </summary>
+                                            <div class="nav-tree-children">
+                                                @foreach (var competition in CompetitionsFor(response, country))
+                                                {
+                                                    @CompetitionNode(competition, pool.Key)
+                                                }
+                                            </div>
+                                        </details>
+                                    }
+                                </div>
+                            </details>
+
+                            <details class="nav-tree">
+                                <summary class="nav-tree-summary">
+                                    <span class="nav-tree-label">Competitions</span>
+                                    <span class="nav-tree-count">@response.Competitions.Count</span>
+                                    <span class="nav-tree-chevron" aria-hidden="true"></span>
+                                </summary>
+                                <div class="nav-tree-children">
+                                    @foreach (var competition in response.Competitions)
+                                    {
+                                        @CompetitionNode(competition, pool.Key)
+                                    }
+                                </div>
+                            </details>
+                        </div>
+                    </details>
+                }
+            }
         }
     </div>
 </details>
 
 @code {
-    private EloBrowseResponse? browseResponse;
+    private static IReadOnlyList<EloPoolDescriptor> Pools
+        => EloPoolCatalog.All.OrderBy(pool => pool.DisplayOrder).ToList();
+
+    private readonly Dictionary<string, EloBrowseResponse> browseResponses = new(StringComparer.OrdinalIgnoreCase);
     private string selectedPool = EloPoolKeys.Default;
-    private string? loadedPool;
     private bool directoryLoading;
     private string? directoryError;
 
     protected override async Task OnInitializedAsync()
     {
         Navigation.LocationChanged += HandleLocationChanged;
-        await LoadDirectoryAsync();
+        selectedPool = CurrentPool();
+        await LoadDirectoriesAsync();
     }
 
-    private RenderFragment CompetitionNode(EloBrowseCompetition competition) => builder =>
+    private RenderFragment CompetitionNode(EloBrowseCompetition competition, string poolKey) => builder =>
     {
         var sequence = 0;
         builder.OpenElement(sequence++, "details");
@@ -107,7 +125,7 @@
         {
             builder.OpenElement(sequence++, "a");
             builder.AddAttribute(sequence++, "class", "nav-tree-team");
-            builder.AddAttribute(sequence++, "href", TeamHref(team));
+            builder.AddAttribute(sequence++, "href", TeamHref(team, poolKey));
             builder.AddContent(sequence++, team.Name);
             builder.CloseElement();
         }
@@ -115,30 +133,23 @@
         builder.CloseElement();
     };
 
-    private async Task LoadDirectoryAsync()
+    private async Task LoadDirectoriesAsync()
     {
-        var pool = CurrentPool();
-        if (browseResponse is not null && string.Equals(loadedPool, pool, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        selectedPool = pool;
         directoryLoading = true;
         directoryError = null;
         try
         {
-            var uri = Navigation.GetUriWithQueryParameters("api/elo/browse", new Dictionary<string, object?>
+            var responses = await Task.WhenAll(Pools.Select(LoadPoolAsync));
+            browseResponses.Clear();
+            foreach (var response in responses)
             {
-                ["pool"] = selectedPool
-            });
-            browseResponse = await Http.GetFromJsonAsync<EloBrowseResponse>(uri);
-            loadedPool = selectedPool;
+                browseResponses[response.EloPoolKey] = response;
+            }
         }
         catch
         {
-            browseResponse = null;
-            directoryError = "The directory could not be loaded.";
+            browseResponses.Clear();
+            directoryError = "The directories could not be loaded.";
         }
         finally
         {
@@ -146,22 +157,31 @@
         }
     }
 
-    private IEnumerable<EloBrowseCompetition> CompetitionsFor(EloBrowseCountry country)
-        => browseResponse?.Competitions.Where(competition =>
-            string.Equals(competition.CountryCode, country.CountryCode, StringComparison.OrdinalIgnoreCase) ||
-            (string.IsNullOrWhiteSpace(competition.CountryCode) && string.Equals(competition.Country, country.Name, StringComparison.OrdinalIgnoreCase)))
-        ?? [];
+    private async Task<EloBrowseResponse> LoadPoolAsync(EloPoolDescriptor pool)
+    {
+        var uri = Navigation.GetUriWithQueryParameters("api/elo/browse", new Dictionary<string, object?>
+        {
+            ["pool"] = pool.Key
+        });
+        return await Http.GetFromJsonAsync<EloBrowseResponse>(uri)
+            ?? throw new InvalidOperationException($"Browse response for {pool.Key} was empty.");
+    }
 
-    private string BrowseHref(string? country = null, string? competition = null)
+    private static IEnumerable<EloBrowseCompetition> CompetitionsFor(EloBrowseResponse response, EloBrowseCountry country)
+        => response.Competitions.Where(competition =>
+            string.Equals(competition.CountryCode, country.CountryCode, StringComparison.OrdinalIgnoreCase) ||
+            (string.IsNullOrWhiteSpace(competition.CountryCode) && string.Equals(competition.Country, country.Name, StringComparison.OrdinalIgnoreCase)));
+
+    private string BrowseHref(string poolKey, string? country = null, string? competition = null)
         => Navigation.GetUriWithQueryParameters("browse", new Dictionary<string, object?>
         {
-            ["pool"] = selectedPool,
+            ["pool"] = poolKey,
             ["country"] = country,
             ["competition"] = competition
         });
 
-    private string TeamHref(EloBrowseTeam team)
-        => $"teams/{team.TeamId}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri))}";
+    private string TeamHref(EloBrowseTeam team, string poolKey)
+        => $"teams/{team.TeamId}?pool={Uri.EscapeDataString(poolKey)}&returnUrl={Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri))}";
 
     private string CurrentPool()
     {
@@ -175,10 +195,17 @@
     }
 
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
-        => _ = InvokeAsync(async () =>
+        => _ = InvokeAsync(() =>
         {
-            await LoadDirectoryAsync();
+            var nextPool = CurrentPool();
+            if (string.Equals(nextPool, selectedPool, StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.CompletedTask;
+            }
+
+            selectedPool = nextPool;
             StateHasChanged();
+            return Task.CompletedTask;
         });
 
     public void Dispose()

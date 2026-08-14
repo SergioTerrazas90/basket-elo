@@ -1,0 +1,258 @@
+@using BasketElo.Domain.Elo
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<details class="nav-disclosure" open>
+    <summary class="nav-disclosure-summary">
+        <span class="nav-icon info-icon" aria-hidden="true"></span>
+        <span>Browse</span>
+        <span class="nav-disclosure-chevron" aria-hidden="true"></span>
+    </summary>
+    <div class="nav-subitems">
+        <div class="nav-item nav-subitem">
+            <NavLink class="nav-link" href="@BrowseHref()" Match="NavLinkMatch.All">Directory</NavLink>
+        </div>
+
+        <details class="nav-tree">
+            <summary class="nav-tree-summary" @onclick="LoadDirectoryAsync" @onclick:stopPropagation="true">
+                <span class="nav-tree-label">Countries</span>
+                <span class="nav-tree-count">@(browseResponse?.Countries.Count ?? 0)</span>
+                <span class="nav-tree-chevron" aria-hidden="true"></span>
+            </summary>
+            @if (directoryLoading)
+            {
+                <div class="nav-tree-status">Loading directoryâ€¦</div>
+            }
+            else if (!string.IsNullOrWhiteSpace(directoryError))
+            {
+                <div class="nav-tree-status nav-tree-status-error">Directory unavailable</div>
+            }
+            else if (browseResponse is not null)
+            {
+                <div class="nav-tree-children">
+                    @foreach (var country in browseResponse.Countries)
+                    {
+                        <details class="nav-tree nav-tree-country">
+                            <summary class="nav-tree-summary">
+                                <span class="nav-tree-label">@country.Name</span>
+                                <span class="nav-tree-count">@country.CompetitionCount</span>
+                                <span class="nav-tree-chevron" aria-hidden="true"></span>
+                            </summary>
+                            <div class="nav-tree-children">
+                                @foreach (var competition in CompetitionsFor(country))
+                                {
+                                    <details class="nav-tree nav-tree-competition">
+                                        <summary class="nav-tree-summary" @onclick="() => EnsureCompetitionLoadedAsync(competition)" @onclick:stopPropagation="true">
+                                            <span class="nav-tree-label">@competition.Name</span>
+                                            <span class="nav-tree-count">@competition.TeamCount</span>
+                                            <span class="nav-tree-chevron" aria-hidden="true"></span>
+                                        </summary>
+                                        @CompetitionTeams(competition)
+                                    </details>
+                                }
+                            </div>
+                        </details>
+                    }
+                </div>
+            }
+        </details>
+
+        <details class="nav-tree">
+            <summary class="nav-tree-summary" @onclick="LoadDirectoryAsync" @onclick:stopPropagation="true">
+                <span class="nav-tree-label">Competitions</span>
+                <span class="nav-tree-count">@(browseResponse?.Competitions.Count ?? 0)</span>
+                <span class="nav-tree-chevron" aria-hidden="true"></span>
+            </summary>
+            @if (directoryLoading)
+            {
+                <div class="nav-tree-status">Loading directoryâ€¦</div>
+            }
+            else if (!string.IsNullOrWhiteSpace(directoryError))
+            {
+                <div class="nav-tree-status nav-tree-status-error">Directory unavailable</div>
+            }
+            else if (browseResponse is not null)
+            {
+                <div class="nav-tree-children">
+                    @foreach (var competition in browseResponse.Competitions)
+                    {
+                        <details class="nav-tree nav-tree-competition">
+                            <summary class="nav-tree-summary" @onclick="() => EnsureCompetitionLoadedAsync(competition)" @onclick:stopPropagation="true">
+                                <span class="nav-tree-label">@competition.Name</span>
+                                <span class="nav-tree-count">@competition.TeamCount</span>
+                                <span class="nav-tree-chevron" aria-hidden="true"></span>
+                            </summary>
+                            @CompetitionTeams(competition)
+                        </details>
+                    }
+                </div>
+            }
+        </details>
+    </div>
+</details>
+
+@code {
+    private EloBrowseResponse? browseResponse;
+    private readonly Dictionary<string, EloBrowseContext?> competitionContexts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> loadingCompetitionKeys = new(StringComparer.OrdinalIgnoreCase);
+    private string selectedPool = EloPoolKeys.Default;
+    private string? loadedPool;
+    private bool directoryLoading;
+    private string? directoryError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += HandleLocationChanged;
+        await LoadDirectoryAsync();
+    }
+
+    private async Task LoadDirectoryAsync()
+    {
+        var pool = CurrentPool();
+        if (browseResponse is not null && string.Equals(loadedPool, pool, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        selectedPool = pool;
+        directoryLoading = true;
+        directoryError = null;
+        competitionContexts.Clear();
+        try
+        {
+            var uri = Navigation.GetUriWithQueryParameters("api/elo/browse", new Dictionary<string, object?>
+            {
+                ["pool"] = selectedPool
+            });
+            browseResponse = await Http.GetFromJsonAsync<EloBrowseResponse>(uri);
+            loadedPool = selectedPool;
+        }
+        catch (Exception exception)
+        {
+            browseResponse = null;
+            directoryError = exception.Message;
+        }
+        finally
+        {
+            directoryLoading = false;
+        }
+    }
+
+    private async Task EnsureCompetitionLoadedAsync(EloBrowseCompetition competition)
+    {
+        var key = CompetitionKey(competition);
+        if (competitionContexts.ContainsKey(key) || !loadingCompetitionKeys.Add(key))
+        {
+            return;
+        }
+
+        try
+        {
+            var uri = Navigation.GetUriWithQueryParameters("api/elo/browse", new Dictionary<string, object?>
+            {
+                ["pool"] = selectedPool,
+                ["country"] = competition.Country,
+                ["competition"] = competition.Name
+            });
+            var response = await Http.GetFromJsonAsync<EloBrowseResponse>(uri);
+            competitionContexts[key] = response?.Context;
+        }
+        catch
+        {
+            competitionContexts[key] = null;
+        }
+        finally
+        {
+            loadingCompetitionKeys.Remove(key);
+        }
+    }
+
+    private RenderFragment CompetitionTeams(EloBrowseCompetition competition) => builder =>
+    {
+        var sequence = 0;
+        var key = CompetitionKey(competition);
+        if (loadingCompetitionKeys.Contains(key))
+        {
+            builder.OpenElement(sequence++, "div");
+            builder.AddAttribute(sequence++, "class", "nav-tree-status");
+            builder.AddContent(sequence++, "Loading teamsâ€¦");
+            builder.CloseElement();
+            return;
+        }
+
+        if (!competitionContexts.TryGetValue(key, out var context))
+        {
+            builder.OpenElement(sequence++, "div");
+            builder.AddAttribute(sequence++, "class", "nav-tree-status");
+            builder.AddContent(sequence++, $"{competition.TeamCount} teams");
+            builder.CloseElement();
+            return;
+        }
+
+        if (context?.TopTeams.Count is not > 0)
+        {
+            builder.OpenElement(sequence++, "div");
+            builder.AddAttribute(sequence++, "class", "nav-tree-status");
+            builder.AddContent(sequence++, "No rated teams yet");
+            builder.CloseElement();
+            return;
+        }
+
+        builder.OpenElement(sequence++, "div");
+        builder.AddAttribute(sequence++, "class", "nav-tree-children nav-team-children");
+        foreach (var team in context.TopTeams)
+        {
+            builder.OpenElement(sequence++, "a");
+            builder.AddAttribute(sequence++, "class", "nav-tree-team");
+            builder.AddAttribute(sequence++, "href", TeamHref(team));
+            builder.AddContent(sequence++, team.Name);
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+    };
+
+    private IEnumerable<EloBrowseCompetition> CompetitionsFor(EloBrowseCountry country)
+        => browseResponse?.Competitions.Where(competition =>
+            string.Equals(competition.CountryCode, country.CountryCode, StringComparison.OrdinalIgnoreCase) ||
+            (string.IsNullOrWhiteSpace(competition.CountryCode) && string.Equals(competition.Country, country.Name, StringComparison.OrdinalIgnoreCase)))
+        ?? [];
+
+    private string CompetitionKey(EloBrowseCompetition competition)
+        => $"{selectedPool}|{competition.CountryCode}|{competition.Name}";
+
+    private string BrowseHref(string? country = null, string? competition = null)
+        => Navigation.GetUriWithQueryParameters("browse", new Dictionary<string, object?>
+        {
+            ["pool"] = selectedPool,
+            ["country"] = country,
+            ["competition"] = competition
+        });
+
+    private string TeamHref(EloBrowseTeam team)
+        => $"teams/{team.TeamId}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri))}";
+
+    private string CurrentPool()
+    {
+        var query = Navigation.ToAbsoluteUri(Navigation.Uri).Query.TrimStart('?');
+        var pool = query.Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .Where(parts => parts.Length == 2 && string.Equals(parts[0], "pool", StringComparison.OrdinalIgnoreCase))
+            .Select(parts => Uri.UnescapeDataString(parts[1]))
+            .FirstOrDefault();
+        return EloPoolKeys.IsSupported(pool) ? pool!.Trim().ToLowerInvariant() : EloPoolKeys.Default;
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
+        => _ = InvokeAsync(async () =>
+        {
+            await LoadDirectoryAsync();
+            StateHasChanged();
+        });
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
+    }
+}
+

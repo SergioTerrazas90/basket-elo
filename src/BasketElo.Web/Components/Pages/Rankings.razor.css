@@ -258,21 +258,12 @@
     padding: 0.3rem 0;
 }
 
-.browse-context-link,
 .context-link {
     color: var(--color-brand-dark);
     font-weight: 800;
     text-decoration: none;
 }
 
-.browse-context-link {
-    margin-left: auto;
-    font-size: 0.78rem;
-    white-space: nowrap;
-}
-
-.browse-context-link:hover,
-.browse-context-link:focus-visible,
 .context-link:hover,
 .context-link:focus-visible {
     color: var(--color-brand);
@@ -513,6 +504,10 @@
     color: var(--color-muted);
     font-size: 0.8rem;
     font-weight: 650;
+}
+
+.results-scope-detail {
+    flex-basis: 100%;
 }
 
 .snapshot-metadata {

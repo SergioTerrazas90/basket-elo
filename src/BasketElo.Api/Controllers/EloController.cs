@@ -2498,3 +2498,35 @@ public class EloController(
         ["USA"] = "United States",
         ["US"] = "United States"
     };
+
+    private static readonly IReadOnlyDictionary<string, string> CountryNames = BuildCountryNameLookup();
+
+    private static IReadOnlyDictionary<string, string> BuildCountryNameLookup()
+    {
+        var countries = new Dictionary<string, string>(CountryNameOverrides, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var culture in CultureInfo.GetCultures(CultureTypes.SpecificCultures))
+        {
+            RegionInfo region;
+            try
+            {
+                region = new RegionInfo(culture.Name);
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+
+            countries.TryAdd(region.TwoLetterISORegionName, region.EnglishName);
+            countries.TryAdd(region.ThreeLetterISORegionName, region.EnglishName);
+            countries.TryAdd(region.EnglishName.ToUpperInvariant(), region.EnglishName);
+        }
+
+        foreach (var overrideEntry in CountryNameOverrides)
+        {
+            countries[overrideEntry.Key] = overrideEntry.Value;
+        }
+
+        return countries;
+    }
+}

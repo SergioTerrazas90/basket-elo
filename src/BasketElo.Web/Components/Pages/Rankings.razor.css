@@ -998,3 +998,96 @@
         width: 100%;
     }
 
+    .view-tab {
+        flex: 1 1 0;
+    }
+
+    .rankings-heading {
+        display: block;
+    }
+
+    .rankings-heading .eyebrow {
+        display: block;
+        margin-bottom: 0.25rem;
+        padding-top: 0;
+        writing-mode: initial;
+        transform: none;
+    }
+
+    .ranking-toolbar,
+    .advanced-filters {
+        align-items: stretch;
+        flex-direction: column;
+        overflow: visible;
+    }
+
+    .team-search-field {
+        flex: 0 0 auto;
+    }
+
+    .filter-field,
+    .season-range-field {
+        flex: 0 0 auto;
+        width: 100%;
+        max-width: none;
+    }
+
+    .results-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .snapshot-metadata {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .dot-plot-row {
+        grid-template-columns: 1.75rem minmax(7rem, 11rem) minmax(5rem, 1fr) 3rem;
+        gap: 0.35rem;
+    }
+
+    .table-preset-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .column-presets {
+        width: 100%;
+    }
+
+    .column-preset {
+        flex: 1 1 0;
+    }
+
+    .scope-control-block,
+    .franchise-scope-control {
+        width: 100%;
+    }
+
+    .scope-control-block {
+        flex: 0 0 auto;
+    }
+
+    .filter-actions {
+        align-items: stretch;
+        margin-left: 0;
+    }
+
+    .advanced-filters .filter-actions {
+        width: 100%;
+    }
+
+    .advanced-filters .filter-actions .btn {
+        flex: 1 1 0;
+    }
+
+    .archive-state {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .pager {
+        width: 100%;
+    }
+}

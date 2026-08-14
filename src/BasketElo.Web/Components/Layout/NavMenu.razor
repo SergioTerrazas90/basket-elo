@@ -8,94 +8,113 @@
     </div>
 </div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+<input id="navigation-toggle" type="checkbox" title="Toggle navigation menu" aria-label="Toggle navigation menu" class="navbar-toggler" aria-controls="primary-navigation" />
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="flex-column">
-        <div class="nav-section">Public</div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="rankings" Match="NavLinkMatch.All">
-                <span class="nav-icon rankings-icon" aria-hidden="true"></span> Rankings
-            </NavLink>
-        </div>
+<div id="primary-navigation" class="nav-scrollable" onclick="document.querySelector('#navigation-toggle').click()">
+    <nav class="flex-column" aria-label="BasketElo destinations">
+        <section class="nav-group" aria-labelledby="public-navigation-heading">
+            <div id="public-navigation-heading" class="nav-section" role="heading" aria-level="2">Explore</div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="rankings" Match="NavLinkMatch.All">
+                    <span class="nav-icon rankings-icon" aria-hidden="true"></span> Rankings
+                </NavLink>
+            </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="movers">
-                <span class="nav-icon movers-icon" aria-hidden="true"></span> Movers
-            </NavLink>
-        </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="movers">
+                    <span class="nav-icon movers-icon" aria-hidden="true"></span> Movers
+                </NavLink>
+            </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="model-lab">
-                <span class="nav-icon lab-icon" aria-hidden="true"></span> Model Lab
-            </NavLink>
-        </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="model-lab">
+                    <span class="nav-icon lab-icon" aria-hidden="true"></span> Model Lab
+                </NavLink>
+            </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="how-it-works">
-                <span class="nav-icon info-icon" aria-hidden="true"></span> How It Works
-            </NavLink>
-        </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="how-it-works">
+                    <span class="nav-icon info-icon" aria-hidden="true"></span> How It Works
+                </NavLink>
+            </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="data-sources">
-                <span class="nav-icon info-icon" aria-hidden="true"></span> Data sources
-            </NavLink>
-        </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="data-sources">
+                    <span class="nav-icon info-icon" aria-hidden="true"></span> Data sources
+                </NavLink>
+            </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="about">
-                <span class="nav-icon about-icon" aria-hidden="true"></span> About BasketElo
-            </NavLink>
-        </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="about">
+                    <span class="nav-icon about-icon" aria-hidden="true"></span> About BasketElo
+                </NavLink>
+            </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="sponsor">
-                <span class="nav-icon sponsor-icon" aria-hidden="true"></span> Sponsor
-            </NavLink>
-        </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="sponsor">
+                    <span class="nav-icon sponsor-icon" aria-hidden="true"></span> Sponsor
+                </NavLink>
+            </div>
+        </section>
 
         <AuthorizeView Roles="admin">
             <Authorized>
-                <div class="nav-section">Operations</div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="games">
-                        <span class="nav-icon games-icon" aria-hidden="true"></span> Games
-                    </NavLink>
-                    <NavLink class="nav-link" href="upcoming">
-                        <span class="nav-icon games-icon" aria-hidden="true"></span> Upcoming
-                    </NavLink>
-                </div>
+                <section class="nav-group nav-group-admin" aria-labelledby="admin-navigation-heading">
+                    <div id="admin-navigation-heading" class="nav-section" role="heading" aria-level="2">Admin</div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="games">
+                            <span class="nav-icon games-icon" aria-hidden="true"></span> Games
+                        </NavLink>
+                    </div>
 
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="backfill">
-                        <span class="nav-icon backfill-icon" aria-hidden="true"></span> Backfill
-                    </NavLink>
-                </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="upcoming">
+                            <span class="nav-icon games-icon" aria-hidden="true"></span> Upcoming
+                        </NavLink>
+                    </div>
 
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="admin">
-                        <span class="nav-icon admin-icon" aria-hidden="true"></span> Admin
-                    </NavLink>
-                </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="backfill">
+                            <span class="nav-icon backfill-icon" aria-hidden="true"></span> Backfill
+                        </NavLink>
+                    </div>
 
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="admin/identity">
-                        <span class="nav-icon identity-icon" aria-hidden="true"></span> Identity
-                    </NavLink>
-                    <NavLink class="nav-link" href="admin/identity-review">
-                        <span class="nav-icon identity-icon" aria-hidden="true"></span> Identity Review
-                    </NavLink>
-                    <NavLink class="nav-link" href="admin/current-results-review">
-                        <span class="nav-icon identity-icon" aria-hidden="true"></span> Current Results Review
-                    </NavLink>
-                    <NavLink class="nav-link" href="admin/competitions">
-                        <span class="nav-icon identity-icon" aria-hidden="true"></span> Competitions
-                    </NavLink>
-                    <NavLink class="nav-link" href="admin/teams">
-                        <span class="nav-icon identity-icon" aria-hidden="true"></span> Teams
-                    </NavLink>
-                </div>
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="admin">
+                            <span class="nav-icon admin-icon" aria-hidden="true"></span> Admin
+                        </NavLink>
+                    </div>
+
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="admin/identity">
+                            <span class="nav-icon identity-icon" aria-hidden="true"></span> Identity
+                        </NavLink>
+                    </div>
+
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="admin/identity-review">
+                            <span class="nav-icon identity-icon" aria-hidden="true"></span> Identity Review
+                        </NavLink>
+                    </div>
+
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="admin/current-results-review">
+                            <span class="nav-icon identity-icon" aria-hidden="true"></span> Current Results Review
+                        </NavLink>
+                    </div>
+
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="admin/competitions">
+                            <span class="nav-icon identity-icon" aria-hidden="true"></span> Competitions
+                        </NavLink>
+                    </div>
+
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="admin/teams">
+                            <span class="nav-icon identity-icon" aria-hidden="true"></span> Teams
+                        </NavLink>
+                    </div>
+                </section>
             </Authorized>
         </AuthorizeView>
     </nav>

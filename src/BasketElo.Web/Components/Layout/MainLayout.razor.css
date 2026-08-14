@@ -20,7 +20,7 @@
     border-top: 1px solid var(--color-border);
     color: var(--color-muted);
     font-size: 0.78rem;
-    padding: var(--space-3) var(--space-6);
+    padding: var(--space-3) var(--space-5);
 }
 
 .data-attribution a {
@@ -70,7 +70,7 @@
     position: sticky;
     top: 0;
     z-index: 10;
-    flex: 0 0 260px;
+    flex: 0 0 224px;
     height: 100vh;
     border-right: 1px solid rgba(255, 250, 240, 0.12);
     background:
@@ -85,13 +85,13 @@
     top: 0;
     z-index: 8;
     display: flex;
-    min-height: 64px;
+    min-height: 56px;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-4);
+    gap: var(--space-3);
     border-bottom: 1px solid rgba(200, 183, 157, 0.58);
     background: rgba(255, 253, 248, 0.86);
-    padding: 0 var(--space-6);
+    padding: 0 var(--space-5);
     backdrop-filter: blur(18px);
 }
 
@@ -99,15 +99,25 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: var(--space-2);
+    gap: 0.55rem;
     color: var(--color-muted);
-    font-size: 0.88rem;
+    font-size: 0.8rem;
     white-space: nowrap;
 }
 
-.workspace-label {
+.top-context-label {
     color: var(--color-text);
     font-weight: 800;
+}
+
+.top-context-detail {
+    color: var(--color-muted);
+}
+
+.top-row ::deep a:focus-visible,
+.data-attribution a:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
 }
 
 .workspace-dot {
@@ -115,31 +125,6 @@
     height: 0.35rem;
     border-radius: var(--radius-pill);
     background: var(--color-accent);
-}
-
-.quick-links {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-}
-
-.quick-links ::deep a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 2.15rem;
-    padding: 0.35rem 0.7rem;
-    border: 1px solid transparent;
-    border-radius: var(--radius-pill);
-    color: var(--color-muted);
-    font-size: 0.88rem;
-    font-weight: 750;
-    text-decoration: none;
-}
-
-.quick-links ::deep a:hover {
-    border-color: var(--color-border);
-    background: var(--color-surface-muted);
-    color: var(--color-brand-dark);
 }
 
 .auth-state-panel {
@@ -212,20 +197,38 @@
 
     .top-row {
         position: relative;
-        min-height: auto;
-        align-items: flex-start;
-        flex-direction: column;
-        padding: var(--space-4);
+        min-height: 3.35rem;
+        padding: 0.6rem 1rem;
     }
 
     .top-context {
-        flex-wrap: wrap;
-        white-space: normal;
+        min-width: 0;
     }
 
-    .quick-links {
-        width: 100%;
-        overflow-x: auto;
-        padding-bottom: 0.1rem;
+    .top-context-detail,
+    .workspace-dot {
+        display: none;
+    }
+
+    .top-row ::deep .auth-status span {
+        max-width: 7rem;
+    }
+
+    .top-row ::deep .dev-persona-switch label {
+        display: none;
+    }
+}
+
+@media (min-width: 901px) and (max-width: 1199px) {
+    .sidebar {
+        flex-basis: 208px;
+    }
+
+    .top-row {
+        padding-inline: var(--space-4);
+    }
+
+    .top-context-detail {
+        display: none;
     }
 }

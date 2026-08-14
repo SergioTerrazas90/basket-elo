@@ -131,7 +131,7 @@
             {
                 <div class="filter-field">
                     <label for="countryFilter">Country</label>
-                    <select id="countryFilter" class="form-select" @bind="selectedCountry">
+                    <select id="countryFilter" class="form-select" @bind="selectedCountry" @bind:after="CountryFilterChanged">
                         <option value="">All countries</option>
                         @foreach (var option in response?.Filters.Countries ?? [])
                         {
@@ -147,9 +147,9 @@
                     <label for="competitionFilter">Competition</label>
                     <select id="competitionFilter" class="form-select" @bind="selectedCompetition">
                         <option value="">All competitions</option>
-                        @foreach (var option in response?.Filters.Competitions ?? [])
+                        @foreach (var option in FilteredCompetitionOptions)
                         {
-                            <option value="@option">@option</option>
+                            <option value="@option.Name">@option.Name</option>
                         }
                     </select>
                 </div>
@@ -803,6 +803,16 @@
         await RefreshSelectionAsync(1);
     }
 
+    private void CountryFilterChanged()
+    {
+        if (!string.IsNullOrWhiteSpace(selectedCompetition) &&
+            !FilteredCompetitionOptions.Any(option =>
+                string.Equals(option.Name, selectedCompetition, StringComparison.OrdinalIgnoreCase)))
+        {
+            selectedCompetition = null;
+        }
+    }
+
     private async Task ClearCompetitionFilterAsync()
     {
         selectedCompetition = null;
@@ -1278,7 +1288,15 @@
         => (response?.Filters.Countries.Count ?? 0) > 1 || !string.IsNullOrWhiteSpace(selectedCountry);
 
     private bool HasCompetitionFilter
-        => (response?.Filters.Competitions.Count ?? 0) > 1 || !string.IsNullOrWhiteSpace(selectedCompetition);
+        => FilteredCompetitionOptions.Count > 1 ||
+            (!string.IsNullOrWhiteSpace(selectedCountry) && FilteredCompetitionOptions.Count > 0) ||
+            !string.IsNullOrWhiteSpace(selectedCompetition);
+
+    private IReadOnlyList<EloRankingCompetitionOption> FilteredCompetitionOptions
+        => (response?.Filters.Competitions ?? [])
+            .Where(option => string.IsNullOrWhiteSpace(selectedCountry) ||
+                string.Equals(option.Country, selectedCountry, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
     private int ActiveFilterCount
         => (HasTeamSearch ? 1 : 0)

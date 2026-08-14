@@ -2307,12 +2307,16 @@ public class EloController(
                     .Distinct()
                     .ToListAsync(cancellationToken);
 
-                var competitions = await dbContext.RatingHistories
+                var competitionRows = await dbContext.RatingHistories
                     .AsNoTracking()
                     .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion)
-                    .Select(x => x.Game.Competition.Name)
+                    .Select(x => new
+                    {
+                        x.Game.Competition.Name,
+                        x.Game.Competition.CountryCode
+                    })
                     .Distinct()
-                    .OrderBy(x => x)
+                    .OrderBy(x => x.Name)
                     .ToListAsync(cancellationToken);
 
                 var seasons = await dbContext.RatingHistories
@@ -2323,7 +2327,9 @@ public class EloController(
 
                 return new EloRankingFilterOptions(
                     countries.Select(DisplayCountryFromCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x).ToList(),
-                    competitions,
+                    competitionRows
+                        .Select(x => new EloRankingCompetitionOption(x.Name, DisplayCountryFromCode(x.CountryCode)))
+                        .ToList(),
                     seasons
                         .Select(NormalizeSeasonFilterInput)
                         .OfType<string>()

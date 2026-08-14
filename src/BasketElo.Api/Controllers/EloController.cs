@@ -212,10 +212,13 @@ public class EloController(
                     x.Status))
                 .ToListAsync(cancellationToken);
 
-            var contextTeamIds = await contextQuery
+            var contextTeamRows = await contextQuery
+                .Select(x => new { x.HomeTeamId, x.AwayTeamId })
+                .ToListAsync(cancellationToken);
+            var contextTeamIds = contextTeamRows
                 .SelectMany(x => new[] { x.HomeTeamId, x.AwayTeamId })
                 .Distinct()
-                .ToListAsync(cancellationToken);
+                .ToList();
             var contextRatings = await dbContext.TeamRatings
                 .AsNoTracking()
                 .Where(x => x.EloPoolKey == poolKey &&
@@ -466,10 +469,7 @@ public class EloController(
                 minGames,
                 team,
                 teams,
-                page,
-                pageSize,
-                cancellationToken);
-            if (uncachedResult.Result is OkObjectResult { Value: …15793 tokens truncated…Violation };
+              …15827 tokens truncated…Violation };
 
     private static EloGameTeamExplanation ToGameTeamExplanation(GameExplanationHistoryRow history, bool wasHome)
         => new(

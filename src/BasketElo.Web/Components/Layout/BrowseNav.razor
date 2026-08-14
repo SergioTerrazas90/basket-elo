@@ -23,7 +23,7 @@
             </summary>
             @if (directoryLoading)
             {
-                <div class="nav-tree-status">Loading directoryâ€¦</div>
+                <div class="nav-tree-status">Loading directoryÃ¢â‚¬Â¦</div>
             }
             else if (!string.IsNullOrWhiteSpace(directoryError))
             {
@@ -67,7 +67,7 @@
             </summary>
             @if (directoryLoading)
             {
-                <div class="nav-tree-status">Loading directoryâ€¦</div>
+                <div class="nav-tree-status">Loading directoryÃ¢â‚¬Â¦</div>
             }
             else if (!string.IsNullOrWhiteSpace(directoryError))
             {
@@ -154,7 +154,8 @@
             {
                 ["pool"] = selectedPool,
                 ["country"] = competition.Country,
-                ["competition"] = competition.Name
+                ["competition"] = competition.Name,
+                ["teamLimit"] = 100
             });
             var response = await Http.GetFromJsonAsync<EloBrowseResponse>(uri);
             competitionContexts[key] = response?.Context;
@@ -177,7 +178,7 @@
         {
             builder.OpenElement(sequence++, "div");
             builder.AddAttribute(sequence++, "class", "nav-tree-status");
-            builder.AddContent(sequence++, "Loading teamsâ€¦");
+            builder.AddContent(sequence++, "Loading teamsÃ¢â‚¬Â¦");
             builder.CloseElement();
             return;
         }
@@ -256,4 +257,5 @@
         Navigation.LocationChanged -= HandleLocationChanged;
     }
 }
+
 

@@ -124,7 +124,7 @@ public class EloController(
         var competitionCatalog = competitionRows
             .Select(row => new EloBrowseCompetition(
                 row.Name,
-                DisplayCountryFromCode(row.CountryCode),
+                BrowseCountryName(row.CountryCode),
                 row.CountryCode,
                 row.Type,
                 row.Tier,
@@ -138,7 +138,7 @@ public class EloController(
         var countries = competitionRows
             .GroupBy(row => row.CountryCode ?? string.Empty, StringComparer.OrdinalIgnoreCase)
             .Select(group => new EloBrowseCountry(
-                DisplayCountryFromCode(group.Key),
+                BrowseCountryName(group.Key),
                 string.IsNullOrWhiteSpace(group.Key) ? null : group.Key,
                 group.Count(),
                 group.SelectMany(row => teamIdsByCompetition.GetValueOrDefault(row.Id) ?? []).Distinct().Count(),
@@ -258,7 +258,7 @@ public class EloController(
                 .ToList();
 
             var contextCountry = selectedCompetitionRow is not null
-                ? DisplayCountryFromCode(selectedCompetitionRow.CountryCode)
+                ? BrowseCountryName(selectedCompetitionRow.CountryCode)
                 : country?.Trim();
             var contextCountryCode = selectedCompetitionRow?.CountryCode ??
                 contextRows.Select(row => row.CountryCode).FirstOrDefault(code => !string.IsNullOrWhiteSpace(code));
@@ -2230,8 +2230,13 @@ public class EloController(
 
     private static bool IsBrowseCountryMatch(string? countryCode, string? country)
         => string.IsNullOrWhiteSpace(country) ||
-           string.Equals(DisplayCountryFromCode(countryCode), country.Trim(), StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(BrowseCountryName(countryCode), country.Trim(), StringComparison.OrdinalIgnoreCase) ||
            CountryCodeCatalog.AreEquivalent(countryCode, country);
+
+    private static string BrowseCountryName(string? countryCode)
+        => string.IsNullOrWhiteSpace(countryCode)
+            ? "International / regional"
+            : DisplayCountryFromCode(countryCode);
 
     private static IQueryable<RatingHistory> ApplySeasonFilter(IQueryable<RatingHistory> query, string season)
     {

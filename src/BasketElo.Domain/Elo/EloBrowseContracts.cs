@@ -25,7 +25,10 @@ public sealed record EloBrowseCompetition(
     int GameCount,
     DateTime? LatestGameUtc,
     IReadOnlyCollection<string> Seasons,
-    string SupportPolicy);
+    string SupportPolicy)
+{
+    public IReadOnlyCollection<EloBrowseTeam> Teams { get; init; } = [];
+}
 
 public sealed record EloBrowseContext(
     string? Country,
@@ -75,3 +78,4 @@ public sealed record EloBrowseGame(
     short? HomeScore,
     short? AwayScore,
     string Status);
+

@@ -69,6 +69,35 @@ public class EloController(
             return BadRequest($"Unsupported ELO pool '{pool}'.");
         }
 
+        var cacheKey = EloResponseCache.BrowseKey(poolKey, country, competition, season, teamLimit);
+        if (responseCache.TryGet<EloBrowseResponse>(cacheKey, out var cachedResponse) && cachedResponse is not null)
+        {
+            return Ok(cachedResponse);
+        }
+
+        var uncachedResult = await GetBrowseUncached(
+            poolKey,
+            country,
+            competition,
+            season,
+            teamLimit,
+            cancellationToken);
+        if (uncachedResult.Result is OkObjectResult { Value: EloBrowseResponse response })
+        {
+            responseCache.Set(cacheKey, response, poolKey, EloRulesetVersions.Default);
+        }
+
+        return uncachedResult;
+    }
+
+    private async Task<ActionResult<EloBrowseResponse>> GetBrowseUncached(
+        string poolKey,
+        string? country,
+        string? competition,
+        string? season,
+        int? teamLimit,
+        CancellationToken cancellationToken)
+    {
         var competitionRows = await dbContext.Competitions
             .AsNoTracking()
             .Where(x => x.IsActive && x.EloPoolKey == poolKey)
@@ -111,6 +140,27 @@ public class EloController(
                 group => group.Key,
                 group => group.SelectMany(x => new[] { x.HomeTeamId, x.AwayTeamId }).ToHashSet());
 
+        var poolTeamIds = teamIdsByCompetition.Values
+            .SelectMany(ids => ids)
+            .Distinct()
+            .ToList();
+        var currentRatingRows = await dbContext.TeamRatings
+            .AsNoTracking()
+            .Where(x => x.EloPoolKey == poolKey &&
+                x.RulesetVersion == EloRulesetVersions.Default &&
+                poolTeamIds.Contains(x.TeamId))
+            .Select(x => new
+            {
+                x.TeamId,
+                x.Elo,
+                x.GamesPlayed,
+                Name = x.Team.CanonicalName,
+                CountryCode = x.Team.CountryCode
+            })
+            .ToListAsync(cancellationToken);
+
+        var currentRatingsByTeamId = currentRatingRows.ToDictionary(x => x.TeamId);
+
         var seasonRows = await dbContext.Seasons
             .AsNoTracking()
             .Where(x => competitionIds.Contains(x.CompetitionId))
@@ -123,17 +173,38 @@ public class EloController(
                 group => group.Select(x => x.Label).Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(x => x).ToList());
 
         var competitionCatalog = competitionRows
-            .Select(row => new EloBrowseCompetition(
-                row.Name,
-                BrowseCountryName(row.CountryCode),
-                row.CountryCode,
-                row.Type,
-                row.Tier,
-                teamIdsByCompetition.GetValueOrDefault(row.Id)?.Count ?? 0,
-                gameStatsByCompetition.GetValueOrDefault(row.Id)?.GameCount ?? 0,
-                gameStatsByCompetition.GetValueOrDefault(row.Id)?.LatestGameUtc,
-                seasonsByCompetition.GetValueOrDefault(row.Id) ?? [],
-                row.SupportPolicy))
+            .Select(row =>
+            {
+                var teams = teamIdsByCompetition.GetValueOrDefault(row.Id)?
+                    .Where(currentRatingsByTeamId.ContainsKey)
+                    .Select(teamId => currentRatingsByTeamId[teamId])
+                    .OrderByDescending(team => team.Elo)
+                    .ThenBy(team => team.Name)
+                    .Take(Math.Clamp(teamLimit ?? 100, 1, 100))
+                    .Select((team, index) => new EloBrowseTeam(
+                        team.TeamId,
+                        team.Name,
+                        DisplayCountryFromCode(team.CountryCode),
+                        team.Elo,
+                        team.GamesPlayed,
+                        index + 1))
+                    .ToList() ?? [];
+
+                return new EloBrowseCompetition(
+                    row.Name,
+                    BrowseCountryName(row.CountryCode),
+                    row.CountryCode,
+                    row.Type,
+                    row.Tier,
+                    teamIdsByCompetition.GetValueOrDefault(row.Id)?.Count ?? 0,
+                    gameStatsByCompetition.GetValueOrDefault(row.Id)?.GameCount ?? 0,
+                    gameStatsByCompetition.GetValueOrDefault(row.Id)?.LatestGameUtc,
+                    seasonsByCompetition.GetValueOrDefault(row.Id) ?? [],
+                    row.SupportPolicy)
+                {
+                    Teams = teams
+                };
+            })
             .ToList();
 
         var countries = competitionRows
@@ -2540,3 +2611,4 @@ public class EloController(
 
         return countries;
     }
+}

@@ -91,6 +91,14 @@ public sealed class EloResponseCache(
         int pageSize)
         => $"elo:rankings:{poolKey}:{rulesetVersion}:{teamScope}:{Normalize(country)}:{Normalize(competition)}:{Normalize(season)}:{Normalize(tournamentCycle)}:{FormatDate(fromUtc)}:{FormatDate(toUtc)}:{FormatDate(asOfDate)}:{minGames}:{Normalize(team)}:{page}:{pageSize}";
 
+    public static string BrowseKey(
+        string poolKey,
+        string? country,
+        string? competition,
+        string? season,
+        int? teamLimit)
+        => $"elo:browse:{poolKey}:{Normalize(country)}:{Normalize(competition)}:{Normalize(season)}:{teamLimit ?? 100}";
+
     public static string EvolutionKey(
         string poolKey,
         string rulesetVersion,
@@ -109,3 +117,4 @@ public sealed class EloResponseCache(
 
     private sealed record CacheScope(string PoolKey, string RulesetVersion);
 }
+

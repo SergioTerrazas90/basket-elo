@@ -126,6 +126,7 @@ public static class InternationalTeamCatalog
             ["POL"] = "Poland",
             ["POR"] = "Portugal",
             ["PUR"] = "Puerto Rico",
+            ["PRK"] = "North Korea",
             ["QAT"] = "Qatar",
             ["ROU"] = "Romania",
             ["RSA"] = "South Africa",

@@ -1246,7 +1246,8 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
             return DateTime.SpecifyKind(startDate, DateTimeKind.Utc);
         }
 
-        return new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var fallbackYear = year is >= 1900 and <= 9998 ? year : DateTime.UtcNow.Year;
+        return new DateTime(fallbackYear, 1, 1, 0, 0, 0, DateTimeKind.Utc);
     }
 
     private static IReadOnlyCollection<short?> ParseScores(HtmlNode card)

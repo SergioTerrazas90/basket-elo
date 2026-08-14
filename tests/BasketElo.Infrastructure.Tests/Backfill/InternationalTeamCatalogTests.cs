@@ -14,6 +14,7 @@ public sealed class InternationalTeamCatalogTests
     [InlineData("SMN", "Serbia and Montenegro", "SCG")]
     [InlineData("FR Yugoslavia", "Serbia and Montenegro", "SCG")]
     [InlineData("NOR", "Norway", "NO")]
+    [InlineData("PRK", "North Korea", "KP")]
     [InlineData("Bolivia", "Bolivia", "BO")]
     public void ResolvesCodesAndFullNamesToOneCanonicalIdentity(
         string sourceTeamId,

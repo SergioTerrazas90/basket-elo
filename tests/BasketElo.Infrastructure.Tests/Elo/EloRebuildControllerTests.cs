@@ -60,6 +60,50 @@ public class EloRebuildControllerTests
     }
 
     [Fact]
+    public async Task RankingsCanSearchByTeamName()
+    {
+        await using var dbContext = CreateDbContext();
+        var matchingTeam = new Team { Id = Guid.NewGuid(), CanonicalName = "North Korea", CountryCode = "KP" };
+        var otherTeam = new Team { Id = Guid.NewGuid(), CanonicalName = "South Korea", CountryCode = "KR" };
+        dbContext.Teams.AddRange(matchingTeam, otherTeam);
+        dbContext.TeamRatings.AddRange(
+            new TeamRating
+            {
+                TeamId = matchingTeam.Id,
+                Team = matchingTeam,
+                EloPoolKey = EloPoolKeys.NationalTeams,
+                RulesetVersion = EloRulesetVersions.AdjustedV1,
+                Elo = 1500m
+            },
+            new TeamRating
+            {
+                TeamId = otherTeam.Id,
+                Team = otherTeam,
+                EloPoolKey = EloPoolKeys.NationalTeams,
+                RulesetVersion = EloRulesetVersions.AdjustedV1,
+                Elo = 1600m
+            });
+        await dbContext.SaveChangesAsync();
+        var controller = CreateController(dbContext, new ScopedIdentityHealthService(EloPoolKeys.NationalTeams));
+
+        var result = await controller.GetRankings(
+            rulesetVersion: null,
+            pool: EloPoolKeys.NationalTeams,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: "north korea");
+
+        var response = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        var row = Assert.Single(response.Rankings);
+        Assert.Equal(matchingTeam.Id, row.TeamId);
+    }
+
+    [Fact]
     public async Task RankingsRejectCompetitionFromAnotherPool()
     {
         await using var dbContext = CreateDbContext();

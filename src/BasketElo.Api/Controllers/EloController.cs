@@ -150,6 +150,7 @@ public class EloController(
         [FromQuery] string? tournamentCycle = null,
         CancellationToken cancellationToken = default)
     {
+        season = NormalizeSeasonFilterInput(season);
         var poolKey = ResolvePoolOrDefault(pool);
         var teamScope = EloTeamScopes.Normalize(teams);
         page = Math.Max(1, page);
@@ -566,6 +567,7 @@ public class EloController(
         [FromQuery] int pointsPerTeam = EloEvolutionLimits.DefaultPointsPerTeam,
         CancellationToken cancellationToken = default)
     {
+        season = NormalizeSeasonFilterInput(season);
         var poolKey = ResolvePoolOrDefault(pool);
         if (poolKey is null)
         {
@@ -646,7 +648,7 @@ public class EloController(
                       AND rh."GameDateTimeUtc" >= @startUtc
                       AND rh."GameDateTimeUtc" <= @cutoffUtc
                       AND (@hasCompetitionFilter = false OR c."Name" = @competition)
-                      AND (@hasSeasonFilter = false OR s."Label" = @season)
+                      AND (@hasSeasonFilter = false OR s."Label" = @season OR s."Label" = split_part(@season, '-', 1))
                       AND (@hasCycleFilter = false OR tc."Key" = @tournamentCycle)
                 ), bucketed AS (
                     SELECT
@@ -732,6 +734,7 @@ public class EloController(
         [FromQuery] int pageSize = 25,
         CancellationToken cancellationToken = default)
     {
+        season = NormalizeSeasonFilterInput(season);
         var poolKey = ResolvePoolOrDefault(pool);
         if (poolKey is null)
         {
@@ -1883,7 +1886,12 @@ public class EloController(
                 return new EloRankingFilterOptions(
                     countries.Select(DisplayCountryFromCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x).ToList(),
                     competitions,
-                    seasons.Distinct().OrderByDescending(x => x).ToList());
+                    seasons
+                        .Select(NormalizeSeasonFilterInput)
+                        .OfType<string>()
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderByDescending(x => x, StringComparer.Ordinal)
+                        .ToList());
             }) ?? new EloRankingFilterOptions([], [], []);
     }
 
@@ -1974,7 +1982,24 @@ public class EloController(
            CountryCodeCatalog.AreEquivalent(countryCode, country);
 
     private static IQueryable<RatingHistory> ApplySeasonFilter(IQueryable<RatingHistory> query, string season)
-        => query.Where(x => x.Game.Season.Label == season.Trim());
+    {
+        var normalized = NormalizeSeasonFilterInput(season) ?? season.Trim();
+        var separatorIndex = normalized.IndexOf('-', StringComparison.Ordinal);
+        var legacyLabel = separatorIndex > 0 ? normalized[..separatorIndex] : normalized;
+
+        return query.Where(x => x.Game.Season.Label == normalized || x.Game.Season.Label == legacyLabel);
+    }
+
+    private static string? NormalizeSeasonFilterInput(string? season)
+    {
+        if (string.IsNullOrWhiteSpace(season))
+        {
+            return null;
+        }
+
+        var normalized = NormalizeSeasonLabel(season);
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
 
     private static string NormalizeSeasonLabel(string season, DateTime? gameDateTimeUtc = null)
     {

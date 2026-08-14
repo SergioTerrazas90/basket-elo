@@ -22,11 +22,18 @@ public sealed class CountryCodeCatalogTests
     [InlineData("YUG")]
     [InlineData("URS")]
     [InlineData("DDR")]
+    [InlineData("ENG")]
     [InlineData("FRG")]
     [InlineData("TCH")]
-    public void Normalize_PreservesHistoricalNationalIdentities(string historicalCode)
+    public void Normalize_PreservesHistoricalAndConstituentNationalIdentities(string historicalCode)
     {
         Assert.Equal(historicalCode, CountryCodeCatalog.Normalize(historicalCode));
+    }
+
+    [Fact]
+    public void DisplayName_UsesEnglandForSourceSpecificCode()
+    {
+        Assert.Equal("England", CountryCodeCatalog.DisplayName("ENG"));
     }
 
     [Fact]

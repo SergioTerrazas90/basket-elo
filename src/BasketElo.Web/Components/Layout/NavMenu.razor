@@ -14,7 +14,11 @@
     <nav class="flex-column" aria-label="BasketElo destinations">
         <section class="nav-group" aria-labelledby="public-navigation-heading">
             <div id="public-navigation-heading" class="nav-section" role="heading" aria-level="2">Explore</div>
-            <BrowseNav />
+            <div class="nav-item">
+                <NavLink class="nav-link" href="browse">
+                    <span class="nav-icon info-icon" aria-hidden="true"></span> Browse
+                </NavLink>
+            </div>
 
             <div class="nav-item">
                 <NavLink class="nav-link" href="rankings" Match="NavLinkMatch.All">
@@ -121,5 +125,6 @@
         </AuthorizeView>
     </nav>
 </div>
+
 
 

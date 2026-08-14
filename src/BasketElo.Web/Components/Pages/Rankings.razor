@@ -21,7 +21,7 @@
             }
         </nav>
 
-        <div>
+        <div class="rankings-heading">
             <p class="eyebrow">Basket ELO</p>
             <h1>@PageHeading()</h1>
             <p class="intro">@PoolIntroduction()</p>
@@ -35,7 +35,7 @@
         </div>
     }
 
-    <section class="ranking-controls" aria-label="Ranking controls">
+    <section class="ranking-toolbar" aria-label="Ranking controls">
         @if (SupportsTeamScope)
         {
             <div class="scope-control-block">
@@ -61,65 +61,144 @@
             </div>
         </div>
 
-        @if (selectedPool != EloPoolKeys.Nba)
+        <button type="button"
+                class="filter-toggle"
+                aria-expanded="@showAdvancedFilters"
+                aria-controls="advanced-ranking-filters"
+                @onclick="ToggleAdvancedFilters">
+            <span>Filters</span>
+            @if (ActiveFilterCount > 0)
+            {
+                <span class="filter-count" aria-label="@($"{ActiveFilterCount} active filters")">@ActiveFilterCount</span>
+            }
+            <span class="filter-toggle-icon" aria-hidden="true">@(showAdvancedFilters ? "−" : "+")</span>
+        </button>
+
+        @if (HasActiveFilters)
         {
-            <div class="filter-field">
-                <label for="countryFilter">Country</label>
-                <select id="countryFilter" class="form-select" @bind="selectedCountry">
-                    <option value="">All countries</option>
-                    @foreach (var option in response?.Filters.Countries ?? [])
-                    {
-                        <option value="@option">@option</option>
-                    }
-                </select>
-            </div>
+            <button type="button" class="clear-all-filters" @onclick="ResetFiltersAsync" disabled="@isBusy">
+                Clear all
+            </button>
         }
-
-        @if (selectedPool == EloPoolKeys.EuropeClubs)
-        {
-            <div class="filter-field">
-                <label for="competitionFilter">Competition</label>
-                <select id="competitionFilter" class="form-select" @bind="selectedCompetition">
-                    <option value="">All competitions</option>
-                    @foreach (var option in response?.Filters.Competitions ?? [])
-                    {
-                        <option value="@option">@option</option>
-                    }
-                </select>
-            </div>
-        }
-
-        <div class="season-range-field">
-            <span class="filter-label">Seasons</span>
-            <div class="season-range-control">
-                <select id="fromSeasonFilter" class="form-select" aria-label="From season" @bind="selectedFromSeason">
-                    <option value="">All history</option>
-                    @foreach (var option in response?.Filters.Seasons ?? [])
-                    {
-                        <option value="@option">@option</option>
-                    }
-                </select>
-                <span aria-hidden="true">to</span>
-                <select id="toSeasonFilter" class="form-select" aria-label="To season" @bind="selectedToSeason">
-                    <option value="">Current</option>
-                    @foreach (var option in response?.Filters.Seasons ?? [])
-                    {
-                        <option value="@option">@option</option>
-                    }
-                </select>
-            </div>
-        </div>
-
-        <div class="filter-field compact">
-            <label for="minGames">Min games</label>
-            <input id="minGames" class="form-control" type="number" min="0" max="999" @bind="minimumGames" />
-        </div>
-
-        <div class="filter-actions">
-            <button class="btn btn-primary" @onclick="ApplyFiltersAsync" disabled="@isBusy">Apply</button>
-            <button class="btn btn-outline-secondary" @onclick="ResetFiltersAsync" disabled="@isBusy">Reset</button>
-        </div>
     </section>
+
+    @if (HasActiveFilters)
+    {
+        <div class="active-filters" aria-label="Active ranking filters">
+            @if (!string.IsNullOrWhiteSpace(teamSearch))
+            {
+                <button type="button" class="filter-chip" @onclick="ClearTeamSearch">
+                    Team: @teamSearch <span aria-hidden="true">×</span>
+                </button>
+            }
+            @if (!string.IsNullOrWhiteSpace(selectedCountry))
+            {
+                <button type="button" class="filter-chip" @onclick="ClearCountryFilterAsync">
+                    Country: @selectedCountry <span aria-hidden="true">×</span>
+                </button>
+            }
+            @if (!string.IsNullOrWhiteSpace(selectedCompetition))
+            {
+                <button type="button" class="filter-chip" @onclick="ClearCompetitionFilterAsync">
+                    Competition: @selectedCompetition <span aria-hidden="true">×</span>
+                </button>
+            }
+            @if (!string.IsNullOrWhiteSpace(selectedFromSeason) || !string.IsNullOrWhiteSpace(selectedToSeason))
+            {
+                <button type="button" class="filter-chip" @onclick="ClearSeasonFilterAsync">
+                    Seasons: @(selectedFromSeason ?? "All") – @(selectedToSeason ?? "Current") <span aria-hidden="true">×</span>
+                </button>
+            }
+            @if (minimumGames > 0)
+            {
+                <button type="button" class="filter-chip" @onclick="ClearMinimumGamesFilterAsync">
+                    Min games: @minimumGames <span aria-hidden="true">×</span>
+                </button>
+            }
+        </div>
+    }
+
+    @if (showAdvancedFilters)
+    {
+        <section id="advanced-ranking-filters" class="advanced-filters" aria-label="Additional ranking filters">
+            @if (selectedPool != EloPoolKeys.Nba)
+            {
+                <div class="filter-field">
+                    <label for="countryFilter">Country</label>
+                    <select id="countryFilter" class="form-select" @bind="selectedCountry">
+                        <option value="">All countries</option>
+                        @foreach (var option in response?.Filters.Countries ?? [])
+                        {
+                            <option value="@option">@option</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @if (selectedPool == EloPoolKeys.EuropeClubs)
+            {
+                <div class="filter-field">
+                    <label for="competitionFilter">Competition</label>
+                    <select id="competitionFilter" class="form-select" @bind="selectedCompetition">
+                        <option value="">All competitions</option>
+                        @foreach (var option in response?.Filters.Competitions ?? [])
+                        {
+                            <option value="@option">@option</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            <div class="season-range-field">
+                <span class="filter-label">Seasons</span>
+                <div class="season-range-control">
+                    <select id="fromSeasonFilter" class="form-select" aria-label="From season" @bind="selectedFromSeason">
+                        <option value="">All history</option>
+                        @foreach (var option in response?.Filters.Seasons ?? [])
+                        {
+                            <option value="@option">@option</option>
+                        }
+                    </select>
+                    <span aria-hidden="true">to</span>
+                    <select id="toSeasonFilter" class="form-select" aria-label="To season" @bind="selectedToSeason">
+                        <option value="">Current</option>
+                        @foreach (var option in response?.Filters.Seasons ?? [])
+                        {
+                            <option value="@option">@option</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="filter-field compact">
+                <label for="minGames">Min games</label>
+                <input id="minGames" class="form-control" type="number" min="0" max="999" @bind="minimumGames" />
+            </div>
+
+            <div class="filter-actions">
+                <button class="btn btn-primary" @onclick="ApplyFiltersAsync" disabled="@isBusy">Apply</button>
+                <button class="btn btn-outline-secondary" @onclick="ResetFiltersAsync" disabled="@isBusy">Reset</button>
+            </div>
+        </section>
+    }
+
+    @if (selectedView != "movers")
+    {
+        <section class="table-preset-toolbar" aria-label="Ranking table columns">
+            <div>
+                <span class="toolbar-kicker">Table view</span>
+                <span class="toolbar-caption">Keep the core columns visible, or add movement context.</span>
+            </div>
+            <div class="column-presets" role="group" aria-label="Ranking table column preset">
+                @foreach (var preset in ColumnPresets)
+                {
+                    <button type="button" class="@ColumnPresetClass(preset.Key)" @onclick="() => SelectColumnPreset(preset.Key)">
+                        @preset.Label
+                    </button>
+                }
+            </div>
+        </section>
+    }
 
     @if (isBusy && response is null)
     {
@@ -127,12 +206,25 @@
     }
     else if (response is not null)
     {
-        <section class="results-header">
+        <section class="results-header" aria-label="Ranking snapshot">
             <div class="results-context">
                 <span class="results-kicker">@((selectedView == "movers") ? "Movement view" : "Current rankings")</span>
                 <strong>@response.Summary.FilteredTeams <span>of @response.Summary.RatedTeams teams</span></strong>
-                <small>@LatestGameLabel(): @FormatDate(response.Summary.LatestGameUtc) | @LeaderLabel(): @(response.Summary.TopTeamName ?? "-") (@FormatRating(response.Summary.TopTeamElo)) | Ruleset @response.RulesetVersion</small>
             </div>
+            <dl class="snapshot-metadata">
+                <div>
+                    <dt>@LatestGameLabel()</dt>
+                    <dd>@FormatDate(response.Summary.LatestGameUtc)</dd>
+                </div>
+                <div>
+                    <dt>@LeaderLabel()</dt>
+                    <dd>@(response.Summary.TopTeamName ?? "-") <span>(@FormatRating(response.Summary.TopTeamElo))</span></dd>
+                </div>
+                <div>
+                    <dt>Ruleset</dt>
+                    <dd>@response.RulesetVersion</dd>
+                </div>
+            </dl>
         </section>
 
         @if (IsArchiveMode)
@@ -240,51 +332,6 @@
                 </div>
             </section>
         }
-        @if (selectedView != "movers" && response.Rankings.Count > 0)
-        {
-            <section class="evolution-section">
-                <div class="section-head">
-                    <div>
-                        <h2>ELO evolution</h2>
-                        <p>@EvolutionContextLabel()</p>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ToggleChartSize">
-                        @(isChartExpanded ? "Compact chart" : "Expand chart")
-                    </button>
-                </div>
-
-                <div class="@EvolutionChartClass" role="img" aria-label="ELO evolution for teams in the current ranking table">
-                    @if (EvolutionSeries.Count < 1 || EvolutionSeries.All(x => x.Points.Count < 2))
-                    {
-                        <div class="empty-state">Not enough rated games for an evolution chart yet.</div>
-                    }
-                    else
-                    {
-                        <EloEvolutionChart @key="activeRankingsCacheKey"
-                                           Series="@evolutionChartSeries"
-                                           EnableRangeNavigation="true"
-                                           ShowLegend="false"
-                                           SharedTooltip="false"
-                                           HeightPixels="@ChartHeightPixels"
-                                           DataRevision="@evolutionDataRevision"
-                                           IsRefining="@isEvolutionRefining"
-                                           ViewportRefinementRequested="@QueueEvolutionRefinementAsync"
-                                           FullRangeRequested="@RestoreFullEvolutionAsync" />
-
-                        <div class="evolution-legend legacy-links" aria-label="ELO evolution chart team links">
-                            @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
-                            {
-                                <a href="@BuildTeamHref(item.series.TeamId)">
-                                    <span style="background: @ChartColor(item.index)"></span>
-                                    @item.series.TeamName
-                                </a>
-                            }
-                        </div>
-                    }
-                </div>
-            </section>
-        }
-
         @if (selectedView != "movers")
         {
             <section class="rankings-table-section">
@@ -305,23 +352,41 @@
                 </div>
 
                 <div class="table-responsive ranking-table-wrap">
-                    <table class="table table-hover align-middle ranking-table">
+                    <table class="table table-hover align-middle ranking-table @(ShowsGlobalRank ? "with-global-rank" : string.Empty)">
                         <thead>
                             <tr>
-                                <th>Rank</th>
-                                @if (response.Summary.IsFiltered)
+                                @if (ShowRankingColumn("rank"))
                                 {
-                                    <th>Global rank</th>
+                                    <th class="sticky-column rank-column" scope="col">Rank</th>
                                 }
-                                <th>Team</th>
-                                @if (ShowsCountryColumn)
+                                @if (ShowRankingColumn("globalRank"))
                                 {
-                                    <th>Country</th>
+                                    <th class="sticky-column global-rank-column" scope="col">Global rank</th>
                                 }
-                                <th class="numeric">ELO</th>
-                                <th class="numeric">Games</th>
-                                <th class="numeric">Last</th>
-                                <th>Last game</th>
+                                @if (ShowRankingColumn("team"))
+                                {
+                                    <th class="sticky-column team-column" scope="col">Team</th>
+                                }
+                                @if (ShowRankingColumn("country"))
+                                {
+                                    <th scope="col">Country</th>
+                                }
+                                @if (ShowRankingColumn("elo"))
+                                {
+                                    <th class="numeric" scope="col">ELO</th>
+                                }
+                                @if (ShowRankingColumn("games"))
+                                {
+                                    <th class="numeric" scope="col">Games</th>
+                                }
+                                @if (ShowRankingColumn("movement"))
+                                {
+                                    <th class="numeric" scope="col">Last</th>
+                                }
+                                @if (ShowRankingColumn("lastGame"))
+                                {
+                                    <th scope="col">Last game</th>
+                                }
                             </tr>
                         </thead>
                         <tbody>
@@ -336,12 +401,17 @@
                                 @foreach (var row in response.Rankings)
                                 {
                                     <tr class="team-row" tabindex="0" @onclick="() => OpenTeam(row.TeamId)" @onkeydown="args => OpenTeamFromKeyboard(args, row.TeamId)">
-                                        <td class="rank-cell">#@row.Rank</td>
-                                        @if (response.Summary.IsFiltered)
+                                        @if (ShowRankingColumn("rank"))
                                         {
-                                            <td class="muted-rank">#@row.GlobalRank</td>
+                                            <td class="rank-cell sticky-column rank-column">#@row.Rank</td>
                                         }
-                                        <td>
+                                        @if (ShowRankingColumn("globalRank"))
+                                        {
+                                            <td class="muted-rank sticky-column global-rank-column">#@row.GlobalRank</td>
+                                        }
+                                        @if (ShowRankingColumn("team"))
+                                        {
+                                            <td class="sticky-column team-column">
                                             <div class="team-identity-cell">
                                                 <div>
                                                     <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
@@ -351,23 +421,102 @@
                                                     }
                                                 </div>
                                             </div>
-                                        </td>
-                                        @if (ShowsCountryColumn)
+                                            </td>
+                                        }
+                                        @if (ShowRankingColumn("country"))
                                         {
                                             <td>@row.Country</td>
                                         }
-                                        <td class="numeric rating">@row.Elo.ToString("0")</td>
-                                        <td class="numeric">@row.GamesPlayed</td>
-                                        <td class="numeric">
-                                            <span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span>
-                                        </td>
-                                        <td>@FormatDate(row.LastGameUtc)</td>
+                                        @if (ShowRankingColumn("elo"))
+                                        {
+                                            <td class="numeric rating">@row.Elo.ToString("0")</td>
+                                        }
+                                        @if (ShowRankingColumn("games"))
+                                        {
+                                            <td class="numeric">@row.GamesPlayed</td>
+                                        }
+                                        @if (ShowRankingColumn("movement"))
+                                        {
+                                            <td class="numeric">
+                                                <span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span>
+                                            </td>
+                                        }
+                                        @if (ShowRankingColumn("lastGame"))
+                                        {
+                                            <td>@FormatDate(row.LastGameUtc)</td>
+                                        }
                                     </tr>
                                 }
                             }
                         </tbody>
                     </table>
                 </div>
+            </section>
+        }
+
+        @if (selectedView != "movers" && response.Rankings.Count > 0)
+        {
+            <section class="evolution-section">
+                <div class="section-head">
+                    <div>
+                        <h2>ELO evolution</h2>
+                        <p>@EvolutionContextLabel()</p>
+                    </div>
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            aria-expanded="@isChartVisible"
+                            aria-controls="ranking-evolution-panel"
+                            @onclick="ToggleChartAsync">
+                        @(isChartVisible ? "Hide chart" : "Show chart")
+                    </button>
+                </div>
+
+                @if (isChartVisible)
+                {
+                    <div id="ranking-evolution-panel" class="evolution-panel" role="region" aria-label="ELO evolution chart">
+                        @if (isChartLoading)
+                        {
+                            <div class="loading-panel">Loading chart...</div>
+                        }
+                        else
+                        {
+                            <div class="@EvolutionChartClass" role="img" aria-label="ELO evolution for teams in the current ranking table">
+                                @if (EvolutionSeries.Count < 1 || EvolutionSeries.All(x => x.Points.Count < 2))
+                                {
+                                    <div class="empty-state">Not enough rated games for an evolution chart yet.</div>
+                                }
+                                else
+                                {
+                                    <EloEvolutionChart @key="activeRankingsCacheKey"
+                                                       Series="@evolutionChartSeries"
+                                                       EnableRangeNavigation="true"
+                                                       ShowLegend="false"
+                                                       SharedTooltip="false"
+                                                       HeightPixels="@ChartHeightPixels"
+                                                       DataRevision="@evolutionDataRevision"
+                                                       IsRefining="@isEvolutionRefining"
+                                                       ViewportRefinementRequested="@QueueEvolutionRefinementAsync"
+                                                       FullRangeRequested="@RestoreFullEvolutionAsync" />
+
+                                    <div class="evolution-legend legacy-links" aria-label="ELO evolution chart team links">
+                                        @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
+                                        {
+                                            <a href="@BuildTeamHref(item.series.TeamId)">
+                                                <span style="background: @ChartColor(item.index)"></span>
+                                                @item.series.TeamName
+                                            </a>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div class="chart-actions">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ToggleChartSize">
+                                    @(isChartExpanded ? "Compact chart" : "Expand chart")
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
             </section>
         }
 
@@ -411,6 +560,9 @@
     [SupplyParameterFromQuery(Name = "view")]
     public string? View { get; set; }
 
+    [SupplyParameterFromQuery(Name = "columns")]
+    public string? Columns { get; set; }
+
     [SupplyParameterFromQuery(Name = "movement")]
     public string? Movement { get; set; }
 
@@ -428,6 +580,9 @@
     private IReadOnlyList<EloChartSeries> evolutionChartSeries = [];
     private bool isBusy;
     private bool isChartExpanded;
+    private bool isChartVisible;
+    private bool isChartLoading;
+    private bool showAdvancedFilters;
     private string? errorMessage;
     private string? selectedCountry;
     private string? selectedCompetition;
@@ -436,6 +591,7 @@
     private string? selectedFromSeason;
     private string? selectedToSeason;
     private string? teamSearch;
+    private string selectedColumnPreset = "core";
     private int minimumGames;
     private int page = 1;
     private int requestedPage = 1;
@@ -458,6 +614,13 @@
 
     private const int EvolutionRefinementDebounceMilliseconds = 600;
     private const int EvolutionRangeCacheLimit = 8;
+
+    private static readonly IReadOnlyList<(string Key, string Label)> ColumnPresets =
+    [
+        ("core", "Core"),
+        ("movement", "Movement"),
+        ("full", "Full")
+    ];
 
     private sealed record RankingsClientCacheKey(
         string Pool,
@@ -518,6 +681,11 @@
         selectedView = isMoversRoute || string.Equals(View, "movers", StringComparison.OrdinalIgnoreCase) ? "movers" : "rankings";
         selectedMoverDirection = string.Equals(Movement, "fallers", StringComparison.OrdinalIgnoreCase) ? "fallers" : "risers";
         selectedWindowDays = WindowDays is 7 or 30 or 90 ? WindowDays.Value : 30;
+        selectedColumnPreset = NormalizeColumnPreset(Columns);
+        showAdvancedFilters = HasAdvancedFilterValues;
+        isChartVisible = false;
+        isChartExpanded = false;
+        isChartLoading = false;
         page = Math.Max(1, Page ?? 1);
         requestedPage = page;
         lastLoadedUri = currentUri;
@@ -585,6 +753,40 @@
         await RefreshSelectionAsync(1);
     }
 
+    private async Task ClearCountryFilterAsync()
+    {
+        selectedCountry = null;
+        await RefreshSelectionAsync(1);
+    }
+
+    private async Task ClearCompetitionFilterAsync()
+    {
+        selectedCompetition = null;
+        await RefreshSelectionAsync(1);
+    }
+
+    private async Task ClearSeasonFilterAsync()
+    {
+        selectedFromSeason = null;
+        selectedToSeason = null;
+        await RefreshSelectionAsync(1);
+    }
+
+    private async Task ClearMinimumGamesFilterAsync()
+    {
+        minimumGames = 0;
+        await RefreshSelectionAsync(1);
+    }
+
+    private void ToggleAdvancedFilters()
+        => showAdvancedFilters = !showAdvancedFilters;
+
+    private void SelectColumnPreset(string preset)
+    {
+        selectedColumnPreset = NormalizeColumnPreset(preset);
+        Navigation.NavigateTo(BuildRankingsHref(page), replace: true);
+    }
+
     private Task ChangeMoverDirectionAsync(ChangeEventArgs args)
     {
         selectedMoverDirection = string.Equals(args.Value?.ToString(), "fallers", StringComparison.OrdinalIgnoreCase)
@@ -601,6 +803,35 @@
             : 30;
         NavigateToRankings(1);
         return Task.CompletedTask;
+    }
+
+    private async Task ToggleChartAsync()
+    {
+        isChartVisible = !isChartVisible;
+        if (!isChartVisible || isChartLoading || evolution is not null || response is null)
+        {
+            return;
+        }
+
+        isChartLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            evolutionRankings = await FetchEvolutionRankingsAsync();
+            evolution = await FetchEvolutionAsync();
+            fullEvolution = evolution;
+            RebuildEvolutionChartSeries();
+            CaptureActiveRankingsCacheEntry();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load chart: {ex.Message}";
+        }
+        finally
+        {
+            isChartLoading = false;
+        }
     }
 
     private void ToggleChartSize()
@@ -677,10 +908,8 @@
             }
             else
             {
-                evolutionRankings = await FetchEvolutionRankingsAsync();
-                evolution = await FetchEvolutionAsync();
-                fullEvolution = evolution;
-                RebuildEvolutionChartSeries();
+                // Chart data is intentionally deferred until the user opens the chart.
+                // The ranking response must remain the first meaningful data surface.
             }
 
             StoreRankingsCacheEntry(cacheKey);
@@ -807,6 +1036,9 @@
         fullEvolution = null;
         evolutionRankings = null;
         evolutionChartSeries = [];
+        isChartVisible = false;
+        isChartExpanded = false;
+        isChartLoading = false;
         CancelEvolutionRefinement();
         await RefreshAsync();
     }
@@ -832,6 +1064,7 @@
             ["toSeason"] = selectedToSeason,
             ["minGames"] = minimumGames > 0 ? minimumGames : null,
             ["team"] = teamSearch,
+            ["columns"] = selectedColumnPreset == "core" ? null : selectedColumnPreset,
             ["page"] = targetPage > 1 ? targetPage : null
         };
 
@@ -936,6 +1169,49 @@
 
     private bool HasTeamSearch
         => !string.IsNullOrWhiteSpace(teamSearch);
+
+    private bool HasAdvancedFilterValues
+        => !string.IsNullOrWhiteSpace(selectedCountry)
+            || !string.IsNullOrWhiteSpace(selectedCompetition)
+            || !string.IsNullOrWhiteSpace(selectedFromSeason)
+            || !string.IsNullOrWhiteSpace(selectedToSeason)
+            || minimumGames > 0;
+
+    private bool HasActiveFilters
+        => HasTeamSearch || HasAdvancedFilterValues;
+
+    private int ActiveFilterCount
+        => (HasTeamSearch ? 1 : 0)
+            + (!string.IsNullOrWhiteSpace(selectedCountry) ? 1 : 0)
+            + (!string.IsNullOrWhiteSpace(selectedCompetition) ? 1 : 0)
+            + (!string.IsNullOrWhiteSpace(selectedFromSeason) || !string.IsNullOrWhiteSpace(selectedToSeason) ? 1 : 0)
+            + (minimumGames > 0 ? 1 : 0);
+
+    private string ColumnPresetClass(string preset)
+        => selectedColumnPreset == preset
+            ? "column-preset active"
+            : "column-preset";
+
+    private bool ShowRankingColumn(string column)
+        => column switch
+        {
+            "rank" or "team" or "elo" or "games" or "lastGame" => true,
+            "movement" => selectedColumnPreset is "movement" or "full",
+            "country" => selectedColumnPreset == "full" && ShowsCountryColumn,
+            "globalRank" => selectedColumnPreset == "full" && response?.Summary.IsFiltered == true,
+            _ => false
+        };
+
+    private bool ShowsGlobalRank
+        => ShowRankingColumn("globalRank");
+
+    private static string NormalizeColumnPreset(string? preset)
+        => preset?.Trim().ToLowerInvariant() switch
+        {
+            "movement" => "movement",
+            "full" => "full",
+            _ => "core"
+        };
 
     private string PoolTabClass(string poolKey)
         => selectedPool == poolKey ? "pool-tab active" : "pool-tab";
@@ -1233,7 +1509,8 @@
         => selectedPool is not EloPoolKeys.Nba and not EloPoolKeys.NationalTeams;
 
     private int RankingTableColumnCount
-        => 6 + (ShowsCountryColumn ? 1 : 0) + (response?.Summary.IsFiltered == true ? 1 : 0);
+        => new[] { "rank", "globalRank", "team", "country", "elo", "games", "movement", "lastGame" }
+            .Count(ShowRankingColumn);
 
     private bool IsHistoricalTeamScope
         => SupportsTeamScope && selectedTeamScope == EloTeamScopes.Historical;

@@ -218,13 +218,15 @@ public static class CountryCodeCatalog
 
     private static readonly IReadOnlySet<string> HistoricalCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "ANT", "CIS", "CSK", "CSP", "DDR", "FRG", "FRY", "GDR", "SCG", "TCH", "UAR", "URS", "YUG", "ZAI", "ZAR"
+        // England is a constituent nation code, not a synonym for the United Kingdom.
+        "ANT", "CIS", "CSK", "CSP", "DDR", "ENG", "FRG", "FRY", "GDR", "SCG", "TCH", "UAR", "URS", "YUG", "ZAI", "ZAR"
     };
 
     private static readonly IReadOnlyDictionary<string, string> DisplayNames =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["CZ"] = "Czech Republic",
+            ["ENG"] = "England",
             ["GR"] = "Greece",
             ["RU"] = "Russia",
             ["GB"] = "United Kingdom",

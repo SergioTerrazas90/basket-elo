@@ -1,0 +1,194 @@
+@page "/data-sources"
+@using BasketElo.Domain.Backfill
+@using BasketElo.Domain.Elo
+@using BasketElo.Infrastructure.Backfill
+
+<PageTitle>Data sources - BasketElo</PageTitle>
+
+<div class="data-sources-page">
+    <section class="data-sources-hero">
+        <p class="eyebrow">Data trail</p>
+        <h1>Data sources</h1>
+        <p>See which seasons are accounted for and follow each competition back to the archive or data service behind it.</p>
+    </section>
+
+    <section class="data-sources-note" aria-label="Coverage note">
+        <strong>Coverage is not the same as completeness.</strong>
+        <span>A listed season means it is part of the ingestion catalog. Provider warnings, source gaps, and partial seasons remain recorded in the ingestion run history.</span>
+    </section>
+
+    <section class="data-source-list" aria-label="Configured leagues and sources">
+        @foreach (var region in regions)
+        {
+            <section class="data-source-region" aria-labelledby="region-@region.Slug">
+                <div class="data-source-region-heading">
+                    <p class="eyebrow">Coverage region</p>
+                    <h2 id="region-@region.Slug">@region.Name</h2>
+                </div>
+
+                <div class="data-source-region-list">
+                    @foreach (var league in region.Leagues)
+                    {
+                        <article class="data-source-card">
+                            <div class="data-source-heading">
+                                <h3>@league.LeagueName</h3>
+                                <span class="data-source-pool">@PoolLabel(league.EloPoolKey)</span>
+                            </div>
+
+                            @foreach (var source in league.Sources)
+                            {
+                                <div class="data-source-row">
+                                    <div class="data-source-provider">
+                                        <a href="@source.Url" target="_blank" rel="noopener noreferrer">@source.Name</a>
+                                        <span>@source.CoverageLabel</span>
+                                    </div>
+                                    <div class="data-source-seasons">
+                                        <span class="data-source-label">Seasons accounted for</span>
+                                        <p>@string.Join(", ", source.Seasons)</p>
+                                    </div>
+                                </div>
+                            }
+                        </article>
+                    }
+                </div>
+            </section>
+        }
+    </section>
+
+    <section class="data-sources-attribution">
+        <h2>Source notes</h2>
+        <p>NBA seasons through 2007-2008 use the pinned <a href="https://github.com/fivethirtyeight/data/blob/4c1ff5e3aef1816ae04af63218015066e186c147/nba-elo/nbaallelo.csv" target="_blank" rel="noopener noreferrer">FiveThirtyEight NBA Elo archive</a>, licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>.</p>
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<RegionView> regions = [];
+
+    protected override void OnInitialized()
+    {
+        var catalog = new BackfillCatalog();
+        regions = catalog.GetLeagues()
+            .GroupBy(x => new { x.Country, x.LeagueName, x.EloPoolKey })
+            .GroupBy(x => x.Key.Country)
+            .OrderBy(x => x.Key == "World" ? 0 : 1)
+            .ThenBy(x => x.Key)
+            .Select(region => new RegionView(
+                region.Key,
+                Slug(region.Key),
+                region
+                    .OrderBy(x => x.Key.LeagueName)
+                    .Select(group => new LeagueView(
+                        group.Key.LeagueName,
+                        group.Key.EloPoolKey,
+                        group
+                            .OrderBy(x => x.Provider)
+                            .ThenBy(x => x.StartSeason)
+                            .Select(x => new SourceView(
+                                SourceName(x.Provider),
+                                SourceUrl(x.Provider),
+                                CoverageLabel(x),
+                                catalog.GetSeasonsForLeague(x)
+                                    .Select(SeasonLabel)
+                                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                                    .OrderBy(SeasonSortKey)
+                                    .ToList()))
+                            .ToList()))
+                    .ToList()))
+            .ToList();
+    }
+
+    private static string SeasonLabel(string season)
+        => SeasonLabelNormalizer.ToFullSeasonLabel(season);
+
+    private static int SeasonSortKey(string season)
+        => SeasonLabelNormalizer.ParseStartYear(season);
+
+    private static string PoolLabel(string pool)
+        => pool switch
+        {
+            EloPoolKeys.Nba => "NBA",
+            EloPoolKeys.NationalTeams => "National teams",
+            _ => "Europe clubs"
+        };
+
+    private static string CoverageLabel(ConfiguredBackfillLeague league)
+        => league.Provider switch
+        {
+            FiveThirtyEightBasketballDataProvider.Source => "Pinned archive · CC BY 4.0",
+            ApiSportsBasketballDataProvider.Source => "Live and historical basketball feed",
+            FibaBasketballDataProvider.Source => "Official competition history",
+            GlobalSportsArchiveBasketballDataProvider.Source => "Historical results archive",
+            _ => "Historical results archive"
+        };
+
+    private static string SourceName(string provider)
+        => provider switch
+        {
+            FiveThirtyEightBasketballDataProvider.Source => "FiveThirtyEight NBA Elo archive",
+            ApiSportsBasketballDataProvider.Source => "API Sports Basketball",
+            FibaBasketballDataProvider.Source => "FIBA archive",
+            GlobalSportsArchiveBasketballDataProvider.Source => "Global Sports Archive",
+            "aba-official" => "ABA League official archive",
+            "acb-dbasket" => "DBasket historical archive",
+            "acb-official-liga-nacional" or "acb-official-tournaments" => "ACB official archive",
+            "basketball-database" => "Basketball Database",
+            "bbl-wayback" => "Internet Archive",
+            "eurobasket-lithuania" => "LKL official archive",
+            "euroleagueR" => "EuroLeague historical dataset",
+            "flashscore-domestic" or "flashscore-poland-plk" or "flashscore-czech-nbl" => "Flashscore archive",
+            "french-historical" => "French Basketball Archives",
+            "german-official" => "German Basketball League archive",
+            "greek-official" => "Greek Basketball League archive",
+            "official-israel-basket" => "Israel Basketball Association archive",
+            "lba-official" => "Lega Basket official archive",
+            "serbian-historical" => "Serbian basketball historical archive",
+            "turkish-historical" => "Turkish Basketball Federation archive",
+            _ when provider.StartsWith("wikipedia", StringComparison.OrdinalIgnoreCase) => "Wikipedia",
+            _ => "Historical basketball archive"
+        };
+
+    private static string SourceUrl(string provider)
+        => provider switch
+        {
+            FiveThirtyEightBasketballDataProvider.Source => "https://github.com/fivethirtyeight/data/blob/4c1ff5e3aef1816ae04af63218015066e186c147/nba-elo/nbaallelo.csv",
+            ApiSportsBasketballDataProvider.Source => "https://api-sports.io/sports/basketball",
+            FibaBasketballDataProvider.Source => "https://www.fiba.basketball/",
+            GlobalSportsArchiveBasketballDataProvider.Source => "https://globalsportsarchive.com/",
+            "aba-official" => "https://www.aba-liga.com/",
+            "acb-dbasket" => "https://dbasket.net/",
+            "acb-official-liga-nacional" or "acb-official-tournaments" => "https://www.acb.com/",
+            "basketball-database" => "https://basketball-database.com/",
+            "bbl-wayback" => "https://web.archive.org/",
+            "eurobasket-lithuania" => "https://lkl.lt/",
+            "euroleagueR" => "https://github.com/JaseZiv/euroleagueR_data",
+            "flashscore-domestic" or "flashscore-poland-plk" or "flashscore-czech-nbl" => "https://www.flashscore.com/basketball/",
+            "french-historical" => "https://www.basketarchives.fr/",
+            "german-official" => "https://www.easycredit-bbl.de/",
+            "greek-official" => "https://www.esake.gr/",
+            "official-israel-basket" => "https://basket.co.il/",
+            "lba-official" => "https://www.legabasket.it/",
+            "serbian-historical" => "https://kls.rs/",
+            "turkish-historical" => "https://www.tbf.org.tr/",
+            _ when provider.StartsWith("wikipedia", StringComparison.OrdinalIgnoreCase) => "https://www.wikipedia.org/",
+            _ => "https://www.google.com/search?q=" + Uri.EscapeDataString(provider + " basketball archive")
+        };
+
+    private static string Slug(string value)
+        => new string(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+
+    private sealed record RegionView(
+        string Name,
+        string Slug,
+        IReadOnlyList<LeagueView> Leagues);
+
+    private sealed record LeagueView(
+        string LeagueName,
+        string EloPoolKey,
+        IReadOnlyList<SourceView> Sources);
+
+    private sealed record SourceView(
+        string Name,
+        string Url,
+        string CoverageLabel,
+        IReadOnlyList<string> Seasons);
+}

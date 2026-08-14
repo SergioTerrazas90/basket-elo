@@ -16,7 +16,7 @@
             @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
             {
                 <button type="button" class="@PoolTabClass(option.Key)" @onclick="() => SelectPoolAsync(option.Key)" disabled="@isBusy">
-                    @(option.Key == EloPoolKeys.EuropeClubs ? "Europe" : option.Key == EloPoolKeys.NationalTeams ? "International" : option.DisplayName)
+                    @(option.Key == EloPoolKeys.EuropeClubs ? "Europe" : option.Key == EloPoolKeys.NationalTeams ? "National teams" : option.DisplayName)
                 </button>
             }
         </nav>
@@ -186,7 +186,7 @@
                             <tr>
                                 <th>Rank</th>
                                 <th>Team</th>
-                                @if (selectedPool != EloPoolKeys.Nba)
+                                @if (ShowsCountryColumn)
                                 {
                                     <th>Country</th>
                                 }
@@ -215,10 +215,6 @@
                                             <div class="team-identity-cell">
                                                 <div>
                                                     <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
-                                                    @if (selectedPool == EloPoolKeys.NationalTeams)
-                                                    {
-                                                        <span class="national-team-badge">National team</span>
-                                                    }
                                                     @if (!row.IsActive)
                                                     {
                                                         <span class="franchise-status">@HistoricalTeamLabel()</span>
@@ -226,7 +222,7 @@
                                                 </div>
                                             </div>
                                         </td>
-                                        @if (selectedPool != EloPoolKeys.Nba)
+                                        @if (ShowsCountryColumn)
                                         {
                                             <td>@row.Country</td>
                                         }
@@ -315,10 +311,10 @@
                                 <th>Rank</th>
                                 @if (response.Summary.IsFiltered)
                                 {
-                                    <th>Pool</th>
+                                    <th>Global rank</th>
                                 }
                                 <th>Team</th>
-                                @if (selectedPool != EloPoolKeys.Nba)
+                                @if (ShowsCountryColumn)
                                 {
                                     <th>Country</th>
                                 }
@@ -332,7 +328,7 @@
                             @if (response.Rankings.Count == 0)
                             {
                                 <tr>
-                                    <td colspan="8" class="empty-state">@(selectedPool == EloPoolKeys.NationalTeams ? "National team ratings are not available yet." : "No teams match the current filters.")</td>
+                                    <td colspan="@RankingTableColumnCount" class="empty-state">@(selectedPool == EloPoolKeys.NationalTeams ? "National team ratings are not available yet." : "No teams match the current filters.")</td>
                                 </tr>
                             }
                             else
@@ -349,10 +345,6 @@
                                             <div class="team-identity-cell">
                                                 <div>
                                                     <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
-                                                    @if (selectedPool == EloPoolKeys.NationalTeams)
-                                                    {
-                                                        <span class="national-team-badge">National team</span>
-                                                    }
                                                     @if (!row.IsActive)
                                                     {
                                                         <span class="franchise-status">@HistoricalTeamLabel()</span>
@@ -360,7 +352,7 @@
                                                 </div>
                                             </div>
                                         </td>
-                                        @if (selectedPool != EloPoolKeys.Nba)
+                                        @if (ShowsCountryColumn)
                                         {
                                             <td>@row.Country</td>
                                         }
@@ -544,13 +536,12 @@
         await RefreshAsync();
     }
 
-    private Task ApplyFiltersAsync()
+    private async Task ApplyFiltersAsync()
     {
-        NavigateToRankings(1);
-        return Task.CompletedTask;
+        await RefreshSelectionAsync(1);
     }
 
-    private Task ResetFiltersAsync()
+    private async Task ResetFiltersAsync()
     {
         selectedTeamScope = EloTeamScopes.Current;
         selectedCountry = null;
@@ -559,8 +550,7 @@
         selectedToSeason = null;
         minimumGames = 0;
         teamSearch = null;
-        NavigateToRankings(1);
-        return Task.CompletedTask;
+        await RefreshSelectionAsync(1);
     }
 
     private Task SelectTeamScopeAsync(string teamScope)
@@ -589,11 +579,10 @@
         return Task.CompletedTask;
     }
 
-    private Task ClearTeamSearch()
+    private async Task ClearTeamSearch()
     {
         teamSearch = null;
-        NavigateToRankings(1);
-        return Task.CompletedTask;
+        await RefreshSelectionAsync(1);
     }
 
     private Task ChangeMoverDirectionAsync(ChangeEventArgs args)
@@ -619,22 +608,19 @@
         isChartExpanded = !isChartExpanded;
     }
 
-    private Task PreviousPageAsync()
+    private async Task PreviousPageAsync()
     {
-        NavigateToRankings(Math.Max(1, CurrentPage - 1));
-        return Task.CompletedTask;
+        await RefreshSelectionAsync(Math.Max(1, CurrentPage - 1));
     }
 
-    private Task NextPageAsync()
+    private async Task NextPageAsync()
     {
-        NavigateToRankings(Math.Min(CurrentTotalPages, CurrentPage + 1));
-        return Task.CompletedTask;
+        await RefreshSelectionAsync(Math.Min(CurrentTotalPages, CurrentPage + 1));
     }
 
-    private Task GoToRequestedPageAsync()
+    private async Task GoToRequestedPageAsync()
     {
-        NavigateToRankings(ClampRequestedPage(requestedPage, CurrentTotalPages));
-        return Task.CompletedTask;
+        await RefreshSelectionAsync(ClampRequestedPage(requestedPage, CurrentTotalPages));
     }
 
     private async Task HandlePageInputKeyDown(KeyboardEventArgs args)
@@ -805,6 +791,24 @@
         lastLoadedUri = null;
 
         Navigation.NavigateTo(BuildRankingsHref(targetPage));
+    }
+
+    private async Task RefreshSelectionAsync(int targetPage)
+    {
+        NormalizeSelectedSeasonRange();
+        page = ClampRequestedPage(targetPage, CurrentTotalPages);
+        requestedPage = page;
+        lastRankingsApiUri = null;
+        lastMoversApiUri = null;
+        lastEvolutionRankingsApiUri = null;
+        lastEvolutionApiUri = null;
+        movers = null;
+        evolution = null;
+        fullEvolution = null;
+        evolutionRankings = null;
+        evolutionChartSeries = [];
+        CancelEvolutionRefinement();
+        await RefreshAsync();
     }
 
     private string BuildRankingsHref(int targetPage)
@@ -1225,6 +1229,12 @@
     private bool SupportsTeamScope
         => selectedPool is EloPoolKeys.Nba or EloPoolKeys.EuropeClubs or EloPoolKeys.NationalTeams;
 
+    private bool ShowsCountryColumn
+        => selectedPool is not EloPoolKeys.Nba and not EloPoolKeys.NationalTeams;
+
+    private int RankingTableColumnCount
+        => 6 + (ShowsCountryColumn ? 1 : 0) + (response?.Summary.IsFiltered == true ? 1 : 0);
+
     private bool IsHistoricalTeamScope
         => SupportsTeamScope && selectedTeamScope == EloTeamScopes.Historical;
 
@@ -1235,7 +1245,7 @@
         => selectedPool switch
         {
             EloPoolKeys.Nba => "NBA franchise scope",
-            EloPoolKeys.NationalTeams => "International team scope",
+            EloPoolKeys.NationalTeams => "National team scope",
             _ => "European club team scope"
         };
 
@@ -1265,7 +1275,7 @@
     private string PoolIntroduction() => selectedPool switch
     {
         EloPoolKeys.EuropeClubs => "Domestic and continental club results share one chronological Europe rating pool.",
-        EloPoolKeys.NationalTeams => "International tournaments and national-team games use an independent rating pool.",
+        EloPoolKeys.NationalTeams => "National-team tournaments and games use an independent rating pool.",
         _ => "NBA franchise strength across the complete imported league history."
     };
 

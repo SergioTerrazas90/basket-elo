@@ -631,76 +631,10 @@
 
 .rankings-table-section,
 .movers-section,
-.results-section,
-.dot-plot-section {
+.results-section {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-}
-
-.compact-section-head {
-    align-items: center;
-}
-
-.dot-plot {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-}
-
-.dot-plot-row {
-    display: grid;
-    grid-template-columns: 2rem minmax(8rem, 15rem) minmax(8rem, 1fr) 3.5rem;
-    align-items: center;
-    gap: 0.6rem;
-    min-height: 1.55rem;
-}
-
-.dot-plot-rank,
-.dot-plot-value {
-    color: var(--color-muted);
-    font-size: 0.76rem;
-}
-
-.dot-plot-rank {
-    text-align: right;
-}
-
-.dot-plot-label {
-    overflow: hidden;
-    color: var(--color-text);
-    font-size: 0.78rem;
-    font-weight: 750;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.dot-plot-track {
-    position: relative;
-    height: 0.45rem;
-    border-radius: var(--radius-pill);
-    background: var(--color-surface-muted);
-}
-
-.dot-plot-dot {
-    position: absolute;
-    top: 50%;
-    width: 0.8rem;
-    height: 0.8rem;
-    border: 2px solid var(--color-surface);
-    border-radius: var(--radius-pill);
-    background: var(--color-accent);
-    box-shadow: 0 0 0 1px var(--color-accent-dark);
-    transform: translate(-50%, -50%);
-}
-
-.dot-plot-value {
-    color: var(--color-text);
-    text-align: right;
 }
 
 .results-table {
@@ -1040,11 +974,6 @@
     .snapshot-metadata {
         width: 100%;
         justify-content: flex-start;
-    }
-
-    .dot-plot-row {
-        grid-template-columns: 1.75rem minmax(7rem, 11rem) minmax(5rem, 1fr) 3rem;
-        gap: 0.35rem;
     }
 
     .table-preset-toolbar {

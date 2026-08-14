@@ -1,0 +1,313 @@
+@page "/browse"
+@rendermode InteractiveServer
+@using BasketElo.Domain.Elo
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Browse @selectedPoolName</PageTitle>
+
+<div class="browse-page">
+    <header class="browse-header">
+        <div>
+            <p class="eyebrow">Ratings directory</p>
+            <h1>Browse @selectedPoolName</h1>
+            <p class="intro">Start with a country, competition, or league tier, then move into the ratings and games that make up the context.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="@RankingsHref()">Open rankings</a>
+    </header>
+
+    <nav class="browse-pool-tabs" aria-label="Browse rating pools">
+        @foreach (var pool in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
+        {
+            <a class="@(selectedPool == pool.Key ? "active" : null)" href="@BrowseHref(pool: pool.Key)">
+                @pool.DisplayName
+            </a>
+        }
+    </nav>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+    else if (isBusy)
+    {
+        <section class="browse-loading" aria-live="polite">Loading browsing context...</section>
+    }
+    else if (response is not null)
+    {
+        @if (response.Context is not null)
+        {
+            <section class="browse-context-header">
+                <div>
+                    <a class="browse-back-link" href="@BrowseHref()">← All @selectedPoolName browsing</a>
+                    <p class="eyebrow">@ContextEyebrow()</p>
+                    <h2>@ContextTitle()</h2>
+                    <p class="context-coverage">@response.Context.CoverageMessage</p>
+                </div>
+                <div class="context-actions">
+                    <a class="btn btn-primary" href="@RankingsHref()">View rankings</a>
+                </div>
+            </section>
+
+            <section class="browse-summary" aria-label="Context summary">
+                <div><span>Teams</span><strong>@response.Context.TeamCount</strong></div>
+                <div><span>Games</span><strong>@response.Context.GameCount</strong></div>
+                <div><span>Finished</span><strong>@response.Context.FinishedGameCount</strong></div>
+                <div><span>Latest rating input</span><strong>@FormatDate(response.Context.LatestGameUtc)</strong></div>
+            </section>
+
+            @if (response.Context.Seasons.Count > 0)
+            {
+                <section class="browse-section">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">Coverage</p>
+                            <h2>Seasons</h2>
+                        </div>
+                        <span class="section-note">Select a season to keep the same context.</span>
+                    </div>
+                    <div class="season-links">
+                        @foreach (var item in response.Context.Seasons)
+                        {
+                            <a class="season-link @(string.Equals(Season, item.Label, StringComparison.OrdinalIgnoreCase) ? "active" : null)"
+                               href="@BrowseHref(country: response.Context.Country, competition: response.Context.Competition, season: item.Label)">
+                                <strong>@item.Label</strong>
+                                <span>@item.GameCount games · @FormatDate(item.LatestGameUtc)</span>
+                            </a>
+                        }
+                    </div>
+                </section>
+            }
+
+            @if (response.Context.Tiers.Count > 0)
+            {
+                <section class="browse-section">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">League structure</p>
+                            <h2>Tiers and comparability</h2>
+                        </div>
+                        <span class="section-note">Tier averages are descriptive within this pool and ruleset.</span>
+                    </div>
+                    <div class="tier-grid">
+                        @foreach (var tier in response.Context.Tiers)
+                        {
+                            <div class="tier-card">
+                                <span>Tier @tier.Tier</span>
+                                <strong>@tier.TeamCount teams</strong>
+                                <small>@tier.CompetitionCount competition@(tier.CompetitionCount == 1 ? "" : "s") · @tier.GameCount games</small>
+                                <small>Average ELO: @(tier.AverageElo?.ToString("0") ?? "Not enough ratings")</small>
+                            </div>
+                        }
+                    </div>
+                    <p class="comparability-note">Ratings are directly comparable only when the pool and ruleset match. Tier labels describe competition context; they do not create a cross-pool ranking.</p>
+                </section>
+            }
+
+            <div class="browse-columns">
+                <section class="browse-section">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">Current signal</p>
+                            <h2>Top-rated teams</h2>
+                        </div>
+                    </div>
+                    @if (response.Context.TopTeams.Count == 0)
+                    {
+                        <p class="empty-state">No current ratings are available for this context yet.</p>
+                    }
+                    else
+                    {
+                        <div class="browse-team-list">
+                            @foreach (var team in response.Context.TopTeams)
+                            {
+                                <a class="browse-team-row" href="@TeamHref(team.TeamId)">
+                                    <span class="team-rank">#@team.Rank</span>
+                                    <span><strong>@team.Name</strong><small>@team.Country · @team.GamesPlayed games</small></span>
+                                    <strong class="team-rating">@(team.Elo?.ToString("0") ?? "-")</strong>
+                                </a>
+                            }
+                        </div>
+                    }
+                </section>
+
+                <section class="browse-section">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">Freshness</p>
+                            <h2>Recent games</h2>
+                        </div>
+                    </div>
+                    @if (response.Context.RecentGames.Count == 0)
+                    {
+                        <p class="empty-state">No imported games are available for this context yet.</p>
+                    }
+                    else
+                    {
+                        <div class="browse-game-list">
+                            @foreach (var game in response.Context.RecentGames)
+                            {
+                                <div class="browse-game-row">
+                                    <span>@FormatDate(game.GameDateTimeUtc)<small>@game.Season@(string.IsNullOrWhiteSpace(game.Phase) ? null : $" · {game.Phase}")</small></span>
+                                    <strong>@game.HomeTeam <span>@FormatScore(game.HomeScore)</span></strong>
+                                    <strong>@game.AwayTeam <span>@FormatScore(game.AwayScore)</span></strong>
+                                </div>
+                            }
+                        </div>
+                    }
+                </section>
+            </div>
+        }
+        else
+        {
+            <section class="browse-intro-card">
+                <p class="eyebrow">Choose a context</p>
+                <h2>Find ratings by place or competition</h2>
+                <p>Country pages collect their competitions; competition pages expose tiers, seasons, freshness, recent games, and the current top-rated teams.</p>
+            </section>
+
+            <section class="browse-section">
+                <div class="section-head">
+                    <div>
+                        <p class="eyebrow">Geography</p>
+                        <h2>Countries and regions</h2>
+                    </div>
+                    <span class="section-note">@response.Countries.Count contexts</span>
+                </div>
+                @if (response.Countries.Count == 0)
+                {
+                    <p class="empty-state">No country coverage is available in this pool yet.</p>
+                }
+                else
+                {
+                    <div class="browse-card-grid">
+                        @foreach (var item in response.Countries)
+                        {
+                            <a class="browse-card" href="@BrowseHref(country: item.Name)">
+                                <strong>@item.Name</strong>
+                                <span>@item.CompetitionCount competition@(item.CompetitionCount == 1 ? "" : "s")</span>
+                                <small>@item.TeamCount teams · @item.GameCount games · latest @FormatDate(item.LatestGameUtc)</small>
+                            </a>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="browse-section">
+                <div class="section-head">
+                    <div>
+                        <p class="eyebrow">Competitions</p>
+                        <h2>League directory</h2>
+                    </div>
+                    <span class="section-note">Filter values remain available for power users.</span>
+                </div>
+                <div class="competition-list">
+                    @foreach (var item in response.Competitions)
+                    {
+                        <a class="competition-row" href="@BrowseHref(country: item.Country, competition: item.Name)">
+                            <span><strong>@item.Name</strong><small>@item.Country · @item.Type</small></span>
+                            <span class="competition-tier">Tier @item.Tier</span>
+                            <span>@item.TeamCount teams</span>
+                            <span>@item.GameCount games</span>
+                            <span>@FormatDate(item.LatestGameUtc)</span>
+                        </a>
+                    }
+                </div>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "pool")]
+    public string? Pool { get; set; }
+
+    [SupplyParameterFromQuery(Name = "country")]
+    public string? Country { get; set; }
+
+    [SupplyParameterFromQuery(Name = "competition")]
+    public string? Competition { get; set; }
+
+    [SupplyParameterFromQuery(Name = "season")]
+    public string? Season { get; set; }
+
+    private EloBrowseResponse? response;
+    private string selectedPool = EloPoolKeys.Default;
+    private bool isBusy;
+    private string? errorMessage;
+    private string selectedPoolName => EloPoolKeys.DisplayName(selectedPool);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        selectedPool = EloPoolKeys.IsSupported(Pool) ? Pool!.Trim().ToLowerInvariant() : EloPoolKeys.Default;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        isBusy = true;
+        errorMessage = null;
+        try
+        {
+            var query = new Dictionary<string, object?>
+            {
+                ["pool"] = selectedPool,
+                ["country"] = Country,
+                ["competition"] = Competition,
+                ["season"] = Season
+            };
+            var uri = Navigation.GetUriWithQueryParameters("api/elo/browse", query);
+            response = await Http.GetFromJsonAsync<EloBrowseResponse>(uri);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load browse context: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private string ContextEyebrow()
+        => response?.Context?.Competition is not null ? "Competition context" : "Country context";
+
+    private string ContextTitle()
+    {
+        if (response?.Context is null)
+        {
+            return selectedPoolName;
+        }
+
+        return response.Context.Competition is not null
+            ? response.Context.Competition
+            : response.Context.Country ?? selectedPoolName;
+    }
+
+    private string BrowseHref(string? pool = null, string? country = null, string? competition = null, string? season = null)
+        => Navigation.GetUriWithQueryParameters("/browse", new Dictionary<string, object?>
+        {
+            ["pool"] = pool ?? selectedPool,
+            ["country"] = country,
+            ["competition"] = competition,
+            ["season"] = season
+        });
+
+    private string RankingsHref()
+        => Navigation.GetUriWithQueryParameters("/rankings", new Dictionary<string, object?>
+        {
+            ["pool"] = selectedPool,
+            ["country"] = response?.Context?.Country,
+            ["competition"] = response?.Context?.Competition,
+            ["season"] = Season
+        });
+
+    private string TeamHref(Guid teamId)
+        => $"/teams/{teamId}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri))}";
+
+    private static string FormatDate(DateTime? value)
+        => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";
+
+    private static string FormatScore(short? value)
+        => value?.ToString() ?? "-";
+}

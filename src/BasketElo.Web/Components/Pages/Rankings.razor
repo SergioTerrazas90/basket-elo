@@ -197,6 +197,10 @@
                     </button>
                 }
             </div>
+            @if (selectedPool != EloPoolKeys.Nba)
+            {
+                <a class="browse-context-link" href="@BrowseHref()">Browse countries and competitions</a>
+            }
         </section>
     }
 
@@ -316,7 +320,7 @@
                                         </td>
                                         @if (ShowsCountryColumn)
                                         {
-                                            <td>@row.Country</td>
+                                            <td><a class="context-link" href="@BrowseHref(country: row.Country)" @onclick:stopPropagation="true">@row.Country</a></td>
                                         }
                                         <td class="numeric"><span class="@MovementClass(row.EloChange)">@FormatMovement(row.EloChange)</span></td>
                                         <td class="numeric">@row.StartElo.ToString("0")</td>
@@ -425,7 +429,7 @@
                                         }
                                         @if (ShowRankingColumn("country"))
                                         {
-                                            <td>@row.Country</td>
+                                            <td><a class="context-link" href="@BrowseHref(country: row.Country)" @onclick:stopPropagation="true">@row.Country</a></td>
                                         }
                                         @if (ShowRankingColumn("elo"))
                                         {
@@ -1466,6 +1470,15 @@
         var returnUrl = Navigation.ToBaseRelativePath(Navigation.Uri);
         return $"/teams/{teamId}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
     }
+
+    private string BrowseHref(string? country = null)
+        => Navigation.GetUriWithQueryParameters("/browse", new Dictionary<string, object?>
+        {
+            ["pool"] = selectedPool,
+            ["country"] = country,
+            ["competition"] = selectedCompetition,
+            ["season"] = selectedToSeason
+        });
 
     private IReadOnlyList<EloTeamEvolutionSeries> EvolutionSeries
         => evolution?.Series

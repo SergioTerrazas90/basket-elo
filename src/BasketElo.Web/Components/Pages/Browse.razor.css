@@ -1,0 +1,333 @@
+.browse-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.browse-header,
+.browse-context-header,
+.section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+.browse-header h1,
+.browse-context-header h2,
+.browse-intro-card h2,
+.browse-section h2 {
+    margin: 0 0 0.25rem;
+    color: var(--color-text);
+}
+
+.browse-header h1 {
+    font-size: clamp(1.8rem, 3vw, 2.6rem);
+}
+
+.browse-header .intro,
+.browse-intro-card p,
+.context-coverage,
+.comparability-note {
+    max-width: 52rem;
+    margin: 0;
+    color: var(--color-muted);
+}
+
+.browse-pool-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.browse-pool-tabs a,
+.browse-back-link {
+    color: var(--color-muted);
+    font-size: 0.84rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.browse-pool-tabs a {
+    padding: 0.45rem 0.8rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+}
+
+.browse-pool-tabs a:hover,
+.browse-pool-tabs a:focus-visible,
+.browse-pool-tabs a.active {
+    border-color: var(--color-border);
+    background: var(--color-surface-muted);
+    color: var(--color-brand-dark);
+}
+
+.browse-context-header {
+    align-items: end;
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.browse-back-link {
+    display: inline-block;
+    margin-bottom: 0.65rem;
+    color: var(--color-brand-dark);
+}
+
+.context-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.browse-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-3);
+}
+
+.browse-summary div,
+.browse-intro-card,
+.browse-section {
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.browse-summary span,
+.tier-card span,
+.tier-card small,
+.browse-team-row small,
+.browse-game-row small,
+.browse-card span,
+.browse-card small,
+.competition-row small {
+    display: block;
+    color: var(--color-muted);
+    font-size: 0.76rem;
+}
+
+.browse-summary strong {
+    display: block;
+    margin-top: 0.3rem;
+    color: var(--color-brand-dark);
+    font-size: 1.25rem;
+}
+
+.browse-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.section-note {
+    color: var(--color-muted);
+    font-size: 0.78rem;
+}
+
+.browse-card-grid,
+.tier-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: var(--space-3);
+}
+
+.browse-card,
+.season-link,
+.competition-row,
+.browse-team-row {
+    color: var(--color-text);
+    text-decoration: none;
+}
+
+.browse-card,
+.season-link,
+.tier-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+}
+
+.browse-card:hover,
+.browse-card:focus-visible,
+.season-link:hover,
+.season-link:focus-visible,
+.season-link.active {
+    border-color: var(--color-brand);
+    background: #fff8ec;
+}
+
+.browse-card strong,
+.season-link strong,
+.tier-card strong {
+    color: var(--color-brand-dark);
+}
+
+.season-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.season-link {
+    min-width: 10rem;
+}
+
+.tier-card {
+    background: linear-gradient(145deg, var(--color-surface-muted), #fffaf1);
+}
+
+.comparability-note {
+    padding: 0.7rem 0.85rem;
+    border-left: 3px solid var(--color-accent);
+    background: #fff8ec;
+    font-size: 0.8rem;
+}
+
+.browse-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-4);
+}
+
+.browse-team-list,
+.browse-game-list,
+.competition-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.browse-team-row,
+.browse-game-row,
+.competition-row {
+    display: grid;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.browse-team-row {
+    grid-template-columns: 3rem minmax(0, 1fr) auto;
+}
+
+.browse-team-row:hover,
+.browse-team-row:focus-visible {
+    color: var(--color-brand-dark);
+}
+
+.team-rank {
+    color: var(--color-accent-dark);
+    font-weight: 850;
+}
+
+.team-rating {
+    color: var(--color-brand-dark);
+    font-variant-numeric: tabular-nums;
+}
+
+.browse-game-row {
+    grid-template-columns: 7rem minmax(0, 1fr) minmax(0, 1fr);
+    font-size: 0.84rem;
+}
+
+.browse-game-row > span {
+    color: var(--color-muted);
+}
+
+.browse-game-row > strong {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.browse-game-row > strong span {
+    color: var(--color-brand-dark);
+    font-variant-numeric: tabular-nums;
+}
+
+.competition-row {
+    grid-template-columns: minmax(14rem, 1fr) 5rem 6rem 6rem 7rem;
+}
+
+.competition-row:hover,
+.competition-row:focus-visible {
+    background: var(--color-surface-muted);
+}
+
+.competition-row > span:not(:first-child) {
+    color: var(--color-muted);
+    font-size: 0.78rem;
+    text-align: right;
+}
+
+.competition-tier {
+    color: var(--color-brand-dark) !important;
+    font-weight: 850;
+}
+
+.browse-loading,
+.empty-state {
+    padding: var(--space-8) var(--space-4);
+    color: var(--color-muted);
+    text-align: center;
+}
+
+@media (max-width: 900px) {
+    .browse-header,
+    .browse-context-header,
+    .section-head {
+        flex-direction: column;
+    }
+
+    .browse-header .btn,
+    .context-actions,
+    .context-actions .btn {
+        width: 100%;
+    }
+
+    .browse-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .browse-columns {
+        grid-template-columns: 1fr;
+    }
+
+    .competition-list {
+        overflow-x: auto;
+    }
+
+    .competition-row {
+        min-width: 34rem;
+    }
+}
+
+@media (max-width: 560px) {
+    .browse-summary {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .browse-summary strong {
+        font-size: 1.05rem;
+    }
+
+    .browse-game-row {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .browse-game-row > span {
+        grid-column: 1 / -1;
+    }
+}

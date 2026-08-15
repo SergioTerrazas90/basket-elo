@@ -12,14 +12,26 @@
                 </div>
                 <div class="elo-chart-range-buttons">
                     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Reset zoom</button>
+                    @if (ShowDiagnostics)
+                    {
+                        <button type="button"
+                                class="btn btn-sm btn-outline-secondary"
+                                aria-expanded="@diagnosticsExpanded"
+                                @onclick="ToggleDiagnostics">
+                            Diagnostics
+                        </button>
+                    }
                 </div>
             </div>
             <span class="elo-chart-context">
                 <span>@ChartContextLabel</span>
-                <span class="elo-chart-metrics">
-                    <span>@VisibleChartPointCount plotted</span>
-                    <span>@CurrentRatedPointCount rated in view / @TotalRatedPointCount full range</span>
-                </span>
+                @if (ShowDiagnostics && diagnosticsExpanded)
+                {
+                    <span class="elo-chart-metrics">
+                        <span>@VisibleChartPointCount plotted</span>
+                        <span>@CurrentRatedPointCount rated in view / @TotalRatedPointCount full range</span>
+                    </span>
+                }
                 <span class="elo-chart-refinement-slot" aria-live="polite">
                     @if (IsRefining)
                     {
@@ -31,13 +43,13 @@
         </div>
     }
 
-    @if (EnableRangeNavigation && SourceSeries.Count > 1)
+    @if (ShowSeriesControls && EnableRangeNavigation && SourceSeries.Count > 1)
     {
-        <div class="elo-chart-series-controls" aria-label="Team comparison controls">
-            <span class="elo-chart-series-controls-label">Compare teams</span>
+        <div class="elo-chart-series-controls" aria-label="Chart legend and visibility controls">
+            <span class="elo-chart-series-controls-label">Legend</span>
             <button type="button"
                     class="btn btn-sm btn-outline-secondary"
-                    @onclick="ShowAllSeries"
+                    @onclick="ShowAllSeriesAsync"
                     disabled="@(hiddenSeriesKeys.Count == 0)">Show all</button>
             @foreach (var series in SourceSeries)
             {
@@ -46,10 +58,13 @@
                         class="elo-chart-series-toggle @(isVisible ? "is-visible" : "is-hidden")"
                         aria-pressed="@isVisible"
                         title="@(isVisible ? $"Hide {series.TeamName}" : $"Show {series.TeamName}")"
-                        @onclick="() => ToggleSeries(series)">
+                        @onclick="() => ToggleSeriesAsync(series)">
                     <span class="elo-chart-series-toggle-swatch" style="background: @series.Color"></span>
                     <span class="elo-chart-series-toggle-name">@series.TeamName</span>
-                    <small>@GetVisibleChartPointCount(series) plotted &#183; @RatedPointCount(series) rated</small>
+                    @if (ShowDiagnostics && diagnosticsExpanded)
+                    {
+                        <small>@GetVisibleChartPointCount(series) plotted &#183; @RatedPointCount(series) rated</small>
+                    }
                 </button>
             }
         </div>
@@ -166,6 +181,21 @@
     public bool ShowLegend { get; set; } = true;
 
     [Parameter]
+    public bool ShowSeriesControls { get; set; } = true;
+
+    [Parameter]
+    public bool ShowDiagnostics { get; set; }
+
+    [Parameter]
+    public IReadOnlyCollection<Guid> HiddenTeamIds { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<Guid> SeriesVisibilityChanged { get; set; }
+
+    [Parameter]
+    public EventCallback ShowAllSeriesRequested { get; set; }
+
+    [Parameter]
     public bool SharedTooltip { get; set; } = true;
 
     [Parameter]
@@ -200,6 +230,7 @@
     private IReadOnlyList<DateTime> activeDates = [];
     private EloChartPoint? selectedPoint;
     private long renderedDataRevision = -1;
+    private bool diagnosticsExpanded;
     private readonly HashSet<string> hiddenSeriesKeys = new(StringComparer.Ordinal);
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
@@ -265,6 +296,11 @@
 
     protected override void OnParametersSet()
     {
+        if (!ShowDiagnostics)
+        {
+            diagnosticsExpanded = false;
+        }
+
         var dataChanged = renderedDataRevision != DataRevision;
         sourceSeries = Series
             .Select(series => series with
@@ -275,7 +311,15 @@
             })
             .Where(x => x.Points.Count >= 2)
             .ToList();
-        hiddenSeriesKeys.RemoveWhere(key => sourceSeries.All(series => SeriesKey(series) != key));
+        if (UsesExternalVisibilityState)
+        {
+            hiddenSeriesKeys.Clear();
+            hiddenSeriesKeys.UnionWith(HiddenTeamIds.Select(teamId => teamId.ToString("D")));
+        }
+        else
+        {
+            hiddenSeriesKeys.RemoveWhere(key => sourceSeries.All(series => SeriesKey(series) != key));
+        }
         RebuildDisplaySeries();
 
         if (!EnableRangeNavigation || dataChanged)
@@ -322,6 +366,20 @@
         ResetView();
     }
 
+    private void ToggleDiagnostics()
+        => diagnosticsExpanded = !diagnosticsExpanded;
+
+    private async Task ToggleSeriesAsync(EloChartSeries series)
+    {
+        if (series.TeamId is Guid teamId && SeriesVisibilityChanged.HasDelegate)
+        {
+            await SeriesVisibilityChanged.InvokeAsync(teamId);
+            return;
+        }
+
+        ToggleSeries(series);
+    }
+
     private void ToggleSeries(EloChartSeries series)
     {
         var key = SeriesKey(series);
@@ -338,6 +396,17 @@
         RebuildDisplaySeries();
     }
 
+    private async Task ShowAllSeriesAsync()
+    {
+        if (ShowAllSeriesRequested.HasDelegate)
+        {
+            await ShowAllSeriesRequested.InvokeAsync();
+            return;
+        }
+
+        ShowAllSeries();
+    }
+
     private void ShowAllSeries()
     {
         hiddenSeriesKeys.Clear();
@@ -346,6 +415,9 @@
 
     private bool IsSeriesVisible(EloChartSeries series)
         => !hiddenSeriesKeys.Contains(SeriesKey(series));
+
+    private bool UsesExternalVisibilityState
+        => SeriesVisibilityChanged.HasDelegate || ShowAllSeriesRequested.HasDelegate;
 
     private static string SeriesKey(EloChartSeries series)
         => series.TeamId?.ToString("D") ?? series.TeamName;

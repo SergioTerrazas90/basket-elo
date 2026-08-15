@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace BasketElo.Domain.Elo;
 
 public static class EloRulesetVersions
@@ -234,7 +236,7 @@ public sealed record EloTeamEvolutionSeries(
     Guid TeamId,
     string TeamName,
     IReadOnlyCollection<EloTeamEvolutionPoint> Points,
-    int RatedPointCount = 0);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int RatedPointCount = 0);
 
 public sealed record EloTeamEvolutionPoint(
     DateTime GameDateTimeUtc,

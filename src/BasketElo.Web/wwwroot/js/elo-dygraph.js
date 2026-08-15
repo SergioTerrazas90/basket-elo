@@ -1,0 +1,295 @@
+(function () {
+    "use strict";
+
+    const states = new WeakMap();
+
+    function escapeHtml(value) {
+        return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(value) {
+        return new Intl.DateTimeFormat(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric"
+        }).format(new Date(value));
+    }
+
+    function formatElo(value) {
+        return Number(value).toLocaleString(undefined, {
+            maximumFractionDigits: 0
+        });
+    }
+
+    function formatMovement(value) {
+        const number = Number(value);
+        if (number > 0) {
+            return `+${formatElo(number)}`;
+        }
+
+        return formatElo(number);
+    }
+
+    function ensureTooltip(host) {
+        const tooltip = document.createElement("div");
+        tooltip.className = "elo-dygraph-tooltip";
+        tooltip.hidden = true;
+        host.appendChild(tooltip);
+        return tooltip;
+    }
+
+    function toRows(payload) {
+        const rowMap = new Map();
+        const metadata = [];
+
+        payload.series.forEach((series, seriesIndex) => {
+            series.points.forEach(point => {
+                const time = Number(point.x);
+                let row = rowMap.get(time);
+                if (!row) {
+                    row = {
+                        time,
+                        values: Array(payload.series.length).fill(null),
+                        metadata: Array(payload.series.length).fill(null)
+                    };
+                    rowMap.set(time, row);
+                }
+
+                row.values[seriesIndex] = Number(point.y);
+                row.metadata[seriesIndex] = {
+                    x: time,
+                    y: Number(point.y),
+                    delta: point.delta == null ? null : Number(point.delta),
+                    rank: point.rank == null ? null : Number(point.rank),
+                    name: series.name,
+                    color: series.color
+                };
+            });
+        });
+
+        const sortedRows = Array.from(rowMap.values()).sort((left, right) => left.time - right.time);
+        sortedRows.forEach(row => metadata.push(row.metadata));
+
+        return {
+            rows: sortedRows.map(row => [new Date(row.time), ...row.values]),
+            metadata,
+            min: sortedRows[0]?.time ?? Date.now(),
+            max: sortedRows.at(-1)?.time ?? Date.now()
+        };
+    }
+
+    function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    function selectedRange(state, minDate, maxDate) {
+        const span = state.max - state.min;
+        if (span <= 0) {
+            return { start: 0, end: 1 };
+        }
+
+        return {
+            start: clamp((minDate - state.min) / span, 0, 1),
+            end: clamp((maxDate - state.min) / span, 0, 1)
+        };
+    }
+
+    function renderTooltip(state, event, points, row) {
+        if (!points || points.length === 0 || row == null) {
+            state.tooltip.hidden = true;
+            return;
+        }
+
+        const validPoints = points.filter(point => point.yval != null && !Number.isNaN(point.yval));
+        if (validPoints.length === 0) {
+            state.tooltip.hidden = true;
+            return;
+        }
+
+        const visiblePoints = state.sharedTooltip ? validPoints : [validPoints[0]];
+        const rows = visiblePoints.map(point => {
+            const seriesIndex = state.labels.indexOf(point.name) - 1;
+            const meta = state.metadata[row]?.[seriesIndex];
+            if (!meta) {
+                return "";
+            }
+
+            const detail = [
+                `<span>${formatDate(meta.x)}</span>`,
+                `<span>${formatElo(meta.y)} ELO</span>`
+            ];
+            if (meta.delta != null) {
+                detail.push(`<span>Change ${formatMovement(meta.delta)}</span>`);
+            }
+            if (meta.rank != null) {
+                detail.push(`<span>Rank #${meta.rank}</span>`);
+            }
+
+            return `<div class="elo-dygraph-tooltip-series" style="--active-team-color: ${escapeHtml(meta.color)}"><span class="elo-chart-active-swatch"></span><strong>${escapeHtml(meta.name)}</strong></div><div class="elo-dygraph-tooltip-details">${detail.join("")}</div>`;
+        }).filter(Boolean);
+
+        if (rows.length === 0) {
+            state.tooltip.hidden = true;
+            return;
+        }
+
+        const first = visiblePoints[0];
+        const firstSeriesIndex = state.labels.indexOf(first.name) - 1;
+        const firstMeta = state.metadata[row]?.[firstSeriesIndex];
+        state.tooltip.style.setProperty("--active-team-color", firstMeta?.color ?? "var(--color-accent)");
+        state.tooltip.innerHTML = rows.join("");
+        state.tooltip.hidden = false;
+
+        const rect = state.host.getBoundingClientRect();
+        const width = state.tooltip.offsetWidth || 210;
+        const height = state.tooltip.offsetHeight || 80;
+        const offsetX = event?.offsetX ?? first.canvasx ?? 0;
+        const offsetY = event?.offsetY ?? first.canvasy ?? 0;
+        state.tooltip.style.left = `${clamp(offsetX + 14, 8, Math.max(8, rect.width - width - 8))}px`;
+        state.tooltip.style.top = `${clamp(offsetY - height - 12, 8, Math.max(8, rect.height - height - 8))}px`;
+    }
+
+    function disposeState(state) {
+        state.resizeObserver?.disconnect();
+        state.graph?.destroy();
+        state.graph = null;
+        state.host.replaceChildren();
+    }
+
+    function render(host, payload, dotNet) {
+        if (!window.Dygraph) {
+            throw new Error("Dygraphs did not load.");
+        }
+
+        const state = states.get(host);
+        if (!state) {
+            throw new Error("Dygraphs host was not initialized.");
+        }
+
+        state.dotNet = dotNet;
+        state.host.replaceChildren();
+        state.tooltip = ensureTooltip(host);
+        state.sharedTooltip = payload.sharedTooltip !== false;
+        state.labels = ["Date", ...payload.series.map(series => series.name)];
+        state.payload = payload;
+
+        const normalized = toRows(payload);
+        state.metadata = normalized.metadata;
+        state.min = normalized.min;
+        state.max = normalized.max;
+        state.suppressCallbacks = true;
+
+        if (payload.series.length === 0 || normalized.rows.length === 0) {
+            state.tooltip.hidden = true;
+            const empty = document.createElement("div");
+            empty.className = "elo-dygraph-empty";
+            empty.textContent = "No chart data available";
+            host.appendChild(empty);
+            state.suppressCallbacks = false;
+            return;
+        }
+
+        const rangeSpan = state.max - state.min;
+        const startFraction = clamp(Number(payload.viewStart ?? 0), 0, 1);
+        const endFraction = clamp(Number(payload.viewEnd ?? 1), 0, 1);
+        const dateWindow = rangeSpan > 0 && (startFraction > 0 || endFraction < 1)
+            ? [state.min + rangeSpan * startFraction, state.min + rangeSpan * endFraction]
+            : undefined;
+
+        state.graph = new Dygraph(host, normalized.rows, {
+            labels: state.labels,
+            colors: payload.series.map(series => series.color),
+            strokeWidth: 2,
+            drawPoints: false,
+            connectSeparatedPoints: true,
+            highlightSeriesOpts: { strokeWidth: 2.75 },
+            legend: "never",
+            animatedZooms: false,
+            panEdgeFraction: 0,
+            rightGap: 10,
+            xRangePad: 5,
+            dateWindow,
+            showRangeSelector: payload.enableRangeNavigation === true,
+            rangeSelectorHeight: 52,
+            axes: {
+                x: { axisLabelWidth: 70 },
+                y: { axisLabelWidth: 42 }
+            },
+            highlightCallback: (event, x, points, row) => renderTooltip(state, event, points, row),
+            unhighlightCallback: () => { state.tooltip.hidden = true; },
+            zoomCallback: (minDate, maxDate) => {
+                if (state.suppressCallbacks || !state.dotNet) {
+                    return;
+                }
+
+                const range = selectedRange(state, minDate, maxDate);
+                state.dotNet.invokeMethodAsync("HandleDygraphViewChange", range.start, range.end);
+            },
+            clickCallback: (event, x, points, row) => {
+                if (!state.dotNet || row == null) {
+                    return;
+                }
+
+                let seriesName = points?.find(point => point.yval != null)?.name;
+                try {
+                    const coords = state.graph.eventToDomCoords(event);
+                    seriesName = state.graph.findClosestPoint(coords[0], coords[1])?.seriesName ?? seriesName;
+                } catch {
+                    // The highlighted point is a sufficient fallback when browser event coordinates are unavailable.
+                }
+
+                if (seriesName) {
+                    const seriesIndex = state.labels.indexOf(seriesName) - 1;
+                    const point = state.metadata[row]?.[seriesIndex];
+                    if (point) {
+                        state.dotNet.invokeMethodAsync("HandleDygraphPointClick", seriesName, point.x);
+                    }
+                }
+            }
+        });
+
+        state.graph.ready(() => {
+            state.suppressCallbacks = false;
+        });
+    }
+
+    window.basketEloDygraph = {
+        initialize: (host) => {
+            if (states.has(host)) {
+                return;
+            }
+
+            const state = {
+                host,
+                graph: null,
+                tooltip: null,
+                dotNet: null,
+                labels: [],
+                metadata: [],
+                min: 0,
+                max: 0,
+                suppressCallbacks: true,
+                sharedTooltip: true,
+                resizeObserver: null
+            };
+            states.set(host, state);
+            state.resizeObserver = new ResizeObserver(() => state.graph?.resize());
+            state.resizeObserver.observe(host);
+        },
+        render,
+        dispose: (host) => {
+            const state = states.get(host);
+            if (!state) {
+                return;
+            }
+
+            disposeState(state);
+            states.delete(host);
+        }
+    };
+})();

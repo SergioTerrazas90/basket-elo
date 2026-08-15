@@ -1,4 +1,6 @@
 @using System.Globalization
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 
 <div class="elo-chart">
     @if (EnableRangeNavigation)
@@ -92,84 +94,11 @@
             </div>
         }
 
-        <RadzenChart @key="samplingMode"
-                     class="elo-radzen-chart"
-                     Style="@ChartStyle"
-                     TooltipTolerance="40"
-                     ClickTolerance="40"
-                     MouseMoveThrottle="25"
-                     AllowSeriesHover="true"
-                     AllowZoom="@EnableRangeNavigation"
-                     AllowPan="@EnableRangeNavigation"
-                     @bind-Zoom="chartZoom"
-                     @bind-ViewStart="viewStart"
-                     @bind-ViewEnd="viewEnd"
-                     ViewChange="@HandleViewChangeAsync"
-                     SeriesClick="@HandleSeriesClickAsync">
-        <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="@TooltipTrigger" HighlightDataPoint="false" />
-        <RadzenLegend Visible="@ShowLegend" Position="LegendPosition.Bottom" />
-
-        @foreach (var series in DisplaySeries)
-        {
-            <RadzenLineSeries Data="@series.Points"
-                              TItem="EloChartPoint"
-                              CategoryProperty="@CategoryProperty"
-                              ValueProperty="@nameof(EloChartPoint.Elo)"
-                              Title="@series.TeamName"
-                              Stroke="@series.Color"
-                              StrokeWidth="3"
-                              Smooth="@Smooth">
-                <ChildContent>
-                    <RadzenMarkers MarkerType="MarkerType.Circle" Size="2" Fill="@series.Color" Stroke="@series.Color" />
-                </ChildContent>
-                <TooltipTemplate Context="point">
-                    <div class="elo-chart-tooltip" style="--active-team-color: @point.Color">
-                        <div class="elo-chart-tooltip-team">
-                            <span class="elo-chart-active-swatch"></span>
-                            <strong>@point.TeamName</strong>
-                        </div>
-                        <span>@FormatDate(point.GameDateTimeUtc)</span>
-                        <span>@point.Elo.ToString("0") ELO</span>
-                        @if (point.EloDelta.HasValue)
-                        {
-                            <span>Change @FormatMovement(point.EloDelta.Value)</span>
-                        }
-                        @if (point.Rank.HasValue)
-                        {
-                            <span>Rank #@point.Rank</span>
-                        }
-                    </div>
-                </TooltipTemplate>
-            </RadzenLineSeries>
-        }
-
-        <RadzenCategoryAxis Formatter="@FormatCategoryAxis"
-                            LabelAutoRotation="-35"
-                            Min="@CategoryAxisMin"
-                            Max="@CategoryAxisMax"
-                            TickPlacement="@CategoryTickPlacement">
-            <RadzenAxisCrosshair Visible="true" Label="true" Snap="true" Stroke="#6b7682" />
-        </RadzenCategoryAxis>
-        <RadzenValueAxis Formatter="@FormatEloAxis">
-            <RadzenGridLines Visible="true" />
-            <RadzenAxisCrosshair Visible="true" Label="true" Stroke="#9aa6b2" />
-        </RadzenValueAxis>
-
-        @if (DisplaySeries.FirstOrDefault() is { } navigatorSeries)
-        {
-            <RadzenChartRangeNavigator Visible="@EnableRangeNavigation"
-                                       Height="52"
-                                       ShowHandleLabels="true">
-                <RadzenRangeNavigatorLineSeries TItem="EloChartPoint"
-                                                Data="@navigatorSeries.Points"
-                                                CategoryProperty="@nameof(EloChartPoint.GameDateTimeUtc)"
-                                                ValueProperty="@nameof(EloChartPoint.Elo)"
-                                                Stroke="@navigatorSeries.Color"
-                                                StrokeWidth="2"
-                                                Smooth="@Smooth" />
-            </RadzenChartRangeNavigator>
-        }
-        </RadzenChart>
+        <div @ref="chartHost"
+             class="elo-dygraph-chart"
+             style="@ChartStyle"
+             role="img"
+             aria-label="ELO history chart"></div>
     </div>
 </div>
 
@@ -219,7 +148,6 @@
     [Parameter]
     public EventCallback FullRangeRequested { get; set; }
 
-    private double chartZoom = 100;
     private double viewStart;
     private double viewEnd = 1;
 
@@ -231,30 +159,14 @@
     private EloChartPoint? selectedPoint;
     private long renderedDataRevision = -1;
     private bool diagnosticsExpanded;
+    private bool chartInitialized;
+    private bool chartRenderPending;
+    private string renderedChartSignature = string.Empty;
+    private ElementReference chartHost;
+    private DotNetObjectReference<EloEvolutionChart>? dotNetReference;
     private readonly HashSet<string> hiddenSeriesKeys = new(StringComparer.Ordinal);
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
-
-    private string CategoryProperty => samplingMode == EloChartSamplingMode.GameByGame
-        ? nameof(EloChartPoint.ActiveDateIndex)
-        : nameof(EloChartPoint.GameDateTimeUtc);
-
-    private object? CategoryAxisMin =>
-        samplingMode == EloChartSamplingMode.GameByGame && activeDates.Count > 1
-            ? 0d
-            : null;
-
-    private object? CategoryAxisMax =>
-        samplingMode == EloChartSamplingMode.GameByGame && activeDates.Count > 1
-            ? (double)(activeDates.Count - 1)
-            : null;
-
-    private TickPlacement CategoryTickPlacement =>
-        samplingMode == EloChartSamplingMode.GameByGame
-            ? TickPlacement.On
-            : TickPlacement.Between;
-
-    private ChartTooltipTrigger TooltipTrigger => ChartTooltipTrigger.Axis;
 
     private IReadOnlyList<EloChartSeries> SourceSeries
         => sourceSeries;
@@ -322,6 +234,10 @@
         }
         RebuildDisplaySeries();
 
+        var chartSignature = BuildChartSignature();
+        chartRenderPending = dataChanged || !string.Equals(renderedChartSignature, chartSignature, StringComparison.Ordinal);
+        renderedChartSignature = chartSignature;
+
         if (!EnableRangeNavigation || dataChanged)
         {
             ResetView();
@@ -335,19 +251,49 @@
         renderedDataRevision = DataRevision;
     }
 
-    private Task HandleSeriesClickAsync(SeriesClickEventArgs args)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (args.Data is EloChartPoint point)
+        if (!chartInitialized)
         {
-            selectedPoint = point;
+            dotNetReference ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("basketEloDygraph.initialize", chartHost);
+            chartInitialized = true;
         }
 
-        return Task.CompletedTask;
+        if (chartRenderPending)
+        {
+            chartRenderPending = false;
+            await JS.InvokeVoidAsync("basketEloDygraph.render", chartHost, BuildDygraphPayload(), dotNetReference);
+        }
+    }
+
+    [JSInvokable("HandleDygraphPointClick")]
+    public async Task HandleDygraphPointClick(string teamName, double xMillis)
+    {
+        var date = DateTimeOffset.FromUnixTimeMilliseconds((long)xMillis).UtcDateTime;
+        selectedPoint = displaySeries
+            .FirstOrDefault(series => string.Equals(series.TeamName, teamName, StringComparison.Ordinal))?
+            .Points
+            .OrderBy(point => Math.Abs((point.GameDateTimeUtc - date).Ticks))
+            .FirstOrDefault();
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable("HandleDygraphViewChange")]
+    public async Task HandleDygraphViewChange(double requestedStart, double requestedEnd)
+    {
+        viewStart = Math.Clamp(Math.Min(requestedStart, requestedEnd), 0, 1);
+        viewEnd = Math.Clamp(Math.Max(requestedStart, requestedEnd), 0, 1);
+        await RequestViewportRefinementAsync(viewStart, viewEnd);
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ShowFullRange()
     {
         ResetView();
+        chartRenderPending = true;
+        await InvokeAsync(StateHasChanged);
         if (FullRangeRequested.HasDelegate)
         {
             await FullRangeRequested.InvokeAsync();
@@ -364,6 +310,7 @@
         samplingMode = mode;
         RebuildDisplaySeries();
         ResetView();
+        chartRenderPending = true;
     }
 
     private void ToggleDiagnostics()
@@ -394,6 +341,7 @@
         }
 
         RebuildDisplaySeries();
+        chartRenderPending = true;
     }
 
     private async Task ShowAllSeriesAsync()
@@ -411,6 +359,7 @@
     {
         hiddenSeriesKeys.Clear();
         RebuildDisplaySeries();
+        chartRenderPending = true;
     }
 
     private bool IsSeriesVisible(EloChartSeries series)
@@ -489,13 +438,37 @@
             .ToList();
     }
 
-    private async Task HandleViewChangeAsync(ChartViewChangeEventArgs args)
-    {
-        chartZoom = args.Zoom;
-        viewStart = args.ViewStart;
-        viewEnd = args.ViewEnd;
-        await RequestViewportRefinementAsync(args.ViewStart, args.ViewEnd);
-    }
+    private string BuildChartSignature()
+        => string.Join(
+            ";",
+            samplingMode,
+            string.Join(",", hiddenSeriesKeys.OrderBy(key => key, StringComparer.Ordinal)),
+            string.Join(",", displaySeries.Select(series =>
+                $"{SeriesKey(series)}:{series.Points.Count}:{series.Points.FirstOrDefault()?.GameDateTimeUtc.Ticks}:{series.Points.LastOrDefault()?.GameDateTimeUtc.Ticks}")));
+
+    private object BuildDygraphPayload()
+        => new
+        {
+            sharedTooltip = SharedTooltip,
+            enableRangeNavigation = EnableRangeNavigation,
+            viewStart,
+            viewEnd,
+            series = displaySeries.Select(series => new
+            {
+                name = series.TeamName,
+                color = series.Color,
+                points = series.Points.Select(point => new
+                {
+                    x = ToUnixMilliseconds(point.GameDateTimeUtc),
+                    y = (double)point.Elo,
+                    delta = point.EloDelta.HasValue ? (double?)point.EloDelta.Value : null,
+                    rank = point.Rank
+                }).ToList()
+            }).ToList()
+        };
+
+    private static long ToUnixMilliseconds(DateTime value)
+        => new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
 
     private async Task RequestViewportRefinementAsync(double requestedStart, double requestedEnd)
     {
@@ -559,7 +532,6 @@
 
     private void ResetView()
     {
-        chartZoom = 100;
         viewStart = 0;
         viewEnd = 1;
     }
@@ -684,4 +656,20 @@
         => value is IFormattable formattable
             ? formattable.ToString("0", CultureInfo.CurrentCulture)
             : value?.ToString() ?? string.Empty;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (chartInitialized)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("basketEloDygraph.dispose", chartHost);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        dotNetReference?.Dispose();
+    }
 }

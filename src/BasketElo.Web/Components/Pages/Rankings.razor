@@ -4,7 +4,9 @@
 @rendermode @(new InteractiveServerRenderMode(prerender: true))
 @using System.Globalization
 @using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Authorization
 @using BasketElo.Domain.Elo
+@using BasketElo.Domain.Entities
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
@@ -327,7 +329,7 @@
                 <div class="section-head">
                     <div>
                         <h2>Recent results</h2>
-                        <p>Finished games in the selected rating pool, newest first.</p>
+                        <p>Finished games from the last 30 days in the selected rating pool, newest first.</p>
                     </div>
                     <div class="pager">
                         <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
@@ -494,21 +496,39 @@
         @if ((selectedView == "rankings" || selectedView == "graph") && response.Rankings.Count > 0)
         {
             <section class="evolution-section">
-                <div class="section-head">
+                <div class="section-head evolution-section-head">
                     <div>
                         <h2>@(selectedView == "graph" ? "ELO evolution" : "Explore the graph")</h2>
                         <p>@EvolutionContextLabel()</p>
                     </div>
-                    @if (selectedView == "rankings")
-                    {
-                        <button type="button"
-                                class="btn btn-sm btn-outline-secondary"
-                                aria-expanded="@isChartVisible"
-                                aria-controls="ranking-evolution-panel"
-                                @onclick="ToggleChartAsync">
-                            @(isChartVisible ? "Hide chart" : "Show chart")
-                        </button>
-                    }
+                    <div class="evolution-section-actions">
+                        @if (selectedView == "rankings")
+                        {
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    aria-expanded="@isChartVisible"
+                                    aria-controls="ranking-evolution-panel"
+                                    @onclick="ToggleChartAsync">
+                                @(isChartVisible ? "Hide chart" : "Show chart")
+                            </button>
+                        }
+                        @if (isChartVisible || selectedView == "graph")
+                        {
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    aria-expanded="@isGraphTeamManagerOpen"
+                                    aria-controls="chart-team-manager"
+                                    @onclick="ToggleGraphTeamManager">
+                                Manage teams <span class="chart-count-badge">@graphTeamIds.Count</span>
+                            </button>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    aria-pressed="@showGraphLegend"
+                                    @onclick="ToggleGraphLegend">
+                                Legend: @(showGraphLegend ? "On" : "Off")
+                            </button>
+                        }
+                    </div>
                 </div>
 
                 @if (isChartVisible || selectedView == "graph")
@@ -520,34 +540,106 @@
                         }
                         else
                         {
-                            <div class="@EvolutionChartClass" role="img" aria-label="ELO evolution for teams in the current ranking table">
-                                @if (EvolutionSeries.Count < 1 || EvolutionSeries.All(x => x.Points.Count < 2))
+                            <div class="evolution-workspace @(isGraphTeamManagerOpen ? "manager-open" : string.Empty)">
+                                @if (isGraphTeamManagerOpen)
                                 {
-                                    <div class="empty-state">Not enough rated games for an evolution chart yet.</div>
-                                }
-                                else
-                                {
-                                    <EloEvolutionChart @key="activeRankingsCacheKey"
-                                                       Series="@evolutionChartSeries"
-                                                       EnableRangeNavigation="true"
-                                                       ShowLegend="false"
-                                                       SharedTooltip="false"
-                                                       HeightPixels="@ChartHeightPixels"
-                                                       DataRevision="@evolutionDataRevision"
-                                                       IsRefining="@isEvolutionRefining"
-                                                       ViewportRefinementRequested="@QueueEvolutionRefinementAsync"
-                                                       FullRangeRequested="@RestoreFullEvolutionAsync" />
+                                    <aside id="chart-team-manager" class="graph-team-manager" aria-label="Chart team manager">
+                                        <div class="graph-team-manager-heading">
+                                            <div>
+                                                <strong>Chart teams</strong>
+                                                <span>@graphTeamIds.Count selected · @VisibleGraphTeamCount visible</span>
+                                            </div>
+                                            <button type="button" class="btn btn-sm btn-quiet" @onclick="ToggleGraphTeamManager">Collapse</button>
+                                        </div>
 
-                                    <div class="evolution-legend legacy-links" aria-label="ELO evolution chart team links">
-                                        @foreach (var item in EvolutionSeries.Select((series, index) => new { series, index }))
+                                        <p class="graph-team-manager-help">Use the eye to show or hide a line. Remove teams from the chart using the team menu.</p>
+
+                                        <div class="graph-team-search">
+                                            <label for="graphTeamSearch">Add or manage teams</label>
+                                            <div class="graph-team-search-row">
+                                                <input id="graphTeamSearch" class="form-control" @bind="graphTeamSearch" @bind:event="oninput" placeholder="Search teams" />
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="SearchGraphTeamsAsync" disabled="@(isGraphSelectionBusy || string.IsNullOrWhiteSpace(graphTeamSearch))">Search</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="graph-bulk-actions">
+                                            @if (!string.IsNullOrWhiteSpace(selectedCountry))
+                                            {
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AddCountryTeamsToGraphAsync" disabled="@isGraphSelectionBusy">Add all @selectedCountry</button>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(selectedCompetition))
+                                            {
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AddCompetitionTeamsToGraphAsync" disabled="@isGraphSelectionBusy">Add all @selectedCompetition</button>
+                                            }
+                                        </div>
+
+                                        @if (graphTeamSearchResults.Count > 0)
                                         {
-                                            <a href="@BuildTeamHref(item.series.TeamId)">
-                                                <span style="background: @ChartColor(item.index)"></span>
-                                                @item.series.TeamName
-                                            </a>
+                                            <div class="graph-team-search-results" aria-label="Team search results">
+                                                @foreach (var row in graphTeamSearchResults)
+                                                {
+                                                    var isAdded = graphTeamIds.Contains(row.TeamId);
+                                                    <div class="graph-team-search-result">
+                                                        <span>@row.TeamName <small>@row.Country</small></span>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(isAdded || isGraphSelectionBusy)" @onclick="() => AddGraphTeamAsync(row)">@(isAdded ? "Added" : "Add")</button>
+                                                    </div>
+                                                }
+                                            </div>
                                         }
-                                    </div>
+
+                                        @if (SelectedGraphTeams.Count == 0)
+                                        {
+                                            <p class="graph-selection-empty">No teams selected. Search for a team or add teams from the active country or competition.</p>
+                                        }
+                                        else
+                                        {
+                                            <div class="graph-team-manager-list-heading">
+                                                <span>Legend</span>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowAllGraphTeamsAsync" disabled="@(hiddenGraphTeamIds.Count == 0)">Show all</button>
+                                            </div>
+                                            <div class="graph-team-manager-list" aria-label="Chart legend and selected teams">
+                                                @foreach (var team in SelectedGraphTeams)
+                                                {
+                                                    var isVisible = IsGraphTeamVisible(team.TeamId);
+                                                    <div class="graph-team-manager-row @(isVisible ? "is-visible" : "is-hidden")">
+                                                        <span class="graph-team-color-swatch" style="background: @GraphTeamColor(team.TeamId)" aria-hidden="true"></span>
+                                                        <span class="graph-team-manager-name" title="@team.TeamName">@team.TeamName <small>@team.Country</small></span>
+                                                        <button type="button" class="graph-team-visibility-toggle" aria-pressed="@isVisible" aria-label="@(isVisible ? $"Hide {team.TeamName}" : $"Show {team.TeamName}")" title="@(isVisible ? "Hide line" : "Show line")" @onclick="() => ToggleGraphTeamVisibilityAsync(team.TeamId)">
+                                                            <span class="graph-eye-icon" aria-hidden="true"></span>
+                                                        </button>
+                                                        <button type="button" class="graph-team-remove-button" aria-label="Remove @team.TeamName from chart" title="Remove from chart" @onclick="() => RemoveGraphTeamAsync(team.TeamId)">&times;</button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </aside>
                                 }
+
+                                <div class="@EvolutionChartClass" role="img" aria-label="ELO evolution for teams in the current ranking table">
+                                    @if (EvolutionSeries.Count < 1 || EvolutionSeries.All(x => x.Points.Count < 2))
+                                    {
+                                        <div class="empty-state">Not enough rated games for an evolution chart yet.</div>
+                                    }
+                                    else
+                                    {
+                                        <EloEvolutionChart @key="activeRankingsCacheKey"
+                                                           Series="@evolutionChartSeries"
+                                                           EnableRangeNavigation="true"
+                                                           ShowLegend="false"
+                                                           ShowSeriesControls="@(showGraphLegend && !isGraphTeamManagerOpen)"
+                                                           ShowDiagnostics="@isAdmin"
+                                                           HiddenTeamIds="@HiddenGraphTeamIds"
+                                                           SeriesVisibilityChanged="@ToggleGraphTeamVisibilityAsync"
+                                                           ShowAllSeriesRequested="@ShowAllGraphTeamsAsync"
+                                                           SharedTooltip="false"
+                                                           HeightPixels="@ChartHeightPixels"
+                                                           DataRevision="@evolutionDataRevision"
+                                                           IsRefining="@isEvolutionRefining"
+                                                           ViewportRefinementRequested="@QueueEvolutionRefinementAsync"
+                                                           FullRangeRequested="@RestoreFullEvolutionAsync" />
+
+                                    }
+                                </div>
                             </div>
                             <div class="chart-actions">
                                 <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ToggleChartSize">
@@ -564,6 +656,9 @@
 </div>
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
     [SupplyParameterFromQuery(Name = "pool")]
     public string? Pool { get; set; }
 
@@ -620,6 +715,9 @@
     private bool isChartExpanded;
     private bool isChartVisible;
     private bool isChartLoading;
+    private bool isAdmin;
+    private bool isGraphTeamManagerOpen;
+    private bool showGraphLegend = true;
     private bool showAdvancedFilters;
     private string? errorMessage;
     private string? selectedCountry;
@@ -652,6 +750,17 @@
 
     private const int EvolutionRefinementDebounceMilliseconds = 600;
     private const int EvolutionRangeCacheLimit = 8;
+    private const int MaxManualGraphTeams = 200;
+
+    private readonly HashSet<Guid> graphTeamIds = [];
+    private readonly HashSet<Guid> graphBulkTeamIds = [];
+    private readonly HashSet<Guid> manualGraphTeamIds = [];
+    private readonly HashSet<Guid> hiddenGraphTeamIds = [];
+    private IReadOnlyList<EloRankingRow> graphTeamRows = [];
+    private IReadOnlyList<EloRankingRow> graphTeamSearchResults = [];
+    private string? graphTeamSearch;
+    private bool graphSelectionInitialized;
+    private bool isGraphSelectionBusy;
 
     private sealed record RankingsClientCacheKey(
         string Pool,
@@ -680,6 +789,11 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        var authenticationState = AuthenticationStateTask is null
+            ? null
+            : await AuthenticationStateTask;
+        isAdmin = authenticationState?.User.IsInRole(ApplicationRoleKeys.Admin) == true;
+
         var currentUri = Navigation.Uri;
         if (currentUri == lastLoadedUri)
         {
@@ -731,6 +845,7 @@
         CancelEvolutionRefinement();
         evolutionRangeCache.Clear();
         evolutionRangeCacheOrder.Clear();
+        ResetGraphSelection();
 
         activeRankingsCacheKey = null;
         response = null;
@@ -884,6 +999,7 @@
 
         try
         {
+            await EnsureGraphSelectionAsync();
             evolutionRankings = await FetchEvolutionRankingsAsync();
             evolution = await FetchEvolutionAsync();
             fullEvolution = evolution;
@@ -898,6 +1014,247 @@
         {
             isChartLoading = false;
         }
+    }
+
+    private async Task EnsureGraphSelectionAsync()
+    {
+        if (graphSelectionInitialized || response is null)
+        {
+            return;
+        }
+
+        var rows = HasGraphBulkScope
+            ? await FetchAllRankingRowsAsync(includeTeamSearch: false)
+            : response.Rankings.Take(20).ToList();
+
+        graphTeamRows = MergeGraphTeamRows(rows);
+        graphTeamIds.Clear();
+        graphTeamIds.UnionWith(rows.Select(row => row.TeamId));
+        hiddenGraphTeamIds.Clear();
+        if (HasGraphBulkScope)
+        {
+            graphBulkTeamIds.UnionWith(rows.Select(row => row.TeamId));
+        }
+        graphSelectionInitialized = true;
+    }
+
+    private async Task AddCountryTeamsToGraphAsync()
+        => await AddBulkGraphTeamsAsync($"country '{selectedCountry}'");
+
+    private async Task AddCompetitionTeamsToGraphAsync()
+        => await AddBulkGraphTeamsAsync($"competition '{selectedCompetition}'");
+
+    private async Task AddBulkGraphTeamsAsync(string description)
+    {
+        if (!HasGraphBulkScope)
+        {
+            return;
+        }
+
+        isGraphSelectionBusy = true;
+        errorMessage = null;
+        try
+        {
+            var rows = await FetchAllRankingRowsAsync(includeTeamSearch: false);
+            graphTeamRows = MergeGraphTeamRows(rows);
+            graphTeamIds.UnionWith(rows.Select(row => row.TeamId));
+            graphBulkTeamIds.UnionWith(rows.Select(row => row.TeamId));
+            graphSelectionInitialized = true;
+            graphTeamSearchResults = [];
+            await ReloadGraphAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not add teams from {description}: {ex.Message}";
+        }
+        finally
+        {
+            isGraphSelectionBusy = false;
+        }
+    }
+
+    private async Task SearchGraphTeamsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(graphTeamSearch))
+        {
+            graphTeamSearchResults = [];
+            return;
+        }
+
+        isGraphSelectionBusy = true;
+        errorMessage = null;
+        try
+        {
+            var rows = await FetchRankingRowsAsync(1, 100, includeTeamSearch: true, teamOverride: graphTeamSearch);
+            graphTeamRows = MergeGraphTeamRows(rows);
+            graphTeamSearchResults = rows;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not search teams: {ex.Message}";
+        }
+        finally
+        {
+            isGraphSelectionBusy = false;
+        }
+    }
+
+    private async Task AddGraphTeamAsync(EloRankingRow row)
+    {
+        if (graphTeamIds.Contains(row.TeamId))
+        {
+            return;
+        }
+
+        if (manualGraphTeamIds.Count >= MaxManualGraphTeams)
+        {
+            errorMessage = $"You can manually add up to {MaxManualGraphTeams} teams to the chart.";
+            return;
+        }
+
+        graphTeamRows = MergeGraphTeamRows([row]);
+        graphTeamIds.Add(row.TeamId);
+        hiddenGraphTeamIds.Remove(row.TeamId);
+        manualGraphTeamIds.Add(row.TeamId);
+        graphSelectionInitialized = true;
+        graphTeamSearchResults = graphTeamSearchResults
+            .Where(item => item.TeamId != row.TeamId)
+            .ToList();
+        await ReloadGraphAsync();
+    }
+
+    private Task RemoveGraphTeamAsync(Guid teamId)
+    {
+        CancelEvolutionRefinement();
+        graphTeamIds.Remove(teamId);
+        hiddenGraphTeamIds.Remove(teamId);
+        manualGraphTeamIds.Remove(teamId);
+        graphTeamSearchResults = graphTeamSearchResults
+            .Where(item => item.TeamId != teamId)
+            .ToList();
+
+        if (evolutionRankings is not null)
+        {
+            var selectedRows = graphTeamRows
+                .Where(row => graphTeamIds.Contains(row.TeamId))
+                .ToList();
+            evolutionRankings = evolutionRankings with
+            {
+                Rankings = selectedRows,
+                PageSize = selectedRows.Count,
+                TotalCount = selectedRows.Count,
+                TotalPages = 1
+            };
+            RebuildEvolutionChartSeries(resetViewport: false);
+            CaptureActiveRankingsCacheEntry();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task ReloadGraphAsync()
+    {
+        CancelEvolutionRefinement();
+        evolution = null;
+        fullEvolution = null;
+        evolutionRankings = null;
+        evolutionChartSeries = [];
+        lastEvolutionApiUri = null;
+        lastEvolutionRankingsApiUri = null;
+        await LoadChartAsync();
+    }
+
+    private async Task<IReadOnlyList<EloRankingRow>> FetchAllRankingRowsAsync(bool includeTeamSearch)
+    {
+        var firstResponse = await FetchRankingResponseAsync(1, 100, includeTeamSearch);
+        if (firstResponse is null || firstResponse.Rankings.Count == 0)
+        {
+            return [];
+        }
+
+        if (firstResponse.TotalPages <= 1)
+        {
+            return firstResponse.Rankings.ToList();
+        }
+
+        var rows = firstResponse.Rankings.ToList();
+        for (var nextPage = 2; nextPage <= firstResponse.TotalPages; nextPage++)
+        {
+            rows.AddRange(await FetchRankingRowsAsync(nextPage, 100, includeTeamSearch));
+        }
+
+        return rows;
+    }
+
+    private async Task<IReadOnlyList<EloRankingRow>> FetchRankingRowsAsync(
+        int requestedPage,
+        int requestedPageSize,
+        bool includeTeamSearch,
+        string? teamOverride = null)
+    {
+        var result = await FetchRankingResponseAsync(requestedPage, requestedPageSize, includeTeamSearch, teamOverride);
+        return result?.Rankings?.ToList() ?? [];
+    }
+
+    private Task<EloRankingsResponse?> FetchRankingResponseAsync(
+        int requestedPage,
+        int requestedPageSize,
+        bool includeTeamSearch,
+        string? teamOverride = null)
+        => Http.GetFromJsonAsync<EloRankingsResponse>(BuildApiUri(
+            requestedPage,
+            requestedPageSize,
+            includeTeamSearch,
+            teamOverride));
+
+    private IReadOnlyList<EloRankingRow> MergeGraphTeamRows(IReadOnlyCollection<EloRankingRow> rows)
+        => graphTeamRows
+            .Concat(rows)
+            .GroupBy(row => row.TeamId)
+            .Select(group => group.First())
+            .OrderByDescending(row => row.Elo)
+            .ThenBy(row => row.TeamName)
+            .ToList();
+
+    private void ResetGraphSelection()
+    {
+        graphTeamIds.Clear();
+        graphBulkTeamIds.Clear();
+        manualGraphTeamIds.Clear();
+        hiddenGraphTeamIds.Clear();
+        graphTeamRows = [];
+        graphTeamSearchResults = [];
+        graphTeamSearch = null;
+        graphSelectionInitialized = false;
+        isGraphSelectionBusy = false;
+        isGraphTeamManagerOpen = false;
+    }
+
+    private void ToggleGraphTeamManager()
+        => isGraphTeamManagerOpen = !isGraphTeamManagerOpen;
+
+    private void ToggleGraphLegend()
+        => showGraphLegend = !showGraphLegend;
+
+    private Task ToggleGraphTeamVisibilityAsync(Guid teamId)
+    {
+        if (!graphTeamIds.Contains(teamId))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (!hiddenGraphTeamIds.Add(teamId))
+        {
+            hiddenGraphTeamIds.Remove(teamId);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task ShowAllGraphTeamsAsync()
+    {
+        hiddenGraphTeamIds.Clear();
+        return Task.CompletedTask;
     }
 
     private void ToggleChartSize()
@@ -1124,6 +1481,7 @@
         lastResultsApiUri = null;
         lastEvolutionRankingsApiUri = null;
         lastEvolutionApiUri = null;
+        ResetGraphSelection();
         movers = null;
         results = null;
         evolution = null;
@@ -1274,6 +1632,28 @@
     private bool HasTeamSearch
         => !string.IsNullOrWhiteSpace(teamSearch);
 
+    private bool HasGraphBulkScope
+        => !string.IsNullOrWhiteSpace(selectedCountry) || !string.IsNullOrWhiteSpace(selectedCompetition);
+
+    private IReadOnlyList<EloRankingRow> SelectedGraphTeams
+        => graphTeamRows
+            .Where(row => graphTeamIds.Contains(row.TeamId))
+            .OrderBy(row => row.TeamName)
+            .ToList();
+
+    private IReadOnlyCollection<Guid> HiddenGraphTeamIds
+        => hiddenGraphTeamIds.ToArray();
+
+    private int VisibleGraphTeamCount
+        => graphTeamIds.Count - hiddenGraphTeamIds.Count(id => graphTeamIds.Contains(id));
+
+    private bool IsGraphTeamVisible(Guid teamId)
+        => graphTeamIds.Contains(teamId) && !hiddenGraphTeamIds.Contains(teamId);
+
+    private string GraphTeamColor(Guid teamId)
+        => evolutionChartSeries.FirstOrDefault(series => series.TeamId == teamId)?.Color
+            ?? "var(--color-border-strong)";
+
     private bool HasAdvancedFilterValues
         => !string.IsNullOrWhiteSpace(selectedCountry)
             || !string.IsNullOrWhiteSpace(selectedCompetition)
@@ -1341,13 +1721,17 @@
 
     private int ChartHeightPixels => isChartExpanded ? 560 : 340;
 
-    private string BuildApiUri()
+    private string BuildApiUri(
+        int? requestedPage = null,
+        int? requestedPageSize = null,
+        bool includeTeamSearch = true,
+        string? teamOverride = null)
     {
         var seasonRange = GetSelectedSeasonDateRange();
         var query = new List<string>
         {
-            "pageSize=50",
-            $"page={page}",
+            $"pageSize={requestedPageSize ?? 50}",
+            $"page={requestedPage ?? page}",
             $"pool={Uri.EscapeDataString(selectedPool)}"
         };
 
@@ -1357,7 +1741,7 @@
         Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
         Append(query, "asOfDate", seasonRange.AsOfUtc?.ToString("O"));
         Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
-        Append(query, "team", teamSearch);
+        Append(query, "team", teamOverride ?? (includeTeamSearch ? teamSearch : null));
         Append(query, "teams", SupportsTeamScope ? selectedTeamScope : null);
 
         return $"api/elo/rankings?{string.Join("&", query)}";
@@ -1428,7 +1812,14 @@
     private string BuildEvolutionApiUri(DateTime? viewportFromUtc = null, DateTime? viewportToUtc = null)
     {
         var seasonRange = GetSelectedSeasonDateRange();
-        var teamIds = string.Join(",", evolutionRankings?.Rankings.Take(20).Select(x => x.TeamId) ?? []);
+        var usesBulkScope = graphBulkTeamIds.Count > 0 && HasGraphBulkScope;
+        var selectedTeamIds = usesBulkScope
+            ? graphTeamIds.Except(graphBulkTeamIds).ToList()
+            : graphTeamIds.ToList();
+        var excludedTeamIds = usesBulkScope
+            ? graphBulkTeamIds.Except(graphTeamIds).ToList()
+            : [];
+        var teamIds = string.Join(",", selectedTeamIds);
         var query = new List<string>
         {
             $"rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}",
@@ -1439,7 +1830,9 @@
 
         Append(query, "fromUtc", (viewportFromUtc ?? seasonRange.FromUtc)?.ToString("O"));
         Append(query, "toUtc", (viewportToUtc ?? seasonRange.ToUtc)?.ToString("O"));
+        Append(query, "country", usesBulkScope ? selectedCountry : null);
         Append(query, "competition", selectedCompetition);
+        Append(query, "excludeTeamIds", usesBulkScope ? string.Join(",", excludedTeamIds) : null);
 
         return $"api/elo/rankings/evolution?{string.Join("&", query)}";
     }
@@ -1555,25 +1948,22 @@
 
     private async Task<EloRankingsResponse?> FetchEvolutionRankingsAsync()
     {
-        if (response is null || response.TotalCount == 0)
+        if (response is null || graphTeamIds.Count == 0)
         {
-            return null;
+            return response is null ? null : response with { Rankings = [] };
         }
 
-        if (response.Page == 1 && response.Rankings.Count >= Math.Min(20, response.TotalCount))
+        var selectedRows = graphTeamRows
+            .Where(row => graphTeamIds.Contains(row.TeamId))
+            .ToList();
+        return response with
         {
-            return response;
-        }
-
-        var evolutionRankingsUri = BuildEvolutionRankingsApiUri();
-        if (evolutionRankings is not null && string.Equals(evolutionRankingsUri, lastEvolutionRankingsApiUri, StringComparison.Ordinal))
-        {
-            return evolutionRankings;
-        }
-
-        var result = await Http.GetFromJsonAsync<EloRankingsResponse>(evolutionRankingsUri);
-        lastEvolutionRankingsApiUri = evolutionRankingsUri;
-        return result;
+            Rankings = selectedRows,
+            Page = 1,
+            PageSize = selectedRows.Count,
+            TotalCount = selectedRows.Count,
+            TotalPages = 1
+        };
     }
 
     private string BuildEvolutionRankingsApiUri()
@@ -1621,13 +2011,11 @@
             .ToList() ?? [];
 
     private string EvolutionContextLabel()
-        => IsArchiveMode
-            ? "Rating history for the top 20 teams in the archived result set."
-            : response?.Summary.IsFiltered == true
-            ? "Rating history for the top 20 teams in the current filtered result set."
-            : IsHistoricalTeamScope
-            ? $"Rating history for the top 20 {TeamScopeNoun().ToLowerInvariant()} in the current and historical scope."
-            : "Rating history for the top 20 teams overall.";
+        => HasGraphBulkScope
+            ? $"Rating history for all selected-scope {TeamScopeNoun().ToLowerInvariant()}."
+            : graphTeamIds.Count > 0
+                ? $"Rating history for {graphTeamIds.Count} selected {TeamScopeNoun().ToLowerInvariant()}."
+                : "No teams selected for the chart.";
 
     private string TableContextLabel()
     {

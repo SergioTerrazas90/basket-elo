@@ -685,9 +685,315 @@
     gap: var(--space-3);
 }
 
+.evolution-section-head {
+    align-items: flex-start;
+}
+
+.evolution-section-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.chart-count-badge {
+    display: inline-flex;
+    min-width: 1.35rem;
+    height: 1.35rem;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.2rem;
+    padding-inline: 0.3rem;
+    border-radius: var(--radius-pill);
+    background: rgba(36, 92, 122, 0.12);
+    color: var(--color-brand);
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.evolution-workspace {
+    display: grid;
+    grid-template-areas: "chart";
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+}
+
+.evolution-workspace.manager-open {
+    grid-template-areas: "chart manager";
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 23rem);
+    align-items: start;
+}
+
+.evolution-workspace > .evolution-chart {
+    grid-area: chart;
+    min-width: 0;
+}
+
+.graph-team-manager {
+    position: sticky;
+    top: var(--space-3);
+    display: flex;
+    grid-area: manager;
+    min-width: 0;
+    max-height: min(46rem, calc(100vh - 5rem));
+    flex-direction: column;
+    gap: var(--space-3);
+    overflow: visible;
+    padding: var(--space-3);
+    border: 1px solid rgba(200, 183, 157, 0.72);
+    border-radius: var(--radius-md);
+    background: rgba(255, 253, 248, 0.9);
+    box-shadow: var(--shadow-sm);
+}
+
+.graph-team-manager-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.graph-team-manager-heading strong,
+.graph-team-manager-heading span {
+    display: block;
+}
+
+.graph-team-manager-heading span,
+.graph-team-manager-help {
+    color: var(--color-muted);
+    font-size: 0.76rem;
+}
+
+.graph-team-manager-help {
+    margin: -0.45rem 0 0;
+}
+
+.graph-team-search-row,
+.graph-team-search-result {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.graph-team-search {
+}
+
+.graph-team-search label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: var(--color-text);
+    font-size: 0.76rem;
+    font-weight: 750;
+}
+
+.graph-team-search-row input {
+    width: 100%;
+    min-width: 14rem;
+}
+
+.graph-bulk-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: var(--space-2);
+}
+
+.graph-team-search-results {
+    display: grid;
+    max-height: 15rem;
+    overflow-y: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+}
+
+.graph-team-search-result {
+    justify-content: space-between;
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.graph-team-search-result:last-child {
+    border-bottom: 0;
+}
+
+.graph-team-search-result span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-text);
+    font-size: 0.82rem;
+    font-weight: 750;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.graph-team-search-result small {
+    margin-left: 0.35rem;
+    color: var(--color-muted);
+    font-weight: 650;
+}
+
+.graph-team-manager-list {
+    display: grid;
+    max-height: min(31rem, 52vh);
+    overflow-y: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+}
+
+.graph-team-manager-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 0.45rem 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.graph-team-manager-row:last-child {
+    border-bottom: 0;
+}
+
+.graph-team-manager-row.is-hidden {
+    background: rgba(120, 120, 120, 0.04);
+}
+
+.graph-team-color-swatch {
+    width: 0.65rem;
+    height: 0.65rem;
+    flex: 0 0 0.65rem;
+    border-radius: var(--radius-pill);
+}
+
+.graph-team-manager-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-text);
+    font-size: 0.76rem;
+    font-weight: 750;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.graph-team-manager-name small {
+    margin-left: 0.25rem;
+    color: var(--color-muted);
+    font-size: 0.68rem;
+    font-weight: 650;
+}
+
+.graph-team-manager-row.is-hidden .graph-team-manager-name,
+.graph-team-manager-row.is-hidden .graph-team-color-swatch {
+    opacity: 0.48;
+}
+
+.graph-team-manager-list-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--color-muted);
+    font-size: 0.76rem;
+    font-weight: 750;
+}
+
+.graph-team-visibility-toggle,
+.graph-team-remove-button {
+    display: inline-flex;
+    width: 1.65rem;
+    height: 1.65rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+}
+
+.graph-team-visibility-toggle:hover,
+.graph-team-visibility-toggle:focus-visible,
+.graph-team-remove-button:hover,
+.graph-team-remove-button:focus-visible {
+    background: var(--color-surface-muted);
+    color: var(--color-brand);
+}
+
+.graph-eye-icon {
+    position: relative;
+    display: block;
+    width: 0.95rem;
+    height: 0.62rem;
+    border: 1.5px solid currentColor;
+    border-radius: 75% / 100%;
+}
+
+.graph-eye-icon::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.25rem;
+    height: 0.25rem;
+    border-radius: var(--radius-pill);
+    background: currentColor;
+    content: "";
+    transform: translate(-50%, -50%);
+}
+
+.graph-team-manager-row.is-hidden .graph-eye-icon {
+    opacity: 0.48;
+}
+
+.graph-team-remove-button {
+    width: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+.graph-team-remove-button:hover,
+.graph-team-remove-button:focus-visible {
+    color: var(--color-danger, #a64632);
+}
+
+.graph-selection-empty {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: 0.8rem;
+}
+
+/* Keep legacy chart links visually quiet if rendered by an older cached component. */
+.graph-team-chip {
+    display: none;
+}
+
+.graph-team-chip > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .chart-actions {
     display: flex;
     justify-content: flex-end;
+}
+
+@media (max-width: 1040px) {
+    .evolution-workspace.manager-open {
+        grid-template-areas:
+            "manager"
+            "chart";
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .graph-team-manager {
+        position: static;
+        max-height: none;
+    }
 }
 
 .evolution-chart {
@@ -914,6 +1220,11 @@
         flex-direction: column;
     }
 
+    .evolution-section-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
     .rankings-header {
         align-items: stretch;
     }
@@ -1013,5 +1324,14 @@
 
     .pager {
         width: 100%;
+    }
+
+    .graph-team-manager-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .graph-team-manager-heading .btn {
+        align-self: flex-start;
     }
 }

@@ -94,11 +94,110 @@
             </div>
         }
 
-        <div @ref="chartHost"
-             class="elo-dygraph-chart"
-             style="@ChartStyle"
-             role="img"
-             aria-label="ELO history chart"></div>
+        @if (CompareRenderers)
+        {
+            <div class="elo-chart-comparison" aria-label="Radzen and Dygraphs chart comparison">
+                <section class="elo-chart-comparison-pane" aria-label="Radzen SVG chart">
+                    <div class="elo-chart-comparison-heading">
+                        <strong>Radzen / SVG</strong>
+                        <span>Current renderer</span>
+                    </div>
+                    <RadzenChart @key="samplingMode"
+                                 class="elo-radzen-chart"
+                                 Style="@ChartStyle"
+                                 TooltipTolerance="40"
+                                 ClickTolerance="40"
+                                 MouseMoveThrottle="25"
+                                 AllowSeriesHover="true"
+                                 AllowZoom="false"
+                                 AllowPan="false">
+                        <RadzenChartTooltipOptions Shared="@SharedTooltip" Trigger="@TooltipTrigger" HighlightDataPoint="false" />
+                        <RadzenLegend Visible="@ShowLegend" Position="LegendPosition.Bottom" />
+
+                        @foreach (var series in DisplaySeries)
+                        {
+                            <RadzenLineSeries Data="@series.Points"
+                                              TItem="EloChartPoint"
+                                              CategoryProperty="@CategoryProperty"
+                                              ValueProperty="@nameof(EloChartPoint.Elo)"
+                                              Title="@series.TeamName"
+                                              Stroke="@series.Color"
+                                              StrokeWidth="3"
+                                              Smooth="@Smooth">
+                                <ChildContent>
+                                    <RadzenMarkers MarkerType="MarkerType.Circle" Size="2" Fill="@series.Color" Stroke="@series.Color" />
+                                </ChildContent>
+                                <TooltipTemplate Context="point">
+                                    <div class="elo-chart-tooltip" style="--active-team-color: @point.Color">
+                                        <div class="elo-chart-tooltip-team">
+                                            <span class="elo-chart-active-swatch"></span>
+                                            <strong>@point.TeamName</strong>
+                                        </div>
+                                        <span>@FormatDate(point.GameDateTimeUtc)</span>
+                                        <span>@point.Elo.ToString("0") ELO</span>
+                                        @if (point.EloDelta.HasValue)
+                                        {
+                                            <span>Change @FormatMovement(point.EloDelta.Value)</span>
+                                        }
+                                        @if (point.Rank.HasValue)
+                                        {
+                                            <span>Rank #@point.Rank</span>
+                                        }
+                                    </div>
+                                </TooltipTemplate>
+                            </RadzenLineSeries>
+                        }
+
+                        <RadzenCategoryAxis Formatter="@FormatCategoryAxis"
+                                            LabelAutoRotation="-35"
+                                            Min="@CategoryAxisMin"
+                                            Max="@CategoryAxisMax"
+                                            TickPlacement="@CategoryTickPlacement">
+                            <RadzenAxisCrosshair Visible="true" Label="true" Snap="true" Stroke="#6b7682" />
+                        </RadzenCategoryAxis>
+                        <RadzenValueAxis Formatter="@FormatEloAxis">
+                            <RadzenGridLines Visible="true" />
+                            <RadzenAxisCrosshair Visible="true" Label="true" Stroke="#9aa6b2" />
+                        </RadzenValueAxis>
+
+                        @if (DisplaySeries.FirstOrDefault() is { } navigatorSeries)
+                        {
+                            <RadzenChartRangeNavigator Visible="@EnableRangeNavigation"
+                                                       Height="52"
+                                                       ShowHandleLabels="true">
+                                <RadzenRangeNavigatorLineSeries TItem="EloChartPoint"
+                                                                Data="@navigatorSeries.Points"
+                                                                CategoryProperty="@nameof(EloChartPoint.GameDateTimeUtc)"
+                                                                ValueProperty="@nameof(EloChartPoint.Elo)"
+                                                                Stroke="@navigatorSeries.Color"
+                                                                StrokeWidth="2"
+                                                                Smooth="@Smooth" />
+                            </RadzenChartRangeNavigator>
+                        }
+                    </RadzenChart>
+                </section>
+
+                <section class="elo-chart-comparison-pane" aria-label="Dygraphs Canvas chart">
+                    <div class="elo-chart-comparison-heading">
+                        <strong>Dygraphs / Canvas</strong>
+                        <span>New renderer</span>
+                    </div>
+                    <div @ref="chartHost"
+                         class="elo-dygraph-chart"
+                         style="@ChartStyle"
+                         role="img"
+                         aria-label="ELO history chart"></div>
+                </section>
+            </div>
+        }
+        else
+        {
+            <div @ref="chartHost"
+                 class="elo-dygraph-chart"
+                 style="@ChartStyle"
+                 role="img"
+                 aria-label="ELO history chart"></div>
+        }
     </div>
 </div>
 
@@ -129,6 +228,9 @@
 
     [Parameter]
     public bool EnableRangeNavigation { get; set; }
+
+    [Parameter]
+    public bool CompareRenderers { get; set; }
 
     [Parameter]
     public bool Smooth { get; set; }
@@ -167,6 +269,27 @@
     private readonly HashSet<string> hiddenSeriesKeys = new(StringComparer.Ordinal);
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
+
+    private string CategoryProperty => samplingMode == EloChartSamplingMode.GameByGame
+        ? nameof(EloChartPoint.ActiveDateIndex)
+        : nameof(EloChartPoint.GameDateTimeUtc);
+
+    private object? CategoryAxisMin =>
+        samplingMode == EloChartSamplingMode.GameByGame && activeDates.Count > 1
+            ? 0d
+            : null;
+
+    private object? CategoryAxisMax =>
+        samplingMode == EloChartSamplingMode.GameByGame && activeDates.Count > 1
+            ? (double)(activeDates.Count - 1)
+            : null;
+
+    private TickPlacement CategoryTickPlacement =>
+        samplingMode == EloChartSamplingMode.GameByGame
+            ? TickPlacement.On
+            : TickPlacement.Between;
+
+    private ChartTooltipTrigger TooltipTrigger => ChartTooltipTrigger.Axis;
 
     private IReadOnlyList<EloChartSeries> SourceSeries
         => sourceSeries;

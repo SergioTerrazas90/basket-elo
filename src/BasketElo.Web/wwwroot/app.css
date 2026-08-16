@@ -423,3 +423,49 @@ label,
         transform: rotate(360deg);
     }
 }
+
+/* The Dygraphs tooltip is injected by JavaScript, so it cannot receive the
+   scoped attribute emitted for EloEvolutionChart.razor.css. */
+.elo-dygraph-tooltip {
+    position: absolute;
+    z-index: 20;
+    display: grid;
+    gap: 0.22rem;
+    min-width: 170px;
+    max-width: min(280px, calc(100% - 16px));
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--color-border);
+    border-left: 0.22rem solid var(--active-team-color, var(--color-accent));
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+    color: var(--color-muted);
+    font-size: 0.78rem;
+    pointer-events: none;
+}
+
+.elo-dygraph-tooltip-series {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--color-text);
+}
+
+.elo-dygraph-tooltip-series .elo-chart-active-swatch {
+    flex: 0 0 0.62rem;
+    width: 0.62rem;
+    height: 0.62rem;
+    border-radius: var(--radius-pill);
+    background: var(--active-team-color);
+}
+
+.elo-dygraph-tooltip-series strong {
+    color: var(--color-text);
+    font-size: 0.88rem;
+}
+
+.elo-dygraph-tooltip-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}

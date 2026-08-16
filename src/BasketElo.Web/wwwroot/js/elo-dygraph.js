@@ -101,13 +101,24 @@
 
     function notifyViewChange(state, minDate, maxDate) {
         const range = selectedRange(state, minDate, maxDate);
+        if (state.lastNotifiedRange &&
+            Math.abs(state.lastNotifiedRange.start - range.start) < 0.000001 &&
+            Math.abs(state.lastNotifiedRange.end - range.end) < 0.000001) {
+            return;
+        }
+
+        state.lastNotifiedRange = range;
         try {
             Promise.resolve(state.dotNet.invokeMethodAsync(
                 "HandleDygraphViewChange",
                 range.start,
                 range.end))
-                .catch(error => console.error("Dygraphs viewport refinement failed.", error));
+                .catch(error => {
+                    state.lastNotifiedRange = null;
+                    console.error("Dygraphs viewport refinement failed.", error);
+                });
         } catch (error) {
+            state.lastNotifiedRange = null;
             console.error("Dygraphs viewport refinement failed.", error);
         }
     }
@@ -200,6 +211,7 @@
         state.min = normalized.min;
         state.max = normalized.max;
         state.suppressCallbacks = true;
+        state.lastNotifiedRange = null;
 
         if (payload.series.length === 0 || normalized.rows.length === 0) {
             state.tooltip.hidden = true;
@@ -239,6 +251,14 @@
             },
             highlightCallback: (event, x, points, row) => renderTooltip(state, event, points, row),
             unhighlightCallback: () => { if (state.tooltip) state.tooltip.hidden = true; },
+            drawCallback: graph => {
+                if (state.suppressCallbacks || !state.dotNet) {
+                    return;
+                }
+
+                const [minDate, maxDate] = graph.xAxisRange();
+                notifyViewChange(state, minDate, maxDate);
+            },
             zoomCallback: (minDate, maxDate) => {
                 if (state.suppressCallbacks || !state.dotNet) {
                     return;
@@ -272,6 +292,8 @@
         // Dygraphs rebuilds the host during construction, so attach the custom
         // tooltip after the graph has created its canvases.
         state.tooltip = ensureTooltip(host);
+        const [initialMinDate, initialMaxDate] = state.graph.xAxisRange();
+        state.lastNotifiedRange = selectedRange(state, initialMinDate, initialMaxDate);
 
         state.graph.ready(() => {
             state.suppressCallbacks = false;
@@ -299,6 +321,7 @@
                 min: 0,
                 max: 0,
                 suppressCallbacks: true,
+                lastNotifiedRange: null,
                 sharedTooltip: true,
                 resizeObserver: null
             };

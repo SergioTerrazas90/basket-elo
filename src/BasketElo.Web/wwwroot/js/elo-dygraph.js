@@ -99,6 +99,19 @@
         };
     }
 
+    function notifyViewChange(state, minDate, maxDate) {
+        const range = selectedRange(state, minDate, maxDate);
+        try {
+            Promise.resolve(state.dotNet.invokeMethodAsync(
+                "HandleDygraphViewChange",
+                range.start,
+                range.end))
+                .catch(error => console.error("Dygraphs viewport refinement failed.", error));
+        } catch (error) {
+            console.error("Dygraphs viewport refinement failed.", error);
+        }
+    }
+
     function renderTooltip(state, event, points, row) {
         if (!state.tooltip) {
             return;
@@ -231,8 +244,7 @@
                     return;
                 }
 
-                const range = selectedRange(state, minDate, maxDate);
-                state.dotNet.invokeMethodAsync("HandleDygraphViewChange", range.start, range.end);
+                notifyViewChange(state, minDate, maxDate);
             },
             clickCallback: (event, x, points, row) => {
                 if (!state.dotNet || row == null) {
@@ -264,6 +276,11 @@
         state.graph.ready(() => {
             state.suppressCallbacks = false;
         });
+
+        // Dygraphs can finish synchronously when the data is already in memory,
+        // so the ready callback is not a reliable only path for enabling user
+        // interactions. Initialization callbacks are already complete here.
+        state.suppressCallbacks = false;
     }
 
     window.basketEloDygraph = {

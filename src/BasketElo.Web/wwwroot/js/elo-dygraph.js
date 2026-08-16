@@ -100,6 +100,10 @@
     }
 
     function renderTooltip(state, event, points, row) {
+        if (!state.tooltip) {
+            return;
+        }
+
         if (!points || points.length === 0 || row == null) {
             state.tooltip.hidden = true;
             return;
@@ -173,7 +177,7 @@
 
         state.dotNet = dotNet;
         state.host.replaceChildren();
-        state.tooltip = ensureTooltip(host);
+        state.tooltip = null;
         state.sharedTooltip = payload.sharedTooltip !== false;
         state.labels = ["Date", ...payload.series.map(series => series.name)];
         state.payload = payload;
@@ -221,7 +225,7 @@
                 y: { axisLabelWidth: 42 }
             },
             highlightCallback: (event, x, points, row) => renderTooltip(state, event, points, row),
-            unhighlightCallback: () => { state.tooltip.hidden = true; },
+            unhighlightCallback: () => { if (state.tooltip) state.tooltip.hidden = true; },
             zoomCallback: (minDate, maxDate) => {
                 if (state.suppressCallbacks || !state.dotNet) {
                     return;
@@ -252,6 +256,10 @@
                 }
             }
         });
+
+        // Dygraphs rebuilds the host during construction, so attach the custom
+        // tooltip after the graph has created its canvases.
+        state.tooltip = ensureTooltip(host);
 
         state.graph.ready(() => {
             state.suppressCallbacks = false;

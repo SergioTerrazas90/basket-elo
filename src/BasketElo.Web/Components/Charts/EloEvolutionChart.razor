@@ -94,9 +94,10 @@
             </div>
         }
 
-        @if (CompareRenderers)
-        {
-            <div class="elo-chart-comparison" aria-label="Radzen and Dygraphs chart comparison">
+        <div class="elo-chart-comparison @(!CompareRenderers ? "elo-chart-single" : string.Empty)"
+             aria-label="@(CompareRenderers ? "Radzen and Dygraphs chart comparison" : UseDygraphs ? "Dygraphs Canvas chart" : "Radzen SVG chart")">
+            @if (CompareRenderers || !UseDygraphs)
+            {
                 <section class="elo-chart-comparison-pane" aria-label="Radzen SVG chart">
                     <div class="elo-chart-comparison-heading">
                         <strong>Radzen / SVG</strong>
@@ -176,7 +177,10 @@
                         }
                     </RadzenChart>
                 </section>
+            }
 
+            @if (CompareRenderers || UseDygraphs)
+            {
                 <section class="elo-chart-comparison-pane" aria-label="Dygraphs Canvas chart">
                     <div class="elo-chart-comparison-heading">
                         <strong>Dygraphs / Canvas</strong>
@@ -188,16 +192,8 @@
                          role="img"
                          aria-label="ELO history chart"></div>
                 </section>
-            </div>
-        }
-        else
-        {
-            <div @ref="chartHost"
-                 class="elo-dygraph-chart"
-                 style="@ChartStyle"
-                 role="img"
-                 aria-label="ELO history chart"></div>
-        }
+            }
+        </div>
     </div>
 </div>
 
@@ -231,6 +227,9 @@
 
     [Parameter]
     public bool CompareRenderers { get; set; }
+
+    [Parameter]
+    public bool UseDygraphs { get; set; } = true;
 
     [Parameter]
     public bool Smooth { get; set; }
@@ -376,6 +375,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!UseDygraphs)
+        {
+            return;
+        }
+
         if (!chartInitialized)
         {
             dotNetReference ??= DotNetObjectReference.Create(this);

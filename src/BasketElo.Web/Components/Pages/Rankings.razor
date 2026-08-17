@@ -31,7 +31,8 @@
             <nav class="rankings-view-tabs" aria-label="Ranking views">
                 <button type="button" class='@ViewTabClass("rankings")' @onclick='() => SelectViewAsync("rankings")' disabled="@isBusy">Rankings</button>
                 <button type="button" class='@ViewTabClass("results")' @onclick='() => SelectViewAsync("results")' disabled="@isBusy">Results</button>
-                <button type="button" class='@ViewTabClass("graph")' @onclick='() => SelectViewAsync("graph")' disabled="@isBusy">Graph</button>
+                <button type="button" class='@ViewTabClass("graph-svg")' @onclick='() => SelectViewAsync("graph-svg")' disabled="@isBusy">Graph SVG</button>
+                <button type="button" class='@ViewTabClass("graph-canvas")' @onclick='() => SelectViewAsync("graph-canvas")' disabled="@isBusy">Graph Canvas</button>
             </nav>
         </div>
     </header>
@@ -493,12 +494,12 @@
             </section>
         }
 
-        @if ((selectedView == "rankings" || selectedView == "graph") && response.Rankings.Count > 0)
+        @if ((selectedView == "rankings" || IsGraphView) && response.Rankings.Count > 0)
         {
             <section class="evolution-section">
                 <div class="section-head evolution-section-head">
                     <div>
-                        <h2>@(selectedView == "graph" ? "ELO evolution" : "Explore the graph")</h2>
+                        <h2>@(IsGraphView ? "ELO evolution" : "Explore the graph")</h2>
                         <p>@EvolutionContextLabel()</p>
                     </div>
                     <div class="evolution-section-actions">
@@ -512,7 +513,7 @@
                                 @(isChartVisible ? "Hide chart" : "Show chart")
                             </button>
                         }
-                        @if (isChartVisible || selectedView == "graph")
+                        @if (isChartVisible || IsGraphView)
                         {
                             <button type="button"
                                     class="btn btn-sm btn-outline-secondary"
@@ -531,7 +532,7 @@
                     </div>
                 </div>
 
-                @if (isChartVisible || selectedView == "graph")
+                @if (isChartVisible || IsGraphView)
                 {
                     <div id="ranking-evolution-panel" class="evolution-panel" role="region" aria-label="ELO evolution chart">
                         @if (isChartLoading)
@@ -622,12 +623,13 @@
                                     }
                                     else
                                     {
-                                        <EloEvolutionChart @key="activeRankingsCacheKey"
+                                        <EloEvolutionChart @key="@($"{activeRankingsCacheKey}:{selectedView}")"
                                                            Series="@evolutionChartSeries"
                                                            EnableRangeNavigation="true"
                                                            ShowLegend="false"
                                                            ShowSeriesControls="@(showGraphLegend && !isGraphTeamManagerOpen)"
-                                                           CompareRenderers="true"
+                                                           CompareRenderers="false"
+                                                           UseDygraphs="@(selectedView == "graph-canvas")"
                                                            ShowDiagnostics="@isAdmin"
                                                            HiddenTeamIds="@HiddenGraphTeamIds"
                                                            SeriesVisibilityChanged="@ToggleGraphTeamVisibilityAsync"
@@ -831,13 +833,14 @@
             : View?.Trim().ToLowerInvariant() switch
             {
                 "results" => "results",
-                "graph" => "graph",
+                "graph" or "graph-canvas" => "graph-canvas",
+                "graph-svg" => "graph-svg",
                 _ => "rankings"
             };
         selectedMoverDirection = string.Equals(Movement, "fallers", StringComparison.OrdinalIgnoreCase) ? "fallers" : "risers";
         selectedWindowDays = WindowDays is 7 or 30 or 90 ? WindowDays.Value : 30;
         showAdvancedFilters = HasAdvancedFilterValues;
-        isChartVisible = selectedView == "graph";
+        isChartVisible = IsGraphView;
         isChartExpanded = false;
         isChartLoading = false;
         page = Math.Max(1, Page ?? 1);
@@ -858,7 +861,7 @@
         fullEvolution = null;
 
         await RefreshAsync();
-        if (selectedView == "graph")
+        if (IsGraphView)
         {
             await LoadChartAsync();
         }
@@ -953,7 +956,12 @@
 
     private Task SelectViewAsync(string view)
     {
-        selectedView = view is "results" or "graph" ? view : "rankings";
+        selectedView = view switch
+        {
+            "results" or "graph-svg" or "graph-canvas" => view,
+            "graph" => "graph-canvas",
+            _ => "rankings"
+        };
         page = 1;
         NavigateToRankings(1);
         return Task.CompletedTask;
@@ -1494,7 +1502,7 @@
         isChartLoading = false;
         CancelEvolutionRefinement();
         await RefreshAsync();
-        if (selectedView == "graph")
+        if (IsGraphView)
         {
             await LoadChartAsync();
         }
@@ -1645,6 +1653,9 @@
     private IReadOnlyCollection<Guid> HiddenGraphTeamIds
         => hiddenGraphTeamIds.ToArray();
 
+    private bool IsGraphView
+        => selectedView is "graph-svg" or "graph-canvas";
+
     private int VisibleGraphTeamCount
         => graphTeamIds.Count - hiddenGraphTeamIds.Count(id => graphTeamIds.Contains(id));
 
@@ -1709,7 +1720,8 @@
         => selectedView switch
         {
             "results" => "Results",
-            "graph" => "Graph",
+            "graph-svg" => "Graph SVG",
+            "graph-canvas" => "Graph Canvas",
             "movers" => "Biggest Movers",
             _ => "Rankings"
         };

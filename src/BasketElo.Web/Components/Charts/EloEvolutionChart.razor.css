@@ -132,6 +132,10 @@
     gap: var(--space-3);
 }
 
+.elo-chart-comparison.elo-chart-single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .elo-chart-comparison-pane {
     min-width: 0;
     overflow: hidden;

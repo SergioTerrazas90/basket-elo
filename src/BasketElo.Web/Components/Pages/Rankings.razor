@@ -2233,7 +2233,10 @@
                     visibleRatedPointCount);
             })
             .ToList();
-        evolutionDataRevision++;
+        if (resetViewport)
+        {
+            evolutionDataRevision++;
+        }
     }
 
     private static IReadOnlyList<EloChartPoint> ToChartPoints(

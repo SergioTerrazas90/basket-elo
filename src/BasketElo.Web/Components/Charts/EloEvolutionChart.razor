@@ -632,7 +632,13 @@
         double requestedEnd,
         bool includeAdjacentPoints = false)
     {
-        var dates = samplingMode == EloChartSamplingMode.GameByGame
+        var dates = UseDygraphs
+            ? allPoints
+                .Select(x => x.GameDateTimeUtc)
+                .Distinct()
+                .OrderBy(x => x)
+                .ToList()
+            : samplingMode == EloChartSamplingMode.GameByGame
             ? activeDates
             : allPoints
                 .Select(x => x.GameDateTimeUtc)
@@ -646,6 +652,20 @@
 
         var startFraction = Math.Clamp(Math.Min(requestedStart, requestedEnd), 0, 1);
         var endFraction = Math.Clamp(Math.Max(requestedStart, requestedEnd), 0, 1);
+
+        if (UseDygraphs)
+        {
+            var fromUtc = InterpolateDate(dates[0], dates[^1], startFraction);
+            var toUtc = InterpolateDate(dates[0], dates[^1], endFraction);
+            if (includeAdjacentPoints)
+            {
+                fromUtc = dates.LastOrDefault(date => date < fromUtc, dates[0]);
+                toUtc = dates.FirstOrDefault(date => date > toUtc, dates[^1]);
+            }
+
+            return (fromUtc, toUtc);
+        }
+
         var startIndex = (int)Math.Floor(startFraction * (dates.Count - 1));
         var endIndex = (int)Math.Ceiling(endFraction * (dates.Count - 1));
         if (includeAdjacentPoints)
@@ -655,6 +675,17 @@
         }
 
         return (dates[startIndex], dates[endIndex]);
+    }
+
+    private static DateTime InterpolateDate(DateTime fromUtc, DateTime toUtc, double fraction)
+    {
+        if (toUtc <= fromUtc)
+        {
+            return fromUtc;
+        }
+
+        var ticks = (long)Math.Round((toUtc.Ticks - fromUtc.Ticks) * fraction);
+        return fromUtc.AddTicks(ticks);
     }
 
     private void ResetView()

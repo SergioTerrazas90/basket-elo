@@ -1825,10 +1825,16 @@
     private string BuildEvolutionApiUri(DateTime? viewportFromUtc = null, DateTime? viewportToUtc = null)
     {
         var seasonRange = GetSelectedSeasonDateRange();
-        var usesBulkScope = graphBulkTeamIds.Count > 0 && HasGraphBulkScope;
+        var activeTeamIds = graphTeamIds.Count > 0
+            ? graphTeamIds.ToArray()
+            : evolutionChartSeries
+                .Where(series => series.TeamId.HasValue)
+                .Select(series => series.TeamId!.Value)
+                .ToArray();
+        var usesBulkScope = graphBulkTeamIds.Count > 0 && HasGraphBulkScope && graphTeamIds.Count > 0;
         var selectedTeamIds = usesBulkScope
             ? graphTeamIds.Except(graphBulkTeamIds).ToList()
-            : graphTeamIds.ToList();
+            : activeTeamIds.ToList();
         var excludedTeamIds = usesBulkScope
             ? graphBulkTeamIds.Except(graphTeamIds).ToList()
             : [];

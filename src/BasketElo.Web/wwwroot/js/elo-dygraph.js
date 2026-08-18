@@ -189,7 +189,7 @@
         state.host.replaceChildren();
     }
 
-    function setDateWindow(state, requestedFrom, requestedTo) {
+    function setDateWindow(state, requestedFrom, requestedTo, notify = false) {
         if (!state.graph || !Number.isFinite(requestedFrom) || !Number.isFinite(requestedTo) || requestedTo <= requestedFrom) {
             return;
         }
@@ -202,6 +202,10 @@
             });
             const [minDate, maxDate] = state.graph.xAxisRange();
             state.lastNotifiedRange = selectedRange(state, minDate, maxDate);
+            if (notify) {
+                state.lastNotifiedRange = null;
+                notifyViewChange(state, minDate, maxDate);
+            }
         } finally {
             state.suppressCallbacks = false;
         }
@@ -209,18 +213,68 @@
 
     function bindRangeSelectorHandleFallback(state) {
         const handles = state.host.querySelectorAll("img.dygraph-rangesel-zoomhandle");
-        handles.forEach(handle => {
+        const foregroundCanvas = state.host.querySelector("canvas.dygraph-rangesel-fgcanvas");
+        if (handles.length < 2 || !foregroundCanvas) {
+            return;
+        }
+
+        const leftHandle = handles[0];
+        const rightHandle = handles[1];
+        const handleWidth = leftHandle.getBoundingClientRect().width;
+
+        const toDateWindow = (leftPosition, rightPosition, rect) => {
+            const extremes = state.graph.xAxisExtremes();
+            const span = extremes[1] - extremes[0];
+            return [
+                extremes[0] + ((leftPosition - rect.left) / rect.width) * span,
+                extremes[0] + ((rightPosition - rect.left) / rect.width) * span
+            ];
+        };
+
+        const onMouseMove = event => {
+            const drag = state.rangeDrag;
+            if (!drag) {
+                return;
+            }
+
+            const pointer = clamp(event.clientX, drag.rect.left, drag.rect.right);
+            const minimumGap = handleWidth + 3;
+            let leftPosition = drag.leftPosition;
+            let rightPosition = drag.rightPosition;
+            if (drag.handle === leftHandle) {
+                leftPosition = Math.min(pointer, rightPosition - minimumGap);
+                leftPosition = Math.max(leftPosition, drag.rect.left);
+            } else {
+                rightPosition = Math.max(pointer, leftPosition + minimumGap);
+                rightPosition = Math.min(rightPosition, drag.rect.right);
+            }
+
+            const [from, to] = toDateWindow(leftPosition, rightPosition, drag.rect);
+            setDateWindow(state, from, to);
+        };
+
+        const onMouseUp = () => {
+            if (!state.rangeDrag) {
+                return;
+            }
+
+            state.rangeDrag = null;
+            document.removeEventListener("mousemove", onMouseMove);
+            document.removeEventListener("mouseup", onMouseUp);
+            const [minDate, maxDate] = state.graph.xAxisRange();
+            notifyViewChange(state, minDate, maxDate);
+        };
+
+        [leftHandle, rightHandle].forEach(handle => {
             handle.draggable = false;
             handle.addEventListener("mousedown", event => {
                 event.preventDefault();
-                handle.dispatchEvent(new MouseEvent("dragstart", {
-                    bubbles: true,
-                    cancelable: true,
-                    clientX: event.clientX,
-                    clientY: event.clientY,
-                    button: event.button,
-                    buttons: event.buttons
-                }));
+                const rect = foregroundCanvas.getBoundingClientRect();
+                const leftPosition = leftHandle.getBoundingClientRect().left + handleWidth / 2;
+                const rightPosition = rightHandle.getBoundingClientRect().left + handleWidth / 2;
+                state.rangeDrag = { handle, rect, leftPosition, rightPosition };
+                document.addEventListener("mousemove", onMouseMove);
+                document.addEventListener("mouseup", onMouseUp);
             });
         });
     }
@@ -371,7 +425,8 @@
                 suppressCallbacks: true,
                 lastNotifiedRange: null,
                 sharedTooltip: true,
-                resizeObserver: null
+                resizeObserver: null,
+                rangeDrag: null
             };
             states.set(host, state);
             state.resizeObserver = new ResizeObserver(() => state.graph?.resize());

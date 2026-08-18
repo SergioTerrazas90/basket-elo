@@ -207,6 +207,24 @@
         }
     }
 
+    function bindRangeSelectorHandleFallback(state) {
+        const handles = state.host.querySelectorAll("img.dygraph-rangesel-zoomhandle");
+        handles.forEach(handle => {
+            handle.draggable = false;
+            handle.addEventListener("mousedown", event => {
+                event.preventDefault();
+                handle.dispatchEvent(new MouseEvent("dragstart", {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                    button: event.button,
+                    buttons: event.buttons
+                }));
+            });
+        });
+    }
+
     function render(host, payload, dotNet) {
         if (!window.Dygraph) {
             throw new Error("Dygraphs did not load.");
@@ -317,6 +335,7 @@
         if (hasAbsoluteDateWindow) {
             setDateWindow(state, requestedFrom, requestedTo);
         }
+        bindRangeSelectorHandleFallback(state);
 
         // Dygraphs rebuilds the host during construction, so attach the custom
         // tooltip after the graph has created its canvases.

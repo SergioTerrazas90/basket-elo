@@ -183,6 +183,8 @@
     }
 
     function disposeState(state) {
+        state.rangeBindingCleanup?.();
+        state.rangeBindingCleanup = null;
         state.resizeObserver?.disconnect();
         state.graph?.destroy();
         state.graph = null;
@@ -220,6 +222,8 @@
             return;
         }
 
+        state.rangeBindingCleanup?.();
+
         const leftHandle = handles[0];
         const rightHandle = handles[1];
         const handleWidth = leftHandle.getBoundingClientRect().width;
@@ -233,11 +237,17 @@
             ];
         };
 
-        const onMouseMove = event => {
+        const onPointerMove = event => {
             const drag = state.rangeDrag;
             if (!drag) {
                 return;
             }
+
+            if (drag.pointerId != null && event.pointerId != null && drag.pointerId !== event.pointerId) {
+                return;
+            }
+
+            event.preventDefault?.();
 
             const pointer = clamp(event.clientX, drag.rect.left, drag.rect.right);
             const minimumGap = handleWidth + 3;
@@ -255,31 +265,77 @@
             setDateWindow(state, from, to, false, false);
         };
 
-        const onMouseUp = () => {
+        const onPointerUp = event => {
             if (!state.rangeDrag) {
                 return;
             }
 
+            if (state.rangeDrag.pointerId != null && event.pointerId != null &&
+                state.rangeDrag.pointerId !== event.pointerId) {
+                return;
+            }
+
             state.rangeDrag = null;
-            document.removeEventListener("mousemove", onMouseMove);
-            document.removeEventListener("mouseup", onMouseUp);
+            document.removeEventListener("pointermove", onPointerMove);
+            document.removeEventListener("pointerup", onPointerUp);
+            document.removeEventListener("pointercancel", onPointerUp);
+            document.removeEventListener("mousemove", onPointerMove);
+            document.removeEventListener("mouseup", onPointerUp);
             const [minDate, maxDate] = state.graph.xAxisRange();
             state.lastNotifiedRange = null;
             notifyViewChange(state, minDate, maxDate);
         };
 
+        const startDrag = (event, handle) => {
+            if (state.rangeDrag) {
+                return;
+            }
+
+            event.preventDefault?.();
+            event.stopPropagation?.();
+            const rect = foregroundCanvas.getBoundingClientRect();
+            const leftPosition = leftHandle.getBoundingClientRect().left + handleWidth / 2;
+            const rightPosition = rightHandle.getBoundingClientRect().left + handleWidth / 2;
+            state.rangeDrag = {
+                handle,
+                pointerId: event.pointerId ?? null,
+                rect,
+                leftPosition,
+                rightPosition
+            };
+
+            try {
+                handle.setPointerCapture?.(event.pointerId);
+            } catch {
+                // Document-level listeners below keep the drag alive if capture is unavailable.
+            }
+
+            document.addEventListener("pointermove", onPointerMove, { passive: false });
+            document.addEventListener("pointerup", onPointerUp);
+            document.addEventListener("pointercancel", onPointerUp);
+            document.addEventListener("mousemove", onPointerMove, { passive: false });
+            document.addEventListener("mouseup", onPointerUp);
+        };
+
+        const onPointerDown = event => startDrag(event, event.currentTarget);
+
         [leftHandle, rightHandle].forEach(handle => {
             handle.draggable = false;
-            handle.addEventListener("mousedown", event => {
-                event.preventDefault();
-                const rect = foregroundCanvas.getBoundingClientRect();
-                const leftPosition = leftHandle.getBoundingClientRect().left + handleWidth / 2;
-                const rightPosition = rightHandle.getBoundingClientRect().left + handleWidth / 2;
-                state.rangeDrag = { handle, rect, leftPosition, rightPosition };
-                document.addEventListener("mousemove", onMouseMove);
-                document.addEventListener("mouseup", onMouseUp);
-            });
+            handle.addEventListener("pointerdown", onPointerDown);
+            handle.addEventListener("mousedown", onPointerDown);
         });
+
+        state.rangeBindingCleanup = () => {
+            [leftHandle, rightHandle].forEach(handle => {
+                handle.removeEventListener("pointerdown", onPointerDown);
+                handle.removeEventListener("mousedown", onPointerDown);
+            });
+            document.removeEventListener("pointermove", onPointerMove);
+            document.removeEventListener("pointerup", onPointerUp);
+            document.removeEventListener("pointercancel", onPointerUp);
+            document.removeEventListener("mousemove", onPointerMove);
+            document.removeEventListener("mouseup", onPointerUp);
+        };
     }
 
     function render(host, payload, dotNet) {
@@ -293,8 +349,6 @@
         }
 
         state.dotNet = dotNet;
-        state.host.replaceChildren();
-        state.tooltip = null;
         state.sharedTooltip = payload.sharedTooltip !== false;
         state.labels = ["Date", ...payload.series.map(series => series.name)];
         state.payload = payload;
@@ -307,7 +361,11 @@
         state.lastNotifiedRange = null;
 
         if (payload.series.length === 0 || normalized.rows.length === 0) {
-            state.tooltip.hidden = true;
+            state.graph?.destroy();
+            state.graph = null;
+            state.rangeBindingCleanup?.();
+            state.rangeBindingCleanup = null;
+            state.host.replaceChildren();
             const empty = document.createElement("div");
             empty.className = "elo-dygraph-empty";
             empty.textContent = "No chart data available";
@@ -329,6 +387,38 @@
             : rangeSpan > 0 && (startFraction > 0 || endFraction < 1)
                 ? [state.min + rangeSpan * startFraction, state.min + rangeSpan * endFraction]
                 : undefined;
+
+        const isFullRangeReset = !hasAbsoluteDateWindow && startFraction <= 0 && endFraction >= 1;
+        const previousDateWindow = state.graph && !isFullRangeReset
+            ? (() => {
+                try {
+                    return state.graph.xAxisRange();
+                } catch {
+                    return null;
+                }
+            })()
+            : null;
+
+        if (state.graph) {
+            const updateDateWindow = dateWindow ?? previousDateWindow ?? [state.min, state.max];
+            state.graph.updateOptions({
+                file: normalized.rows,
+                labels: state.labels,
+                colors: payload.series.map(series => series.color),
+                dateWindow: updateDateWindow,
+                xRangePad: dateWindow || previousDateWindow ? 0 : 5
+            });
+            state.graph.resize();
+            bindRangeSelectorHandleFallback(state);
+            state.tooltip ??= ensureTooltip(host);
+            const [updatedMinDate, updatedMaxDate] = state.graph.xAxisRange();
+            state.lastNotifiedRange = selectedRange(state, updatedMinDate, updatedMaxDate);
+            state.suppressCallbacks = false;
+            return;
+        }
+
+        state.host.replaceChildren();
+        state.tooltip = null;
 
         state.graph = new Dygraph(host, normalized.rows, {
             labels: state.labels,
@@ -429,7 +519,8 @@
                 lastNotifiedRange: null,
                 sharedTooltip: true,
                 resizeObserver: null,
-                rangeDrag: null
+                rangeDrag: null,
+                rangeBindingCleanup: null
             };
             states.set(host, state);
             state.resizeObserver = new ResizeObserver(() => state.graph?.resize());

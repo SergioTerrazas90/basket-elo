@@ -215,7 +215,7 @@
         }
     }
 
-    function bindRangeSelectorHandleFallback(state) {
+    function bindRangeSelectorInteraction(state) {
         const handles = state.host.querySelectorAll("img.dygraph-rangesel-zoomhandle");
         const foregroundCanvas = state.host.querySelector("canvas.dygraph-rangesel-fgcanvas");
         if (handles.length < 2 || !foregroundCanvas) {
@@ -224,9 +224,27 @@
 
         state.rangeBindingCleanup?.();
 
-        const leftHandle = handles[0];
-        const rightHandle = handles[1];
-        const handleWidth = leftHandle.getBoundingClientRect().width;
+        handles.forEach(handle => {
+            handle.draggable = false;
+            handle.style.touchAction = "none";
+        });
+        foregroundCanvas.style.touchAction = "none";
+
+        const selectorGeometry = () => {
+            const rect = foregroundCanvas.getBoundingClientRect();
+            const positions = Array.from(handles)
+                .map(handle => {
+                    const handleRect = handle.getBoundingClientRect();
+                    return handleRect.left + handleRect.width / 2;
+                })
+                .sort((left, right) => left - right);
+
+            return {
+                rect,
+                leftPosition: positions[0],
+                rightPosition: positions.at(-1)
+            };
+        };
 
         const toDateWindow = (leftPosition, rightPosition, rect) => {
             const extremes = state.graph.xAxisExtremes();
@@ -237,104 +255,127 @@
             ];
         };
 
-        const onPointerMove = event => {
+        const stopSelectorEvent = event => {
+            event.preventDefault?.();
+            event.stopImmediatePropagation?.();
+        };
+
+        const removeDragListeners = () => {
+            document.removeEventListener("pointermove", onDragMove, true);
+            document.removeEventListener("pointerup", onDragEnd, true);
+            document.removeEventListener("pointercancel", onDragEnd, true);
+            document.removeEventListener("mousemove", onDragMove, true);
+            document.removeEventListener("mouseup", onDragEnd, true);
+        };
+
+        const onDragMove = event => {
             const drag = state.rangeDrag;
             if (!drag) {
                 return;
             }
 
-            if (drag.pointerId != null && event.pointerId != null && drag.pointerId !== event.pointerId) {
+            if (drag.pointerId != null && event.pointerId == null) {
+                return;
+            }
+            if (drag.pointerId != null && drag.pointerId !== event.pointerId) {
                 return;
             }
 
-            event.preventDefault?.();
+            stopSelectorEvent(event);
 
             const pointer = clamp(event.clientX, drag.rect.left, drag.rect.right);
-            const minimumGap = handleWidth + 3;
+            const minimumGap = 12;
             let leftPosition = drag.leftPosition;
             let rightPosition = drag.rightPosition;
-            if (drag.handle === leftHandle) {
+            if (drag.mode === "left") {
                 leftPosition = Math.min(pointer, rightPosition - minimumGap);
                 leftPosition = Math.max(leftPosition, drag.rect.left);
-            } else {
+            } else if (drag.mode === "right") {
                 rightPosition = Math.max(pointer, leftPosition + minimumGap);
                 rightPosition = Math.min(rightPosition, drag.rect.right);
+            } else {
+                const width = rightPosition - leftPosition;
+                const requestedLeft = leftPosition + (pointer - drag.startPointer);
+                leftPosition = clamp(requestedLeft, drag.rect.left, drag.rect.right - width);
+                rightPosition = leftPosition + width;
             }
 
             const [from, to] = toDateWindow(leftPosition, rightPosition, drag.rect);
             setDateWindow(state, from, to, false, false);
         };
 
-        const onPointerUp = event => {
-            if (!state.rangeDrag) {
+        const onDragEnd = event => {
+            const drag = state.rangeDrag;
+            if (!drag) {
                 return;
             }
 
-            if (state.rangeDrag.pointerId != null && event.pointerId != null &&
-                state.rangeDrag.pointerId !== event.pointerId) {
+            if (drag.pointerId != null && event.pointerId == null) {
+                return;
+            }
+            if (drag.pointerId != null && drag.pointerId !== event.pointerId) {
                 return;
             }
 
+            stopSelectorEvent(event);
             state.rangeDrag = null;
-            document.removeEventListener("pointermove", onPointerMove);
-            document.removeEventListener("pointerup", onPointerUp);
-            document.removeEventListener("pointercancel", onPointerUp);
-            document.removeEventListener("mousemove", onPointerMove);
-            document.removeEventListener("mouseup", onPointerUp);
+            removeDragListeners();
             const [minDate, maxDate] = state.graph.xAxisRange();
             state.lastNotifiedRange = null;
             notifyViewChange(state, minDate, maxDate);
         };
 
-        const startDrag = (event, handle) => {
+        const startDrag = event => {
+            const geometry = selectorGeometry();
+            const withinSelector = event.clientX >= geometry.rect.left - 16 &&
+                event.clientX <= geometry.rect.right + 16 &&
+                event.clientY >= geometry.rect.top - 10 &&
+                event.clientY <= geometry.rect.bottom + 10;
+            if (!withinSelector) {
+                return;
+            }
+
+            stopSelectorEvent(event);
             if (state.rangeDrag) {
                 return;
             }
 
-            event.preventDefault?.();
-            event.stopPropagation?.();
-            const rect = foregroundCanvas.getBoundingClientRect();
-            const leftPosition = leftHandle.getBoundingClientRect().left + handleWidth / 2;
-            const rightPosition = rightHandle.getBoundingClientRect().left + handleWidth / 2;
-            state.rangeDrag = {
-                handle,
-                pointerId: event.pointerId ?? null,
-                rect,
-                leftPosition,
-                rightPosition
-            };
-
-            try {
-                handle.setPointerCapture?.(event.pointerId);
-            } catch {
-                // Document-level listeners below keep the drag alive if capture is unavailable.
+            const leftDistance = Math.abs(event.clientX - geometry.leftPosition);
+            const rightDistance = Math.abs(event.clientX - geometry.rightPosition);
+            let mode;
+            if (leftDistance <= 18 && leftDistance <= rightDistance) {
+                mode = "left";
+            } else if (rightDistance <= 18) {
+                mode = "right";
+            } else if (event.clientX > geometry.leftPosition && event.clientX < geometry.rightPosition) {
+                mode = "pan";
+            } else {
+                mode = event.clientX <= geometry.leftPosition ? "left" : "right";
             }
 
-            document.addEventListener("pointermove", onPointerMove, { passive: false });
-            document.addEventListener("pointerup", onPointerUp);
-            document.addEventListener("pointercancel", onPointerUp);
-            document.addEventListener("mousemove", onPointerMove, { passive: false });
-            document.addEventListener("mouseup", onPointerUp);
+            state.rangeDrag = {
+                mode,
+                pointerId: event.pointerId ?? null,
+                rect: geometry.rect,
+                leftPosition: geometry.leftPosition,
+                rightPosition: geometry.rightPosition,
+                startPointer: event.clientX
+            };
+
+            document.addEventListener("pointermove", onDragMove, { capture: true, passive: false });
+            document.addEventListener("pointerup", onDragEnd, true);
+            document.addEventListener("pointercancel", onDragEnd, true);
+            document.addEventListener("mousemove", onDragMove, { capture: true, passive: false });
+            document.addEventListener("mouseup", onDragEnd, true);
         };
 
-        const onPointerDown = event => startDrag(event, event.currentTarget);
-
-        [leftHandle, rightHandle].forEach(handle => {
-            handle.draggable = false;
-            handle.addEventListener("pointerdown", onPointerDown);
-            handle.addEventListener("mousedown", onPointerDown);
-        });
+        state.host.addEventListener("pointerdown", startDrag, true);
+        state.host.addEventListener("mousedown", startDrag, true);
 
         state.rangeBindingCleanup = () => {
-            [leftHandle, rightHandle].forEach(handle => {
-                handle.removeEventListener("pointerdown", onPointerDown);
-                handle.removeEventListener("mousedown", onPointerDown);
-            });
-            document.removeEventListener("pointermove", onPointerMove);
-            document.removeEventListener("pointerup", onPointerUp);
-            document.removeEventListener("pointercancel", onPointerUp);
-            document.removeEventListener("mousemove", onPointerMove);
-            document.removeEventListener("mouseup", onPointerUp);
+            state.host.removeEventListener("pointerdown", startDrag, true);
+            state.host.removeEventListener("mousedown", startDrag, true);
+            removeDragListeners();
         };
     }
 
@@ -409,7 +450,7 @@
                 xRangePad: dateWindow || previousDateWindow ? 0 : 5
             });
             state.graph.resize();
-            bindRangeSelectorHandleFallback(state);
+            bindRangeSelectorInteraction(state);
             state.tooltip ??= ensureTooltip(host);
             const [updatedMinDate, updatedMaxDate] = state.graph.xAxisRange();
             state.lastNotifiedRange = selectedRange(state, updatedMinDate, updatedMaxDate);
@@ -482,7 +523,7 @@
         if (hasAbsoluteDateWindow) {
             setDateWindow(state, requestedFrom, requestedTo);
         }
-        bindRangeSelectorHandleFallback(state);
+        bindRangeSelectorInteraction(state);
 
         // Dygraphs rebuilds the host during construction, so attach the custom
         // tooltip after the graph has created its canvases.

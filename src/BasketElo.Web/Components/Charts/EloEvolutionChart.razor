@@ -430,9 +430,28 @@
     {
         var startMillis = Math.Min(requestedStartMillis, requestedEndMillis);
         var endMillis = Math.Max(requestedStartMillis, requestedEndMillis);
-        viewFromUtc = DateTimeOffset.FromUnixTimeMilliseconds((long)startMillis).UtcDateTime;
-        viewToUtc = DateTimeOffset.FromUnixTimeMilliseconds((long)endMillis).UtcDateTime;
-        await RequestViewportRefinementAsync(viewFromUtc.Value, viewToUtc.Value);
+        var fullRange = GetVisibleDateRange(0, 1);
+        if (fullRange.HasValue)
+        {
+            var requestedFromUtc = DateTimeOffset.FromUnixTimeMilliseconds((long)startMillis).UtcDateTime;
+            var requestedToUtc = DateTimeOffset.FromUnixTimeMilliseconds((long)endMillis).UtcDateTime;
+            var clampedFromUtc = requestedFromUtc < fullRange.Value.FromUtc
+                ? fullRange.Value.FromUtc
+                : requestedFromUtc;
+            var clampedToUtc = requestedToUtc > fullRange.Value.ToUtc
+                ? fullRange.Value.ToUtc
+                : requestedToUtc;
+            if (clampedToUtc < clampedFromUtc)
+            {
+                clampedFromUtc = fullRange.Value.FromUtc;
+                clampedToUtc = fullRange.Value.ToUtc;
+            }
+
+            viewFromUtc = clampedFromUtc;
+            viewToUtc = clampedToUtc;
+            await RequestViewportRefinementAsync(viewFromUtc.Value, viewToUtc.Value);
+        }
+
         await InvokeAsync(StateHasChanged);
     }
 

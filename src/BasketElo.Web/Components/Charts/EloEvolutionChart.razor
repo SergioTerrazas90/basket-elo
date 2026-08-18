@@ -251,6 +251,8 @@
 
     private double viewStart;
     private double viewEnd = 1;
+    private DateTime? viewFromUtc;
+    private DateTime? viewToUtc;
 
     private EloChartSamplingMode samplingMode = EloChartSamplingMode.GameByGame;
     private IReadOnlyList<EloChartSeries> sourceSeries = [];
@@ -318,7 +320,7 @@
                 return "No range";
             }
 
-            var visibleRange = GetVisibleDateRange(viewStart, viewEnd);
+            var visibleRange = GetCurrentVisibleDateRange();
             if (!visibleRange.HasValue)
             {
                 return "No range";
@@ -412,7 +414,25 @@
     {
         viewStart = Math.Clamp(Math.Min(requestedStart, requestedEnd), 0, 1);
         viewEnd = Math.Clamp(Math.Max(requestedStart, requestedEnd), 0, 1);
-        await RequestViewportRefinementAsync(viewStart, viewEnd);
+        var visibleRange = GetVisibleDateRange(viewStart, viewEnd);
+        if (visibleRange.HasValue)
+        {
+            viewFromUtc = visibleRange.Value.FromUtc;
+            viewToUtc = visibleRange.Value.ToUtc;
+            await RequestViewportRefinementAsync(viewFromUtc.Value, viewToUtc.Value);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable("HandleDygraphDateRangeChange")]
+    public async Task HandleDygraphDateRangeChange(double requestedStartMillis, double requestedEndMillis)
+    {
+        var startMillis = Math.Min(requestedStartMillis, requestedEndMillis);
+        var endMillis = Math.Max(requestedStartMillis, requestedEndMillis);
+        viewFromUtc = DateTimeOffset.FromUnixTimeMilliseconds((long)startMillis).UtcDateTime;
+        viewToUtc = DateTimeOffset.FromUnixTimeMilliseconds((long)endMillis).UtcDateTime;
+        await RequestViewportRefinementAsync(viewFromUtc.Value, viewToUtc.Value);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -506,7 +526,7 @@
             return 0;
         }
 
-        var range = GetVisibleDateRange(viewStart, viewEnd);
+        var range = GetCurrentVisibleDateRange();
         return range is null
             ? display.Points.Count
             : display.Points.Count(point => point.GameDateTimeUtc >= range.Value.FromUtc && point.GameDateTimeUtc <= range.Value.ToUtc);
@@ -580,6 +600,8 @@
             enableRangeNavigation = EnableRangeNavigation,
             viewStart,
             viewEnd,
+            viewFromUtc = viewFromUtc.HasValue ? ToUnixMilliseconds(viewFromUtc.Value) : (long?)null,
+            viewToUtc = viewToUtc.HasValue ? ToUnixMilliseconds(viewToUtc.Value) : (long?)null,
             series = displaySeries.Select(series => new
             {
                 name = series.TeamName,
@@ -597,7 +619,7 @@
     private static long ToUnixMilliseconds(DateTime value)
         => new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
 
-    private async Task RequestViewportRefinementAsync(double requestedStart, double requestedEnd)
+    private async Task RequestViewportRefinementAsync(DateTime requestedFromUtc, DateTime requestedToUtc)
     {
         if (!ViewportRefinementRequested.HasDelegate || sourceSeries.Count == 0)
         {
@@ -605,14 +627,16 @@
         }
 
         var fullRange = GetVisibleDateRange(0, 1);
-        var requestedRange = GetVisibleDateRange(requestedStart, requestedEnd, includeAdjacentPoints: true);
-        if (!fullRange.HasValue || !requestedRange.HasValue)
+        if (!fullRange.HasValue)
         {
             return;
         }
 
-        if (requestedRange.Value.FromUtc.Date <= fullRange.Value.FromUtc.Date &&
-            requestedRange.Value.ToUtc.Date >= fullRange.Value.ToUtc.Date)
+        var requestedRange = (
+            FromUtc: requestedFromUtc < fullRange.Value.FromUtc ? fullRange.Value.FromUtc : requestedFromUtc,
+            ToUtc: requestedToUtc > fullRange.Value.ToUtc ? fullRange.Value.ToUtc : requestedToUtc);
+        if (requestedRange.FromUtc.Date <= fullRange.Value.FromUtc.Date &&
+            requestedRange.ToUtc.Date >= fullRange.Value.ToUtc.Date)
         {
             if (FullRangeRequested.HasDelegate)
             {
@@ -623,9 +647,14 @@
         }
 
         await ViewportRefinementRequested.InvokeAsync(new EloChartViewportRange(
-            DateTime.SpecifyKind(requestedRange.Value.FromUtc, DateTimeKind.Utc),
-            DateTime.SpecifyKind(requestedRange.Value.ToUtc, DateTimeKind.Utc)));
+            DateTime.SpecifyKind(requestedRange.FromUtc, DateTimeKind.Utc),
+            DateTime.SpecifyKind(requestedRange.ToUtc, DateTimeKind.Utc)));
     }
+
+    private (DateTime FromUtc, DateTime ToUtc)? GetCurrentVisibleDateRange()
+        => UseDygraphs && viewFromUtc.HasValue && viewToUtc.HasValue
+            ? (viewFromUtc.Value, viewToUtc.Value)
+            : GetVisibleDateRange(viewStart, viewEnd);
 
     private (DateTime FromUtc, DateTime ToUtc)? GetVisibleDateRange(
         double requestedStart,
@@ -692,6 +721,8 @@
     {
         viewStart = 0;
         viewEnd = 1;
+        viewFromUtc = null;
+        viewToUtc = null;
     }
 
     private string SamplingButtonClass(EloChartSamplingMode mode)

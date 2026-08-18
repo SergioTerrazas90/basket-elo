@@ -110,9 +110,9 @@
         state.lastNotifiedRange = range;
         try {
             Promise.resolve(state.dotNet.invokeMethodAsync(
-                "HandleDygraphViewChange",
-                range.start,
-                range.end))
+                "HandleDygraphDateRangeChange",
+                minDate,
+                maxDate))
                 .catch(error => {
                     state.lastNotifiedRange = null;
                     console.error("Dygraphs viewport refinement failed.", error);
@@ -226,9 +226,16 @@
         const rangeSpan = state.max - state.min;
         const startFraction = clamp(Number(payload.viewStart ?? 0), 0, 1);
         const endFraction = clamp(Number(payload.viewEnd ?? 1), 0, 1);
-        const dateWindow = rangeSpan > 0 && (startFraction > 0 || endFraction < 1)
-            ? [state.min + rangeSpan * startFraction, state.min + rangeSpan * endFraction]
-            : undefined;
+        const requestedFrom = Number(payload.viewFromUtc);
+        const requestedTo = Number(payload.viewToUtc);
+        const hasAbsoluteDateWindow = Number.isFinite(requestedFrom) &&
+            Number.isFinite(requestedTo) &&
+            requestedTo > requestedFrom;
+        const dateWindow = hasAbsoluteDateWindow
+            ? [requestedFrom, requestedTo]
+            : rangeSpan > 0 && (startFraction > 0 || endFraction < 1)
+                ? [state.min + rangeSpan * startFraction, state.min + rangeSpan * endFraction]
+                : undefined;
 
         state.graph = new Dygraph(host, normalized.rows, {
             labels: state.labels,

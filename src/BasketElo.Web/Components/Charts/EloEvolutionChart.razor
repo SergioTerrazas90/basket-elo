@@ -450,6 +450,14 @@
             viewFromUtc = clampedFromUtc;
             viewToUtc = clampedToUtc;
             await RequestViewportRefinementAsync(viewFromUtc.Value, viewToUtc.Value);
+            if (chartInitialized)
+            {
+                await JS.InvokeVoidAsync(
+                    "basketEloDygraph.setDateWindow",
+                    chartHost,
+                    ToUnixMilliseconds(viewFromUtc.Value),
+                    ToUnixMilliseconds(viewToUtc.Value));
+            }
         }
 
         await InvokeAsync(StateHasChanged);

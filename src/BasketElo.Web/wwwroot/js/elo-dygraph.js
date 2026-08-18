@@ -189,7 +189,7 @@
         state.host.replaceChildren();
     }
 
-    function setDateWindow(state, requestedFrom, requestedTo, notify = false) {
+    function setDateWindow(state, requestedFrom, requestedTo, notify = false, markNotified = true) {
         if (!state.graph || !Number.isFinite(requestedFrom) || !Number.isFinite(requestedTo) || requestedTo <= requestedFrom) {
             return;
         }
@@ -201,7 +201,9 @@
                 isZoomedIgnoreProgrammaticZoom: true
             });
             const [minDate, maxDate] = state.graph.xAxisRange();
-            state.lastNotifiedRange = selectedRange(state, minDate, maxDate);
+            if (markNotified) {
+                state.lastNotifiedRange = selectedRange(state, minDate, maxDate);
+            }
             if (notify) {
                 state.lastNotifiedRange = null;
                 notifyViewChange(state, minDate, maxDate);
@@ -250,7 +252,7 @@
             }
 
             const [from, to] = toDateWindow(leftPosition, rightPosition, drag.rect);
-            setDateWindow(state, from, to);
+            setDateWindow(state, from, to, false, false);
         };
 
         const onMouseUp = () => {
@@ -262,6 +264,7 @@
             document.removeEventListener("mousemove", onMouseMove);
             document.removeEventListener("mouseup", onMouseUp);
             const [minDate, maxDate] = state.graph.xAxisRange();
+            state.lastNotifiedRange = null;
             notifyViewChange(state, minDate, maxDate);
         };
 

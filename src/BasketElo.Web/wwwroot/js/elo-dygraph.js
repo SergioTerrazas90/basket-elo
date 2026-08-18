@@ -189,6 +189,24 @@
         state.host.replaceChildren();
     }
 
+    function setDateWindow(state, requestedFrom, requestedTo) {
+        if (!state.graph || !Number.isFinite(requestedFrom) || !Number.isFinite(requestedTo) || requestedTo <= requestedFrom) {
+            return;
+        }
+
+        state.suppressCallbacks = true;
+        try {
+            state.graph.updateOptions({
+                dateWindow: [requestedFrom, requestedTo],
+                isZoomedIgnoreProgrammaticZoom: true
+            });
+            const [minDate, maxDate] = state.graph.xAxisRange();
+            state.lastNotifiedRange = selectedRange(state, minDate, maxDate);
+        } finally {
+            state.suppressCallbacks = false;
+        }
+    }
+
     function render(host, payload, dotNet) {
         if (!window.Dygraph) {
             throw new Error("Dygraphs did not load.");
@@ -248,7 +266,7 @@
             animatedZooms: false,
             panEdgeFraction: 0,
             rightGap: 10,
-            xRangePad: 5,
+            xRangePad: hasAbsoluteDateWindow ? 0 : 5,
             dateWindow,
             showRangeSelector: payload.enableRangeNavigation === true,
             rangeSelectorHeight: 52,
@@ -296,6 +314,10 @@
             }
         });
 
+        if (hasAbsoluteDateWindow) {
+            setDateWindow(state, requestedFrom, requestedTo);
+        }
+
         // Dygraphs rebuilds the host during construction, so attach the custom
         // tooltip after the graph has created its canvases.
         state.tooltip = ensureTooltip(host);
@@ -337,6 +359,12 @@
             state.resizeObserver.observe(host);
         },
         render,
+        setDateWindow: (host, requestedFrom, requestedTo) => {
+            const state = states.get(host);
+            if (state) {
+                setDateWindow(state, Number(requestedFrom), Number(requestedTo));
+            }
+        },
         dispose: (host) => {
             const state = states.get(host);
             if (!state) {

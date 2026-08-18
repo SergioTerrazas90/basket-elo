@@ -359,7 +359,7 @@
         RebuildDisplaySeries();
 
         var chartSignature = BuildChartSignature();
-        chartRenderPending = dataChanged || !string.Equals(renderedChartSignature, chartSignature, StringComparison.Ordinal);
+        chartRenderPending |= dataChanged || !string.Equals(renderedChartSignature, chartSignature, StringComparison.Ordinal);
         renderedChartSignature = chartSignature;
 
         if (!EnableRangeNavigation || dataChanged)
@@ -605,12 +605,31 @@
     }
 
     private string BuildChartSignature()
-        => string.Join(
-            ";",
-            samplingMode,
-            string.Join(",", hiddenSeriesKeys.OrderBy(key => key, StringComparer.Ordinal)),
-            string.Join(",", displaySeries.Select(series =>
-                $"{SeriesKey(series)}:{series.Points.Count}:{series.Points.FirstOrDefault()?.GameDateTimeUtc.Ticks}:{series.Points.LastOrDefault()?.GameDateTimeUtc.Ticks}")));
+    {
+        var signature = new HashCode();
+        signature.Add(samplingMode);
+        foreach (var hiddenKey in hiddenSeriesKeys.OrderBy(key => key, StringComparer.Ordinal))
+        {
+            signature.Add(hiddenKey, StringComparer.Ordinal);
+        }
+
+        foreach (var series in displaySeries)
+        {
+            signature.Add(SeriesKey(series), StringComparer.Ordinal);
+            signature.Add(series.TeamName, StringComparer.Ordinal);
+            signature.Add(series.Color, StringComparer.Ordinal);
+            signature.Add(series.Points.Count);
+            foreach (var point in series.Points)
+            {
+                signature.Add(point.GameDateTimeUtc.Ticks);
+                signature.Add(point.Elo);
+                signature.Add(point.EloDelta);
+                signature.Add(point.Rank);
+            }
+        }
+
+        return signature.ToHashCode().ToString("X8", CultureInfo.InvariantCulture);
+    }
 
     private object BuildDygraphPayload()
         => new

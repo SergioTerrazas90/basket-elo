@@ -99,10 +99,13 @@
             @if (CompareRenderers || !UseDygraphs)
             {
                 <section class="elo-chart-comparison-pane" aria-label="Radzen SVG chart">
-                    <div class="elo-chart-comparison-heading">
-                        <strong>Radzen / SVG</strong>
-                        <span>Current renderer</span>
-                    </div>
+                    @if (CompareRenderers)
+                    {
+                        <div class="elo-chart-comparison-heading">
+                            <strong>Radzen / SVG</strong>
+                            <span>Current renderer</span>
+                        </div>
+                    }
                     <RadzenChart @key="samplingMode"
                                  class="elo-radzen-chart"
                                  Style="@ChartStyle"
@@ -182,10 +185,13 @@
             @if (CompareRenderers || UseDygraphs)
             {
                 <section class="elo-chart-comparison-pane" aria-label="Dygraphs Canvas chart">
-                    <div class="elo-chart-comparison-heading">
-                        <strong>Dygraphs / Canvas</strong>
-                        <span>New renderer</span>
-                    </div>
+                    @if (CompareRenderers)
+                    {
+                        <div class="elo-chart-comparison-heading">
+                            <strong>Dygraphs / Canvas</strong>
+                            <span>New renderer</span>
+                        </div>
+                    }
                     <div @ref="chartHost"
                          class="elo-dygraph-chart"
                          style="@ChartStyle"

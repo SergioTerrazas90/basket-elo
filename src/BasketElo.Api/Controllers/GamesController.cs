@@ -429,12 +429,19 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         return review.Trim().ToLowerInvariant() switch
         {
             "needs_review" => query.Where(x =>
-                !x.EloEligible ||
-                ((x.Status.Contains("finished") || x.Status.Contains("after overtime") || x.Status.Contains("after over time") || x.Status.Contains("final")) && (!x.HomeScore.HasValue || !x.AwayScore.HasValue)) ||
-                (!(x.Status.Contains("finished") || x.Status.Contains("after overtime") || x.Status.Contains("after over time") || x.Status.Contains("final")) && x.GameDateTimeUtc < cutoff)),
+                !(x.Status.ToLower().Contains("cancelled") ||
+                  x.Status.ToLower().Contains("canceled") ||
+                  x.Status.ToLower().Contains("postponed") ||
+                  x.Status.ToLower().Contains("abandoned")) &&
+                (!x.EloEligible ||
+                 ((x.Status.ToLower().Contains("finished") || x.Status.ToLower().Contains("after overtime") || x.Status.ToLower().Contains("after over time") || x.Status.ToLower().Contains("final")) && (!x.HomeScore.HasValue || !x.AwayScore.HasValue)) ||
+                 (!(x.Status.ToLower().Contains("finished") || x.Status.ToLower().Contains("after overtime") || x.Status.ToLower().Contains("after over time") || x.Status.ToLower().Contains("final")) && x.GameDateTimeUtc < cutoff))),
             "excluded_from_elo" => query.Where(x => !x.EloEligible),
-            "missing_score" => query.Where(x => (x.Status.Contains("finished") || x.Status.Contains("after overtime") || x.Status.Contains("after over time") || x.Status.Contains("final")) && (!x.HomeScore.HasValue || !x.AwayScore.HasValue)),
-            "stale_status" => query.Where(x => !(x.Status.Contains("finished") || x.Status.Contains("after overtime") || x.Status.Contains("after over time") || x.Status.Contains("final")) && x.GameDateTimeUtc < cutoff),
+            "missing_score" => query.Where(x => (x.Status.ToLower().Contains("finished") || x.Status.ToLower().Contains("after overtime") || x.Status.ToLower().Contains("after over time") || x.Status.ToLower().Contains("final")) && (!x.HomeScore.HasValue || !x.AwayScore.HasValue)),
+            "stale_status" => query.Where(x =>
+                !(x.Status.ToLower().Contains("finished") || x.Status.ToLower().Contains("after overtime") || x.Status.ToLower().Contains("after over time") || x.Status.ToLower().Contains("final")) &&
+                !(x.Status.ToLower().Contains("cancelled") || x.Status.ToLower().Contains("canceled") || x.Status.ToLower().Contains("postponed") || x.Status.ToLower().Contains("abandoned")) &&
+                x.GameDateTimeUtc < cutoff),
             _ => query
         };
     }
@@ -448,6 +455,11 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         string? eloExclusionReason)
     {
         var reasons = new List<string>();
+        if (IsTerminalNonPlayedStatus(status))
+        {
+            return reasons;
+        }
+
         if (!eloEligible)
         {
             reasons.Add(string.IsNullOrWhiteSpace(eloExclusionReason)
@@ -474,6 +486,15 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         return normalized.Contains("finished", StringComparison.Ordinal) ||
             normalized.Contains("afterovertime", StringComparison.Ordinal) ||
             normalized is "final" or "completed";
+    }
+
+    private static bool IsTerminalNonPlayedStatus(string status)
+    {
+        var normalized = status.Replace(" ", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
+        return normalized.Contains("cancelled", StringComparison.Ordinal) ||
+            normalized.Contains("canceled", StringComparison.Ordinal) ||
+            normalized.Contains("postponed", StringComparison.Ordinal) ||
+            normalized.Contains("abandoned", StringComparison.Ordinal);
     }
 
     private static string DisplayCountryFromCode(string? countryCode)

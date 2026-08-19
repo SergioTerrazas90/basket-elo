@@ -31,8 +31,7 @@
             <nav class="rankings-view-tabs" aria-label="Ranking views">
                 <button type="button" class='@ViewTabClass("rankings")' @onclick='() => SelectViewAsync("rankings")' disabled="@isBusy">Rankings</button>
                 <button type="button" class='@ViewTabClass("results")' @onclick='() => SelectViewAsync("results")' disabled="@isBusy">Results</button>
-                <button type="button" class='@ViewTabClass("graph-svg")' @onclick='() => SelectViewAsync("graph-svg")' disabled="@isBusy">Graph SVG</button>
-                <button type="button" class='@ViewTabClass("graph-canvas")' @onclick='() => SelectViewAsync("graph-canvas")' disabled="@isBusy">Graph Canvas</button>
+                <button type="button" class='@ViewTabClass("graph")' @onclick='() => SelectViewAsync("graph")' disabled="@isBusy">Graph</button>
             </nav>
         </div>
     </header>
@@ -629,7 +628,7 @@
                                                            ShowLegend="false"
                                                            ShowSeriesControls="@(showGraphLegend && !isGraphTeamManagerOpen)"
                                                            CompareRenderers="false"
-                                                           UseDygraphs="@(selectedView == "graph-canvas")"
+                                                           UseDygraphs="true"
                                                            ShowDiagnostics="@isAdmin"
                                                            HiddenTeamIds="@HiddenGraphTeamIds"
                                                            SeriesVisibilityChanged="@ToggleGraphTeamVisibilityAsync"
@@ -833,8 +832,7 @@
             : View?.Trim().ToLowerInvariant() switch
             {
                 "results" => "results",
-                "graph" or "graph-canvas" => "graph-canvas",
-                "graph-svg" => "graph-svg",
+                "graph" or "graph-canvas" or "graph-svg" => "graph",
                 _ => "rankings"
             };
         selectedMoverDirection = string.Equals(Movement, "fallers", StringComparison.OrdinalIgnoreCase) ? "fallers" : "risers";
@@ -958,8 +956,8 @@
     {
         selectedView = view switch
         {
-            "results" or "graph-svg" or "graph-canvas" => view,
-            "graph" => "graph-canvas",
+            "results" => "results",
+            "graph" or "graph-svg" or "graph-canvas" => "graph",
             _ => "rankings"
         };
         page = 1;
@@ -1654,7 +1652,7 @@
         => hiddenGraphTeamIds.ToArray();
 
     private bool IsGraphView
-        => selectedView is "graph-svg" or "graph-canvas";
+        => selectedView == "graph";
 
     private int VisibleGraphTeamCount
         => graphTeamIds.Count - hiddenGraphTeamIds.Count(id => graphTeamIds.Contains(id));
@@ -1720,8 +1718,7 @@
         => selectedView switch
         {
             "results" => "Results",
-            "graph-svg" => "Graph SVG",
-            "graph-canvas" => "Graph Canvas",
+            "graph" => "Graph",
             "movers" => "Biggest Movers",
             _ => "Rankings"
         };

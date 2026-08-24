@@ -637,7 +637,7 @@
 }
 
 .results-table {
-    min-width: 720px;
+    min-width: 980px;
 }
 
 .results-table td,
@@ -652,6 +652,14 @@
     font-size: 0.72rem;
 }
 
+.result-header-note {
+    display: block;
+    color: var(--color-muted);
+    font-size: 0.68rem;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
 .result-separator {
     margin-inline: 0.3rem;
     color: var(--color-subtle);
@@ -663,6 +671,46 @@
 .result-score {
     color: var(--color-text);
     font-weight: 850;
+}
+
+.result-elo-cell {
+    min-width: 178px;
+    white-space: nowrap;
+}
+
+.result-elo-line {
+    display: grid;
+    grid-template-columns: 1rem auto auto;
+    align-items: baseline;
+    gap: 0.35rem;
+    line-height: 1.35;
+}
+
+.result-elo-line + .result-elo-line {
+    margin-top: 0.18rem;
+}
+
+.result-elo-side {
+    color: var(--color-muted);
+    font-size: 0.68rem;
+    font-weight: 850;
+    letter-spacing: 0.04em;
+}
+
+.result-elo-values {
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.results-action-column,
+.results-action-cell {
+    width: 1%;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.results-action-cell .btn {
+    min-width: 4.7rem;
 }
 
 .pager-status {

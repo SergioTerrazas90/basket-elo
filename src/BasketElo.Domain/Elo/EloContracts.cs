@@ -237,7 +237,15 @@ public sealed record EloResultRow(
     string HomeTeam,
     string AwayTeam,
     short? HomeScore,
-    short? AwayScore);
+    short? AwayScore,
+    EloResultTeamRating? HomeRating = null,
+    EloResultTeamRating? AwayRating = null);
+
+public sealed record EloResultTeamRating(
+    decimal PreElo,
+    decimal PostElo,
+    decimal EloDelta,
+    int? RatingPositionAfter = null);
 
 public sealed record EloTeamEvolutionSeries(
     Guid TeamId,

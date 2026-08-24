@@ -1440,12 +1440,35 @@ public class EloController(
                 CountryCode = x.Competition.CountryCode,
                 Season = x.Season.Label,
                 x.CompetitionPhase,
+                x.HomeTeamId,
+                x.AwayTeamId,
                 HomeTeam = x.HomeTeam.CanonicalName,
                 AwayTeam = x.AwayTeam.CanonicalName,
                 x.HomeScore,
                 x.AwayScore
             })
             .ToListAsync(cancellationToken);
+
+        var resultGameIds = resultRows.Select(x => x.Id).ToList();
+        var ratingRows = await dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x => x.EloPoolKey == poolKey &&
+                x.RulesetVersion == selectedRuleset &&
+                resultGameIds.Contains(x.GameId))
+            .Select(x => new
+            {
+                x.GameId,
+                x.TeamId,
+                x.PreElo,
+                x.PostElo,
+                x.EloDelta,
+                x.RatingPositionAfter
+            })
+            .ToListAsync(cancellationToken);
+
+        var ratingsByGameAndTeam = ratingRows.ToDictionary(
+            x => (x.GameId, x.TeamId),
+            x => new EloResultTeamRating(x.PreElo, x.PostElo, x.EloDelta, x.RatingPositionAfter));
 
         var rows = resultRows
             .Select(x => new EloResultRow(
@@ -1458,7 +1481,9 @@ public class EloController(
                 x.HomeTeam,
                 x.AwayTeam,
                 x.HomeScore,
-                x.AwayScore))
+                x.AwayScore,
+                ratingsByGameAndTeam.GetValueOrDefault((x.Id, x.HomeTeamId)),
+                ratingsByGameAndTeam.GetValueOrDefault((x.Id, x.AwayTeamId))))
             .ToList();
 
         return Ok(new EloResultsResponse(poolKey, selectedRuleset, rows, page, pageSize, totalCount, totalPages));

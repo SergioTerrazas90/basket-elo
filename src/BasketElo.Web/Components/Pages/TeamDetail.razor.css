@@ -120,6 +120,17 @@
     box-shadow: var(--shadow-sm);
 }
 
+.history-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    gap: var(--space-5);
+    align-items: start;
+}
+
+.history-workspace > section {
+    min-width: 0;
+}
+
 .team-summary strong {
     display: block;
     margin-top: 0.25rem;
@@ -401,6 +412,48 @@
     height: 220px;
 }
 
+.games-table-scroll {
+    overflow: auto;
+}
+
+.team-games-table.is-condensed {
+    margin-bottom: 0;
+    font-size: 0.82rem;
+}
+
+.team-games-table.is-condensed th,
+.team-games-table.is-condensed td {
+    padding: 0.42rem 0.5rem;
+    white-space: nowrap;
+}
+
+.team-games-table.is-condensed .competition-cell {
+    line-height: 1.2;
+}
+
+.team-games-table.is-condensed .competition-cell small {
+    font-size: 0.72rem;
+}
+
+.team-games-table.is-condensed .btn {
+    padding: 0.2rem 0.45rem;
+    font-size: 0.75rem;
+}
+
+@media (min-width: 981px) {
+    .games-table-scroll {
+        max-height: min(36rem, calc(100vh - 14rem));
+    }
+
+    .team-games-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--color-surface);
+        box-shadow: 0 1px 0 var(--color-border);
+    }
+}
+
 .team-games-table th {
     color: var(--color-muted);
 }
@@ -507,5 +560,11 @@
 
     .pager {
         width: 100%;
+    }
+}
+
+@media (max-width: 980px) {
+    .history-workspace {
+        grid-template-columns: minmax(0, 1fr);
     }
 }

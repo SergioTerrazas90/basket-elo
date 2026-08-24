@@ -842,11 +842,27 @@
             labels: state.labels,
             colors: payload.series.map(series => series.color),
             strokeWidth: 2,
-            drawPoints: true,
+            // Keep the history readable at game-level sampling. The point
+            // metadata remains available for hover/table synchronization;
+            // only the active point is drawn by drawHighlightPointCallback.
+            drawPoints: false,
             pointSize: 3,
-            highlightCircleSize: 6,
+            highlightCircleSize: 7,
             connectSeparatedPoints: true,
             highlightSeriesOpts: { strokeWidth: 2.75 },
+            drawHighlightPointCallback: (graph, seriesName, context, cx, cy, color, pointSize) => {
+                const highlightedSeries = typeof graph.getHighlightSeries === "function"
+                    ? graph.getHighlightSeries()
+                    : null;
+                if (highlightedSeries && highlightedSeries !== seriesName) {
+                    return;
+                }
+
+                context.beginPath();
+                context.arc(cx, cy, pointSize, 0, 2 * Math.PI, false);
+                context.fillStyle = color;
+                context.fill();
+            },
             legend: "never",
             animatedZooms: false,
             panEdgeFraction: 0,

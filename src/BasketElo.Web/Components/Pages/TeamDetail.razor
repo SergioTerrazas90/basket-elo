@@ -52,6 +52,11 @@
                 <small>Best rank @FormatRank(team.BestRank) · last reached @FormatDate(team.BestRankUtc)</small>
             </div>
             <div>
+                <span>Best ELO</span>
+                <strong>@FormatRating(team.BestElo)</strong>
+                <small>@FormatDate(team.BestEloUtc)</small>
+            </div>
+            <div>
                 <span>Games rated</span>
                 <strong>@team.GamesPlayed</strong>
             </div>
@@ -63,11 +68,6 @@
             <div>
                 <span>Last game</span>
                 <strong>@FormatDate(team.LastGameUtc)</strong>
-            </div>
-            <div>
-                <span>Best ELO</span>
-                <strong>@FormatRating(team.BestElo)</strong>
-                <small>@FormatDate(team.BestEloUtc)</small>
             </div>
         </section>
 

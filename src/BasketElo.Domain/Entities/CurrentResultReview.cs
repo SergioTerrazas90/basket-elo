@@ -24,6 +24,7 @@ public class CurrentResultReview
     public string Status { get; set; } = string.Empty;
     public string? SuggestedCompetitionName { get; set; }
     public string? SuggestedCompetitionCountryCode { get; set; }
+    public Guid? TournamentCycleId { get; set; }
     public string? ParserVersion { get; set; }
     public string? SourceRevision { get; set; }
     public Guid? AssignedGameId { get; set; }
@@ -34,4 +35,5 @@ public class CurrentResultReview
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public CurrentResultsRun? Run { get; set; }
+    public TournamentCycle? TournamentCycle { get; set; }
 }

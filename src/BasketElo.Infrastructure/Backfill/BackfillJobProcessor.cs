@@ -868,6 +868,9 @@ public class BackfillJobProcessor(
             competitionName is "FIBA Basketball World Cup" or
                 "FIBA Basketball World Cup Qualifiers" or
                 "FIBA Basketball World Cup Pre-Qualifiers" or
+                "FIBA World Cup" or
+                "FIBA World Cup Qualifiers" or
+                "FIBA World Cup Pre-Qualifiers" or
                 "FIBA WC Qualification";
 
     private static bool IsFibaOceaniaCompetition(

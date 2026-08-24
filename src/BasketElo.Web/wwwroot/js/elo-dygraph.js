@@ -35,6 +35,23 @@
         return formatElo(number);
     }
 
+    function waitForNextPaint() {
+        return new Promise(resolve => {
+            let completed = false;
+            const finish = () => {
+                if (completed) {
+                    return;
+                }
+
+                completed = true;
+                window.clearTimeout(fallbackTimer);
+                resolve();
+            };
+            const fallbackTimer = window.setTimeout(finish, 500);
+            window.requestAnimationFrame(() => window.requestAnimationFrame(finish));
+        });
+    }
+
     function ensureTooltip(host) {
         const tooltip = document.createElement("div");
         tooltip.className = "elo-dygraph-tooltip";
@@ -183,12 +200,21 @@
     }
 
     function disposeState(state) {
+        state.wheelBindingCleanup?.();
+        state.wheelBindingCleanup = null;
+        state.selectionBindingCleanup?.();
+        state.selectionBindingCleanup = null;
+        if (state.wheelNotifyTimer != null) {
+            window.clearTimeout(state.wheelNotifyTimer);
+            state.wheelNotifyTimer = null;
+        }
         state.rangeBindingCleanup?.();
         state.rangeBindingCleanup = null;
         state.resizeObserver?.disconnect();
         state.graph?.destroy();
         state.graph = null;
         state.host.replaceChildren();
+        state.selectionOverlay = null;
     }
 
     function setDateWindow(state, requestedFrom, requestedTo, notify = false, markNotified = true) {
@@ -213,6 +239,260 @@
         } finally {
             state.suppressCallbacks = false;
         }
+    }
+
+    function bindWheelZoom(state) {
+        state.wheelBindingCleanup?.();
+
+        const onWheel = event => {
+            if (!state.graph || event.ctrlKey || event.metaKey || !(event.target instanceof HTMLCanvasElement)) {
+                return;
+            }
+
+            if (event.target.classList.contains("dygraph-rangesel-fgcanvas") ||
+                event.target.classList.contains("dygraph-rangesel-bgcanvas")) {
+                return;
+            }
+
+            const area = state.graph.getArea();
+            const hostRect = state.host.getBoundingClientRect();
+            const x = event.clientX - hostRect.left;
+            const y = event.clientY - hostRect.top;
+            if (x < area.x || x > area.x + area.w || y < area.y || y > area.y + area.h) {
+                return;
+            }
+
+            const [currentStart, currentEnd] = state.graph.xAxisRange();
+            const [extremeStart, extremeEnd] = state.graph.xAxisExtremes();
+            const fullSpan = extremeEnd - extremeStart;
+            const currentSpan = currentEnd - currentStart;
+            if (fullSpan <= 0 || currentSpan <= 0 || event.deltaY === 0) {
+                return;
+            }
+
+            const deltaUnit = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+                ? 16
+                : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+                    ? Math.max(state.host.clientHeight, 1)
+                    : 1;
+            const deltaPixels = clamp(event.deltaY * deltaUnit, -240, 240);
+            const zoomFactor = Math.exp(deltaPixels * 0.0015);
+            const minimumSpan = Math.min(fullSpan, Math.max(60 * 60 * 1000, fullSpan / 100000));
+            const requestedSpan = clamp(currentSpan * zoomFactor, minimumSpan, fullSpan);
+            if (Math.abs(requestedSpan - currentSpan) < 0.5) {
+                return;
+            }
+
+            const anchorFraction = clamp((x - area.x) / area.w, 0, 1);
+            const anchorDate = currentStart + currentSpan * anchorFraction;
+            let requestedStart = anchorDate - requestedSpan * anchorFraction;
+            let requestedEnd = requestedStart + requestedSpan;
+            if (requestedStart < extremeStart) {
+                requestedEnd += extremeStart - requestedStart;
+                requestedStart = extremeStart;
+            }
+            if (requestedEnd > extremeEnd) {
+                requestedStart -= requestedEnd - extremeEnd;
+                requestedEnd = extremeEnd;
+            }
+            requestedStart = Math.max(extremeStart, requestedStart);
+
+            event.preventDefault();
+            setDateWindow(state, requestedStart, requestedEnd, false, false);
+
+            if (state.wheelNotifyTimer != null) {
+                window.clearTimeout(state.wheelNotifyTimer);
+            }
+            state.wheelNotifyTimer = window.setTimeout(() => {
+                state.wheelNotifyTimer = null;
+                if (!state.graph) {
+                    return;
+                }
+
+                const [minDate, maxDate] = state.graph.xAxisRange();
+                state.lastNotifiedRange = null;
+                notifyViewChange(state, minDate, maxDate);
+            }, 180);
+        };
+
+        state.host.addEventListener("wheel", onWheel, { passive: false });
+        state.wheelBindingCleanup = () => state.host.removeEventListener("wheel", onWheel);
+    }
+
+    function ensureSelectionOverlay(state) {
+        if (state.selectionOverlay?.isConnected) {
+            return state.selectionOverlay;
+        }
+
+        const overlay = document.createElement("div");
+        overlay.className = "elo-dygraph-selection-window";
+        overlay.hidden = true;
+        overlay.style.position = "absolute";
+        overlay.style.zIndex = "6";
+        overlay.style.pointerEvents = "none";
+        overlay.style.border = "1px solid rgba(36, 92, 122, 0.78)";
+        overlay.style.background = "rgba(36, 92, 122, 0.16)";
+        overlay.style.boxShadow = "inset 0 0 0 1px rgba(255, 255, 255, 0.28)";
+        state.host.appendChild(overlay);
+        state.selectionOverlay = overlay;
+        return overlay;
+    }
+
+    function plotPointerPosition(state, event, area) {
+        const hostRect = state.host.getBoundingClientRect();
+        return {
+            x: clamp(event.clientX - hostRect.left, area.x, area.x + area.w),
+            y: clamp(event.clientY - hostRect.top, area.y, area.y + area.h)
+        };
+    }
+
+    function bindPlotSelectionInteraction(state) {
+        state.selectionBindingCleanup?.();
+
+        const overlay = ensureSelectionOverlay(state);
+        const removeDragListeners = () => {
+            document.removeEventListener("pointermove", onDragMove, true);
+            document.removeEventListener("pointerup", onDragEnd, true);
+            document.removeEventListener("pointercancel", onDragCancel, true);
+            document.removeEventListener("mousemove", onDragMove, true);
+            document.removeEventListener("mouseup", onDragEnd, true);
+        };
+
+        const clearSelection = () => {
+            state.selectionDrag = null;
+            removeDragListeners();
+            overlay.hidden = true;
+            state.host.classList.remove("elo-dygraph-selecting");
+            state.host.style.cursor = "";
+            state.host.style.userSelect = "";
+        };
+
+        const updateSelection = event => {
+            const drag = state.selectionDrag;
+            if (!drag || !state.graph) {
+                return;
+            }
+
+            if (drag.pointerId != null && event.pointerId == null) {
+                return;
+            }
+            if (drag.pointerId != null && drag.pointerId !== event.pointerId) {
+                return;
+            }
+
+            event.preventDefault?.();
+            event.stopImmediatePropagation?.();
+            const pointer = plotPointerPosition(state, event, drag.area);
+            const left = Math.min(drag.startX, pointer.x);
+            const right = Math.max(drag.startX, pointer.x);
+            overlay.style.left = `${left}px`;
+            overlay.style.top = `${drag.area.y}px`;
+            overlay.style.width = `${right - left}px`;
+            overlay.style.height = `${drag.area.h}px`;
+            overlay.hidden = right - left < 1;
+        };
+
+        const onDragMove = event => updateSelection(event);
+
+        const onDragEnd = event => {
+            const drag = state.selectionDrag;
+            if (!drag) {
+                return;
+            }
+
+            if (drag.pointerId != null && event.pointerId == null) {
+                return;
+            }
+            if (drag.pointerId != null && drag.pointerId !== event.pointerId) {
+                return;
+            }
+
+            updateSelection(event);
+            const pointer = plotPointerPosition(state, event, drag.area);
+            const left = Math.min(drag.startX, pointer.x);
+            const right = Math.max(drag.startX, pointer.x);
+            const width = right - left;
+            clearSelection();
+            if (width < 8) {
+                return;
+            }
+
+            const [currentStart, currentEnd] = state.graph.xAxisRange();
+            const currentSpan = currentEnd - currentStart;
+            if (currentSpan <= 0 || drag.area.w <= 0) {
+                return;
+            }
+
+            const requestedStart = currentStart + ((left - drag.area.x) / drag.area.w) * currentSpan;
+            const requestedEnd = currentStart + ((right - drag.area.x) / drag.area.w) * currentSpan;
+            setDateWindow(state, requestedStart, requestedEnd, false, false);
+            const [minDate, maxDate] = state.graph.xAxisRange();
+            state.lastNotifiedRange = null;
+            notifyViewChange(state, minDate, maxDate);
+        };
+
+        const onDragCancel = event => {
+            const drag = state.selectionDrag;
+            if (!drag) {
+                return;
+            }
+
+            if (drag.pointerId != null && event.pointerId != null && drag.pointerId !== event.pointerId) {
+                return;
+            }
+
+            clearSelection();
+        };
+
+        const startSelection = event => {
+            if (!state.graph || !event.ctrlKey || event.button !== 0) {
+                return;
+            }
+
+            if (state.selectionDrag) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+
+            const area = state.graph.getArea();
+            const pointer = plotPointerPosition(state, event, area);
+            const hostRect = state.host.getBoundingClientRect();
+            const rawX = event.clientX - hostRect.left;
+            const rawY = event.clientY - hostRect.top;
+            if (rawX < area.x || rawX > area.x + area.w || rawY < area.y || rawY > area.y + area.h) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            clearSelection();
+            state.host.classList.add("elo-dygraph-selecting");
+            state.host.style.cursor = "crosshair";
+            state.host.style.userSelect = "none";
+            state.selectionDrag = {
+                pointerId: event.pointerId ?? null,
+                area,
+                startX: pointer.x
+            };
+            updateSelection(event);
+
+            document.addEventListener("pointermove", onDragMove, { capture: true, passive: false });
+            document.addEventListener("pointerup", onDragEnd, true);
+            document.addEventListener("pointercancel", onDragCancel, true);
+            document.addEventListener("mousemove", onDragMove, { capture: true, passive: false });
+            document.addEventListener("mouseup", onDragEnd, true);
+        };
+
+        state.host.addEventListener("pointerdown", startSelection, true);
+        state.host.addEventListener("mousedown", startSelection, true);
+        state.selectionBindingCleanup = () => {
+            state.host.removeEventListener("pointerdown", startSelection, true);
+            state.host.removeEventListener("mousedown", startSelection, true);
+            clearSelection();
+            state.host.style.cursor = "";
+            state.host.style.userSelect = "";
+        };
     }
 
     function bindRangeSelectorInteraction(state) {
@@ -379,7 +659,7 @@
         };
     }
 
-    function render(host, payload, dotNet) {
+    async function render(host, payload, dotNet) {
         if (!window.Dygraph) {
             throw new Error("Dygraphs did not load.");
         }
@@ -404,6 +684,9 @@
         if (payload.series.length === 0 || normalized.rows.length === 0) {
             state.graph?.destroy();
             state.graph = null;
+            state.selectionBindingCleanup?.();
+            state.selectionBindingCleanup = null;
+            state.selectionOverlay = null;
             state.rangeBindingCleanup?.();
             state.rangeBindingCleanup = null;
             state.host.replaceChildren();
@@ -412,6 +695,7 @@
             empty.textContent = "No chart data available";
             host.appendChild(empty);
             state.suppressCallbacks = false;
+            await waitForNextPaint();
             return;
         }
 
@@ -451,13 +735,18 @@
             });
             state.graph.resize();
             bindRangeSelectorInteraction(state);
+            bindPlotSelectionInteraction(state);
             state.tooltip ??= ensureTooltip(host);
             const [updatedMinDate, updatedMaxDate] = state.graph.xAxisRange();
             state.lastNotifiedRange = selectedRange(state, updatedMinDate, updatedMaxDate);
             state.suppressCallbacks = false;
+            await waitForNextPaint();
             return;
         }
 
+        state.selectionBindingCleanup?.();
+        state.selectionBindingCleanup = null;
+        state.selectionOverlay = null;
         state.host.replaceChildren();
         state.tooltip = null;
 
@@ -524,6 +813,7 @@
             setDateWindow(state, requestedFrom, requestedTo);
         }
         bindRangeSelectorInteraction(state);
+        bindPlotSelectionInteraction(state);
 
         // Dygraphs rebuilds the host during construction, so attach the custom
         // tooltip after the graph has created its canvases.
@@ -539,6 +829,7 @@
         // so the ready callback is not a reliable only path for enabling user
         // interactions. Initialization callbacks are already complete here.
         state.suppressCallbacks = false;
+        await waitForNextPaint();
     }
 
     window.basketEloDygraph = {
@@ -561,9 +852,15 @@
                 sharedTooltip: true,
                 resizeObserver: null,
                 rangeDrag: null,
-                rangeBindingCleanup: null
+                rangeBindingCleanup: null,
+                wheelNotifyTimer: null,
+                wheelBindingCleanup: null,
+                selectionOverlay: null,
+                selectionDrag: null,
+                selectionBindingCleanup: null
             };
             states.set(host, state);
+            bindWheelZoom(state);
             state.resizeObserver = new ResizeObserver(() => state.graph?.resize());
             state.resizeObserver.observe(host);
         },

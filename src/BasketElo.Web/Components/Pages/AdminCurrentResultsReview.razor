@@ -29,7 +29,7 @@
                     <div>
                         <p class="eyebrow text-warning-emphasis">New unmatched competition</p>
                         <h2 class="h4 mb-1">Decide how these competitions should be handled</h2>
-                        <p class="text-muted mb-0">Merge a source competition into an existing canonical competition, or mark it unsupported to ignore all of its current-results candidates.</p>
+                        <p class="text-muted mb-0">Merge into an existing competition or create a new one. For FIBA and Olympic sources, you can also assign or create the target tournament cycle.</p>
                     </div>
                     <NavLink class="btn btn-outline-secondary" href="admin/competitions">Manage competitions</NavLink>
                 </div>
@@ -38,6 +38,7 @@
                     @foreach (var unmatched in unmatchedCompetitions)
                     {
                         var key = UnmatchedKey(unmatched);
+                        var selection = GetUnmatchedSelection(key, unmatched);
                         <div class="border rounded p-3">
                             <div class="d-flex justify-content-between align-items-start gap-3">
                                 <div>
@@ -46,21 +47,80 @@
                                 </div>
                                 <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => IgnoreUnmatchedAsync(unmatched)" disabled="@isBusy">Don't handle</button>
                             </div>
-                            <div class="d-flex flex-wrap align-items-end gap-2 mt-3">
-                                <div class="flex-grow-1">
-                                    <label class="form-label" for="merge-@key">Merge into existing competition</label>
-                                    <select id="merge-@key" class="form-select" value="@GetSelectedCompetition(key)" @onchange="args => SetSelectedCompetition(key, args)">
-                                        <option value="@Guid.Empty">Choose a supported competition...</option>
-                                        @foreach (var option in competitionOptions ?? [])
-                                        {
-                                            if (option.SupportPolicy == CompetitionSupportPolicies.Supported)
-                                            {
-                                                <option value="@option.Id">@option.Name@(string.IsNullOrWhiteSpace(option.CountryCode) ? string.Empty : $" ({option.CountryCode})")</option>
-                                            }
-                                        }
+                            <div class="row g-3 mt-2">
+                                <div class="col-lg-5">
+                                    <label class="form-label" for="competition-mode-@key">Competition action</label>
+                                    <select id="competition-mode-@key" class="form-select" @bind="selection.CompetitionMode">
+                                        <option value="existing">Merge into existing competition</option>
+                                        <option value="create">Create new competition</option>
                                     </select>
                                 </div>
-                                <button type="button" class="btn btn-primary" @onclick="() => MergeUnmatchedAsync(unmatched)" disabled="@isBusy">Merge and save alias</button>
+                                @if (selection.CompetitionMode == "existing")
+                                {
+                                    <div class="col-lg-7">
+                                        <label class="form-label" for="merge-@key">Existing competition</label>
+                                        <select id="merge-@key" class="form-select" @bind="selection.ExistingCompetitionId">
+                                            <option value="">Choose a supported competition...</option>
+                                            @foreach (var option in competitionOptions ?? [])
+                                            {
+                                                if (option.SupportPolicy == CompetitionSupportPolicies.Supported)
+                                                {
+                                                    <option value="@option.Id">@option.Name@(string.IsNullOrWhiteSpace(option.CountryCode) ? string.Empty : $" ({option.CountryCode})")</option>
+                                                }
+                                            }
+                                        </select>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="col-lg-7">
+                                        <label class="form-label" for="new-name-@key">New competition name</label>
+                                        <input id="new-name-@key" class="form-control" @bind="selection.NewCompetitionName" />
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="new-type-@key">Type</label>
+                                        <input id="new-type-@key" class="form-control" @bind="selection.NewCompetitionType" />
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="new-pool-@key">ELO pool</label>
+                                        <input id="new-pool-@key" class="form-control" @bind="selection.NewCompetitionEloPoolKey" />
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="new-country-@key">Country code (optional)</label>
+                                        <input id="new-country-@key" class="form-control" @bind="selection.NewCompetitionCountryCode" />
+                                    </div>
+                                }
+                                <div class="col-lg-7">
+                                    <label class="form-label" for="cycle-@key">Tournament cycle</label>
+                                    <select id="cycle-@key" class="form-select" @bind="selection.CycleSelection">
+                                        <option value="">Do not assign a cycle</option>
+                                        @foreach (var cycle in tournamentCycleOptions ?? [])
+                                        {
+                                            <option value="@cycle.Id">@cycle.DisplayName (@cycle.Key)</option>
+                                        }
+                                        <option value="create">Create a FIBA/Olympic cycle</option>
+                                    </select>
+                                </div>
+                                @if (selection.CycleSelection == "create")
+                                {
+                                    <div class="col-md-5">
+                                        <label class="form-label" for="cycle-family-@key">Cycle family</label>
+                                        <select id="cycle-family-@key" class="form-select" @bind="selection.NewCycleFamily">
+                                            <option value="">Choose a family...</option>
+                                            @foreach (var family in tournamentCycleFamilies ?? [])
+                                            {
+                                                <option value="@family">@family</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label" for="cycle-edition-@key">Edition</label>
+                                        <input id="cycle-edition-@key" class="form-control" placeholder="2031" @bind="selection.NewCycleEdition" />
+                                    </div>
+                                }
+                                <div class="col-12">
+                                    <button type="button" class="btn btn-primary" @onclick="() => MergeUnmatchedAsync(unmatched)" disabled="@isBusy">Apply competition and cycle</button>
+                                </div>
                             </div>
                         </div>
                     }
@@ -123,6 +183,10 @@
                         @if (!string.IsNullOrWhiteSpace(review.ResolutionNote))
                         {
                             <p class="text-muted small mt-2 mb-0">Note: @review.ResolutionNote</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(review.TournamentCycleKey))
+                        {
+                            <p class="small mt-2 mb-0">Tournament cycle: <strong>@review.TournamentCycleKey</strong></p>
                         }
 
                         @if (isOpen)
@@ -187,9 +251,11 @@
     private IReadOnlyList<CurrentResultReviewDto>? reviews;
     private IReadOnlyList<CurrentResultsUnmatchedCompetitionDto>? unmatchedCompetitions;
     private IReadOnlyList<CompetitionAdminOption>? competitionOptions;
+    private IReadOnlyList<CurrentResultsTournamentCycleOption>? tournamentCycleOptions;
+    private IReadOnlyList<string>? tournamentCycleFamilies;
     private readonly Dictionary<Guid, IReadOnlyList<CurrentResultReviewMatchDto>> matchesByReview = [];
     private readonly Dictionary<Guid, Guid> selectedGameByReview = [];
-    private readonly Dictionary<string, Guid> selectedCompetitionByUnmatched = [];
+    private readonly Dictionary<string, UnmatchedSelection> unmatchedSelections = [];
     private Guid? expandedReviewId;
     private string statusFilter = CurrentResultReviewStatuses.Open;
     private string? message;
@@ -208,7 +274,10 @@
             reviews = await Http.GetFromJsonAsync<IReadOnlyList<CurrentResultReviewDto>>($"api/current-results/reviews{query}") ?? [];
             unmatchedCompetitions = await Http.GetFromJsonAsync<IReadOnlyList<CurrentResultsUnmatchedCompetitionDto>>("api/current-results/reviews/unmatched-competitions") ?? [];
             competitionOptions = await Http.GetFromJsonAsync<IReadOnlyList<CompetitionAdminOption>>("api/admin/competitions/options") ?? [];
-            selectedCompetitionByUnmatched.Clear();
+            var cycleResponse = await Http.GetFromJsonAsync<CurrentResultsTournamentCycleOptionsResponse>("api/current-results/tournament-cycles");
+            tournamentCycleOptions = cycleResponse?.Cycles ?? [];
+            tournamentCycleFamilies = cycleResponse?.Families ?? [];
+            unmatchedSelections.Clear();
             matchesByReview.Clear();
             selectedGameByReview.Clear();
             expandedReviewId = null;
@@ -263,16 +332,57 @@
     private async Task MergeUnmatchedAsync(CurrentResultsUnmatchedCompetitionDto unmatched)
     {
         var key = UnmatchedKey(unmatched);
-        if (!selectedCompetitionByUnmatched.TryGetValue(key, out var targetId) || targetId == Guid.Empty)
+        var selection = GetUnmatchedSelection(key, unmatched);
+        Guid? targetId = null;
+        if (selection.CompetitionMode == "existing")
         {
-            SetMessage("Choose a supported competition before merging.", "alert-warning");
-            return;
+            if (!Guid.TryParse(selection.ExistingCompetitionId, out var parsedTargetId))
+            {
+                SetMessage("Choose a supported competition before merging.", "alert-warning");
+                return;
+            }
+
+            targetId = parsedTargetId;
+        }
+
+        CreateCompetitionFromMergeRequest? newCompetition = null;
+        if (selection.CompetitionMode == "create")
+        {
+            newCompetition = new CreateCompetitionFromMergeRequest(
+                selection.NewCompetitionName ?? string.Empty,
+                selection.NewCompetitionType ?? string.Empty,
+                selection.NewCompetitionCountryCode,
+                selection.NewCompetitionEloPoolKey,
+                1,
+                CompetitionSupportPolicies.Supported);
+        }
+
+        Guid? tournamentCycleId = null;
+        string? tournamentCycleFamily = null;
+        string? tournamentCycleEdition = null;
+        if (selection.CycleSelection == "create")
+        {
+            tournamentCycleFamily = selection.NewCycleFamily ?? string.Empty;
+            tournamentCycleEdition = selection.NewCycleEdition ?? string.Empty;
+        }
+        else if (Guid.TryParse(selection.CycleSelection, out var parsedCycleId))
+        {
+            tournamentCycleId = parsedCycleId;
         }
 
         await PostUnmatchedDecisionAsync(
             "api/current-results/reviews/unmatched-competitions/merge",
-            new MergeUnmatchedCompetitionRequest(unmatched.Source, unmatched.SourceCompetitionId, unmatched.CountryName, unmatched.CompetitionName, targetId),
-            "Competition alias saved. Rerun current-results to process these candidates.");
+            new MergeUnmatchedCompetitionRequest(
+                unmatched.Source,
+                unmatched.SourceCompetitionId,
+                unmatched.CountryName,
+                unmatched.CompetitionName,
+                targetId,
+                newCompetition,
+                tournamentCycleId,
+                tournamentCycleFamily,
+                tournamentCycleEdition),
+            "Competition and cycle assignment saved. Any single safe planned match was assigned automatically; rerun current-results or choose a planned match for candidates that remain open.");
     }
 
     private async Task IgnoreUnmatchedAsync(CurrentResultsUnmatchedCompetitionDto unmatched) =>
@@ -309,12 +419,20 @@
     private static string UnmatchedKey(CurrentResultsUnmatchedCompetitionDto unmatched) =>
         string.Join("|", unmatched.Source, unmatched.SourceCompetitionId ?? string.Empty, unmatched.CountryName, unmatched.CompetitionName);
 
-    private Guid GetSelectedCompetition(string key) =>
-        selectedCompetitionByUnmatched.GetValueOrDefault(key, Guid.Empty);
-
-    private void SetSelectedCompetition(string key, ChangeEventArgs args)
+    private UnmatchedSelection GetUnmatchedSelection(string key, CurrentResultsUnmatchedCompetitionDto unmatched)
     {
-        selectedCompetitionByUnmatched[key] = Guid.TryParse(args.Value?.ToString(), out var value) ? value : Guid.Empty;
+        if (unmatchedSelections.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        var selection = new UnmatchedSelection
+        {
+            NewCompetitionName = unmatched.CompetitionName,
+            NewCycleFamily = SuggestedCycleFamily(unmatched.CompetitionName) ?? string.Empty
+        };
+        unmatchedSelections[key] = selection;
+        return selection;
     }
 
     private async Task ResolveAsync(Guid reviewId, CurrentResultReviewResolutionRequest request)
@@ -350,5 +468,30 @@
     {
         message = value;
         messageCss = css;
+    }
+
+    private static string? SuggestedCycleFamily(string competitionName)
+    {
+        var normalized = competitionName.Trim().ToLowerInvariant();
+        if (normalized.Contains("world cup") || (normalized.Contains("wc") && normalized.Contains("qualif"))) return "FIBA Basketball World Cup";
+        if (normalized.Contains("afrobasket")) return "AfroBasket";
+        if (normalized.Contains("eurobasket")) return "EuroBasket";
+        if (normalized.Contains("asia cup")) return "FIBA Asia Cup";
+        if (normalized.Contains("americup")) return "FIBA AmeriCup";
+        if (normalized.Contains("olympic")) return "Olympics";
+        return null;
+    }
+
+    private sealed class UnmatchedSelection
+    {
+        public string CompetitionMode { get; set; } = "existing";
+        public string ExistingCompetitionId { get; set; } = string.Empty;
+        public string? NewCompetitionName { get; set; }
+        public string? NewCompetitionType { get; set; } = "qualifier";
+        public string NewCompetitionCountryCode { get; set; } = string.Empty;
+        public string NewCompetitionEloPoolKey { get; set; } = "national-teams";
+        public string CycleSelection { get; set; } = string.Empty;
+        public string NewCycleFamily { get; set; } = string.Empty;
+        public string NewCycleEdition { get; set; } = string.Empty;
     }
 }

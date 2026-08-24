@@ -26,7 +26,6 @@
         <div class="rankings-context-bar">
             <div>
                 <strong>@PoolHeading()</strong>
-                <span>@PoolIntroduction()</span>
             </div>
             <nav class="rankings-view-tabs" aria-label="Ranking views">
                 <button type="button" class='@ViewTabClass("rankings")' @onclick='() => SelectViewAsync("rankings")' disabled="@isBusy">Rankings</button>
@@ -200,7 +199,10 @@
             <div class="results-context">
                 <span class="results-kicker">@((selectedView == "movers") ? "Movement view" : "Current rankings")</span>
                 <strong>@response.Summary.FilteredTeams <span>of @response.Summary.RatedTeams teams</span></strong>
-                <small class="results-scope-detail">@ScopeDetail()</small>
+                @if (!string.IsNullOrWhiteSpace(ScopeDetail()))
+                {
+                    <small class="results-scope-detail">@ScopeDetail()</small>
+                }
             </div>
             <dl class="snapshot-metadata">
                 <div>
@@ -329,12 +331,7 @@
                 <div class="section-head">
                     <div>
                         <h2>Recent results</h2>
-                        <p>Finished games from the last 30 days in the selected rating pool, newest first.</p>
-                    </div>
-                    <div class="pager">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
-                        <span class="pager-status">Page @CurrentPage of @CurrentTotalPages</span>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
+                        <p>@ResultsContextLabel()</p>
                     </div>
                 </div>
 
@@ -418,13 +415,13 @@
                                 {
                                     <th class="numeric" scope="col">Games</th>
                                 }
-                                @if (ShowRankingColumn("movement"))
-                                {
-                                    <th class="numeric" scope="col">Last</th>
-                                }
                                 @if (ShowRankingColumn("lastGame"))
                                 {
                                     <th scope="col">Last game</th>
+                                }
+                                @if (ShowRankingColumn("form"))
+                                {
+                                    <th class="numeric" scope="col">Form</th>
                                 }
                             </tr>
                         </thead>
@@ -474,15 +471,30 @@
                                         {
                                             <td class="numeric">@row.GamesPlayed</td>
                                         }
-                                        @if (ShowRankingColumn("movement"))
-                                        {
-                                            <td class="numeric">
-                                                <span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span>
-                                            </td>
-                                        }
                                         @if (ShowRankingColumn("lastGame"))
                                         {
                                             <td>@FormatDate(row.LastGameUtc)</td>
+                                        }
+                                        @if (ShowRankingColumn("form"))
+                                        {
+                                            <td class="numeric">
+                                                <div class="ranking-form-strip" aria-label="Recent five rated games">
+                                                    @if (row.RecentForm is { Count: > 0 } form)
+                                                    {
+                                                        @foreach (var game in form)
+                                                        {
+                                                            <span class="ranking-form-box @(game.IsWin ? "is-win" : "is-loss")"
+                                                                  title="@(game.IsWin ? "Win" : "Loss") vs @game.Opponent · @FormatMovement(game.EloDelta) ELO">
+                                                                @FormatMovement(game.EloDelta)
+                                                            </span>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="muted-cell">-</span>
+                                                    }
+                                                </div>
+                                            </td>
                                         }
                                     </tr>
                                 }
@@ -493,7 +505,7 @@
             </section>
         }
 
-        @if ((selectedView == "rankings" || IsGraphView) && response.Rankings.Count > 0)
+        @if (IsGraphView && response.Rankings.Count > 0)
         {
             <section class="evolution-section">
                 <div class="section-head evolution-section-head">
@@ -557,9 +569,22 @@
                                         <div class="graph-team-search">
                                             <label for="graphTeamSearch">Add or manage teams</label>
                                             <div class="graph-team-search-row">
-                                                <input id="graphTeamSearch" class="form-control" @bind="graphTeamSearch" @bind:event="oninput" placeholder="Search teams" />
-                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="SearchGraphTeamsAsync" disabled="@(isGraphSelectionBusy || string.IsNullOrWhiteSpace(graphTeamSearch))">Search</button>
+                                                <input id="graphTeamSearch"
+                                                       class="form-control"
+                                                       value="@graphTeamSearch"
+                                                       @oninput="HandleGraphTeamSearchInputAsync"
+                                                       placeholder="Search teams"
+                                                       autocomplete="off"
+                                                       role="combobox"
+                                                       aria-autocomplete="list"
+                                                       aria-controls="graph-team-search-results"
+                                                       aria-expanded="@(graphTeamSearchResults.Count > 0)" />
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="SearchGraphTeamsAsync" disabled="@(isGraphSelectionBusy || isGraphSearchBusy || string.IsNullOrWhiteSpace(graphTeamSearch))">Search</button>
                                             </div>
+                                            @if (isGraphSearchBusy)
+                                            {
+                                                <span class="graph-team-search-status" aria-live="polite">Searching...</span>
+                                            }
                                         </div>
 
                                         <div class="graph-bulk-actions">
@@ -575,13 +600,30 @@
 
                                         @if (graphTeamSearchResults.Count > 0)
                                         {
-                                            <div class="graph-team-search-results" aria-label="Team search results">
+                                            <div id="graph-team-search-results" class="graph-team-search-results" role="listbox" aria-label="Team search suggestions">
                                                 @foreach (var row in graphTeamSearchResults)
                                                 {
                                                     var isAdded = graphTeamIds.Contains(row.TeamId);
-                                                    <div class="graph-team-search-result">
+                                                    <div class="graph-team-search-result" role="option" aria-selected="@isAdded">
                                                         <span>@row.TeamName <small>@row.Country</small></span>
-                                                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(isAdded || isGraphSelectionBusy)" @onclick="() => AddGraphTeamAsync(row)">@(isAdded ? "Added" : "Add")</button>
+                                                        @if (isAdded)
+                                                        {
+                                                            <button type="button"
+                                                                    class="btn btn-sm btn-outline-danger"
+                                                                    disabled="@isGraphSelectionBusy"
+                                                                    @onclick="() => RemoveGraphTeamAsync(row.TeamId)">
+                                                                Remove
+                                                            </button>
+                                                        }
+                                                        else
+                                                        {
+                                                            <button type="button"
+                                                                    class="btn btn-sm btn-outline-secondary"
+                                                                    disabled="@isGraphSelectionBusy"
+                                                                    @onclick="() => AddGraphTeamAsync(row)">
+                                                                Add
+                                                            </button>
+                                                        }
                                                     </div>
                                                 }
                                             </div>
@@ -595,7 +637,7 @@
                                         {
                                             <div class="graph-team-manager-list-heading">
                                                 <span>Legend</span>
-                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowAllGraphTeamsAsync" disabled="@(hiddenGraphTeamIds.Count == 0)">Show all</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ToggleAllGraphTeamsAsync" disabled="@(SelectedGraphTeams.Count == 0)">@GraphVisibilityToggleLabel</button>
                                             </div>
                                             <div class="graph-team-manager-list" aria-label="Chart legend and selected teams">
                                                 @foreach (var team in SelectedGraphTeams)
@@ -633,6 +675,7 @@
                                                            HiddenTeamIds="@HiddenGraphTeamIds"
                                                            SeriesVisibilityChanged="@ToggleGraphTeamVisibilityAsync"
                                                            ShowAllSeriesRequested="@ShowAllGraphTeamsAsync"
+                                                           HideAllSeriesRequested="@HideAllGraphTeamsAsync"
                                                            SharedTooltip="false"
                                                            HeightPixels="@ChartHeightPixels"
                                                            DataRevision="@evolutionDataRevision"
@@ -763,6 +806,8 @@
     private string? graphTeamSearch;
     private bool graphSelectionInitialized;
     private bool isGraphSelectionBusy;
+    private bool isGraphSearchBusy;
+    private CancellationTokenSource? graphSearchCancellation;
 
     private sealed record RankingsClientCacheKey(
         string Pool,
@@ -1080,21 +1125,68 @@
         }
     }
 
-    private async Task SearchGraphTeamsAsync()
+    private async Task HandleGraphTeamSearchInputAsync(ChangeEventArgs args)
+    {
+        graphTeamSearch = args.Value?.ToString();
+        graphSearchCancellation?.Cancel();
+        graphSearchCancellation?.Dispose();
+        graphSearchCancellation = null;
+        graphTeamSearchResults = [];
+
+        if (string.IsNullOrWhiteSpace(graphTeamSearch))
+        {
+            isGraphSearchBusy = false;
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        graphSearchCancellation = cancellation;
+        try
+        {
+            await Task.Delay(180, cancellation.Token);
+            await SearchGraphTeamsAsync(cancellation.Token);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(graphSearchCancellation, cancellation))
+            {
+                graphSearchCancellation = null;
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    private Task SearchGraphTeamsAsync()
+    {
+        graphSearchCancellation?.Cancel();
+        graphSearchCancellation?.Dispose();
+        graphSearchCancellation = null;
+        return SearchGraphTeamsAsync(CancellationToken.None);
+    }
+
+    private async Task SearchGraphTeamsAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(graphTeamSearch))
         {
             graphTeamSearchResults = [];
+            isGraphSearchBusy = false;
             return;
         }
 
-        isGraphSelectionBusy = true;
+        isGraphSearchBusy = true;
         errorMessage = null;
         try
         {
-            var rows = await FetchRankingRowsAsync(1, 100, includeTeamSearch: true, teamOverride: graphTeamSearch);
+            var rows = await FetchGraphSearchRowsAsync(graphTeamSearch, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             graphTeamRows = MergeGraphTeamRows(rows);
             graphTeamSearchResults = rows;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception ex)
         {
@@ -1102,7 +1194,10 @@
         }
         finally
         {
-            isGraphSelectionBusy = false;
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                isGraphSearchBusy = false;
+            }
         }
     }
 
@@ -1119,15 +1214,40 @@
             return;
         }
 
-        graphTeamRows = MergeGraphTeamRows([row]);
-        graphTeamIds.Add(row.TeamId);
-        hiddenGraphTeamIds.Remove(row.TeamId);
-        manualGraphTeamIds.Add(row.TeamId);
-        graphSelectionInitialized = true;
-        graphTeamSearchResults = graphTeamSearchResults
-            .Where(item => item.TeamId != row.TeamId)
-            .ToList();
-        await ReloadGraphAsync();
+        isGraphSelectionBusy = true;
+        errorMessage = null;
+        try
+        {
+            var addedEvolution = await FetchEvolutionForTeamsAsync([row.TeamId]);
+
+            graphTeamRows = MergeGraphTeamRows([row]);
+            graphTeamIds.Add(row.TeamId);
+            hiddenGraphTeamIds.Remove(row.TeamId);
+            manualGraphTeamIds.Add(row.TeamId);
+            graphSelectionInitialized = true;
+            graphTeamSearchResults = graphTeamSearchResults
+                .Where(item => item.TeamId != row.TeamId)
+                .ToList();
+
+            evolutionRankings = await FetchEvolutionRankingsAsync();
+            fullEvolution = MergeEvolutionData(fullEvolution ?? evolution, addedEvolution);
+            evolution = MergeEvolutionData(evolution ?? fullEvolution, addedEvolution);
+            foreach (var series in addedEvolution.Series)
+            {
+                evolutionVisibleRatedPointCounts[series.TeamId] = series.RatedPointCount;
+            }
+
+            RebuildEvolutionChartSeries(resetViewport: false);
+            CaptureActiveRankingsCacheEntry();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not add {row.TeamName}: {ex.Message}";
+        }
+        finally
+        {
+            isGraphSelectionBusy = false;
+        }
     }
 
     private Task RemoveGraphTeamAsync(Guid teamId)
@@ -1136,10 +1256,6 @@
         graphTeamIds.Remove(teamId);
         hiddenGraphTeamIds.Remove(teamId);
         manualGraphTeamIds.Remove(teamId);
-        graphTeamSearchResults = graphTeamSearchResults
-            .Where(item => item.TeamId != teamId)
-            .ToList();
-
         if (evolutionRankings is not null)
         {
             var selectedRows = graphTeamRows
@@ -1203,6 +1319,16 @@
         return result?.Rankings?.ToList() ?? [];
     }
 
+    private async Task<IReadOnlyList<EloRankingRow>> FetchGraphSearchRowsAsync(
+        string? searchText,
+        CancellationToken cancellationToken)
+    {
+        var result = await Http.GetFromJsonAsync<EloRankingsResponse>(
+            BuildApiUri(1, 100, includeTeamSearch: true, teamOverride: searchText),
+            cancellationToken);
+        return result?.Rankings?.ToList() ?? [];
+    }
+
     private Task<EloRankingsResponse?> FetchRankingResponseAsync(
         int requestedPage,
         int requestedPageSize,
@@ -1225,6 +1351,7 @@
 
     private void ResetGraphSelection()
     {
+        CancelGraphSearch();
         graphTeamIds.Clear();
         graphBulkTeamIds.Clear();
         manualGraphTeamIds.Clear();
@@ -1235,6 +1362,15 @@
         graphSelectionInitialized = false;
         isGraphSelectionBusy = false;
         isGraphTeamManagerOpen = false;
+    }
+
+    private void CancelGraphSearch()
+    {
+        var cancellation = graphSearchCancellation;
+        graphSearchCancellation = null;
+        cancellation?.Cancel();
+        cancellation?.Dispose();
+        isGraphSearchBusy = false;
     }
 
     private void ToggleGraphTeamManager()
@@ -1264,24 +1400,42 @@
         return Task.CompletedTask;
     }
 
+    private Task HideAllGraphTeamsAsync()
+    {
+        hiddenGraphTeamIds.Clear();
+        hiddenGraphTeamIds.UnionWith(graphTeamIds);
+        return Task.CompletedTask;
+    }
+
+    private Task ToggleAllGraphTeamsAsync()
+        => hiddenGraphTeamIds.Count == 0
+            ? HideAllGraphTeamsAsync()
+            : ShowAllGraphTeamsAsync();
+
+    private string GraphVisibilityToggleLabel
+        => hiddenGraphTeamIds.Count == 0 ? "Hide all" : "Show all";
+
     private void ToggleChartSize()
     {
         isChartExpanded = !isChartExpanded;
     }
 
-    private async Task PreviousPageAsync()
+    private Task PreviousPageAsync()
     {
-        await RefreshSelectionAsync(Math.Max(1, CurrentPage - 1));
+        NavigateToRankings(Math.Max(1, CurrentPage - 1));
+        return Task.CompletedTask;
     }
 
-    private async Task NextPageAsync()
+    private Task NextPageAsync()
     {
-        await RefreshSelectionAsync(Math.Min(CurrentTotalPages, CurrentPage + 1));
+        NavigateToRankings(Math.Min(CurrentTotalPages, CurrentPage + 1));
+        return Task.CompletedTask;
     }
 
-    private async Task GoToRequestedPageAsync()
+    private Task GoToRequestedPageAsync()
     {
-        await RefreshSelectionAsync(ClampRequestedPage(requestedPage, CurrentTotalPages));
+        NavigateToRankings(ClampRequestedPage(requestedPage, CurrentTotalPages));
+        return Task.CompletedTask;
     }
 
     private async Task HandlePageInputKeyDown(KeyboardEventArgs args)
@@ -1347,8 +1501,10 @@
 
                 if (results is not null)
                 {
-                    page = results.Page;
-                    requestedPage = results.Page;
+                    // Results are a single bounded newest-first window; ranking
+                    // and mover pagination remains independent.
+                    page = 1;
+                    requestedPage = 1;
                 }
             }
             else
@@ -1636,6 +1792,19 @@
         _ => Math.Max(1, response?.TotalPages ?? 1)
     };
 
+    private string ResultsContextLabel()
+    {
+        if (results is null || results.TotalCount == 0)
+        {
+            return "Completed games matching the current filters, newest first.";
+        }
+
+        var shown = results.Results.Count;
+        return shown < results.TotalCount
+            ? $"Showing the latest {shown} of {results.TotalCount} matching completed games, newest first."
+            : $"Showing all {results.TotalCount} matching completed games, newest first.";
+    }
+
     private bool HasTeamSearch
         => !string.IsNullOrWhiteSpace(teamSearch);
 
@@ -1698,8 +1867,8 @@
     private bool ShowRankingColumn(string column)
         => column switch
         {
-            "rank" or "team" or "elo" or "games" or "lastGame" => true,
-            "movement" => true,
+            "rank" or "team" or "elo" or "games" or "lastGame" or "form" => true,
+            "movement" => false,
             "country" => ShowsCountryColumn,
             "globalRank" => response?.Summary.IsFiltered == true,
             _ => false
@@ -1762,8 +1931,8 @@
         var seasonRange = GetSelectedSeasonDateRange();
         var query = new List<string>
         {
-            "pageSize=25",
-            $"page={page}",
+            $"pageSize={EloPublicDataLimits.ResultsPerResponse}",
+            "page=1",
             $"pool={Uri.EscapeDataString(selectedPool)}"
         };
 
@@ -1819,16 +1988,31 @@
         return result;
     }
 
-    private string BuildEvolutionApiUri(DateTime? viewportFromUtc = null, DateTime? viewportToUtc = null)
+    private async Task<EloRankingsEvolutionResponse> FetchEvolutionForTeamsAsync(
+        IReadOnlyCollection<Guid> teamIds)
+    {
+        var evolutionUri = BuildEvolutionApiUri(teamIdsOverride: teamIds);
+        return await Http.GetFromJsonAsync<EloRankingsEvolutionResponse>(evolutionUri)
+            ?? new EloRankingsEvolutionResponse(
+                selectedPool,
+                response?.RulesetVersion ?? string.Empty,
+                []);
+    }
+
+    private string BuildEvolutionApiUri(
+        DateTime? viewportFromUtc = null,
+        DateTime? viewportToUtc = null,
+        IReadOnlyCollection<Guid>? teamIdsOverride = null)
     {
         var seasonRange = GetSelectedSeasonDateRange();
-        var activeTeamIds = graphTeamIds.Count > 0
+        var activeTeamIds = teamIdsOverride ?? (graphTeamIds.Count > 0
             ? graphTeamIds.ToArray()
             : evolutionChartSeries
                 .Where(series => series.TeamId.HasValue)
                 .Select(series => series.TeamId!.Value)
-                .ToArray();
-        var usesBulkScope = graphBulkTeamIds.Count > 0 && HasGraphBulkScope && graphTeamIds.Count > 0;
+                .ToArray());
+        var usesBulkScope = teamIdsOverride is null &&
+            graphBulkTeamIds.Count > 0 && HasGraphBulkScope && graphTeamIds.Count > 0;
         var selectedTeamIds = usesBulkScope
             ? graphTeamIds.Except(graphBulkTeamIds).ToList()
             : activeTeamIds.ToList();
@@ -2070,9 +2254,7 @@
             details.Add($"{selectedFromSeason ?? "All history"} to {selectedToSeason ?? "Current"}");
         }
 
-        return details.Count == 0
-            ? $"{PoolHeading()} · all available {TeamScopeNoun().ToLowerInvariant()}"
-            : string.Join(" · ", details);
+        return details.Count == 0 ? string.Empty : string.Join(" · ", details);
     }
 
     private bool IsArchiveMode
@@ -2085,7 +2267,7 @@
         => selectedPool is not EloPoolKeys.Nba and not EloPoolKeys.NationalTeams;
 
     private int RankingTableColumnCount
-        => new[] { "rank", "globalRank", "team", "country", "elo", "games", "movement", "lastGame" }
+        => new[] { "rank", "globalRank", "team", "country", "elo", "games", "lastGame", "form" }
             .Count(ShowRankingColumn);
 
     private bool IsHistoricalTeamScope
@@ -2124,13 +2306,6 @@
         => selectedView == "movers"
             ? PoolHeading().Replace("power rankings", "biggest movers", StringComparison.Ordinal)
             : PoolHeading();
-
-    private string PoolIntroduction() => selectedPool switch
-    {
-        EloPoolKeys.EuropeClubs => "Domestic and continental club results share one chronological Europe rating pool.",
-        EloPoolKeys.NationalTeams => "National-team tournaments and games use an independent rating pool.",
-        _ => "NBA franchise strength across the complete imported league history."
-    };
 
     private string LeaderLabel()
         => IsArchiveMode
@@ -2260,10 +2435,14 @@
 
         var refinedByTeam = refinedEvolution.Series
             .ToDictionary(series => series.TeamId);
+        var baseTeamIds = baseEvolution.Series
+            .Select(series => series.TeamId)
+            .ToHashSet();
         var mergedSeries = baseEvolution.Series
             .Select(series => refinedByTeam.TryGetValue(series.TeamId, out var refined)
                 ? series with { Points = MergeEvolutionPoints(series.Points, refined.Points) }
                 : series)
+            .Concat(refinedEvolution.Series.Where(series => !baseTeamIds.Contains(series.TeamId)))
             .ToList();
 
         return baseEvolution with { Series = mergedSeries };
@@ -2286,6 +2465,7 @@
 
     public void Dispose()
     {
+        CancelGraphSearch();
         CancelEvolutionRefinement();
     }
 

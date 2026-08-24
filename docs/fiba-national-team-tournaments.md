@@ -17,7 +17,7 @@ pre-qualifiers:
 | AfroBasket | `afrobasket-{year}` | `FIBA AfroBasket` | `FIBA AfroBasket Qualifiers` | `FIBA AfroBasket Pre-Qualifiers` |
 | Asia Cup | `asiacup-{year}` | `FIBA Asia Cup` | `FIBA Asia Cup Qualifiers` / `FIBA Asia Cup Qualification` | `FIBA Asia Cup Pre-Qualifiers` |
 | AmeriCup | `americup-{year}` | `FIBA AmeriCup` | `FIBA AmeriCup Qualifiers` | `FIBA AmeriCup Pre-Qualifiers` |
-| World Cup | `worldcup-{year}` | `FIBA Basketball World Cup` | `FIBA Basketball World Cup Qualifiers` | `FIBA Basketball World Cup Pre-Qualifiers`* |
+| World Cup | `worldcup-{year}` | `FIBA World Cup` | `FIBA World Cup Qualifiers` | `FIBA World Cup Pre-Qualifiers`* |
 | Centrobasket | `centrobasket-{year}` | `Centrobasket Championship` | â€” | â€” |
 | COCABA | `cocaba-{year}` | `COCABA Championship` | â€” | â€” |
 | South American | `south-american-{year}` | `South American Championship` | â€” | â€” |
@@ -192,4 +192,3 @@ finals, qualifiers, and pre-qualifier rows, all labeled `FIBA AmeriCup 2025`.
 The API, worker, and web health endpoints returned healthy responses after the
 deployment. The pre-AmeriCup reconciliation backup is documented in
 [`americup-ingestion.md`](americup-ingestion.md).
-

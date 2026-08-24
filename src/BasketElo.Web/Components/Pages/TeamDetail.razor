@@ -4,9 +4,10 @@
 @implements IAsyncDisposable
 @using System.Globalization
 @using System.Text.Json
+@using Microsoft.AspNetCore.Components.Authorization
 @using BasketElo.Domain.Elo
+@using BasketElo.Domain.Entities
 @inject HttpClient Http
-@inject NavigationManager Navigation
 
 <PageTitle>@(team?.TeamName ?? "Team") - Basket ELO</PageTitle>
 
@@ -35,7 +36,7 @@
                         <span class="national-team-badge">National team</span>
                     }
                 </div>
-                <p class="intro">Adjusted ELO profile, recent rated games, and the team's continuous rating path.</p>
+                <p class="intro">Adjusted ELO profile, latest rated games, and the team's continuous rating path.</p>
             </div>
             <div class="team-rank-card">
                 <span>Pool rank</span>
@@ -60,6 +61,16 @@
             <div>
                 <span>Last game</span>
                 <strong>@FormatDate(team.LastGameUtc)</strong>
+            </div>
+            <div>
+                <span>Best ELO</span>
+                <strong>@FormatRating(team.BestElo)</strong>
+                <small>@FormatDate(team.BestEloUtc)</small>
+            </div>
+            <div>
+                <span>Best rank</span>
+                <strong>@FormatRank(team.BestRank)</strong>
+                <small>@FormatDate(team.BestRankUtc)</small>
             </div>
         </section>
 
@@ -176,6 +187,8 @@
                 {
                     <EloEvolutionChart Series="@teamHistoryChartSeries"
                                        ShowLegend="false"
+                                       ShowSeriesControls="false"
+                                       ShowDiagnostics="@isAdmin"
                                        SharedTooltip="false"
                                        EnableRangeNavigation="true"
                                        DataRevision="@teamHistoryDataRevision"
@@ -189,17 +202,8 @@
         <section class="recent-games-section">
             <div class="section-head">
                 <div>
-                    <h2>Rated games</h2>
+                    <h2>Plotted games</h2>
                     <p>@GamesContextLabel(team)</p>
-                </div>
-                <div class="pager">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousGamesPageAsync" disabled="@isBusy || team.RecentGamesPage <= 1">Previous</button>
-                    <label class="page-jump" for="teamGamesPageInput">
-                        <span>Page</span>
-                        <input id="teamGamesPageInput" class="form-control form-control-sm" type="number" min="1" max="@team.RecentGamesTotalPages" @bind="requestedGamesPage" @onkeydown="HandleGamesPageInputKeyDown" />
-                    </label>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedGamesPageAsync" disabled="@isBusy">Go</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextGamesPageAsync" disabled="@isBusy || team.RecentGamesPage >= team.RecentGamesTotalPages">Next</button>
                 </div>
             </div>
 
@@ -213,6 +217,7 @@
                             <th>Score</th>
                             <th class="numeric">ELO change</th>
                             <th class="numeric">After</th>
+                            <th class="numeric">New rank</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -220,7 +225,7 @@
                         @if (team.RecentGames.Count == 0)
                         {
                             <tr>
-                                <td colspan="7" class="empty-state">No rated games are available for this team.</td>
+                                <td colspan="8" class="empty-state">No imported games are available for this team yet.</td>
                             </tr>
                         }
                         else
@@ -237,8 +242,31 @@
                                     </td>
                                     <td>@(game.WasHome ? "vs" : "at") @game.Opponent</td>
                                     <td>@FormatScore(game)</td>
-                                    <td class="numeric"><span class="@MovementClass(game.EloDelta)">@FormatMovement(game.EloDelta)</span></td>
-                                    <td class="numeric rating">@game.PostElo.ToString("0")</td>
+                                    <td class="numeric">
+                                        @if (game.EloDelta.HasValue)
+                                        {
+                                            <span class="@MovementClass(game.EloDelta)">@FormatMovement(game.EloDelta)</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="muted-cell">Not rated</span>
+                                        }
+                                    </td>
+                                    <td class="numeric rating">@(game.PostElo?.ToString("0") ?? "-")</td>
+                                    <td class="numeric">
+                                        @if (game.RankAfter.HasValue)
+                                        {
+                                            <span>#@game.RankAfter</span>
+                                            @if (game.RankChange.HasValue && game.RankChange.Value != 0)
+                                            {
+                                                <small class="@RankChangeClass(game.RankChange.Value)">(@FormatRankChange(game.RankChange.Value))</small>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="muted-cell">-</span>
+                                        }
+                                    </td>
                                     <td>
                                         <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => LoadExplanationAsync(game.GameId)" disabled="@IsExplanationLoading(game.GameId)">
                                             @(IsExplanationLoading(game.GameId) ? "Loading" : "Explain")
@@ -261,6 +289,9 @@
 </div>
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
     [Parameter]
     public Guid TeamId { get; set; }
 
@@ -270,28 +301,25 @@
     [SupplyParameterFromQuery(Name = "pool")]
     public string? Pool { get; set; }
 
-    [SupplyParameterFromQuery(Name = "gamesPage")]
-    public int? GamesPage { get; set; }
-
     private EloTeamDetailResponse? team;
     private bool isBusy;
+    private bool isAdmin;
     private string? errorMessage;
-    private int gamesPage = 1;
-    private int requestedGamesPage = 1;
     private Guid? selectedExplanationGameId;
     private EloGameExplanationResponse? selectedExplanation;
     private bool isExplanationLoading;
     private string? explanationError;
     private IReadOnlyList<EloChartSeries> teamHistoryChartSeries = [];
     private IReadOnlyList<EloChartSeries> fullTeamHistoryChartSeries = [];
+    private IReadOnlyCollection<EloTeamGameDto> fullTeamHistoryGames = [];
+    private int fullTeamHistoryTotalGames;
+    private bool fullTeamHistoryWasSampled;
     private long teamHistoryDataRevision;
     private bool isTeamHistoryRefining;
     private CancellationTokenSource? teamHistoryRefinementCancellation;
-    private readonly Dictionary<string, EloRankingsEvolutionResponse> teamHistoryRangeCache = new(StringComparer.Ordinal);
-    private readonly Queue<string> teamHistoryRangeCacheOrder = new();
+    private readonly Dictionary<string, EloTeamHistoryGamesResponse> teamHistoryGamesRangeCache = new(StringComparer.Ordinal);
 
     private const int HistoryRefinementDebounceMilliseconds = 600;
-    private const int HistoryRangeCacheLimit = 8;
 
     private string BackHref => string.IsNullOrWhiteSpace(ReturnUrl) ? "/rankings" : "/" + ReturnUrl.TrimStart('/');
 
@@ -299,20 +327,22 @@
     {
         isBusy = true;
         errorMessage = null;
+        var authenticationState = AuthenticationStateTask is null
+            ? null
+            : await AuthenticationStateTask;
+        isAdmin = authenticationState?.User.IsInRole(ApplicationRoleKeys.Admin) == true;
         CancelTeamHistoryRefinement();
-        teamHistoryRangeCache.Clear();
-        teamHistoryRangeCacheOrder.Clear();
-        gamesPage = Math.Max(1, GamesPage ?? 1);
-        requestedGamesPage = gamesPage;
+        teamHistoryGamesRangeCache.Clear();
 
         try
         {
             var poolKey = string.IsNullOrWhiteSpace(Pool) ? EloPoolKeys.Default : Pool;
-            team = await Http.GetFromJsonAsync<EloTeamDetailResponse>($"api/elo/teams/{TeamId}?pool={Uri.EscapeDataString(poolKey)}&gamesPage={gamesPage}&gamesPageSize=25");
+            team = await Http.GetFromJsonAsync<EloTeamDetailResponse>($"api/elo/teams/{TeamId}?pool={Uri.EscapeDataString(poolKey)}");
             if (team is not null)
             {
-                gamesPage = team.RecentGamesPage;
-                requestedGamesPage = team.RecentGamesPage;
+                fullTeamHistoryGames = team.RecentGames.ToList();
+                fullTeamHistoryTotalGames = team.RecentGamesTotalCount;
+                fullTeamHistoryWasSampled = team.RecentGamesWasSampled;
                 teamHistoryChartSeries = BuildTeamChartSeries(team);
                 fullTeamHistoryChartSeries = teamHistoryChartSeries;
                 teamHistoryDataRevision++;
@@ -326,51 +356,6 @@
         {
             isBusy = false;
         }
-    }
-
-    private Task PreviousGamesPageAsync()
-    {
-        NavigateToGamesPage(Math.Max(1, (team?.RecentGamesPage ?? gamesPage) - 1));
-        return Task.CompletedTask;
-    }
-
-    private Task NextGamesPageAsync()
-    {
-        if (team is not null)
-        {
-            NavigateToGamesPage(Math.Min(team.RecentGamesTotalPages, team.RecentGamesPage + 1));
-        }
-
-        return Task.CompletedTask;
-    }
-
-    private Task GoToRequestedGamesPageAsync()
-    {
-        NavigateToGamesPage(ClampRequestedPage(requestedGamesPage, team?.RecentGamesTotalPages ?? 1));
-        return Task.CompletedTask;
-    }
-
-    private async Task HandleGamesPageInputKeyDown(KeyboardEventArgs args)
-    {
-        if (args.Key == "Enter")
-        {
-            await GoToRequestedGamesPageAsync();
-        }
-    }
-
-    private void NavigateToGamesPage(int targetPage)
-    {
-        targetPage = ClampRequestedPage(targetPage, team?.RecentGamesTotalPages ?? targetPage);
-        CloseExplanation();
-
-        var query = new Dictionary<string, object?>
-        {
-            ["pool"] = Pool,
-            ["returnUrl"] = ReturnUrl,
-            ["gamesPage"] = targetPage > 1 ? targetPage : null
-        };
-
-        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters($"/teams/{TeamId}", query));
     }
 
     private async Task LoadExplanationAsync(Guid gameId)
@@ -448,9 +433,6 @@
         return body;
     }
 
-    private static int ClampRequestedPage(int value, int totalPages)
-        => Math.Clamp(value, 1, Math.Max(1, totalPages));
-
     private static IReadOnlyList<EloChartSeries> BuildTeamChartSeries(EloTeamDetailResponse team)
         =>
         [
@@ -473,11 +455,22 @@
         ];
 
     private static IReadOnlyList<EloChartSeries> BuildTeamChartSeries(
-        EloRankingsEvolutionResponse evolution,
+        EloTeamHistoryGamesResponse historyGames,
         EloTeamDetailResponse team)
     {
-        var history = evolution.Series.FirstOrDefault(x => x.TeamId == team.TeamId);
-        if (history is null)
+        var points = historyGames.Games
+            .Where(game => game.PostElo.HasValue)
+            .OrderBy(game => game.GameDateTimeUtc)
+            .ThenBy(game => game.GameId)
+            .Select(game => new EloChartPoint(
+                game.GameDateTimeUtc,
+                game.PostElo!.Value,
+                team.TeamName,
+                "#245c7a",
+                game.EloDelta,
+                game.RankAfter))
+            .ToList();
+        if (points.Count == 0)
         {
             return [];
         }
@@ -485,21 +478,12 @@
         return
         [
             new EloChartSeries(
-                history.TeamId,
-                history.TeamName,
+                team.TeamId,
+                team.TeamName,
                 "#245c7a",
-                history.Points
-                    .OrderBy(point => point.GameDateTimeUtc)
-                    .Select(point => new EloChartPoint(
-                        point.GameDateTimeUtc,
-                        point.Elo,
-                        history.TeamName,
-                        "#245c7a",
-                        point.EloDelta,
-                        point.Rank))
-                    .ToList(),
-                history.RatedPointCount > 0 ? history.RatedPointCount : team.GamesPlayed,
-                history.RatedPointCount > 0 ? history.RatedPointCount : team.GamesPlayed)
+                points,
+                historyGames.TotalGames,
+                historyGames.SampledGames)
         ];
     }
 
@@ -525,17 +509,16 @@
 
             var fromUtc = DateTime.SpecifyKind(range.FromUtc.Date, DateTimeKind.Utc);
             var toUtc = DateTime.SpecifyKind(range.ToUtc.Date, DateTimeKind.Utc);
-            var historyUri = BuildTeamHistoryApiUri(team, fromUtc, toUtc);
-
-            if (!teamHistoryRangeCache.TryGetValue(historyUri, out var refinedHistory))
+            var gamesUri = BuildTeamHistoryGamesApiUri(team, fromUtc, toUtc);
+            if (!teamHistoryGamesRangeCache.TryGetValue(gamesUri, out var refinedGames))
             {
-                refinedHistory = await Http.GetFromJsonAsync<EloRankingsEvolutionResponse>(historyUri, cancellation.Token);
-                if (refinedHistory is null)
+                refinedGames = await Http.GetFromJsonAsync<EloTeamHistoryGamesResponse>(gamesUri, cancellation.Token);
+                if (refinedGames is null)
                 {
                     return;
                 }
 
-                AddTeamHistoryRangeToCache(historyUri, refinedHistory);
+                teamHistoryGamesRangeCache[gamesUri] = refinedGames;
             }
 
             cancellation.Token.ThrowIfCancellationRequested();
@@ -544,13 +527,21 @@
                 return;
             }
 
-            var refinedSeries = BuildTeamChartSeries(refinedHistory, team);
-            if (refinedSeries.Count == 0 || refinedSeries[0].Points.Count < 2)
+            var refinedSeries = BuildTeamChartSeries(refinedGames, team);
+            team = team with
             {
-                return;
+                RecentGames = refinedGames.Games,
+                RecentGamesPage = 1,
+                RecentGamesPageSize = Math.Max(1, refinedGames.Games.Count),
+                RecentGamesTotalCount = refinedGames.TotalGames,
+                RecentGamesTotalPages = 1,
+                RecentGamesSampledCount = refinedGames.SampledGames,
+                RecentGamesWasSampled = refinedGames.WasSampled
+            };
+            if (refinedSeries.Count > 0 && refinedSeries[0].Points.Count >= 2)
+            {
+                teamHistoryChartSeries = MergeTeamHistorySeries(teamHistoryChartSeries, refinedSeries);
             }
-
-            teamHistoryChartSeries = MergeTeamHistorySeries(teamHistoryChartSeries, refinedSeries);
             errorMessage = null;
             await InvokeAsync(StateHasChanged);
         }
@@ -578,10 +569,9 @@
         }
     }
 
-    private static string BuildTeamHistoryApiUri(EloTeamDetailResponse team, DateTime fromUtc, DateTime toUtc)
-        => $"api/elo/rankings/evolution?rulesetVersion={Uri.EscapeDataString(team.RulesetVersion)}" +
+    private static string BuildTeamHistoryGamesApiUri(EloTeamDetailResponse team, DateTime fromUtc, DateTime toUtc)
+        => $"api/elo/teams/{team.TeamId}/history-games?rulesetVersion={Uri.EscapeDataString(team.RulesetVersion)}" +
            $"&pool={Uri.EscapeDataString(team.EloPoolKey)}" +
-           $"&teamIds={team.TeamId}" +
            $"&pointsPerTeam={EloEvolutionLimits.DefaultPointsPerTeam}" +
            $"&fromUtc={Uri.EscapeDataString(fromUtc.ToString("O"))}" +
            $"&toUtc={Uri.EscapeDataString(toUtc.ToString("O"))}";
@@ -592,6 +582,19 @@
         teamHistoryChartSeries = fullTeamHistoryChartSeries
             .Select(series => series with { VisibleRatedPointCount = series.RatedPointCount })
             .ToList();
+        if (team is not null)
+        {
+            team = team with
+            {
+                RecentGames = fullTeamHistoryGames,
+                RecentGamesPage = 1,
+                RecentGamesPageSize = Math.Max(1, fullTeamHistoryGames.Count),
+                RecentGamesTotalCount = fullTeamHistoryTotalGames,
+                RecentGamesTotalPages = 1,
+                RecentGamesSampledCount = fullTeamHistoryGames.Count,
+                RecentGamesWasSampled = fullTeamHistoryWasSampled
+            };
+        }
         return Task.CompletedTask;
     }
 
@@ -611,21 +614,6 @@
                 }
                 : series)
             .ToList();
-    }
-
-    private void AddTeamHistoryRangeToCache(string uri, EloRankingsEvolutionResponse response)
-    {
-        if (teamHistoryRangeCache.ContainsKey(uri))
-        {
-            return;
-        }
-
-        teamHistoryRangeCache[uri] = response;
-        teamHistoryRangeCacheOrder.Enqueue(uri);
-        while (teamHistoryRangeCacheOrder.Count > HistoryRangeCacheLimit)
-        {
-            teamHistoryRangeCache.Remove(teamHistoryRangeCacheOrder.Dequeue());
-        }
     }
 
     private void CancelTeamHistoryRefinement()
@@ -659,13 +647,12 @@
     {
         if (team.RecentGamesTotalCount == 0)
         {
-            return "No rated games are available for this team.";
+            return "No imported games are available for this team yet.";
         }
-
-        var rangeStart = ((team.RecentGamesPage - 1) * team.RecentGamesPageSize) + 1;
-        var rangeEnd = Math.Min(team.RecentGamesTotalCount, team.RecentGamesPage * team.RecentGamesPageSize);
-
-        return $"Showing {rangeStart}-{rangeEnd} of {team.RecentGamesTotalCount} rated games. Page {team.RecentGamesPage} of {team.RecentGamesTotalPages}.";
+        var shown = team.RecentGames.Count;
+        return team.RecentGamesWasSampled
+            ? $"Showing {shown} of {team.RecentGamesTotalCount} rated games represented by this chart interval."
+            : $"Showing all {shown} rated games represented by this chart interval.";
     }
 
     private static string FormatScore(EloTeamGameDto game)
@@ -686,11 +673,23 @@
     private static string FormatRating(decimal value)
         => value == 0 ? "-" : value.ToString("0");
 
-    private static string FormatMovement(decimal value)
+    private static string FormatRating(decimal? value)
+        => !value.HasValue || value.Value == 0 ? "-" : value.Value.ToString("0");
+
+    private static string FormatRank(int? rank)
+        => rank.HasValue ? $"#{rank.Value}" : "-";
+
+    private static string FormatRankChange(int value)
+        => value > 0 ? $"+{value}" : value.ToString();
+
+    private static string RankChangeClass(int value)
+        => value > 0 ? "movement-up" : value < 0 ? "movement-down" : "movement-flat";
+    private static string FormatMovement(decimal? value)
         => value switch
         {
+            null => "-",
             > 0 => $"+{value:0}",
-            < 0 => value.ToString("0"),
+            < 0 => value.Value.ToString("0"),
             _ => "0"
         };
 
@@ -712,9 +711,10 @@
         return $"{location} {game.Opponent}{score} ({FormatMovement(game.EloDelta)})";
     }
 
-    private static string MovementClass(decimal value)
+    private static string MovementClass(decimal? value)
         => value switch
         {
+            null => "movement-flat",
             > 0 => "movement-up",
             < 0 => "movement-down",
             _ => "movement-flat"

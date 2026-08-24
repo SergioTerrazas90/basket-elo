@@ -2,6 +2,45 @@ namespace BasketElo.Domain.Tournaments;
 
 public static class TournamentCycleCatalog
 {
+    public static IReadOnlyList<string> SupportedFamilies { get; } =
+    [
+        "EuroBasket",
+        "AfroBasket",
+        "FIBA Asia Cup",
+        "FIBA AmeriCup",
+        "FIBA Basketball World Cup",
+        "Olympics"
+    ];
+
+    public static string? ResolveKeyFromFamily(string? family, string? editionLabel)
+    {
+        if (string.IsNullOrWhiteSpace(family) || string.IsNullOrWhiteSpace(editionLabel))
+        {
+            return null;
+        }
+
+        var normalizedFamily = SupportedFamilies.FirstOrDefault(
+            value => string.Equals(value, family.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (normalizedFamily is null)
+        {
+            return null;
+        }
+
+        var normalizedEdition = editionLabel.Trim();
+        var prefix = normalizedFamily switch
+        {
+            "EuroBasket" => "eurobasket",
+            "AfroBasket" => "afrobasket",
+            "FIBA Asia Cup" => "asiacup",
+            "FIBA AmeriCup" => "americup",
+            "FIBA Basketball World Cup" => "worldcup",
+            "Olympics" => "olympics",
+            _ => null
+        };
+
+        return prefix is null ? null : $"{prefix}-{normalizedEdition}";
+    }
+
     public static string? ResolveKey(string? country, string? competitionName, string? seasonLabel)
     {
         if (string.IsNullOrWhiteSpace(country) ||
@@ -58,6 +97,9 @@ public static class TournamentCycleCatalog
             (normalized.Equals("FIBA Basketball World Cup", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA Basketball World Cup Qualifiers", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA Basketball World Cup Pre-Qualifiers", StringComparison.OrdinalIgnoreCase) ||
+             normalized.Equals("FIBA World Cup", StringComparison.OrdinalIgnoreCase) ||
+             normalized.Equals("FIBA World Cup Qualifiers", StringComparison.OrdinalIgnoreCase) ||
+             normalized.Equals("FIBA World Cup Pre-Qualifiers", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA WC Qualification", StringComparison.OrdinalIgnoreCase));
 
         return isEuroBasketCompetition

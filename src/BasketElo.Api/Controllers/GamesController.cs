@@ -140,7 +140,10 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             var requestedLeague = leagueName.Trim();
             var isWorldCupQualifierAlias = requestedLeague.Equals(
                 "FIBA Basketball World Cup Qualifiers",
-                StringComparison.OrdinalIgnoreCase);
+                StringComparison.OrdinalIgnoreCase) ||
+                requestedLeague.Equals(
+                    "FIBA World Cup Qualifiers",
+                    StringComparison.OrdinalIgnoreCase);
             query = isWorldCupQualifierAlias
                 ? query.Where(x =>
                     x.Competition.Name == requestedLeague ||
@@ -366,9 +369,9 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
                 link.Stage == "qualifier" &&
                 link.TournamentCycle.Family == "FIBA Basketball World Cup"), cancellationToken);
         if (hasHistoricalWorldCupQualifierLinks &&
-            !leagues.Contains("FIBA Basketball World Cup Qualifiers", StringComparer.OrdinalIgnoreCase))
+            !leagues.Contains("FIBA World Cup Qualifiers", StringComparer.OrdinalIgnoreCase))
         {
-            leagues.Add("FIBA Basketball World Cup Qualifiers");
+            leagues.Add("FIBA World Cup Qualifiers");
             leagues.Sort(StringComparer.Ordinal);
         }
 

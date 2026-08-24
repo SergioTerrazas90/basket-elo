@@ -114,7 +114,14 @@ public sealed record EloRankingRow(
     int GamesPlayed,
     decimal RecentMovement,
     DateTime? LastGameUtc,
-    bool IsActive);
+    bool IsActive,
+    IReadOnlyCollection<EloRecentFormGame>? RecentForm = null);
+
+public sealed record EloRecentFormGame(
+    DateTime GameDateTimeUtc,
+    string Opponent,
+    bool IsWin,
+    decimal EloDelta);
 
 public sealed record EloFranchiseIdentityEventDto(
     int Year,
@@ -242,7 +249,8 @@ public sealed record EloTeamEvolutionPoint(
     DateTime GameDateTimeUtc,
     decimal Elo,
     decimal? EloDelta = null,
-    int? Rank = null);
+    int? Rank = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? GameId = null);
 
 public sealed record EloTeamDetailResponse(
     Guid TeamId,
@@ -256,6 +264,10 @@ public sealed record EloTeamDetailResponse(
     int GamesPlayed,
     decimal RecentMovement,
     DateTime? LastGameUtc,
+    decimal? BestElo,
+    DateTime? BestEloUtc,
+    int? BestRank,
+    DateTime? BestRankUtc,
     bool IsActive,
     IReadOnlyCollection<EloFranchiseIdentityEventDto> IdentityEvents,
     IReadOnlyCollection<string> Competitions,
@@ -265,8 +277,16 @@ public sealed record EloTeamDetailResponse(
     int RecentGamesTotalCount,
     int RecentGamesTotalPages,
     IReadOnlyCollection<EloTeamFormSummary> RecentForms,
-    IReadOnlyCollection<EloRatingHistoryPoint> History);
+    IReadOnlyCollection<EloRatingHistoryPoint> History,
+    int RecentGamesSampledCount = 0,
+    bool RecentGamesWasSampled = false);
 
+public sealed record EloTeamHistoryGamesResponse(
+    Guid TeamId,
+    int TotalGames,
+    int SampledGames,
+    bool WasSampled,
+    IReadOnlyCollection<EloTeamGameDto> Games);
 public sealed record EloTeamGameDto(
     Guid GameId,
     DateTime GameDateTimeUtc,
@@ -276,9 +296,13 @@ public sealed record EloTeamGameDto(
     bool WasHome,
     short? TeamScore,
     short? OpponentScore,
-    decimal PreElo,
-    decimal PostElo,
-    decimal EloDelta);
+    decimal? PreElo,
+    decimal? PostElo,
+    decimal? EloDelta,
+    bool IsRated,
+    string Status,
+    int? RankAfter = null,
+    int? RankChange = null);
 
 public sealed record EloTeamFormSummary(
     int WindowGames,
@@ -345,7 +369,8 @@ public sealed record EloRatingHistoryPoint(
     DateTime GameDateTimeUtc,
     decimal Elo,
     decimal EloDelta,
-    int? Rank);
+    int? Rank,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? GameId = null);
 
 public sealed record EloPoolOption(
     string Key,

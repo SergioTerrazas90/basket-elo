@@ -7,11 +7,14 @@
     {
         <div class="elo-chart-toolbar" aria-label="Chart range controls">
             <div class="elo-chart-controls">
-                <div class="elo-chart-segment" aria-label="Chart sampling mode">
-                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.GameByGame)" @onclick="() => SetSamplingMode(EloChartSamplingMode.GameByGame)">Games</button>
-                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.Weekly)" @onclick="() => SetSamplingMode(EloChartSamplingMode.Weekly)">Weeks</button>
-                    <button type="button" class="@SamplingButtonClass(EloChartSamplingMode.Monthly)" @onclick="() => SetSamplingMode(EloChartSamplingMode.Monthly)">Months</button>
-                </div>
+                <label class="elo-chart-sampling-select">
+                    <span>View</span>
+                    <select aria-label="Chart sampling mode" value="@samplingMode" @onchange="HandleSamplingModeChanged">
+                        <option value="@EloChartSamplingMode.GameByGame">Games</option>
+                        <option value="@EloChartSamplingMode.Weekly">Weeks</option>
+                        <option value="@EloChartSamplingMode.Monthly">Months</option>
+                    </select>
+                </label>
                 <div class="elo-chart-range-buttons">
                     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Reset zoom</button>
                     @if (ShowDiagnostics)
@@ -35,10 +38,10 @@
                     </span>
                 }
                 <span class="elo-chart-refinement-slot" aria-live="polite">
-                    @if (IsRefining)
+                    @if (ChartBusy)
                     {
                         <span class="spinner-border spinner-border-sm elo-chart-refinement-spinner" aria-hidden="true"></span>
-                        <span class="visually-hidden">Refreshing chart detail</span>
+                        <span class="visually-hidden">@ChartBusyLabel</span>
                     }
                 </span>
             </span>
@@ -51,8 +54,8 @@
             <span class="elo-chart-series-controls-label">Legend</span>
             <button type="button"
                     class="btn btn-sm btn-outline-secondary"
-                    @onclick="ShowAllSeriesAsync"
-                    disabled="@(hiddenSeriesKeys.Count == 0)">Show all</button>
+                    @onclick="ToggleAllSeriesAsync"
+                    disabled="@(SourceSeries.Count == 0)">@(AllSeriesVisible ? "Hide all" : "Show all")</button>
             @foreach (var series in SourceSeries)
             {
                 var isVisible = IsSeriesVisible(series);
@@ -226,6 +229,9 @@
     public EventCallback ShowAllSeriesRequested { get; set; }
 
     [Parameter]
+    public EventCallback HideAllSeriesRequested { get; set; }
+
+    [Parameter]
     public bool SharedTooltip { get; set; } = true;
 
     [Parameter]
@@ -270,12 +276,17 @@
     private bool diagnosticsExpanded;
     private bool chartInitialized;
     private bool chartRenderPending;
+    private bool chartPaintPending;
     private string renderedChartSignature = string.Empty;
     private ElementReference chartHost;
     private DotNetObjectReference<EloEvolutionChart>? dotNetReference;
     private readonly HashSet<string> hiddenSeriesKeys = new(StringComparer.Ordinal);
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
+
+    private bool ChartBusy => IsRefining || chartPaintPending;
+
+    private string ChartBusyLabel => IsRefining ? "Refreshing chart detail" : "Rendering chart";
 
     private string CategoryProperty => samplingMode == EloChartSamplingMode.GameByGame
         ? nameof(EloChartPoint.ActiveDateIndex)
@@ -365,7 +376,9 @@
         RebuildDisplaySeries();
 
         var chartSignature = BuildChartSignature();
-        chartRenderPending |= dataChanged || !string.Equals(renderedChartSignature, chartSignature, StringComparison.Ordinal);
+        var renderRequested = dataChanged || !string.Equals(renderedChartSignature, chartSignature, StringComparison.Ordinal);
+        chartRenderPending |= renderRequested;
+        chartPaintPending |= renderRequested && UseDygraphs;
         renderedChartSignature = chartSignature;
 
         if (!EnableRangeNavigation || dataChanged)
@@ -398,7 +411,18 @@
         if (chartRenderPending)
         {
             chartRenderPending = false;
-            await JS.InvokeVoidAsync("basketEloDygraph.render", chartHost, BuildDygraphPayload(), dotNetReference);
+            try
+            {
+                await JS.InvokeVoidAsync("basketEloDygraph.render", chartHost, BuildDygraphPayload(), dotNetReference);
+            }
+            finally
+            {
+                if (!chartRenderPending && chartPaintPending)
+                {
+                    chartPaintPending = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
         }
     }
 
@@ -485,6 +509,14 @@
         chartRenderPending = true;
     }
 
+    private void HandleSamplingModeChanged(ChangeEventArgs args)
+    {
+        if (Enum.TryParse<EloChartSamplingMode>(args.Value?.ToString(), out var mode))
+        {
+            SetSamplingMode(mode);
+        }
+    }
+
     private void ToggleDiagnostics()
         => diagnosticsExpanded = !diagnosticsExpanded;
 
@@ -516,15 +548,30 @@
         chartRenderPending = true;
     }
 
-    private async Task ShowAllSeriesAsync()
+    private async Task ToggleAllSeriesAsync()
     {
-        if (ShowAllSeriesRequested.HasDelegate)
+        if (AllSeriesVisible)
         {
-            await ShowAllSeriesRequested.InvokeAsync();
+            if (HideAllSeriesRequested.HasDelegate)
+            {
+                await HideAllSeriesRequested.InvokeAsync();
+            }
+            else
+            {
+                HideAllSeries();
+            }
+
             return;
         }
 
-        ShowAllSeries();
+        if (ShowAllSeriesRequested.HasDelegate)
+        {
+            await ShowAllSeriesRequested.InvokeAsync();
+        }
+        else
+        {
+            ShowAllSeries();
+        }
     }
 
     private void ShowAllSeries()
@@ -534,11 +581,23 @@
         chartRenderPending = true;
     }
 
+    private void HideAllSeries()
+    {
+        hiddenSeriesKeys.Clear();
+        hiddenSeriesKeys.UnionWith(SourceSeries.Select(SeriesKey));
+        selectedPoint = null;
+        RebuildDisplaySeries();
+        chartRenderPending = true;
+    }
+
     private bool IsSeriesVisible(EloChartSeries series)
         => !hiddenSeriesKeys.Contains(SeriesKey(series));
 
+    private bool AllSeriesVisible
+        => hiddenSeriesKeys.Count == 0;
+
     private bool UsesExternalVisibilityState
-        => SeriesVisibilityChanged.HasDelegate || ShowAllSeriesRequested.HasDelegate;
+        => SeriesVisibilityChanged.HasDelegate || ShowAllSeriesRequested.HasDelegate || HideAllSeriesRequested.HasDelegate;
 
     private static string SeriesKey(EloChartSeries series)
         => series.TeamId?.ToString("D") ?? series.TeamName;
@@ -768,11 +827,6 @@
         viewFromUtc = null;
         viewToUtc = null;
     }
-
-    private string SamplingButtonClass(EloChartSamplingMode mode)
-        => samplingMode == mode
-            ? "btn btn-sm btn-primary"
-            : "btn btn-sm btn-outline-secondary";
 
     private static IReadOnlyList<EloChartPoint> SamplePoints(
         IReadOnlyList<EloChartPoint> sourcePoints,

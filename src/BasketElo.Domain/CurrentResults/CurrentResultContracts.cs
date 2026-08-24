@@ -89,6 +89,8 @@ public sealed record CurrentResultReviewDto(
     string Status,
     string? SuggestedCompetitionName,
     string? SuggestedCompetitionCountryCode,
+    Guid? TournamentCycleId,
+    string? TournamentCycleKey,
     Guid? AssignedGameId,
     string? ResolutionAction,
     string? ResolutionNote,
@@ -104,12 +106,35 @@ public sealed record CurrentResultsUnmatchedCompetitionDto(
     DateTime FirstSeenUtc,
     DateTime LastSeenUtc);
 
+public sealed record CurrentResultsTournamentCycleOption(
+    Guid Id,
+    string Key,
+    string Family,
+    string EditionLabel,
+    string DisplayName);
+
+public sealed record CurrentResultsTournamentCycleOptionsResponse(
+    IReadOnlyList<CurrentResultsTournamentCycleOption> Cycles,
+    IReadOnlyList<string> Families);
+
+public sealed record CreateCompetitionFromMergeRequest(
+    string Name,
+    string Type,
+    string? CountryCode,
+    string? EloPoolKey,
+    int Tier,
+    string SupportPolicy);
+
 public sealed record MergeUnmatchedCompetitionRequest(
     string Source,
     string? SourceCompetitionId,
     string CountryName,
     string CompetitionName,
-    Guid TargetCompetitionId);
+    Guid? TargetCompetitionId,
+    CreateCompetitionFromMergeRequest? NewCompetition = null,
+    Guid? TournamentCycleId = null,
+    string? TournamentCycleFamily = null,
+    string? TournamentCycleEditionLabel = null);
 
 public sealed record IgnoreUnmatchedCompetitionRequest(
     string Source,

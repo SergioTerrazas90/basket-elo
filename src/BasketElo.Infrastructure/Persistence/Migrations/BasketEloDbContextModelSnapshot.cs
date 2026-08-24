@@ -314,6 +314,10 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("EloPoolKey");
 
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasFilter("\"CountryCode\" IS NULL");
+
                     b.HasIndex("Name", "CountryCode")
                         .IsUnique();
 
@@ -480,6 +484,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<Guid?>("TournamentCycleId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -490,6 +497,8 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.HasIndex("RunId");
 
                     b.HasIndex("SourceDate");
+
+                    b.HasIndex("TournamentCycleId");
 
                     b.HasIndex("Source", "SourceGameId")
                         .IsUnique();
@@ -1883,7 +1892,14 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasForeignKey("RunId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("BasketElo.Domain.Entities.TournamentCycle", "TournamentCycle")
+                        .WithMany()
+                        .HasForeignKey("TournamentCycleId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Run");
+
+                    b.Navigation("TournamentCycle");
                 });
 
             modelBuilder.Entity("BasketElo.Domain.Entities.Game", b =>

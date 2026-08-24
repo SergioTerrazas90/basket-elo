@@ -1,4 +1,4 @@
-# FIBA Basketball World Cup ingestion
+# FIBA World Cup ingestion
 
 This runbook covers the men's senior FIBA Basketball World Cup finals and
 World Cup qualification routes. Women's, youth, 3x3, and unrelated Olympic
@@ -8,10 +8,10 @@ qualification competitions are excluded.
 
 | Competition | Cycle key | FIBA archive editions |
 | --- | --- | --- |
-| FIBA Basketball World Cup | `worldcup-{year}` | Played finals 1950, 1954, 1959, 1963, 1967, 1970, 1974, 1978, 1982, 1986, 1990, 1994, 1998, 2002, 2006, 2010, 2014, 2019, 2023 |
-| FIBA Basketball World Cup Qualifiers | `worldcup-{year}` | 2019, 2023, 2027 |
+| FIBA World Cup | `worldcup-{year}` | Played finals 1950, 1954, 1959, 1963, 1967, 1970, 1974, 1978, 1982, 1986, 1990, 1994, 1998, 2002, 2006, 2010, 2014, 2019, 2023 |
+| FIBA World Cup Qualifiers | `worldcup-{year}` | 2019, 2023, 2027 |
 | Historical World Cup qualification routes | `worldcup-{year}` | Existing Olympic and continental qualifying tournaments linked for 1950â€“2014 where source rows are available |
-| FIBA Basketball World Cup Pre-Qualifiers* | `worldcup-{year}` | 2017 (2019 cycle), 2021 (2023 cycle), 2024â€“2025 (2027 cycle) |
+| FIBA World Cup Pre-Qualifiers* | `worldcup-{year}` | 2017 (2019 cycle), 2021 (2023 cycle), 2024â€“2025 (2027 cycle) |
 
 The official archive also displays a future 2027 finals row, but it has no
 played game cards at the 2026-08-08 audit cutoff and is not cataloged. The
@@ -86,9 +86,9 @@ is complete at the current audit cutoff. The separate pre-qualifier family has
 For each FIBA family, run a dry-run before production ingestion:
 
 ```text
-BasketElo.Tools fiba-dry-run --country World --league "FIBA Basketball World Cup" --season 2023 --max-requests 0
-BasketElo.Tools fiba-dry-run --country World --league "FIBA Basketball World Cup Qualifiers" --season 2027 --max-requests 0
-BasketElo.Tools fiba-dry-run --country World --league "FIBA Basketball World Cup Pre-Qualifiers" --season 2027 --max-requests 0
+BasketElo.Tools fiba-dry-run --country World --league "FIBA World Cup" --season 2023 --max-requests 0
+BasketElo.Tools fiba-dry-run --country World --league "FIBA World Cup Qualifiers" --season 2027 --max-requests 0
+BasketElo.Tools fiba-dry-run --country World --league "FIBA World Cup Pre-Qualifiers" --season 2027 --max-requests 0
 ```
 
 Audit source keys, same-stage identities, cross-source duplicates, and cycle

@@ -405,6 +405,142 @@ public class CurrentResultsIngestionServiceTests
         Assert.Equal("merge", (await dbContext.CurrentResultReviews.SingleAsync()).ResolutionAction);
     }
 
+    [Fact]
+    public async Task MergingCanCreateCompetitionAndAssignNewTournamentCycle()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var candidate = new CurrentResultCandidate(
+            "create-competition-cycle-game", null, new DateOnly(2029, 8, 28),
+            new DateTime(2029, 8, 28, 18, 30, 0, DateTimeKind.Utc), "World",
+            "FIBA Basketball World Cup Qualifiers", "Window 1",
+            "Spain", "Georgia", "home-source", "away-source", 88, 76,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        dbContext.AddRange(
+            new Team { Id = Guid.NewGuid(), CanonicalName = "Spain", CountryCode = "ES" },
+            new Team { Id = Guid.NewGuid(), CanonicalName = "Georgia", CountryCode = "GE" });
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext, candidate);
+
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+        var updated = await service.MergeUnmatchedCompetitionAsync(
+            new MergeUnmatchedCompetitionRequest(
+                "livescore", null, "World", candidate.CompetitionName, null,
+                new CreateCompetitionFromMergeRequest(
+                    "FIBA Basketball World Cup Qualifiers", "qualifier", null, "national-teams", 1,
+                    CompetitionSupportPolicies.Supported),
+                null, "FIBA Basketball World Cup", "2031"),
+            CancellationToken.None);
+
+        Assert.Equal(1, updated);
+        var cycle = await dbContext.TournamentCycles.SingleAsync();
+        Assert.Equal("worldcup-2031", cycle.Key);
+        Assert.Equal("FIBA Basketball World Cup 2031", cycle.DisplayName);
+        Assert.Equal(cycle.Id, (await dbContext.CurrentResultReviews.SingleAsync()).TournamentCycleId);
+
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        var game = await dbContext.Games.SingleAsync();
+        Assert.Equal(cycle.Id, game.TournamentCycleId);
+        Assert.True(game.EloEligible);
+    }
+
+    [Fact]
+    public async Task MergingAutoAssignsAnUnambiguousPlannedFixture()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var target = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "FIBA World Cup Qualifiers",
+            CountryCode = null,
+            EloPoolKey = "national-teams"
+        };
+        var home = new Team { Id = Guid.NewGuid(), CanonicalName = "France", CountryCode = "FR" };
+        var away = new Team { Id = Guid.NewGuid(), CanonicalName = "Slovenia", CountryCode = "SI" };
+        var cycle = new TournamentCycle
+        {
+            Id = Guid.NewGuid(),
+            Key = "worldcup-2027",
+            Family = "FIBA Basketball World Cup",
+            EditionLabel = "2027",
+            DisplayName = "FIBA Basketball World Cup 2027"
+        };
+        dbContext.AddRange(
+            target,
+            home,
+            away,
+            cycle,
+            new Game
+            {
+                Id = Guid.NewGuid(),
+                Source = "fiba",
+                SourceGameId = "planned-france-slovenia",
+                CompetitionId = target.Id,
+                SeasonId = Guid.NewGuid(),
+                TournamentCycleId = cycle.Id,
+                GameDateTimeUtc = new DateTime(2026, 8, 27, 18, 30, 0, DateTimeKind.Utc),
+                HomeTeamId = home.Id,
+                AwayTeamId = away.Id,
+                Status = CurrentResultStatuses.Scheduled
+            });
+        await dbContext.SaveChangesAsync();
+
+        var candidate = new CurrentResultCandidate(
+            "merge-auto-assign-game", null, new DateOnly(2026, 8, 27),
+            new DateTime(2026, 8, 27, 8, 0, 0, DateTimeKind.Utc), "World", "Qualification", "Qualification",
+            "France", "Slovenia", "france-live", "slovenia-live", null, null,
+            CurrentResultStatuses.Scheduled, "08:00", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        var updated = await service.MergeUnmatchedCompetitionAsync(
+            new MergeUnmatchedCompetitionRequest(
+                "livescore", null, "World", candidate.CompetitionName, target.Id,
+                null, cycle.Id, null, null),
+            CancellationToken.None);
+
+        Assert.Equal(1, updated);
+        var review = await dbContext.CurrentResultReviews.SingleAsync();
+        var game = await dbContext.Games.SingleAsync(x => x.Source == "fiba");
+        Assert.Equal(CurrentResultReviewStatuses.Resolved, review.Status);
+        Assert.Equal("merge_auto_assign", review.ResolutionAction);
+        Assert.Equal(game.Id, review.AssignedGameId);
+        Assert.Equal(cycle.Id, game.TournamentCycleId);
+        Assert.Equal(CurrentResultStatuses.Scheduled, game.Status);
+    }
+
+    [Fact]
+    public async Task MergeRejectsCycleFromTheWrongKnownFamily()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var candidate = new CurrentResultCandidate(
+            "wrong-cycle-family-game", null, new DateOnly(2029, 8, 28),
+            new DateTime(2029, 8, 28, 18, 30, 0, DateTimeKind.Utc), "World",
+            "FIBA Basketball World Cup Qualifiers", "Window 1",
+            "Spain", "Georgia", "home-source", "away-source", null, null,
+            CurrentResultStatuses.Scheduled, "18:30", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.MergeUnmatchedCompetitionAsync(
+            new MergeUnmatchedCompetitionRequest(
+                "livescore", null, "World", candidate.CompetitionName, null,
+                new CreateCompetitionFromMergeRequest(
+                    "FIBA Basketball World Cup Qualifiers", "qualifier", null, "national-teams", 1,
+                    CompetitionSupportPolicies.Supported),
+                null, "Olympics", "2028"),
+            CancellationToken.None));
+    }
+
     private static CurrentResultsIngestionService CreateService(BasketEloDbContext dbContext, CurrentResultCandidate candidate) =>
         new(
             dbContext,

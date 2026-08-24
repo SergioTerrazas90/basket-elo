@@ -235,28 +235,261 @@ public sealed class CurrentResultsIngestionService(
         var source = RequiredValue(request.Source, "Source", 50);
         var competitionName = RequiredValue(request.CompetitionName, "Competition name", 200);
         var countryName = RequiredValue(request.CountryName, "Country", 100);
-        var target = await dbContext.Competitions
-            .SingleOrDefaultAsync(x => x.Id == request.TargetCompetitionId && x.IsActive, cancellationToken)
-            ?? throw new KeyNotFoundException("Target competition was not found.");
+        var target = await ResolveMergeCompetitionAsync(request, countryName, cancellationToken);
         if (target.SupportPolicy != CompetitionSupportPolicies.Supported)
         {
             throw new InvalidOperationException("Only a supported competition can receive a current-results alias.");
         }
 
         await AddCompetitionAliasAsync(target, source, request.SourceCompetitionId, competitionName, cancellationToken);
+        var tournamentCycle = await ResolveMergeTournamentCycleAsync(request, target.Name, countryName, cancellationToken);
         var reviews = await FindUnmatchedReviewsAsync(source, request.SourceCompetitionId, countryName, competitionName, cancellationToken);
         var now = timeProvider.GetUtcNow().UtcDateTime;
         foreach (var review in reviews)
         {
             review.SuggestedCompetitionName = target.Name;
             review.SuggestedCompetitionCountryCode = target.CountryCode;
+            if (tournamentCycle is not null)
+            {
+                review.TournamentCycleId = tournamentCycle.Id;
+            }
             review.ResolutionAction = "merge";
-            review.ResolutionNote = $"Merged into {target.Name}; rerun current-results to process these candidates.";
+            review.ResolutionNote = tournamentCycle is null
+                ? $"Merged into {target.Name}; a unique planned fixture will be assigned automatically, otherwise choose a planned match or rerun current-results."
+                : $"Merged into {target.Name} and assigned to {tournamentCycle.DisplayName}; a unique planned fixture will be assigned automatically, otherwise choose a planned match or rerun current-results.";
             review.UpdatedAtUtc = now;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await AutoAssignMergedReviewsAsync(target, reviews, tournamentCycle, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
         return reviews.Count;
+    }
+
+    private async Task<int> AutoAssignMergedReviewsAsync(
+        Competition target,
+        IReadOnlyCollection<CurrentResultReview> reviews,
+        TournamentCycle? tournamentCycle,
+        CancellationToken cancellationToken)
+    {
+        var changedPools = new HashSet<string>(StringComparer.Ordinal);
+        var assigned = 0;
+
+        foreach (var review in reviews)
+        {
+            var home = await ResolveTeamAsync(
+                review.HomeTeamName,
+                review.HomeTeamSourceId,
+                target.CountryCode,
+                cancellationToken);
+            var away = await ResolveTeamAsync(
+                review.AwayTeamName,
+                review.AwayTeamSourceId,
+                target.CountryCode,
+                cancellationToken);
+            if (home.Team is null || away.Team is null)
+            {
+                continue;
+            }
+
+            var plannedFixtureMatch = await FindScheduledFixtureAsync(
+                target.Id,
+                home.Team.Id,
+                away.Team.Id,
+                review.GameDateTimeUtc,
+                review.SourceGameId,
+                cancellationToken);
+            if (plannedFixtureMatch.Ambiguous || plannedFixtureMatch.Game is null)
+            {
+                continue;
+            }
+
+            var game = plannedFixtureMatch.Game;
+            if (game.HasManualResultOverride)
+            {
+                continue;
+            }
+
+            var resultChanged = game.HomeScore != review.HomeScore ||
+                                game.AwayScore != review.AwayScore ||
+                                game.Status != review.ResultStatus;
+            game.HomeScore = review.HomeScore;
+            game.AwayScore = review.AwayScore;
+            game.Status = review.ResultStatus;
+            game.EloEligible = review.ResultStatus == CurrentResultStatuses.Finished &&
+                               review.HomeScore.HasValue &&
+                               review.AwayScore.HasValue;
+            game.EloExclusionReason = game.EloEligible
+                ? null
+                : review.ResultStatus == CurrentResultStatuses.Scheduled ? null : "current_result_not_final";
+            if (tournamentCycle is not null)
+            {
+                game.TournamentCycleId = tournamentCycle.Id;
+            }
+
+            game.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+            review.Status = CurrentResultReviewStatuses.Resolved;
+            review.AssignedGameId = game.Id;
+            review.ResolutionAction = "merge_auto_assign";
+            review.ResolutionNote = tournamentCycle is null
+                ? $"Merged into {target.Name} and auto-assigned to planned fixture {game.Source}:{game.SourceGameId}."
+                : $"Merged into {target.Name}, assigned to {tournamentCycle.DisplayName}, and auto-assigned to planned fixture {game.Source}:{game.SourceGameId}.";
+            review.ResolvedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+            review.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+            assigned++;
+
+            if (resultChanged && game.EloEligible && !string.IsNullOrWhiteSpace(target.EloPoolKey))
+            {
+                changedPools.Add(target.EloPoolKey!);
+            }
+        }
+
+        foreach (var poolKey in changedPools)
+        {
+            await QueueEloRunsAsync(poolKey, cancellationToken);
+        }
+
+        return assigned;
+    }
+
+    private async Task<Competition> ResolveMergeCompetitionAsync(
+        MergeUnmatchedCompetitionRequest request,
+        string countryName,
+        CancellationToken cancellationToken)
+    {
+        if (request.TargetCompetitionId is Guid targetCompetitionId)
+        {
+            if (request.NewCompetition is not null)
+            {
+                throw new ArgumentException("Choose an existing competition or create a new one, not both.");
+            }
+
+            return await dbContext.Competitions
+                .SingleOrDefaultAsync(x => x.Id == targetCompetitionId && x.IsActive, cancellationToken)
+                ?? throw new KeyNotFoundException("Target competition was not found.");
+        }
+
+        var create = request.NewCompetition
+            ?? throw new ArgumentException("Choose an existing competition or provide a new competition definition.");
+        var name = RequiredValue(create.Name, "New competition name", 200);
+        var type = RequiredValue(create.Type, "New competition type", 50);
+        var supportPolicy = RequiredValue(create.SupportPolicy, "New competition support policy", 30).ToLowerInvariant();
+        if (!CompetitionSupportPolicies.IsValid(supportPolicy))
+        {
+            throw new ArgumentException("New competition support policy is invalid.");
+        }
+
+        var countryCode = CountryCodeCatalog.Normalize(create.CountryCode);
+        if (string.IsNullOrWhiteSpace(countryCode) && !NormalizeName(countryName).Equals("world", StringComparison.Ordinal))
+        {
+            countryCode = CountryCode(countryName);
+        }
+
+        if (await dbContext.Competitions.AnyAsync(x => x.Name == name && x.CountryCode == countryCode, cancellationToken))
+        {
+            throw new InvalidOperationException("A competition with this name and country already exists; choose it from the existing competitions.");
+        }
+
+        var target = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Type = type,
+            CountryCode = countryCode,
+            EloPoolKey = string.IsNullOrWhiteSpace(create.EloPoolKey) ? null : create.EloPoolKey.Trim(),
+            Tier = Math.Max(0, create.Tier),
+            IsActive = true,
+            SupportPolicy = supportPolicy,
+            CreatedAtUtc = timeProvider.GetUtcNow().UtcDateTime
+        };
+        dbContext.Competitions.Add(target);
+        return target;
+    }
+
+    private async Task<TournamentCycle?> ResolveMergeTournamentCycleAsync(
+        MergeUnmatchedCompetitionRequest request,
+        string competitionName,
+        string countryName,
+        CancellationToken cancellationToken)
+    {
+        if (request.TournamentCycleId is Guid tournamentCycleId)
+        {
+            if (!string.IsNullOrWhiteSpace(request.TournamentCycleFamily) ||
+                !string.IsNullOrWhiteSpace(request.TournamentCycleEditionLabel))
+            {
+                throw new ArgumentException("Choose an existing tournament cycle or create a new one, not both.");
+            }
+
+            var existingCycle = await dbContext.TournamentCycles
+                .SingleOrDefaultAsync(x => x.Id == tournamentCycleId, cancellationToken)
+                ?? throw new KeyNotFoundException("Tournament cycle was not found.");
+            ValidateCycleFamily(competitionName, countryName, existingCycle);
+            return existingCycle;
+        }
+
+        var hasFamily = !string.IsNullOrWhiteSpace(request.TournamentCycleFamily);
+        var hasEdition = !string.IsNullOrWhiteSpace(request.TournamentCycleEditionLabel);
+        if (!hasFamily && !hasEdition)
+        {
+            return null;
+        }
+
+        if (!hasFamily || !hasEdition)
+        {
+            throw new ArgumentException("Both tournament cycle family and edition are required when creating a cycle.");
+        }
+
+        var family = TournamentCycleCatalog.SupportedFamilies.FirstOrDefault(
+            value => string.Equals(value, request.TournamentCycleFamily!.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?? throw new ArgumentException("Tournament cycle family is not supported.");
+        var editionLabel = request.TournamentCycleEditionLabel!.Trim();
+
+        var key = TournamentCycleCatalog.ResolveKeyFromFamily(family, editionLabel)
+            ?? throw new ArgumentException("Tournament cycle family and edition could not be converted to a cycle key.");
+        var existing = await dbContext.TournamentCycles
+            .SingleOrDefaultAsync(x => x.Key == key, cancellationToken);
+        if (existing is not null)
+        {
+            ValidateCycleFamily(competitionName, countryName, existing);
+            return existing;
+        }
+
+        var cycle = new TournamentCycle
+        {
+            Id = Guid.NewGuid(),
+            Key = key,
+            Family = family,
+            EditionLabel = editionLabel,
+            DisplayName = TournamentCycleCatalog.DisplayName(family, editionLabel),
+            CreatedAtUtc = timeProvider.GetUtcNow().UtcDateTime
+        };
+        ValidateCycleFamily(competitionName, countryName, cycle);
+        dbContext.TournamentCycles.Add(cycle);
+        return cycle;
+    }
+
+    private static void ValidateCycleFamily(string competitionName, string countryName, TournamentCycle cycle)
+    {
+        var expectedKey = TournamentCycleCatalog.ResolveKey(countryName, competitionName, cycle.EditionLabel);
+        if (expectedKey is null)
+        {
+            return;
+        }
+
+        var expectedSeparator = expectedKey.IndexOf('-');
+        var actualSeparator = cycle.Key.IndexOf('-');
+        if (expectedSeparator <= 0 || actualSeparator <= 0)
+        {
+            return;
+        }
+
+        var expectedFamilyPrefix = expectedKey[..expectedSeparator];
+        var actualFamilyPrefix = cycle.Key[..actualSeparator];
+        if (!string.Equals(expectedFamilyPrefix, actualFamilyPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Competition '{competitionName}' belongs to the '{expectedFamilyPrefix}' cycle family, not '{actualFamilyPrefix}'.");
+        }
     }
 
     public async Task<int> IgnoreUnmatchedCompetitionAsync(
@@ -445,6 +678,7 @@ public sealed class CurrentResultsIngestionService(
             season.Label,
             candidate.GameDateTimeUtc,
             existing,
+            review,
             cancellationToken);
         var tournamentCyclePendingConfirmation = tournamentCycle is null &&
             TournamentCycleCatalog.ResolveKey(candidate.CountryName, mapping.Competition.Name, season.Label) is not null;
@@ -525,8 +759,15 @@ public sealed class CurrentResultsIngestionService(
         string seasonLabel,
         DateTime gameDateTimeUtc,
         Game? existing,
+        CurrentResultReview? review,
         CancellationToken cancellationToken)
     {
+        if (review?.TournamentCycleId is Guid assignedTournamentCycleId)
+        {
+            return await dbContext.TournamentCycles
+                .SingleOrDefaultAsync(x => x.Id == assignedTournamentCycleId, cancellationToken);
+        }
+
         if (existing?.TournamentCycleId is Guid existingTournamentCycleId)
         {
             return await dbContext.TournamentCycles

@@ -1,5 +1,6 @@
 using BasketElo.Api.Auth;
 using BasketElo.Domain.CurrentResults;
+using BasketElo.Domain.Tournaments;
 using BasketElo.Infrastructure.CurrentResults;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
@@ -56,6 +57,7 @@ public class CurrentResultsController(
                 x.Id, x.SourceGameId, x.SourceCompetitionId, x.SourceDate, x.SourceUrl, x.CountryName, x.CompetitionName, x.StageName,
                 x.HomeTeamName, x.AwayTeamName, x.GameDateTimeUtc, x.HomeScore, x.AwayScore, x.ResultStatus,
                 x.Reason, x.Status, x.SuggestedCompetitionName, x.SuggestedCompetitionCountryCode,
+                x.TournamentCycleId, x.TournamentCycle == null ? null : x.TournamentCycle.Key,
                 x.AssignedGameId, x.ResolutionAction, x.ResolutionNote, x.CreatedAtUtc, x.UpdatedAtUtc))
             .ToListAsync(cancellationToken);
         return Ok(reviews);
@@ -74,7 +76,7 @@ public class CurrentResultsController(
         try
         {
             var count = await ingestionService.MergeUnmatchedCompetitionAsync(request, cancellationToken);
-            return Ok(new { reviewsUpdated = count });
+        return Ok(new { reviewsUpdated = count });
         }
         catch (KeyNotFoundException exception)
         {
@@ -88,6 +90,20 @@ public class CurrentResultsController(
         {
             return Conflict(exception.Message);
         }
+    }
+
+    [HttpGet("tournament-cycles")]
+    public async Task<ActionResult<CurrentResultsTournamentCycleOptionsResponse>> GetTournamentCycles(
+        CancellationToken cancellationToken)
+    {
+        var cycles = await dbContext.TournamentCycles
+            .AsNoTracking()
+            .OrderBy(x => x.Family)
+            .ThenByDescending(x => x.EditionLabel)
+            .Select(x => new CurrentResultsTournamentCycleOption(
+                x.Id, x.Key, x.Family, x.EditionLabel, x.DisplayName))
+            .ToListAsync(cancellationToken);
+        return Ok(new CurrentResultsTournamentCycleOptionsResponse(cycles, TournamentCycleCatalog.SupportedFamilies));
     }
 
     [HttpPost("reviews/unmatched-competitions/ignore")]

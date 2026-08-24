@@ -42,6 +42,14 @@ public class CurrentResultsController(
         return Ok(runs);
     }
 
+    [HttpGet("reviews/count")]
+    public async Task<ActionResult<int>> GetOpenReviewCount(CancellationToken cancellationToken)
+    {
+        var count = await dbContext.CurrentResultReviews
+            .CountAsync(review => review.Status == CurrentResultReviewStatuses.Open, cancellationToken);
+        return Ok(count);
+    }
+
     [HttpGet("reviews")]
     public async Task<ActionResult<IReadOnlyCollection<CurrentResultReviewDto>>> GetReviews(
         [FromQuery] string? status = "open",

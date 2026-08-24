@@ -12,7 +12,15 @@
     <section class="page-header">
         <div>
             <p class="eyebrow">Operations</p>
-            <h1>Current-results review</h1>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <h1>Current-results review</h1>
+                @if (openReviewCount.HasValue)
+                {
+                    <span class="badge rounded-pill text-bg-warning" title="Open reviews remaining">
+                        @openReviewCount.Value @(openReviewCount.Value == 1 ? "review left" : "reviews left")
+                    </span>
+                }
+            </div>
             <p class="intro">Assign Livescore results that could not be matched safely, or ignore them without creating duplicate games.</p>
         </div>
         <div class="header-actions">
@@ -253,6 +261,7 @@
     private IReadOnlyList<CompetitionAdminOption>? competitionOptions;
     private IReadOnlyList<CurrentResultsTournamentCycleOption>? tournamentCycleOptions;
     private IReadOnlyList<string>? tournamentCycleFamilies;
+    private int? openReviewCount;
     private readonly Dictionary<Guid, IReadOnlyList<CurrentResultReviewMatchDto>> matchesByReview = [];
     private readonly Dictionary<Guid, Guid> selectedGameByReview = [];
     private readonly Dictionary<string, UnmatchedSelection> unmatchedSelections = [];
@@ -272,6 +281,14 @@
         {
             var query = statusFilter == "all" ? "" : $"?status={Uri.EscapeDataString(statusFilter)}";
             reviews = await Http.GetFromJsonAsync<IReadOnlyList<CurrentResultReviewDto>>($"api/current-results/reviews{query}") ?? [];
+            try
+            {
+                openReviewCount = await Http.GetFromJsonAsync<int>("api/current-results/reviews/count");
+            }
+            catch
+            {
+                openReviewCount = null;
+            }
             unmatchedCompetitions = await Http.GetFromJsonAsync<IReadOnlyList<CurrentResultsUnmatchedCompetitionDto>>("api/current-results/reviews/unmatched-competitions") ?? [];
             competitionOptions = await Http.GetFromJsonAsync<IReadOnlyList<CompetitionAdminOption>>("api/admin/competitions/options") ?? [];
             var cycleResponse = await Http.GetFromJsonAsync<CurrentResultsTournamentCycleOptionsResponse>("api/current-results/tournament-cycles");

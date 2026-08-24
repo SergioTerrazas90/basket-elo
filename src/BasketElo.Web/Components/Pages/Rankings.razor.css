@@ -469,6 +469,22 @@
     gap: var(--space-2);
 }
 
+.table-section-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.65rem 1rem;
+    min-width: 0;
+}
+
+.table-page-summary {
+    color: var(--color-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-align: right;
+}
+
 .filter-actions {
     align-items: center;
     flex: 0 0 auto;
@@ -1414,6 +1430,16 @@
 
     .pager {
         width: 100%;
+    }
+
+    .table-section-controls {
+        width: 100%;
+        align-items: flex-start;
+        justify-content: flex-start;
+    }
+
+    .table-page-summary {
+        text-align: left;
     }
 
     .graph-team-manager-heading {

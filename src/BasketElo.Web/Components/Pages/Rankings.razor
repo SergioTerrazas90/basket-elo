@@ -235,16 +235,18 @@
                 <div class="section-head">
                     <div>
                         <h2>@MoversTitle()</h2>
-                        <p>@MoversContextLabel()</p>
                     </div>
-                    <div class="pager">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
-                        <label class="page-jump" for="moversPageInput">
-                            <span>Page</span>
-                            <input id="moversPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
-                        </label>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
+                    <div class="table-section-controls">
+                        <span class="table-page-summary">@MoversContextLabel()</span>
+                        <div class="pager" aria-label="Movement table pagination">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
+                            <label class="page-jump" for="moversPageInput">
+                                <span>Page</span>
+                                <input id="moversPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                            </label>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
+                        </div>
                     </div>
                 </div>
 
@@ -404,16 +406,18 @@
                 <div class="section-head">
                     <div>
                         <h2>Ranking table</h2>
-                        <p>@TableContextLabel()</p>
                     </div>
-                    <div class="pager">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
-                        <label class="page-jump" for="rankingsPageInput">
-                            <span>Page</span>
-                            <input id="rankingsPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
-                        </label>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
+                    <div class="table-section-controls">
+                        <span class="table-page-summary">@TableContextLabel()</span>
+                        <div class="pager" aria-label="Ranking table pagination">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
+                            <label class="page-jump" for="rankingsPageInput">
+                                <span>Page</span>
+                                <input id="rankingsPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                            </label>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
+                        </div>
                     </div>
                 </div>
 

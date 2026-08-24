@@ -2,15 +2,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 
-<div class="elo-chart-frame @(chartExpanded ? "is-expanded" : string.Empty)">
-    @if (chartExpanded)
-    {
-        <button type="button"
-                class="elo-chart-expanded-backdrop"
-                aria-label="Close expanded chart"
-                @onclick="CloseExpandedChart"></button>
-    }
-
+<div class="elo-chart-frame @(IsChartExpanded ? "is-expanded" : string.Empty)">
     <div class="elo-chart">
         @if (EnableRangeNavigation)
         {
@@ -39,9 +31,9 @@
                         {
                             <button type="button"
                                     class="btn btn-sm btn-outline-secondary"
-                                    aria-expanded="@chartExpanded"
+                                    aria-expanded="@IsChartExpanded"
                                     @onclick="ToggleExpandedChart">
-                                @(chartExpanded ? "Collapse" : "Expand")
+                                @(IsChartExpanded ? "Collapse" : "Expand")
                             </button>
                         }
                     </div>
@@ -289,6 +281,12 @@
     [Parameter]
     public bool AllowExpand { get; set; }
 
+    [Parameter]
+    public bool IsExpanded { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> ExpandedChanged { get; set; }
+
     private double viewStart;
     private double viewEnd = 1;
     private DateTime? viewFromUtc;
@@ -306,18 +304,28 @@
     private bool chartRenderPending;
     private bool chartPaintPending;
     private bool chartHighlightPending;
-    private bool chartExpanded;
     private Guid? renderedHighlightedGameId;
     private string renderedChartSignature = string.Empty;
     private ElementReference chartHost;
     private DotNetObjectReference<EloEvolutionChart>? dotNetReference;
     private readonly HashSet<string> hiddenSeriesKeys = new(StringComparer.Ordinal);
 
-    private void ToggleExpandedChart()
-        => chartExpanded = !chartExpanded;
+    private bool localChartExpanded;
 
-    private void CloseExpandedChart()
-        => chartExpanded = false;
+    private bool IsChartExpanded
+        => ExpandedChanged.HasDelegate ? IsExpanded : localChartExpanded;
+
+    private async Task ToggleExpandedChart()
+    {
+        var expanded = !IsChartExpanded;
+        if (ExpandedChanged.HasDelegate)
+        {
+            await ExpandedChanged.InvokeAsync(expanded);
+            return;
+        }
+
+        localChartExpanded = expanded;
+    }
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
 

@@ -219,7 +219,7 @@
             </section>
         }
 
-        <div class="history-workspace">
+        <div class="history-workspace @(isChartExpanded ? "is-chart-expanded" : string.Empty)">
             <section class="history-section">
                 <div class="section-head">
                     <div>
@@ -241,6 +241,8 @@
                                            SharedTooltip="false"
                                            EnableRangeNavigation="true"
                                            AllowExpand="true"
+                                           IsExpanded="@isChartExpanded"
+                                           ExpandedChanged="@HandleChartExpandedChanged"
                                            DataRevision="@teamHistoryDataRevision"
                                            IsRefining="@isTeamHistoryRefining"
                                            ViewportRefinementRequested="@QueueTeamHistoryRefinementAsync"
@@ -365,6 +367,7 @@
     private bool isExplanationLoading;
     private string? explanationError;
     private Guid? highlightedGameId;
+    private bool isChartExpanded;
     private IReadOnlyList<EloChartSeries> teamHistoryChartSeries = [];
     private IReadOnlyList<EloChartSeries> fullTeamHistoryChartSeries = [];
     private IReadOnlyCollection<EloTeamGameDto> fullTeamHistoryGames = [];
@@ -377,6 +380,9 @@
     private CancellationTokenSource? teamHistoryRefinementCancellation;
     private readonly Dictionary<string, EloTeamHistoryGamesResponse> teamHistoryGamesRangeCache = new(StringComparer.Ordinal);
 
+    private void HandleChartExpandedChanged(bool expanded)
+        => isChartExpanded = expanded;
+
     private const int HistoryRefinementDebounceMilliseconds = 600;
 
     private string BackHref => string.IsNullOrWhiteSpace(ReturnUrl) ? "/rankings" : "/" + ReturnUrl.TrimStart('/');
@@ -386,6 +392,7 @@
         isBusy = true;
         errorMessage = null;
         highlightedGameId = null;
+        isChartExpanded = false;
         var authenticationState = AuthenticationStateTask is null
             ? null
             : await AuthenticationStateTask;

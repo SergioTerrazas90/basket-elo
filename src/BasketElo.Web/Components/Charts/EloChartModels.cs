@@ -44,6 +44,30 @@ public static class EloChartData
             .OrderBy(point => point.GameDateTimeUtc)
             .ToList();
     }
+
+    public static IReadOnlyList<EloChartPoint> ReplacePointsInRange(
+        IReadOnlyList<EloChartPoint> basePoints,
+        IReadOnlyList<EloChartPoint> refinedPoints,
+        DateTime? fromUtc = null,
+        DateTime? toUtc = null)
+    {
+        if (refinedPoints.Count == 0)
+        {
+            return basePoints;
+        }
+
+        var orderedRefinedPoints = refinedPoints
+            .OrderBy(point => point.GameDateTimeUtc)
+            .ToList();
+        var rangeFromUtc = fromUtc ?? orderedRefinedPoints[0].GameDateTimeUtc;
+        var rangeToUtc = toUtc ?? orderedRefinedPoints[^1].GameDateTimeUtc;
+
+        return basePoints
+            .Where(point => point.GameDateTimeUtc < rangeFromUtc || point.GameDateTimeUtc > rangeToUtc)
+            .Concat(orderedRefinedPoints)
+            .OrderBy(point => point.GameDateTimeUtc)
+            .ToList();
+    }
 }
 
 public enum EloChartSamplingMode

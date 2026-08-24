@@ -33,8 +33,8 @@
                 @if (ShowDiagnostics && diagnosticsExpanded)
                 {
                     <span class="elo-chart-metrics">
-                        <span>@VisibleChartPointCount plotted</span>
-                        <span>@CurrentRatedPointCount rated in view / @TotalRatedPointCount full range</span>
+                        <span>@VisibleChartPointCount plotted snapshots</span>
+                        <span>@CurrentRatedPointCount sampled in view / @TotalRatedPointCount total rated games</span>
                     </span>
                 }
                 <span class="elo-chart-refinement-slot" aria-live="polite">
@@ -68,7 +68,7 @@
                     <span class="elo-chart-series-toggle-name">@series.TeamName</span>
                     @if (ShowDiagnostics && diagnosticsExpanded)
                     {
-                        <small>@GetVisibleChartPointCount(series) plotted &#183; @RatedPointCount(series) rated</small>
+                        <small>@GetVisibleChartPointCount(series) plotted snapshots &#183; @RatedPointCount(series) total games</small>
                     }
                 </button>
             }

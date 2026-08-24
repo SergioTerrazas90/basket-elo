@@ -314,6 +314,8 @@
     private IReadOnlyCollection<EloTeamGameDto> fullTeamHistoryGames = [];
     private int fullTeamHistoryTotalGames;
     private bool fullTeamHistoryWasSampled;
+    private DateTime? teamHistoryVisibleFromUtc;
+    private DateTime? teamHistoryVisibleToUtc;
     private long teamHistoryDataRevision;
     private bool isTeamHistoryRefining;
     private CancellationTokenSource? teamHistoryRefinementCancellation;
@@ -343,6 +345,8 @@
                 fullTeamHistoryGames = team.RecentGames.ToList();
                 fullTeamHistoryTotalGames = team.RecentGamesTotalCount;
                 fullTeamHistoryWasSampled = team.RecentGamesWasSampled;
+                teamHistoryVisibleFromUtc = null;
+                teamHistoryVisibleToUtc = null;
                 teamHistoryChartSeries = BuildTeamChartSeries(team);
                 fullTeamHistoryChartSeries = teamHistoryChartSeries;
                 teamHistoryDataRevision++;
@@ -540,7 +544,9 @@
             };
             if (refinedSeries.Count > 0 && refinedSeries[0].Points.Count >= 2)
             {
-                teamHistoryChartSeries = MergeTeamHistorySeries(teamHistoryChartSeries, refinedSeries);
+                teamHistoryChartSeries = MergeTeamHistorySeries(teamHistoryChartSeries, refinedSeries, fromUtc, toUtc);
+                teamHistoryVisibleFromUtc = fromUtc;
+                teamHistoryVisibleToUtc = toUtc;
             }
             errorMessage = null;
             await InvokeAsync(StateHasChanged);
@@ -582,6 +588,8 @@
         teamHistoryChartSeries = fullTeamHistoryChartSeries
             .Select(series => series with { VisibleRatedPointCount = series.RatedPointCount })
             .ToList();
+        teamHistoryVisibleFromUtc = null;
+        teamHistoryVisibleToUtc = null;
         if (team is not null)
         {
             team = team with
@@ -600,7 +608,9 @@
 
     private static IReadOnlyList<EloChartSeries> MergeTeamHistorySeries(
         IReadOnlyList<EloChartSeries> baseSeries,
-        IReadOnlyList<EloChartSeries> refinedSeries)
+        IReadOnlyList<EloChartSeries> refinedSeries,
+        DateTime fromUtc,
+        DateTime toUtc)
     {
         var refinedByTeam = refinedSeries
             .Where(series => series.TeamId.HasValue)
@@ -609,7 +619,7 @@
             .Select(series => series.TeamId is Guid teamId && refinedByTeam.TryGetValue(teamId, out var refined)
                 ? series with
                 {
-                    Points = EloChartData.MergePoints(series.Points, refined.Points),
+                    Points = EloChartData.ReplacePointsInRange(series.Points, refined.Points, fromUtc, toUtc),
                     VisibleRatedPointCount = refined.VisibleRatedPointCount ?? refined.RatedPointCount
                 }
                 : series)
@@ -636,11 +646,12 @@
             return "No rated history yet.";
         }
 
-        var first = points[0].GameDateTimeUtc;
-        var last = points[^1].GameDateTimeUtc;
-        var pointLabel = points.Count == 1 ? "rated point" : "rated points";
+        var first = teamHistoryVisibleFromUtc ?? points[0].GameDateTimeUtc;
+        var last = teamHistoryVisibleToUtc ?? points[^1].GameDateTimeUtc;
+        var shown = team?.RecentGames.Count ?? points.Count;
+        var gameLabel = team?.RecentGamesWasSampled == true ? "sampled games" : "games";
 
-        return $"Showing {points.Count} {pointLabel} from {FormatDate(first)} to {FormatDate(last)}.";
+        return $"Showing {shown} {gameLabel} from {FormatDate(first)} to {FormatDate(last)}.";
     }
 
     private static string GamesContextLabel(EloTeamDetailResponse team)

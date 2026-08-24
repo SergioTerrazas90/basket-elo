@@ -83,6 +83,7 @@
                     y: Number(point.y),
                     delta: point.delta == null ? null : Number(point.delta),
                     rank: point.rank == null ? null : Number(point.rank),
+                    gameId: point.gameId == null ? null : String(point.gameId),
                     name: series.name,
                     color: series.color
                 };
@@ -197,6 +198,93 @@
         const offsetY = event?.offsetY ?? first.canvasy ?? 0;
         state.tooltip.style.left = `${clamp(offsetX + 14, 8, Math.max(8, rect.width - width - 8))}px`;
         state.tooltip.style.top = `${clamp(offsetY - height - 12, 8, Math.max(8, rect.height - height - 8))}px`;
+    }
+
+    function notifyPointHover(state, points, row) {
+        if (state.suppressHoverNotification || !state.dotNet) {
+            return;
+        }
+
+        const validPoints = (points ?? []).filter(point => point.yval != null && !Number.isNaN(point.yval));
+        const first = validPoints[0];
+        const seriesIndex = first ? state.labels.indexOf(first.name) - 1 : -1;
+        const metadata = row == null || seriesIndex < 0
+            ? null
+            : state.metadata[row]?.[seriesIndex];
+        const gameId = metadata?.gameId ?? null;
+        if (state.lastHoveredGameId === gameId) {
+            return;
+        }
+
+        state.lastHoveredGameId = gameId;
+        Promise.resolve(state.dotNet.invokeMethodAsync("HandleDygraphPointHover", gameId))
+            .catch(error => console.debug("Dygraphs hover synchronization failed.", error));
+    }
+
+    function clearPointHover(state) {
+        if (state.suppressHoverNotification || !state.dotNet || state.lastHoveredGameId == null) {
+            return;
+        }
+
+        state.lastHoveredGameId = null;
+        Promise.resolve(state.dotNet.invokeMethodAsync("HandleDygraphPointHover", null))
+            .catch(error => console.debug("Dygraphs hover synchronization failed.", error));
+    }
+
+    function setHighlight(host, gameId) {
+        const state = states.get(host);
+        if (!state) {
+            return;
+        }
+
+        const normalizedGameId = gameId == null || gameId === ""
+            ? null
+            : String(gameId).toLowerCase();
+        if (!state.graph || normalizedGameId == null) {
+            state.lastHoveredGameId = null;
+            if (state.graph) {
+                state.suppressHoverNotification = true;
+                try {
+                    state.graph.clearSelection();
+                } finally {
+                    state.suppressHoverNotification = false;
+                }
+            }
+            return;
+        }
+
+        let match = null;
+        for (let row = 0; row < state.metadata.length && match == null; row += 1) {
+            const rowMetadata = state.metadata[row] ?? [];
+            for (let seriesIndex = 0; seriesIndex < rowMetadata.length; seriesIndex += 1) {
+                const metadata = rowMetadata[seriesIndex];
+                if (metadata?.gameId?.toLowerCase() === normalizedGameId) {
+                    match = {
+                        row,
+                        seriesName: state.labels[seriesIndex + 1]
+                    };
+                    break;
+                }
+            }
+        }
+
+        state.lastHoveredGameId = normalizedGameId;
+        if (!match) {
+            state.suppressHoverNotification = true;
+            try {
+                state.graph.clearSelection();
+            } finally {
+                state.suppressHoverNotification = false;
+            }
+            return;
+        }
+
+        state.suppressHoverNotification = true;
+        try {
+            state.graph.setSelection(match.row, match.seriesName, true);
+        } finally {
+            state.suppressHoverNotification = false;
+        }
     }
 
     function disposeState(state) {
@@ -769,8 +857,14 @@
                 x: { axisLabelWidth: 70 },
                 y: { axisLabelWidth: 42 }
             },
-            highlightCallback: (event, x, points, row) => renderTooltip(state, event, points, row),
-            unhighlightCallback: () => { if (state.tooltip) state.tooltip.hidden = true; },
+            highlightCallback: (event, x, points, row) => {
+                renderTooltip(state, event, points, row);
+                notifyPointHover(state, points, row);
+            },
+            unhighlightCallback: () => {
+                if (state.tooltip) state.tooltip.hidden = true;
+                clearPointHover(state);
+            },
             drawCallback: graph => {
                 if (state.suppressCallbacks || !state.dotNet) {
                     return;
@@ -849,6 +943,8 @@
                 max: 0,
                 suppressCallbacks: true,
                 lastNotifiedRange: null,
+                lastHoveredGameId: null,
+                suppressHoverNotification: false,
                 sharedTooltip: true,
                 resizeObserver: null,
                 rangeDrag: null,
@@ -865,6 +961,7 @@
             state.resizeObserver.observe(host);
         },
         render,
+        setHighlight,
         setDateWindow: (host, requestedFrom, requestedTo) => {
             const state = states.get(host);
             if (state) {

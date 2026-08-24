@@ -242,7 +242,9 @@
                                        DataRevision="@teamHistoryDataRevision"
                                        IsRefining="@isTeamHistoryRefining"
                                        ViewportRefinementRequested="@QueueTeamHistoryRefinementAsync"
-                                       FullRangeRequested="@RestoreFullTeamHistoryAsync" />
+                                       FullRangeRequested="@RestoreFullTeamHistoryAsync"
+                                       HighlightedGameId="@highlightedGameId"
+                                       PointHoverChanged="@HandleChartPointHoverAsync" />
                 }
             </div>
         </section>
@@ -280,7 +282,9 @@
                         {
                             @foreach (var game in team.RecentGames)
                             {
-                                <tr>
+                                <tr class="@(IsGameHighlighted(game.GameId) ? "is-game-highlighted" : string.Empty)"
+                                    @onmouseenter="() => HandleGameRowEnter(game.GameId)"
+                                    @onmouseleave="() => HandleGameRowLeave(game.GameId)">
                                     <td>@FormatDate(game.GameDateTimeUtc)</td>
                                     <td>
                                         <div class="competition-cell">
@@ -357,6 +361,7 @@
     private EloGameExplanationResponse? selectedExplanation;
     private bool isExplanationLoading;
     private string? explanationError;
+    private Guid? highlightedGameId;
     private IReadOnlyList<EloChartSeries> teamHistoryChartSeries = [];
     private IReadOnlyList<EloChartSeries> fullTeamHistoryChartSeries = [];
     private IReadOnlyCollection<EloTeamGameDto> fullTeamHistoryGames = [];
@@ -377,6 +382,7 @@
     {
         isBusy = true;
         errorMessage = null;
+        highlightedGameId = null;
         var authenticationState = AuthenticationStateTask is null
             ? null
             : await AuthenticationStateTask;
@@ -452,6 +458,26 @@
         isExplanationLoading = false;
     }
 
+    private void HandleGameRowEnter(Guid gameId)
+        => highlightedGameId = gameId;
+
+    private void HandleGameRowLeave(Guid gameId)
+    {
+        if (highlightedGameId == gameId)
+        {
+            highlightedGameId = null;
+        }
+    }
+
+    private Task HandleChartPointHoverAsync(Guid? gameId)
+    {
+        highlightedGameId = gameId;
+        return Task.CompletedTask;
+    }
+
+    private bool IsGameHighlighted(Guid gameId)
+        => highlightedGameId == gameId;
+
     private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage responseMessage)
     {
         var body = await responseMessage.Content.ReadAsStringAsync();
@@ -500,7 +526,8 @@
                         team.TeamName,
                         "#245c7a",
                         point.EloDelta,
-                        point.Rank))
+                        point.Rank,
+                        point.GameId))
                     .ToList(),
                 team.GamesPlayed,
                 team.GamesPlayed)
@@ -520,7 +547,8 @@
                 team.TeamName,
                 "#245c7a",
                 game.EloDelta,
-                game.RankAfter))
+                game.RankAfter,
+                game.GameId))
             .ToList();
         if (points.Count == 0)
         {

@@ -2485,8 +2485,8 @@ public class EloController(
             .ToDictionaryAsync(x => x.Id, cancellationToken);
 
         return historyRows
-            .OrderBy(x => x.GameDateTimeUtc)
-            .ThenBy(x => x.GameId)
+            .OrderByDescending(x => x.GameDateTimeUtc)
+            .ThenByDescending(x => x.GameId)
             .Where(x => gameRows.ContainsKey(x.GameId))
             .Select(x =>
             {

@@ -2548,7 +2548,10 @@
                         point.GameDateTimeUtc,
                         point.Elo,
                         teamName,
-                        color))
+                        color,
+                        point.EloDelta,
+                        point.Rank,
+                        point.GameId))
             .ToList();
 
     private static EloRankingsEvolutionResponse MergeEvolutionData(

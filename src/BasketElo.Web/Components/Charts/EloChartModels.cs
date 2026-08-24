@@ -14,7 +14,8 @@ public sealed record EloChartPoint(
     string TeamName,
     string Color,
     decimal? EloDelta = null,
-    int? Rank = null)
+    int? Rank = null,
+    Guid? GameId = null)
 {
     public int ActiveDateIndex { get; init; }
 }

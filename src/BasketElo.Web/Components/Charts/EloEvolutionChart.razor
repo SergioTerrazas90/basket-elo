@@ -261,6 +261,12 @@
     [Parameter]
     public EventCallback FullRangeRequested { get; set; }
 
+    [Parameter]
+    public Guid? HighlightedGameId { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid?> PointHoverChanged { get; set; }
+
     private double viewStart;
     private double viewEnd = 1;
     private DateTime? viewFromUtc;
@@ -277,6 +283,8 @@
     private bool chartInitialized;
     private bool chartRenderPending;
     private bool chartPaintPending;
+    private bool chartHighlightPending;
+    private Guid? renderedHighlightedGameId;
     private string renderedChartSignature = string.Empty;
     private ElementReference chartHost;
     private DotNetObjectReference<EloEvolutionChart>? dotNetReference;
@@ -355,6 +363,7 @@
         }
 
         var dataChanged = renderedDataRevision != DataRevision;
+        chartHighlightPending |= dataChanged || renderedHighlightedGameId != HighlightedGameId;
         sourceSeries = Series
             .Select(series => series with
             {
@@ -424,6 +433,16 @@
                 }
             }
         }
+
+        if (chartHighlightPending)
+        {
+            chartHighlightPending = false;
+            renderedHighlightedGameId = HighlightedGameId;
+            await JS.InvokeVoidAsync(
+                "basketEloDygraph.setHighlight",
+                chartHost,
+                HighlightedGameId?.ToString("D"));
+        }
     }
 
     [JSInvokable("HandleDygraphPointClick")]
@@ -437,6 +456,16 @@
             .FirstOrDefault();
 
         await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable("HandleDygraphPointHover")]
+    public async Task HandleDygraphPointHover(string? gameId)
+    {
+        var parsedGameId = Guid.TryParse(gameId, out var value) ? value : (Guid?)null;
+        if (PointHoverChanged.HasDelegate)
+        {
+            await PointHoverChanged.InvokeAsync(parsedGameId);
+        }
     }
 
     [JSInvokable("HandleDygraphViewChange")]
@@ -690,6 +719,7 @@
                 signature.Add(point.Elo);
                 signature.Add(point.EloDelta);
                 signature.Add(point.Rank);
+                signature.Add(point.GameId);
             }
         }
 
@@ -714,7 +744,8 @@
                     x = ToUnixMilliseconds(point.GameDateTimeUtc),
                     y = (double)point.Elo,
                     delta = point.EloDelta.HasValue ? (double?)point.EloDelta.Value : null,
-                    rank = point.Rank
+                    rank = point.Rank,
+                    gameId = point.GameId?.ToString("D")
                 }).ToList()
             }).ToList()
         };

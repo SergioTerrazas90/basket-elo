@@ -2,51 +2,69 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 
-<div class="elo-chart">
-    @if (EnableRangeNavigation)
+<div class="elo-chart-frame @(chartExpanded ? "is-expanded" : string.Empty)">
+    @if (chartExpanded)
     {
-        <div class="elo-chart-toolbar" aria-label="Chart range controls">
-            <div class="elo-chart-controls">
-                <label class="elo-chart-sampling-select">
-                    <span>View</span>
-                    <select aria-label="Chart sampling mode" value="@samplingMode" @onchange="HandleSamplingModeChanged">
-                        <option value="@EloChartSamplingMode.GameByGame">Games</option>
-                        <option value="@EloChartSamplingMode.Weekly">Weeks</option>
-                        <option value="@EloChartSamplingMode.Monthly">Months</option>
-                    </select>
-                </label>
-                <div class="elo-chart-range-buttons">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Reset zoom</button>
-                    @if (ShowDiagnostics)
-                    {
-                        <button type="button"
-                                class="btn btn-sm btn-outline-secondary"
-                                aria-expanded="@diagnosticsExpanded"
-                                @onclick="ToggleDiagnostics">
-                            Diagnostics
-                        </button>
-                    }
-                </div>
-            </div>
-            <span class="elo-chart-context">
-                <span>@ChartContextLabel</span>
-                @if (ShowDiagnostics && diagnosticsExpanded)
-                {
-                    <span class="elo-chart-metrics">
-                        <span>@VisibleChartPointCount plotted snapshots</span>
-                        <span>@CurrentRatedPointCount sampled in view / @TotalRatedPointCount total rated games</span>
-                    </span>
-                }
-                <span class="elo-chart-refinement-slot" aria-live="polite">
-                    @if (ChartBusy)
-                    {
-                        <span class="spinner-border spinner-border-sm elo-chart-refinement-spinner" aria-hidden="true"></span>
-                        <span class="visually-hidden">@ChartBusyLabel</span>
-                    }
-                </span>
-            </span>
-        </div>
+        <button type="button"
+                class="elo-chart-expanded-backdrop"
+                aria-label="Close expanded chart"
+                @onclick="CloseExpandedChart"></button>
     }
+
+    <div class="elo-chart">
+        @if (EnableRangeNavigation)
+        {
+            <div class="elo-chart-toolbar" aria-label="Chart range controls">
+                <div class="elo-chart-controls">
+                    <label class="elo-chart-sampling-select">
+                        <span>View</span>
+                        <select aria-label="Chart sampling mode" value="@samplingMode" @onchange="HandleSamplingModeChanged">
+                            <option value="@EloChartSamplingMode.GameByGame">Games</option>
+                            <option value="@EloChartSamplingMode.Weekly">Weeks</option>
+                            <option value="@EloChartSamplingMode.Monthly">Months</option>
+                        </select>
+                    </label>
+                    <div class="elo-chart-range-buttons">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Reset zoom</button>
+                        @if (ShowDiagnostics)
+                        {
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    aria-expanded="@diagnosticsExpanded"
+                                    @onclick="ToggleDiagnostics">
+                                Diagnostics
+                            </button>
+                        }
+                        @if (AllowExpand)
+                        {
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    aria-expanded="@chartExpanded"
+                                    @onclick="ToggleExpandedChart">
+                                @(chartExpanded ? "Collapse" : "Expand")
+                            </button>
+                        }
+                    </div>
+                </div>
+                <span class="elo-chart-context">
+                    <span>@ChartContextLabel</span>
+                    @if (ShowDiagnostics && diagnosticsExpanded)
+                    {
+                        <span class="elo-chart-metrics">
+                            <span>@VisibleChartPointCount plotted snapshots</span>
+                            <span>@CurrentRatedPointCount sampled in view / @TotalRatedPointCount total rated games</span>
+                        </span>
+                    }
+                    <span class="elo-chart-refinement-slot" aria-live="polite">
+                        @if (ChartBusy)
+                        {
+                            <span class="spinner-border spinner-border-sm elo-chart-refinement-spinner" aria-hidden="true"></span>
+                            <span class="visually-hidden">@ChartBusyLabel</span>
+                        }
+                    </span>
+                </span>
+            </div>
+        }
 
     @if (ShowSeriesControls && EnableRangeNavigation && SourceSeries.Count > 1)
     {
@@ -205,6 +223,7 @@
         </div>
     </div>
 </div>
+</div>
 
 @code {
     [Parameter]
@@ -267,6 +286,9 @@
     [Parameter]
     public EventCallback<Guid?> PointHoverChanged { get; set; }
 
+    [Parameter]
+    public bool AllowExpand { get; set; }
+
     private double viewStart;
     private double viewEnd = 1;
     private DateTime? viewFromUtc;
@@ -284,11 +306,18 @@
     private bool chartRenderPending;
     private bool chartPaintPending;
     private bool chartHighlightPending;
+    private bool chartExpanded;
     private Guid? renderedHighlightedGameId;
     private string renderedChartSignature = string.Empty;
     private ElementReference chartHost;
     private DotNetObjectReference<EloEvolutionChart>? dotNetReference;
     private readonly HashSet<string> hiddenSeriesKeys = new(StringComparer.Ordinal);
+
+    private void ToggleExpandedChart()
+        => chartExpanded = !chartExpanded;
+
+    private void CloseExpandedChart()
+        => chartExpanded = false;
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
 

@@ -2,6 +2,49 @@
     min-height: 320px;
 }
 
+.elo-chart-frame {
+    position: relative;
+}
+
+.elo-chart-frame.is-expanded {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: flex;
+    overflow: auto;
+    padding: clamp(0.75rem, 3vw, 2rem);
+    background: rgba(24, 35, 46, 0.58);
+}
+
+.elo-chart-frame.is-expanded > .elo-chart {
+    position: relative;
+    z-index: 1;
+    width: min(1400px, 100%);
+    min-height: 0;
+    margin: auto;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-md);
+}
+
+.elo-chart-frame.is-expanded .elo-dygraph-chart,
+.elo-chart-frame.is-expanded .elo-radzen-chart {
+    height: min(66vh, 680px) !important;
+    min-height: 360px;
+}
+
+.elo-chart-expanded-backdrop {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: transparent;
+    cursor: default;
+}
+
 .elo-chart-plot {
     position: relative;
 }
@@ -329,6 +372,14 @@
 }
 
 @media (max-width: 640px) {
+    .elo-chart-frame.is-expanded {
+        padding: 0.5rem;
+    }
+
+    .elo-chart-frame.is-expanded > .elo-chart {
+        padding: 0.5rem;
+    }
+
     .elo-chart-toolbar {
         align-items: flex-start;
         flex-direction: column;

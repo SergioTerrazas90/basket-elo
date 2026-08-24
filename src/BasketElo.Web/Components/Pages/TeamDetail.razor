@@ -49,6 +49,7 @@
             <div>
                 <span>Current ELO</span>
                 <strong>@team.Elo.ToString("0")</strong>
+                <small>Best rank @FormatRank(team.BestRank) · last reached @FormatDate(team.BestRankUtc)</small>
             </div>
             <div>
                 <span>Games rated</span>
@@ -57,6 +58,7 @@
             <div>
                 <span>Recent movement</span>
                 <strong class="@MovementClass(team.RecentMovement)">@FormatMovement(team.RecentMovement)</strong>
+                <small>@RecentMovementOpponentLabel(team)</small>
             </div>
             <div>
                 <span>Last game</span>
@@ -66,11 +68,6 @@
                 <span>Best ELO</span>
                 <strong>@FormatRating(team.BestElo)</strong>
                 <small>@FormatDate(team.BestEloUtc)</small>
-            </div>
-            <div>
-                <span>Best rank</span>
-                <strong>@FormatRank(team.BestRank)</strong>
-                <small>@FormatDate(team.BestRankUtc)</small>
             </div>
         </section>
 
@@ -138,17 +135,77 @@
 
                             <div class="form-highlights">
                                 <div>
-                                    <span>Best win</span>
-                                    <strong>@FormatFormGame(form.BestWin)</strong>
+                                    <span>Best wins</span>
+                                    @if ((form.BestWins ?? []).Count == 0)
+                                    {
+                                        <strong class="muted-cell">No wins</strong>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var win in (form.BestWins ?? []).Take(3))
+                                        {
+                                            <strong>@FormatFormGame(win)</strong>
+                                        }
+                                    }
                                 </div>
                                 <div>
-                                    <span>Worst loss</span>
-                                    <strong>@FormatFormGame(form.WorstLoss)</strong>
+                                    <span>Worst losses</span>
+                                    @if ((form.WorstLosses ?? []).Count == 0)
+                                    {
+                                        <strong class="muted-cell">No losses</strong>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var loss in (form.WorstLosses ?? []).Take(3))
+                                        {
+                                            <strong>@FormatFormGame(loss)</strong>
+                                        }
+                                    }
                                 </div>
                             </div>
                         </article>
                     }
                 </div>
+
+                @if (team.HistoricalHighlights is not null)
+                {
+                    <div class="historical-highlights">
+                        <div>
+                            <h3>History highlights</h3>
+                            <p>Top three wins and toughest losses across @team.HistoricalHighlights.GamesAvailable rated games.</p>
+                        </div>
+                        <div class="historical-highlights-grid">
+                            <div>
+                                <span>Best wins</span>
+                                @if (team.HistoricalHighlights.BestWins.Count == 0)
+                                {
+                                    <strong class="muted-cell">No wins</strong>
+                                }
+                                else
+                                {
+                                    @foreach (var win in team.HistoricalHighlights.BestWins)
+                                    {
+                                        <strong>@FormatFormGame(win)</strong>
+                                    }
+                                }
+                            </div>
+                            <div>
+                                <span>Worst losses</span>
+                                @if (team.HistoricalHighlights.WorstLosses.Count == 0)
+                                {
+                                    <strong class="muted-cell">No losses</strong>
+                                }
+                                else
+                                {
+                                    @foreach (var loss in team.HistoricalHighlights.WorstLosses)
+                                    {
+                                        <strong>@FormatFormGame(loss)</strong>
+                                    }
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
             </section>
         }
 
@@ -689,6 +746,11 @@
 
     private static string FormatRank(int? rank)
         => rank.HasValue ? $"#{rank.Value}" : "-";
+
+    private static string RecentMovementOpponentLabel(EloTeamDetailResponse team)
+        => string.IsNullOrWhiteSpace(team.RecentMovementOpponent)
+            ? "Latest rated game"
+            : $"vs {team.RecentMovementOpponent}";
 
     private static string FormatRankChange(int value)
         => value > 0 ? $"+{value}" : value.ToString();

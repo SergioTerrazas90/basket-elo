@@ -1600,6 +1600,16 @@ public class EloController(
 
         var recentMovement = (await GetRecentMovementAsync(poolKey, selectedRuleset, [teamId], null, cancellationToken))
             .GetValueOrDefault(teamId);
+        var recentMovementOpponent = await dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x => x.TeamId == teamId &&
+                x.EloPoolKey == poolKey &&
+                x.RulesetVersion == selectedRuleset &&
+                x.GameDateTimeUtc <= DateTime.UtcNow)
+            .OrderByDescending(x => x.GameDateTimeUtc)
+            .ThenByDescending(x => x.Id)
+            .Select(x => x.OpponentTeam.CanonicalName)
+            .FirstOrDefaultAsync(cancellationToken);
 
         var competitionRows = await dbContext.RatingHistories
             .AsNoTracking()
@@ -1645,7 +1655,8 @@ public class EloController(
         var bestRankRow = historyRows
             .Where(x => x.Rank.HasValue)
             .OrderBy(x => x.Rank)
-            .ThenBy(x => x.GameDateTimeUtc)
+            .ThenByDescending(x => x.GameDateTimeUtc)
+            .ThenByDescending(x => x.GameId)
             .FirstOrDefault();
         var historyPoints = historyRows
             .Select(x => new EloRatingHistoryPoint(x.GameDateTimeUtc, x.Elo, x.EloDelta, x.Rank, x.GameId))
@@ -1668,6 +1679,7 @@ public class EloController(
         var gamesWereSampled = recentGames.Count < gamesTotalCount;
 
         var formRows = await GetTeamFormRowsAsync(teamId, poolKey, selectedRuleset, cancellationToken);
+        var historicalFormRows = await GetTeamFormRowsAsync(teamId, poolKey, selectedRuleset, cancellationToken, null);
 
         return Ok(new EloTeamDetailResponse(
             rating.TeamId,
@@ -1696,7 +1708,9 @@ public class EloController(
             BuildTeamFormSummaries(formRows),
             sampledHistoryRows,
             recentGames.Count,
-            gamesWereSampled));
+            gamesWereSampled,
+            recentMovementOpponent,
+            BuildHistoricalHighlights(historicalFormRows)));
     }
 
     [HttpGet("teams/{teamId:guid}/history-games")]
@@ -2300,15 +2314,21 @@ public class EloController(
         Guid teamId,
         string poolKey,
         string rulesetVersion,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? take = 10)
     {
-        var rows = await dbContext.RatingHistories
+        IQueryable<RatingHistory> query = dbContext.RatingHistories
             .AsNoTracking()
             .Where(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion &&
                 x.GameDateTimeUtc <= DateTime.UtcNow)
             .OrderByDescending(x => x.GameDateTimeUtc)
-            .ThenByDescending(x => x.Id)
-            .Take(10)
+            .ThenByDescending(x => x.Id);
+        if (take.HasValue)
+        {
+            query = query.Take(Math.Max(0, take.Value));
+        }
+
+        var rows = await query
             .Select(x => new TeamFormHistoryRow(
                 x.GameId,
                 x.GameDateTimeUtc,
@@ -2361,6 +2381,20 @@ public class EloController(
                     .OrderBy(x => x.EloDelta)
                     .ThenByDescending(x => x.OpponentPreElo)
                     .FirstOrDefault();
+                var bestWins = windowRows
+                    .Where(x => x.ActualScore == 1m)
+                    .OrderByDescending(x => x.EloDelta)
+                    .ThenByDescending(x => x.OpponentPreElo)
+                    .Take(3)
+                    .Select(ToTeamFormGame)
+                    .ToList();
+                var worstLosses = windowRows
+                    .Where(x => x.ActualScore == 0m)
+                    .OrderBy(x => x.EloDelta)
+                    .ThenByDescending(x => x.OpponentPreElo)
+                    .Take(3)
+                    .Select(ToTeamFormGame)
+                    .ToList();
 
                 return new EloTeamFormSummary(
                     window,
@@ -2370,9 +2404,36 @@ public class EloController(
                     windowRows.Sum(x => x.EloDelta),
                     windowRows.Count == 0 ? 0 : Math.Round(windowRows.Average(x => x.OpponentPreElo), 2, MidpointRounding.AwayFromZero),
                     bestWin is null ? null : ToTeamFormGame(bestWin),
-                    worstLoss is null ? null : ToTeamFormGame(worstLoss));
+                    worstLoss is null ? null : ToTeamFormGame(worstLoss),
+                    bestWins,
+                    worstLosses);
             })
             .ToList();
+    }
+
+    private static EloTeamHistoricalHighlights? BuildHistoricalHighlights(IReadOnlyList<TeamFormHistoryRow> rows)
+    {
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        return new EloTeamHistoricalHighlights(
+            rows.Count,
+            rows
+                .Where(x => x.ActualScore == 1m)
+                .OrderByDescending(x => x.EloDelta)
+                .ThenByDescending(x => x.OpponentPreElo)
+                .Take(3)
+                .Select(ToTeamFormGame)
+                .ToList(),
+            rows
+                .Where(x => x.ActualScore == 0m)
+                .OrderBy(x => x.EloDelta)
+                .ThenByDescending(x => x.OpponentPreElo)
+                .Take(3)
+                .Select(ToTeamFormGame)
+                .ToList());
     }
 
     private static EloTeamFormGame ToTeamFormGame(TeamFormHistoryRow row)

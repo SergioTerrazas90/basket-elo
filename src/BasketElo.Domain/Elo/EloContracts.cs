@@ -279,7 +279,9 @@ public sealed record EloTeamDetailResponse(
     IReadOnlyCollection<EloTeamFormSummary> RecentForms,
     IReadOnlyCollection<EloRatingHistoryPoint> History,
     int RecentGamesSampledCount = 0,
-    bool RecentGamesWasSampled = false);
+    bool RecentGamesWasSampled = false,
+    string? RecentMovementOpponent = null,
+    EloTeamHistoricalHighlights? HistoricalHighlights = null);
 
 public sealed record EloTeamHistoryGamesResponse(
     Guid TeamId,
@@ -312,7 +314,14 @@ public sealed record EloTeamFormSummary(
     decimal TotalEloChange,
     decimal AverageOpponentPreElo,
     EloTeamFormGame? BestWin,
-    EloTeamFormGame? WorstLoss);
+    EloTeamFormGame? WorstLoss,
+    IReadOnlyCollection<EloTeamFormGame>? BestWins = null,
+    IReadOnlyCollection<EloTeamFormGame>? WorstLosses = null);
+
+public sealed record EloTeamHistoricalHighlights(
+    int GamesAvailable,
+    IReadOnlyCollection<EloTeamFormGame> BestWins,
+    IReadOnlyCollection<EloTeamFormGame> WorstLosses);
 
 public sealed record EloTeamFormGame(
     Guid GameId,

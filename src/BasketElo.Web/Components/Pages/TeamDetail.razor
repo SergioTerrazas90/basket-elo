@@ -133,36 +133,6 @@
                                 </div>
                             </dl>
 
-                            <div class="form-highlights">
-                                <div>
-                                    <span>Best wins</span>
-                                    @if ((form.BestWins ?? []).Count == 0)
-                                    {
-                                        <strong class="muted-cell">No wins</strong>
-                                    }
-                                    else
-                                    {
-                                        @foreach (var win in (form.BestWins ?? []).Take(3))
-                                        {
-                                            <strong>@FormatFormGame(win)</strong>
-                                        }
-                                    }
-                                </div>
-                                <div>
-                                    <span>Worst losses</span>
-                                    @if ((form.WorstLosses ?? []).Count == 0)
-                                    {
-                                        <strong class="muted-cell">No losses</strong>
-                                    }
-                                    else
-                                    {
-                                        @foreach (var loss in (form.WorstLosses ?? []).Take(3))
-                                        {
-                                            <strong>@FormatFormGame(loss)</strong>
-                                        }
-                                    }
-                                </div>
-                            </div>
                         </article>
                     }
                 </div>
@@ -185,7 +155,16 @@
                                 {
                                     @foreach (var win in team.HistoricalHighlights.BestWins)
                                     {
-                                        <strong>@FormatFormGame(win)</strong>
+                                        <div class="historical-highlight-row">
+                                            <span>@FormatHistoricalHighlightGame(win)</span>
+                                            <button type="button"
+                                                    class="history-highlight-elo @MovementClass(win.EloDelta)"
+                                                    @onclick="() => LoadExplanationAsync(win.GameId)"
+                                                    disabled="@IsExplanationLoading(win.GameId)"
+                                                    title="Explain this game">
+                                                @(IsExplanationLoading(win.GameId) ? "Loading" : FormatMovement(win.EloDelta))
+                                            </button>
+                                        </div>
                                     }
                                 }
                             </div>
@@ -199,7 +178,16 @@
                                 {
                                     @foreach (var loss in team.HistoricalHighlights.WorstLosses)
                                     {
-                                        <strong>@FormatFormGame(loss)</strong>
+                                        <div class="historical-highlight-row">
+                                            <span>@FormatHistoricalHighlightGame(loss)</span>
+                                            <button type="button"
+                                                    class="history-highlight-elo @MovementClass(loss.EloDelta)"
+                                                    @onclick="() => LoadExplanationAsync(loss.GameId)"
+                                                    disabled="@IsExplanationLoading(loss.GameId)"
+                                                    title="Explain this game">
+                                                @(IsExplanationLoading(loss.GameId) ? "Loading" : FormatMovement(loss.EloDelta))
+                                            </button>
+                                        </div>
                                     }
                                 }
                             </div>
@@ -209,24 +197,27 @@
             </section>
         }
 
-        <section class="team-context">
-            <div>
-                <h2>Competitions</h2>
-                <div class="competition-list">
-                    @if (team.Competitions.Count == 0)
-                    {
-                        <span class="empty-chip">No competitions yet</span>
-                    }
-                    else
-                    {
-                        @foreach (var competition in team.Competitions)
+        @if (team.EloPoolKey != EloPoolKeys.Nba)
+        {
+            <section class="team-context">
+                <div>
+                    <h2>Competitions</h2>
+                    <div class="competition-list">
+                        @if (team.Competitions.Count == 0)
                         {
-                            <span>@competition</span>
+                            <span class="empty-chip">No competitions yet</span>
                         }
-                    }
+                        else
+                        {
+                            @foreach (var competition in team.Competitions)
+                            {
+                                <span>@competition</span>
+                            }
+                        }
+                    </div>
                 </div>
-            </div>
-        </section>
+            </section>
+        }
 
         <section class="history-section">
             <div class="section-head">
@@ -769,19 +760,14 @@
     private static string FormatRecord(EloTeamFormSummary form)
         => form.GamesAvailable == 0 ? "No games" : $"{form.Wins}-{form.Losses}";
 
-    private static string FormatFormGame(EloTeamFormGame? game)
+    private static string FormatHistoricalHighlightGame(EloTeamFormGame game)
     {
-        if (game is null)
-        {
-            return "-";
-        }
-
         var location = game.WasHome ? "vs" : "at";
         var score = game.TeamScore.HasValue && game.OpponentScore.HasValue
             ? $" {game.TeamScore}-{game.OpponentScore}"
             : string.Empty;
 
-        return $"{location} {game.Opponent}{score} ({FormatMovement(game.EloDelta)})";
+        return $"{FormatDate(game.GameDateTimeUtc)} · {location} {game.Opponent}{score}";
     }
 
     private static string MovementClass(decimal? value)

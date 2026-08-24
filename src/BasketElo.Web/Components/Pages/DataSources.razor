@@ -55,10 +55,6 @@
         }
     </section>
 
-    <section class="data-sources-attribution">
-        <h2>Source notes</h2>
-        <p>NBA seasons through 2007-2008 use the pinned <a href="https://github.com/fivethirtyeight/data/blob/4c1ff5e3aef1816ae04af63218015066e186c147/nba-elo/nbaallelo.csv" target="_blank" rel="noopener noreferrer">FiveThirtyEight NBA Elo archive</a>, licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>.</p>
-    </section>
 </div>
 
 @code {
@@ -68,7 +64,7 @@
     {
         var catalog = new BackfillCatalog();
         regions = catalog.GetLeagues()
-            .GroupBy(x => new { x.Country, x.LeagueName, x.EloPoolKey })
+            .GroupBy(x => new { Country = NormalizeCountry(x.Country), x.LeagueName, x.EloPoolKey })
             .GroupBy(x => x.Key.Country)
             .OrderBy(x => x.Key == "World" ? 0 : 1)
             .ThenBy(x => x.Key)
@@ -110,6 +106,12 @@
             EloPoolKeys.NationalTeams => "National teams",
             _ => "Europe clubs"
         };
+
+    private static string NormalizeCountry(string country)
+        => string.Equals(country, "USA", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(country, "US", StringComparison.OrdinalIgnoreCase)
+            ? "United States"
+            : country;
 
     private static string CoverageLabel(ConfiguredBackfillLeague league)
         => league.Provider switch

@@ -314,9 +314,7 @@ public sealed record EloTeamFormSummary(
     decimal TotalEloChange,
     decimal AverageOpponentPreElo,
     EloTeamFormGame? BestWin,
-    EloTeamFormGame? WorstLoss,
-    IReadOnlyCollection<EloTeamFormGame>? BestWins = null,
-    IReadOnlyCollection<EloTeamFormGame>? WorstLosses = null);
+    EloTeamFormGame? WorstLoss);
 
 public sealed record EloTeamHistoricalHighlights(
     int GamesAvailable,

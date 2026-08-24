@@ -2381,21 +2381,6 @@ public class EloController(
                     .OrderBy(x => x.EloDelta)
                     .ThenByDescending(x => x.OpponentPreElo)
                     .FirstOrDefault();
-                var bestWins = windowRows
-                    .Where(x => x.ActualScore == 1m)
-                    .OrderByDescending(x => x.EloDelta)
-                    .ThenByDescending(x => x.OpponentPreElo)
-                    .Take(3)
-                    .Select(ToTeamFormGame)
-                    .ToList();
-                var worstLosses = windowRows
-                    .Where(x => x.ActualScore == 0m)
-                    .OrderBy(x => x.EloDelta)
-                    .ThenByDescending(x => x.OpponentPreElo)
-                    .Take(3)
-                    .Select(ToTeamFormGame)
-                    .ToList();
-
                 return new EloTeamFormSummary(
                     window,
                     windowRows.Count,
@@ -2404,9 +2389,7 @@ public class EloController(
                     windowRows.Sum(x => x.EloDelta),
                     windowRows.Count == 0 ? 0 : Math.Round(windowRows.Average(x => x.OpponentPreElo), 2, MidpointRounding.AwayFromZero),
                     bestWin is null ? null : ToTeamFormGame(bestWin),
-                    worstLoss is null ? null : ToTeamFormGame(worstLoss),
-                    bestWins,
-                    worstLosses);
+                    worstLoss is null ? null : ToTeamFormGame(worstLoss));
             })
             .ToList();
     }

@@ -240,8 +240,7 @@
     border-bottom: 1px solid var(--color-border);
 }
 
-.form-card-head span,
-.form-highlights span {
+.form-card-head span {
     color: var(--color-muted);
     font-size: 0.8rem;
     font-weight: 760;
@@ -271,24 +270,6 @@
 .form-stats dd {
     margin: 0.2rem 0 0;
     font-weight: 850;
-}
-
-.form-highlights {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-2);
-    padding: var(--space-3);
-}
-
-.form-highlights div {
-    min-width: 0;
-}
-
-.form-highlights strong {
-    display: block;
-    margin-top: 0.15rem;
-    overflow-wrap: anywhere;
-    font-size: 0.9rem;
 }
 
 .historical-highlights {
@@ -332,6 +313,36 @@
     margin-top: 0.2rem;
     overflow-wrap: anywhere;
     font-size: 0.9rem;
+}
+
+.historical-highlight-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-top: 0.2rem;
+}
+
+.historical-highlight-row > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: 0.9rem;
+}
+
+.history-highlight-elo {
+    flex: 0 0 auto;
+    border: 0;
+    border-bottom: 1px dashed currentColor;
+    padding: 0;
+    background: transparent;
+    font: inherit;
+    font-weight: 850;
+    cursor: pointer;
+}
+
+.history-highlight-elo:disabled {
+    cursor: wait;
+    opacity: 0.65;
 }
 
 .pager {

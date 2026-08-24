@@ -456,6 +456,15 @@
 }
 
 @media (min-width: 981px) {
+    .history-workspace:not(.is-chart-expanded) .history-section {
+        min-height: 0;
+    }
+
+    .history-workspace:not(.is-chart-expanded) .history-section > .chart-shell {
+        flex: 1 1 0;
+        height: 0;
+    }
+
     .games-table-scroll {
         max-height: min(36rem, calc(100vh - 14rem));
     }

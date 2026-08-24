@@ -438,10 +438,18 @@
         {
             chartHighlightPending = false;
             renderedHighlightedGameId = HighlightedGameId;
-            await JS.InvokeVoidAsync(
-                "basketEloDygraph.setHighlight",
-                chartHost,
-                HighlightedGameId?.ToString("D"));
+            try
+            {
+                await JS.InvokeVoidAsync(
+                    "basketEloDygraph.setHighlight",
+                    chartHost,
+                    HighlightedGameId?.ToString("D"));
+            }
+            catch (JSException)
+            {
+                // A cached pre-hover script can briefly survive a deployment.
+                // The chart remains usable even if that older script cannot highlight.
+            }
         }
     }
 

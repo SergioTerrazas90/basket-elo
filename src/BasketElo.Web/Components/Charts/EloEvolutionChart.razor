@@ -2,7 +2,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 
-<div class="elo-chart-frame @(IsChartExpanded ? "is-expanded" : string.Empty)">
+<div class="elo-chart-frame @(FillAvailableHeight ? "is-fill-height" : string.Empty) @(IsChartExpanded ? "is-expanded" : string.Empty)">
     <div class="elo-chart">
         @if (EnableRangeNavigation)
         {
@@ -286,6 +286,9 @@
 
     [Parameter]
     public EventCallback<bool> ExpandedChanged { get; set; }
+
+    [Parameter]
+    public bool FillAvailableHeight { get; set; }
 
     private double viewStart;
     private double viewEnd = 1;

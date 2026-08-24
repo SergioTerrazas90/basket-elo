@@ -17,6 +17,49 @@
     min-height: 360px;
 }
 
+.elo-chart-frame.is-fill-height {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+}
+
+.elo-chart-frame.is-fill-height > .elo-chart {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.elo-chart-frame.is-fill-height .elo-chart-plot {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.elo-chart-frame.is-fill-height .elo-chart-comparison {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.elo-chart-frame.is-fill-height .elo-chart-comparison-pane {
+    min-height: 0;
+}
+
+.elo-chart-frame.is-fill-height .elo-dygraph-chart,
+.elo-chart-frame.is-fill-height .elo-radzen-chart {
+    height: 100% !important;
+    min-height: 0;
+}
+
+.elo-chart-frame.is-fill-height.is-expanded .elo-dygraph-chart,
+.elo-chart-frame.is-fill-height.is-expanded .elo-radzen-chart {
+    height: min(66vh, 680px) !important;
+    min-height: 360px;
+}
+
 .elo-chart-plot {
     position: relative;
 }

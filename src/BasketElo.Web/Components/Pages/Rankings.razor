@@ -2235,7 +2235,7 @@
         var usedGameIds = new HashSet<Guid>();
         var ratedGames = games.Where(game => game.HasBothRatings).ToList();
         var comparableGames = ratedGames.Count > 0 ? ratedGames : games;
-        var highlights = new List<FixtureHighlight>(3);
+        var highlights = new List<FixtureHighlight>(2);
 
         AddHighlight(
             highlights,
@@ -2255,16 +2255,6 @@
             comparableGames
                 .OrderByDescending(CombinedElo)
                 .ThenBy(game => game.EloDifference)
-                .ThenBy(game => game.GameDateTimeUtc));
-
-        AddHighlight(
-            highlights,
-            usedGameIds,
-            "Top-ranked matchup",
-            "The fixture involving the highest-ranked teams.",
-            games
-                .OrderBy(RankSum)
-                .ThenByDescending(CombinedElo)
                 .ThenBy(game => game.GameDateTimeUtc));
 
         return highlights;
@@ -2300,11 +2290,6 @@
         => game.HasBothRatings && game.HomeElo.HasValue && game.AwayElo.HasValue
             ? game.HomeElo.Value + game.AwayElo.Value
             : decimal.MinValue;
-
-    private static int RankSum(UpcomingGameListItem game)
-        => game.HomeRank.HasValue && game.AwayRank.HasValue
-            ? game.HomeRank.Value + game.AwayRank.Value
-            : int.MaxValue;
 
     private static string FormatFixtureDate(DateTime value)
         => value.ToLocalTime().ToString("ddd, MMM d · HH:mm");

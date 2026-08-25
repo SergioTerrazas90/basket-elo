@@ -650,9 +650,12 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+    min-width: 0;
+    width: 100%;
 }
 
 .results-table {
+    width: 100%;
     min-width: 980px;
 }
 
@@ -1101,6 +1104,17 @@
 }
 
 @media (max-width: 1040px) {
+    .rankings-page,
+    .rankings-page .results-section,
+    .rankings-page .ranking-table-wrap {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .rankings-page .results-table {
+        min-width: min(980px, 100%);
+    }
+
     .rankings-page.graph-page .evolution-workspace > .evolution-chart ::deep .elo-chart-frame.is-fill-height {
         height: min(65vh, 34rem);
         min-height: 22rem;
@@ -1169,6 +1183,8 @@
 }
 
 .ranking-table-wrap {
+    width: 100%;
+    max-width: 100%;
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;

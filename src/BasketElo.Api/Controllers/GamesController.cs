@@ -21,6 +21,9 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         [FromQuery] string? poolKey,
         [FromQuery] string? rulesetVersion,
         [FromQuery] decimal? minElo,
+        [FromQuery] string? country,
+        [FromQuery] string? competition,
+        [FromQuery] string? team,
         [FromQuery] int limit = 100,
         CancellationToken cancellationToken = default)
     {
@@ -43,6 +46,25 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         {
             var normalizedPool = EloPoolKeys.Normalize(poolKey);
             query = query.Where(x => x.Competition.EloPoolKey == normalizedPool);
+        }
+
+        if (!string.IsNullOrWhiteSpace(country))
+        {
+            var normalizedCountry = CountryCodeCatalog.Normalize(country);
+            query = query.Where(x => x.Competition.CountryCode == normalizedCountry);
+        }
+
+        if (!string.IsNullOrWhiteSpace(competition))
+        {
+            query = query.Where(x => x.Competition.Name == competition.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(team))
+        {
+            var teamPattern = $"%{team.Trim()}%";
+            query = query.Where(x =>
+                EF.Functions.ILike(x.HomeTeam.CanonicalName, teamPattern) ||
+                EF.Functions.ILike(x.AwayTeam.CanonicalName, teamPattern));
         }
 
         var games = await query
@@ -71,6 +93,22 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
             .Where(x => teamIds.Contains(x.TeamId) && x.RulesetVersion == ruleset)
             .ToDictionaryAsync(x => (x.EloPoolKey, x.TeamId), x => x.Elo, cancellationToken);
 
+        var ranksByTeamId = new Dictionary<Guid, int>();
+        if (!string.IsNullOrWhiteSpace(poolKey))
+        {
+            var normalizedPool = EloPoolKeys.Normalize(poolKey);
+            var rankedTeamIds = await dbContext.TeamRatings
+                .AsNoTracking()
+                .Where(x => x.EloPoolKey == normalizedPool && x.RulesetVersion == ruleset)
+                .OrderByDescending(x => x.Elo)
+                .ThenBy(x => x.TeamId)
+                .Select(x => x.TeamId)
+                .ToListAsync(cancellationToken);
+            ranksByTeamId = rankedTeamIds
+                .Select((teamId, index) => new { teamId, Rank = index + 1 })
+                .ToDictionary(x => x.teamId, x => x.Rank);
+        }
+
         var projected = games
             .Select(game =>
             {
@@ -78,10 +116,27 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
                 decimal? awayElo = game.PoolKey is not null && ratings.TryGetValue((game.PoolKey, game.AwayTeamId), out var away) ? away : null;
                 decimal? difference = homeElo.HasValue && awayElo.HasValue ? Math.Abs(homeElo.Value - awayElo.Value) : null;
                 decimal? minimum = homeElo.HasValue && awayElo.HasValue ? Math.Min(homeElo.Value, awayElo.Value) : null;
-                return new UpcomingGameListItem(game.Id, game.GameDateTimeUtc, DisplayCountryFromCode(game.CountryCode), game.Competition, game.HomeTeam, game.AwayTeam, game.Status, homeElo, awayElo, difference, minimum, homeElo.HasValue && awayElo.HasValue, game.SourceUrl);
+                ranksByTeamId.TryGetValue(game.HomeTeamId, out var homeRank);
+                ranksByTeamId.TryGetValue(game.AwayTeamId, out var awayRank);
+                return new UpcomingGameListItem(
+                    game.Id,
+                    game.GameDateTimeUtc,
+                    DisplayCountryFromCode(game.CountryCode),
+                    game.Competition,
+                    game.HomeTeam,
+                    game.AwayTeam,
+                    game.Status,
+                    homeElo,
+                    awayElo,
+                    difference,
+                    minimum,
+                    homeElo.HasValue && awayElo.HasValue,
+                    game.SourceUrl,
+                    homeRank == 0 ? null : homeRank,
+                    awayRank == 0 ? null : awayRank);
             })
             .Where(x => !minElo.HasValue || (x.HomeElo >= minElo.Value && x.AwayElo >= minElo.Value))
-            .Take(Math.Clamp(limit, 1, 500))
+            .Take(Math.Clamp(limit, 1, 2000))
             .ToList();
 
         return Ok(new UpcomingGamesResponse(projected, from, to, ruleset, projected.Count));

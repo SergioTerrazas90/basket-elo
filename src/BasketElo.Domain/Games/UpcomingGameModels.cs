@@ -20,4 +20,6 @@ public sealed record UpcomingGameListItem(
     decimal? EloDifference,
     decimal? MinimumTeamElo,
     bool HasBothRatings,
-    string? SourceUrl);
+    string? SourceUrl,
+    int? HomeRank = null,
+    int? AwayRank = null);

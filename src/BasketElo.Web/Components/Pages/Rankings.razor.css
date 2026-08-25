@@ -646,7 +646,9 @@
 
 .rankings-table-section,
 .movers-section,
-.results-section {
+.results-section,
+.fixtures-section,
+.fixtures-list-section {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
@@ -657,6 +659,148 @@
 .results-table {
     width: 100%;
     min-width: 980px;
+}
+
+.fixture-highlights {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-3);
+}
+
+.fixture-highlight-card {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: linear-gradient(180deg, var(--color-surface) 0%, #f8efe2 100%);
+    box-shadow: var(--shadow-sm);
+}
+
+.fixture-highlight-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.fixture-highlight-kicker {
+    color: var(--color-accent-dark);
+    font-size: 0.7rem;
+    font-weight: 850;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.fixture-highlight-card h3 {
+    margin: 0.15rem 0 0;
+    font-size: 1.05rem;
+}
+
+.fixture-highlight-card > p {
+    min-height: 2.4rem;
+    margin: 0;
+    color: var(--color-muted);
+    font-size: 0.78rem;
+}
+
+.fixture-highlight-count {
+    display: inline-flex;
+    min-width: 1.45rem;
+    height: 1.45rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    background: var(--color-brand-soft);
+    color: var(--color-brand-dark);
+    font-size: 0.72rem;
+    font-weight: 850;
+}
+
+.fixture-highlight-games {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.fixture-highlight-game {
+    display: grid;
+    gap: 0.28rem;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-border);
+}
+
+.fixture-game-date,
+.fixture-game-meta {
+    color: var(--color-muted);
+    font-size: 0.72rem;
+}
+
+.fixture-matchup {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: 0.84rem;
+}
+
+.fixture-matchup strong:last-child {
+    text-align: right;
+}
+
+.fixture-matchup span {
+    color: var(--color-subtle);
+    font-size: 0.68rem;
+    font-weight: 750;
+    text-transform: uppercase;
+}
+
+.fixture-game-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.fixture-list-count {
+    align-self: center;
+    color: var(--color-muted);
+    font-size: 0.78rem;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.fixtures-table {
+    min-width: 900px;
+}
+
+.fixtures-table td,
+.fixtures-table th {
+    padding: 0.55rem 0.7rem;
+}
+
+.fixture-status {
+    display: inline-flex;
+    padding: 0.18rem 0.45rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    color: var(--color-muted);
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: capitalize;
+    white-space: nowrap;
+}
+
+.fixture-status.scheduled {
+    border-color: rgba(31, 122, 104, 0.3);
+    background: var(--color-teal-soft);
+    color: var(--color-teal);
+}
+
+.fixture-status.pending {
+    border-color: rgba(216, 135, 34, 0.35);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-dark);
 }
 
 .results-table td,
@@ -1446,6 +1590,18 @@
     .results-header {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .fixture-highlights {
+        grid-template-columns: 1fr;
+    }
+
+    .fixture-list-count {
+        align-self: flex-start;
+    }
+
+    .fixtures-table {
+        min-width: 720px;
     }
 
     .snapshot-metadata {

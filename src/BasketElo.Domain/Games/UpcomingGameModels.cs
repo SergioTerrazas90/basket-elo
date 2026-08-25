@@ -22,4 +22,5 @@ public sealed record UpcomingGameListItem(
     bool HasBothRatings,
     string? SourceUrl,
     int? HomeRank = null,
-    int? AwayRank = null);
+    int? AwayRank = null,
+    decimal? HomeWinProbability = null);

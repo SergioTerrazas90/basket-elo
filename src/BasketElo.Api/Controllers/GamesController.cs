@@ -34,6 +34,7 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
         {
             return BadRequest(new ProblemDetails { Detail = $"Unknown ELO ruleset '{ruleset}'." });
         }
+        var rulesetParameters = EloCalculator.GetRulesetParameters(ruleset);
 
         var query = dbContext.Games
             .AsNoTracking()
@@ -116,6 +117,11 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
                 decimal? awayElo = game.PoolKey is not null && ratings.TryGetValue((game.PoolKey, game.AwayTeamId), out var away) ? away : null;
                 decimal? difference = homeElo.HasValue && awayElo.HasValue ? Math.Abs(homeElo.Value - awayElo.Value) : null;
                 decimal? minimum = homeElo.HasValue && awayElo.HasValue ? Math.Min(homeElo.Value, awayElo.Value) : null;
+                decimal? homeWinProbability = homeElo.HasValue && awayElo.HasValue
+                    ? EloCalculator.CalculateExpectedResult(
+                        homeElo.Value + rulesetParameters.HomeAdvantageElo - awayElo.Value,
+                        rulesetParameters.ProbabilityScale)
+                    : null;
                 ranksByTeamId.TryGetValue(game.HomeTeamId, out var homeRank);
                 ranksByTeamId.TryGetValue(game.AwayTeamId, out var awayRank);
                 return new UpcomingGameListItem(
@@ -133,7 +139,8 @@ public class GamesController(BasketEloDbContext dbContext) : ControllerBase
                     homeElo.HasValue && awayElo.HasValue,
                     game.SourceUrl,
                     homeRank == 0 ? null : homeRank,
-                    awayRank == 0 ? null : awayRank);
+                    awayRank == 0 ? null : awayRank,
+                    homeWinProbability);
             })
             .Where(x => !minElo.HasValue || (x.HomeElo >= minElo.Value && x.AwayElo >= minElo.Value))
             .Take(Math.Clamp(limit, 1, 2000))

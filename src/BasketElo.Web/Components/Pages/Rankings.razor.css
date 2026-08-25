@@ -762,6 +762,24 @@
     gap: var(--space-2);
 }
 
+.fixture-game-probability {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    color: var(--color-brand-dark);
+    font-size: 0.74rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.fixture-game-probability strong {
+    font-weight: 900;
+}
+
+.fixture-probability-cell {
+    color: var(--color-brand-dark);
+    font-weight: 850;
+}
+
 .fixture-list-count {
     align-self: center;
     color: var(--color-muted);

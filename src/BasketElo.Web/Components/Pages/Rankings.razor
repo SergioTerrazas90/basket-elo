@@ -451,6 +451,10 @@
                                                 <span>@game.Competition</span>
                                                 <span>@FormatFixtureRank(game.HomeRank) · @FormatFixtureRank(game.AwayRank)</span>
                                             </div>
+                                            <div class="fixture-game-probability" aria-label="Expected win probability">
+                                                <span>Home <strong>@FormatFixtureProbability(game.HomeWinProbability)</strong></span>
+                                                <span>Away <strong>@FormatFixtureProbability(AwayWinProbability(game))</strong></span>
+                                            </div>
                                         </div>
                                     }
                                 </div>
@@ -477,6 +481,7 @@
                                         <th class="numeric">ELO</th>
                                         <th class="numeric">Rank</th>
                                         <th class="numeric">Gap</th>
+                                        <th class="numeric">Expected</th>
                                         <th>Status</th>
                                     </tr>
                                 </thead>
@@ -490,6 +495,7 @@
                                             <td class="numeric">@FormatFixtureRating(game.HomeElo) – @FormatFixtureRating(game.AwayElo)</td>
                                             <td class="numeric">@FormatFixtureRank(game.HomeRank) – @FormatFixtureRank(game.AwayRank)</td>
                                             <td class="numeric">@FormatFixtureRating(game.EloDifference)</td>
+                                            <td class="numeric fixture-probability-cell">@FormatFixtureProbability(game.HomeWinProbability) – @FormatFixtureProbability(AwayWinProbability(game))</td>
                                             <td><span class="@FixtureStatusClass(game.Status)">@game.Status</span></td>
                                         </tr>
                                     }
@@ -2308,6 +2314,12 @@
 
     private static string FormatFixtureRank(int? value)
         => value.HasValue ? $"#{value.Value}" : "—";
+
+    private static decimal? AwayWinProbability(UpcomingGameListItem game)
+        => game.HomeWinProbability.HasValue ? 1m - game.HomeWinProbability.Value : null;
+
+    private static string FormatFixtureProbability(decimal? value)
+        => value.HasValue ? value.Value.ToString("P0") : "—";
 
     private static string FixtureStatusClass(string status)
         => status.Trim().ToLowerInvariant() switch

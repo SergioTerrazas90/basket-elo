@@ -2241,9 +2241,9 @@
             highlights,
             usedGameIds,
             "Most even",
-            "The closest ELO matchup in the window.",
+            "The fixture closest to a 50–50 expected result.",
             comparableGames
-                .OrderBy(game => game.EloDifference)
+                .OrderBy(ProbabilityDistanceFromEven)
                 .ThenByDescending(CombinedElo)
                 .ThenBy(game => game.GameDateTimeUtc));
 
@@ -2290,6 +2290,11 @@
         => game.HasBothRatings && game.HomeElo.HasValue && game.AwayElo.HasValue
             ? game.HomeElo.Value + game.AwayElo.Value
             : decimal.MinValue;
+
+    private static decimal ProbabilityDistanceFromEven(UpcomingGameListItem game)
+        => game.HomeWinProbability.HasValue
+            ? Math.Abs(game.HomeWinProbability.Value - 0.5m)
+            : decimal.MaxValue;
 
     private static string FormatFixtureDate(DateTime value)
         => value.ToLocalTime().ToString("ddd, MMM d · HH:mm");

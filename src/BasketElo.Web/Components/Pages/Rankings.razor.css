@@ -1085,15 +1085,23 @@
         flex-direction: column;
     }
 
-    .rankings-page.graph-page .evolution-workspace > .evolution-chart .elo-chart-frame {
-        flex: 1 1 auto;
+    .rankings-page.graph-page .evolution-workspace > .evolution-chart ::deep .elo-chart-frame {
+        /*
+         * The chart frame also contains the toolbar and the optional series
+         * controls. A percentage height here lets those controls consume the
+         * flex item's entire budget, leaving Dygraphs with only a few pixels
+         * when many teams are selected. Give the graph a stable viewport-sized
+         * canvas instead; the page can scroll naturally when the surrounding
+         * rankings controls need more room than the viewport.
+         */
+        flex: 0 0 clamp(34rem, calc(100vh - 12rem), 42rem);
         min-height: 0;
-        height: 100%;
+        height: clamp(34rem, calc(100vh - 12rem), 42rem);
     }
 }
 
 @media (max-width: 1040px) {
-    .rankings-page.graph-page .evolution-workspace > .evolution-chart .elo-chart-frame.is-fill-height {
+    .rankings-page.graph-page .evolution-workspace > .evolution-chart ::deep .elo-chart-frame.is-fill-height {
         height: min(65vh, 34rem);
         min-height: 22rem;
     }

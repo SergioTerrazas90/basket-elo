@@ -2386,6 +2386,7 @@
         Append(query, "country", selectedCountry);
         Append(query, "competition", selectedCompetition);
         Append(query, "team", teamSearch);
+        Append(query, "teams", SupportsTeamScope ? selectedTeamScope : null);
 
         return $"api/games/upcoming?{string.Join("&", query)}";
     }

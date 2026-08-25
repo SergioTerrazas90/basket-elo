@@ -46,7 +46,7 @@
     }
 
     <section class="ranking-toolbar" aria-label="Ranking controls">
-        @if (SupportsTeamScope)
+        @if (ShowsTeamScopeFilter)
         {
             <div class="scope-control-block">
                 <span class="filter-label">@(selectedPool == EloPoolKeys.Nba ? "Franchises" : "Teams")</span>
@@ -113,13 +113,13 @@
                     Competition: @selectedCompetition <span aria-hidden="true">×</span>
                 </button>
             }
-            @if (!string.IsNullOrWhiteSpace(selectedFromSeason) || !string.IsNullOrWhiteSpace(selectedToSeason))
+            @if (ShowsSeasonFilter && (!string.IsNullOrWhiteSpace(selectedFromSeason) || !string.IsNullOrWhiteSpace(selectedToSeason)))
             {
                 <button type="button" class="filter-chip" @onclick="ClearSeasonFilterAsync">
                     Seasons: @(selectedFromSeason ?? "All") – @(selectedToSeason ?? "Current") <span aria-hidden="true">×</span>
                 </button>
             }
-            @if (minimumGames > 0)
+            @if (ShowsMinimumGamesFilter && minimumGames > 0)
             {
                 <button type="button" class="filter-chip" @onclick="ClearMinimumGamesFilterAsync">
                     Min games: @minimumGames <span aria-hidden="true">×</span>
@@ -159,31 +159,37 @@
                 </div>
             }
 
-            <div class="season-range-field">
-                <span class="filter-label">Seasons</span>
-                <div class="season-range-control">
-                    <select id="fromSeasonFilter" class="form-select" aria-label="From season" @bind="selectedFromSeason">
-                        <option value="">All history</option>
-                        @foreach (var option in response?.Filters.Seasons ?? [])
-                        {
-                            <option value="@option">@option</option>
-                        }
-                    </select>
-                    <span aria-hidden="true">to</span>
-                    <select id="toSeasonFilter" class="form-select" aria-label="To season" @bind="selectedToSeason">
-                        <option value="">Current</option>
-                        @foreach (var option in response?.Filters.Seasons ?? [])
-                        {
-                            <option value="@option">@option</option>
-                        }
-                    </select>
+            @if (ShowsSeasonFilter)
+            {
+                <div class="season-range-field">
+                    <span class="filter-label">Seasons</span>
+                    <div class="season-range-control">
+                        <select id="fromSeasonFilter" class="form-select" aria-label="From season" @bind="selectedFromSeason">
+                            <option value="">All history</option>
+                            @foreach (var option in response?.Filters.Seasons ?? [])
+                            {
+                                <option value="@option">@option</option>
+                            }
+                        </select>
+                        <span aria-hidden="true">to</span>
+                        <select id="toSeasonFilter" class="form-select" aria-label="To season" @bind="selectedToSeason">
+                            <option value="">Current</option>
+                            @foreach (var option in response?.Filters.Seasons ?? [])
+                            {
+                                <option value="@option">@option</option>
+                            }
+                        </select>
+                    </div>
                 </div>
-            </div>
+            }
 
-            <div class="filter-field compact">
-                <label for="minGames">Min games</label>
-                <input id="minGames" class="form-control" type="number" min="0" max="999" @bind="minimumGames" />
-            </div>
+            @if (ShowsMinimumGamesFilter)
+            {
+                <div class="filter-field compact">
+                    <label for="minGames">Min games</label>
+                    <input id="minGames" class="form-control" type="number" min="0" max="999" @bind="minimumGames" />
+                </div>
+            }
 
             <div class="filter-actions">
                 <button class="btn btn-primary" @onclick="ApplyFiltersAsync" disabled="@isBusy">Apply</button>
@@ -1043,6 +1049,22 @@
                 "graph" or "graph-canvas" or "graph-svg" => "graph",
                 _ => "rankings"
             };
+        if (!ShowsTeamScopeFilter)
+        {
+            selectedTeamScope = EloTeamScopes.Current;
+        }
+
+        if (!ShowsSeasonFilter)
+        {
+            selectedFromSeason = null;
+            selectedToSeason = null;
+        }
+
+        if (!ShowsMinimumGamesFilter)
+        {
+            minimumGames = 0;
+        }
+
         selectedMoverDirection = string.Equals(Movement, "fallers", StringComparison.OrdinalIgnoreCase) ? "fallers" : "risers";
         selectedWindowDays = WindowDays is 7 or 30 or 90 ? WindowDays.Value : 30;
         showAdvancedFilters = HasAdvancedFilterValues;
@@ -1178,6 +1200,22 @@
             "graph" or "graph-svg" or "graph-canvas" => "graph",
             _ => "rankings"
         };
+        if (!ShowsTeamScopeFilter)
+        {
+            selectedTeamScope = EloTeamScopes.Current;
+        }
+
+        if (!ShowsSeasonFilter)
+        {
+            selectedFromSeason = null;
+            selectedToSeason = null;
+        }
+
+        if (!ShowsMinimumGamesFilter)
+        {
+            minimumGames = 0;
+        }
+
         page = 1;
         NavigateToRankings(1);
         return Task.CompletedTask;
@@ -1985,16 +2023,16 @@
         var query = new Dictionary<string, object?>
         {
             ["pool"] = selectedPool == EloPoolKeys.Default ? null : selectedPool,
-            ["teams"] = SupportsTeamScope && selectedTeamScope == EloTeamScopes.Historical
+            ["teams"] = ShowsTeamScopeFilter && selectedTeamScope == EloTeamScopes.Historical
                 ? selectedTeamScope
                 : null,
             ["movement"] = view == "movers" ? selectedMoverDirection : null,
             ["windowDays"] = view == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
             ["country"] = selectedCountry,
             ["competition"] = selectedCompetition,
-            ["fromSeason"] = selectedFromSeason,
-            ["toSeason"] = selectedToSeason,
-            ["minGames"] = minimumGames > 0 ? minimumGames : null,
+            ["fromSeason"] = ShowsSeasonFilter ? selectedFromSeason : null,
+            ["toSeason"] = ShowsSeasonFilter ? selectedToSeason : null,
+            ["minGames"] = ShowsMinimumGamesFilter && minimumGames > 0 ? minimumGames : null,
             ["team"] = teamSearch,
             ["view"] = view == "rankings" ? null : view,
             ["page"] = targetPage > 1 ? targetPage : null
@@ -2149,9 +2187,9 @@
     private bool HasAdvancedFilterValues
         => !string.IsNullOrWhiteSpace(selectedCountry)
             || !string.IsNullOrWhiteSpace(selectedCompetition)
-            || !string.IsNullOrWhiteSpace(selectedFromSeason)
-            || !string.IsNullOrWhiteSpace(selectedToSeason)
-            || minimumGames > 0;
+            || (ShowsSeasonFilter && (!string.IsNullOrWhiteSpace(selectedFromSeason)
+                || !string.IsNullOrWhiteSpace(selectedToSeason)))
+            || (ShowsMinimumGamesFilter && minimumGames > 0);
 
     private bool HasActiveFilters
         => HasTeamSearch || HasAdvancedFilterValues;
@@ -2174,8 +2212,8 @@
         => (HasTeamSearch ? 1 : 0)
             + (!string.IsNullOrWhiteSpace(selectedCountry) ? 1 : 0)
             + (!string.IsNullOrWhiteSpace(selectedCompetition) ? 1 : 0)
-            + (!string.IsNullOrWhiteSpace(selectedFromSeason) || !string.IsNullOrWhiteSpace(selectedToSeason) ? 1 : 0)
-            + (minimumGames > 0 ? 1 : 0);
+            + (ShowsSeasonFilter && (!string.IsNullOrWhiteSpace(selectedFromSeason) || !string.IsNullOrWhiteSpace(selectedToSeason)) ? 1 : 0)
+            + (ShowsMinimumGamesFilter && minimumGames > 0 ? 1 : 0);
 
     private bool ShowRankingColumn(string column)
         => column switch
@@ -2340,12 +2378,12 @@
 
         Append(query, "country", selectedCountry);
         Append(query, "competition", selectedCompetition);
-        Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
-        Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
-        Append(query, "asOfDate", seasonRange.AsOfUtc?.ToString("O"));
-        Append(query, "minGames", minimumGames > 0 ? minimumGames.ToString() : null);
+        Append(query, "fromUtc", ShowsSeasonFilter ? seasonRange.FromUtc?.ToString("O") : null);
+        Append(query, "toUtc", ShowsSeasonFilter ? seasonRange.ToUtc?.ToString("O") : null);
+        Append(query, "asOfDate", ShowsSeasonFilter ? seasonRange.AsOfUtc?.ToString("O") : null);
+        Append(query, "minGames", ShowsMinimumGamesFilter && minimumGames > 0 ? minimumGames.ToString() : null);
         Append(query, "team", teamOverride ?? (includeTeamSearch ? teamSearch : null));
-        Append(query, "teams", SupportsTeamScope ? selectedTeamScope : null);
+        Append(query, "teams", ShowsTeamScopeFilter ? selectedTeamScope : null);
 
         return $"api/elo/rankings?{string.Join("&", query)}";
     }
@@ -2386,7 +2424,6 @@
         Append(query, "country", selectedCountry);
         Append(query, "competition", selectedCompetition);
         Append(query, "team", teamSearch);
-        Append(query, "teams", SupportsTeamScope ? selectedTeamScope : null);
 
         return $"api/games/upcoming?{string.Join("&", query)}";
     }
@@ -2710,6 +2747,15 @@
 
     private bool SupportsTeamScope
         => selectedPool is EloPoolKeys.Nba or EloPoolKeys.EuropeClubs or EloPoolKeys.NationalTeams;
+
+    private bool ShowsTeamScopeFilter
+        => SupportsTeamScope && selectedView is not ("results" or "fixtures");
+
+    private bool ShowsSeasonFilter
+        => selectedView is not "fixtures";
+
+    private bool ShowsMinimumGamesFilter
+        => selectedView is "rankings" or "graph" or "movers";
 
     private bool ShowsCountryColumn
         => selectedPool is not EloPoolKeys.Nba and not EloPoolKeys.NationalTeams;

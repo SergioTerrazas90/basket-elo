@@ -52,7 +52,7 @@
     margin-bottom: 0;
 }
 
-.national-team-badge {
+.team-status-badge {
     padding: 0.18rem 0.5rem;
     border: 1px solid rgba(36, 92, 122, 0.28);
     border-radius: var(--radius-pill);
@@ -60,6 +60,18 @@
     color: var(--status-info-text);
     font-size: 0.72rem;
     font-weight: 850;
+}
+
+.team-status-badge.is-defunct {
+    border-color: rgba(142, 59, 46, 0.28);
+    background: var(--status-danger-bg);
+    color: var(--status-danger-text);
+}
+
+.team-status-badge.is-historical {
+    border-color: rgba(134, 82, 13, 0.28);
+    background: var(--status-warning-bg);
+    color: var(--status-warning-text);
 }
 
 .eyebrow {
@@ -122,7 +134,7 @@
 
 .history-workspace {
     display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-5);
     align-items: stretch;
 }
@@ -413,12 +425,29 @@
 }
 
 .chart-shell {
-    min-height: 220px;
+    height: clamp(360px, 45vh, 500px);
+    min-height: 360px;
     margin-top: var(--space-3);
     overflow: hidden;
     border: 1px solid rgba(200, 183, 157, 0.72);
     border-radius: var(--radius-md);
     background: linear-gradient(180deg, var(--color-surface) 0%, #f8efe2 100%);
+}
+
+.history-section > .chart-shell {
+    flex: 0 0 auto;
+    min-height: 360px;
+}
+
+.history-workspace.is-chart-expanded .history-section > .chart-shell {
+    height: min(58vh, 620px);
+    min-height: 420px;
+}
+
+.history-workspace.is-chart-expanded .history-section .elo-chart-frame.is-expanded .elo-dygraph-chart,
+.history-workspace.is-chart-expanded .history-section .elo-chart-frame.is-expanded .elo-radzen-chart {
+    height: min(58vh, 620px) !important;
+    min-height: 360px;
 }
 
 .chart-shell svg {
@@ -442,6 +471,13 @@
     white-space: nowrap;
 }
 
+.team-games-table.is-condensed th:nth-child(2),
+.team-games-table.is-condensed td:nth-child(2),
+.team-games-table.is-condensed th:nth-child(3),
+.team-games-table.is-condensed td:nth-child(3) {
+    white-space: normal;
+}
+
 .team-games-table.is-condensed .competition-cell {
     line-height: 1.2;
 }
@@ -461,8 +497,9 @@
     }
 
     .history-workspace:not(.is-chart-expanded) .history-section > .chart-shell {
-        flex: 1 1 0;
-        height: 0;
+        flex: 0 0 auto;
+        height: clamp(360px, 45vh, 500px);
+        min-height: 360px;
     }
 
     .games-table-scroll {
@@ -584,6 +621,21 @@
 
     .pager {
         width: 100%;
+    }
+
+    .chart-shell {
+        height: 360px;
+        min-height: 320px;
+    }
+
+    .history-section > .chart-shell {
+        height: 360px;
+        min-height: 320px;
+    }
+
+    .history-workspace.is-chart-expanded .history-section > .chart-shell {
+        height: 520px;
+        min-height: 420px;
     }
 }
 

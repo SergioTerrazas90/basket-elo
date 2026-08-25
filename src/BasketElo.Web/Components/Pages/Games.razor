@@ -194,17 +194,22 @@
             <div class="section-head">
                 <div>
                     <h2>Games</h2>
-                    <p>Showing page @response.Page of @response.TotalPages, with @response.TotalCount matching games.</p>
+                    <p>@(response.TotalPages > 1
+                        ? $"Showing page {response.Page} of {response.TotalPages}, with {response.TotalCount} matching games."
+                        : $"Showing all {response.TotalCount} matching games.")</p>
                 </div>
-                <div class="pager">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || response.Page <= 1">Previous</button>
-                    <label class="page-jump" for="gamesPageInput">
-                        <span>Page</span>
-                        <input id="gamesPageInput" class="form-control form-control-sm" type="number" min="1" max="@response.TotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
-                    </label>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || response.Page >= response.TotalPages">Next</button>
-                </div>
+                @if (response.TotalPages > 1)
+                {
+                    <div class="pager">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@isBusy || response.Page <= 1">Previous</button>
+                        <label class="page-jump" for="gamesPageInput">
+                            <span>Page</span>
+                            <input id="gamesPageInput" class="form-control form-control-sm" type="number" min="1" max="@response.TotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                        </label>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@isBusy || response.Page >= response.TotalPages">Next</button>
+                    </div>
+                }
             </div>
 
             <div class="table-responsive">

@@ -1058,6 +1058,47 @@
     justify-content: flex-end;
 }
 
+@media (min-width: 1041px) {
+    .rankings-page.graph-page {
+        min-height: calc(100vh - 8rem);
+    }
+
+    .rankings-page.graph-page .evolution-section {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .rankings-page.graph-page .evolution-panel {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .rankings-page.graph-page .evolution-workspace {
+        flex: 1 1 auto;
+        height: 100%;
+        min-height: 0;
+    }
+
+    .rankings-page.graph-page .evolution-workspace > .evolution-chart {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+    }
+
+    .rankings-page.graph-page .evolution-workspace > .evolution-chart .elo-chart-frame {
+        flex: 1 1 auto;
+        min-height: 0;
+        height: 100%;
+    }
+}
+
+@media (max-width: 1040px) {
+    .rankings-page.graph-page .evolution-workspace > .evolution-chart .elo-chart-frame.is-fill-height {
+        height: min(65vh, 34rem);
+        min-height: 22rem;
+    }
+}
+
 @media (max-width: 1040px) {
     .evolution-workspace.manager-open {
         grid-template-areas:

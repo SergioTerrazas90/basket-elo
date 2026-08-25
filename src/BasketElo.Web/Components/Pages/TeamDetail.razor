@@ -31,9 +31,9 @@
                 <p class="eyebrow">@team.EloPoolName</p>
                 <div class="team-title-line">
                     <h1>@team.TeamName</h1>
-                    @if (team.EloPoolKey == EloPoolKeys.NationalTeams)
+                    @if (!team.IsActive || team.EloPoolKey == EloPoolKeys.NationalTeams)
                     {
-                        <span class="national-team-badge">National team</span>
+                        <span class="team-status-badge @TeamHeaderStatusClass(team)">@TeamHeaderStatusLabel(team)</span>
                     }
                 </div>
                 <p class="intro">Adjusted ELO profile, latest rated games, and the team's continuous rating path.</p>
@@ -71,7 +71,7 @@
             </div>
         </section>
 
-        @if (team.IdentityEvents.Count > 0 || !team.IsActive)
+        @if (team.EloPoolKey == EloPoolKeys.Nba && (team.IdentityEvents.Count > 0 || !team.IsActive))
         {
             <section class="franchise-lineage" aria-labelledby="franchise-lineage-title">
                 <div>
@@ -523,26 +523,43 @@
     }
 
     private static IReadOnlyList<EloChartSeries> BuildTeamChartSeries(EloTeamDetailResponse team)
-        =>
+    {
+        var gamesById = team.RecentGames.ToDictionary(game => game.GameId);
+        var points = team.History
+            .OrderBy(point => point.GameDateTimeUtc)
+            .Select(point =>
+            {
+                var game = point.GameId is { } gameId && gamesById.TryGetValue(gameId, out var plottedGame)
+                    ? plottedGame
+                    : null;
+                return new EloChartPoint(
+                    point.GameDateTimeUtc,
+                    point.Elo,
+                    team.TeamName,
+                    "#245c7a",
+                    point.EloDelta,
+                    point.Rank,
+                    point.GameId,
+                    game?.Competition,
+                    game?.Season,
+                    game?.Opponent,
+                    game?.WasHome,
+                    game?.TeamScore,
+                    game?.OpponentScore);
+            })
+            .ToList();
+
+        return
         [
             new EloChartSeries(
                 team.TeamId,
                 team.TeamName,
                 "#245c7a",
-                team.History
-                    .OrderBy(point => point.GameDateTimeUtc)
-                    .Select(point => new EloChartPoint(
-                        point.GameDateTimeUtc,
-                        point.Elo,
-                        team.TeamName,
-                        "#245c7a",
-                        point.EloDelta,
-                        point.Rank,
-                        point.GameId))
-                    .ToList(),
+                points,
                 team.GamesPlayed,
                 team.GamesPlayed)
         ];
+    }
 
     private static IReadOnlyList<EloChartSeries> BuildTeamChartSeries(
         EloTeamHistoryGamesResponse historyGames,
@@ -559,7 +576,13 @@
                 "#245c7a",
                 game.EloDelta,
                 game.RankAfter,
-                game.GameId))
+                game.GameId,
+                game.Competition,
+                game.Season,
+                game.Opponent,
+                game.WasHome,
+                game.TeamScore,
+                game.OpponentScore))
             .ToList();
         if (points.Count == 0)
         {
@@ -764,6 +787,22 @@
         EloFranchiseIdentityEventTypes.TemporaryRelocation => "Temporary move",
         _ => "Relocation"
     };
+
+    private static string TeamHeaderStatusLabel(EloTeamDetailResponse team)
+        => team.EloPoolKey switch
+        {
+            EloPoolKeys.Nba => "Defunct franchise",
+            EloPoolKeys.EuropeClubs => "Historical club",
+            EloPoolKeys.NationalTeams => team.IsActive ? "National team" : "Historical national team",
+            _ => team.IsActive ? "Team" : "Historical team"
+        };
+
+    private static string TeamHeaderStatusClass(EloTeamDetailResponse team)
+        => !team.IsActive && team.EloPoolKey == EloPoolKeys.Nba
+            ? "is-defunct"
+            : !team.IsActive
+                ? "is-historical"
+                : string.Empty;
 
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";

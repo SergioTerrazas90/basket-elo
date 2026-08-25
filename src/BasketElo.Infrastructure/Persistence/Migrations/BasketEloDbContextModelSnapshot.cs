@@ -1637,10 +1637,19 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TeamId");
 
+                    b.HasIndex("EloPoolKey", "GameDateTimeUtc", "TeamId");
+
+                    b.HasIndex("EloPoolKey", "RulesetVersion", "GameId");
+
                     b.HasIndex("EloPoolKey", "GameId", "TeamId", "RulesetVersion")
                         .IsUnique();
 
                     b.HasIndex("EloPoolKey", "TeamId", "RulesetVersion", "GameDateTimeUtc");
+
+                    b.HasIndex("EloPoolKey", "RulesetVersion", "TeamId", "GameDateTimeUtc", "Id")
+                        .IsDescending(false, false, false, true, true);
+
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("EloPoolKey", "RulesetVersion", "TeamId", "GameDateTimeUtc", "Id"), new[] { "EloDelta", "OpponentTeamId", "ActualScore" });
 
                     b.ToTable("rating_history", (string)null);
                 });

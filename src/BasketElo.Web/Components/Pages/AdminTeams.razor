@@ -76,17 +76,20 @@
         <div class="team-admin-summary">
             <span>Showing @response.Teams.Count of @response.TotalCount teams</span>
             <span>@selectedForMerge.Count selected for merge</span>
-            <div class="team-admin-pager">
-                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || response.Page <= 1)">Previous</button>
-                <span>Page @response.Page of @response.TotalPages</span>
-                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || response.Page >= response.TotalPages)">Next</button>
-            </div>
+            @if (response.TotalPages > 1)
+            {
+                <div class="team-admin-pager">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || response.Page <= 1)">Previous</button>
+                    <span>Page @response.Page of @response.TotalPages</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || response.Page >= response.TotalPages)">Next</button>
+                </div>
+            }
         </div>
 
         <div class="team-admin-layout">
             <section class="team-admin-table-panel">
                 <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle team-admin-table">
+                    <table class="table table-hover align-middle team-admin-table">
                         <thead>
                             <tr>
                                 <th></th>

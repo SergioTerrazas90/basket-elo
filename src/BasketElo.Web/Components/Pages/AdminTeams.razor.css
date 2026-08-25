@@ -77,6 +77,39 @@
     letter-spacing: 0.03em;
 }
 
+.team-admin-table {
+    width: 100%;
+    table-layout: auto;
+}
+
+.team-admin-table tbody tr {
+    height: auto;
+}
+
+.team-admin-table tbody td {
+    padding-block: 0.65rem;
+    line-height: 1.35;
+    white-space: normal;
+    overflow: visible;
+}
+
+.team-admin-table tbody td:nth-child(2) {
+    min-width: 13rem;
+}
+
+.team-admin-table tbody td:nth-child(2) strong {
+    overflow-wrap: anywhere;
+}
+
+.team-admin-table .team-id {
+    margin-top: 0.15rem;
+    line-height: 1.25;
+}
+
+.team-admin-table tbody td:last-child {
+    min-width: 13.5rem;
+}
+
 .team-id {
     display: block;
     color: var(--bs-secondary-color);

@@ -221,10 +221,13 @@ else
 {
     <div class="d-flex justify-content-between align-items-center mb-2">
         <span>Showing @findings.Count row@(findings.Count == 1 ? string.Empty : "s") on page @findingPage.</span>
-        <div class="btn-group">
-            <button class="btn btn-sm btn-outline-secondary" @onclick="PreviousFindingsPageAsync" disabled="@isBusy || findingPage <= 1">Previous</button>
-            <button class="btn btn-sm btn-outline-secondary" @onclick="NextFindingsPageAsync" disabled="@isBusy || findings.Count < findingLimit">Next</button>
-        </div>
+        @if (findingPage > 1 || findings.Count >= findingLimit)
+        {
+            <div class="btn-group">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="PreviousFindingsPageAsync" disabled="@isBusy || findingPage <= 1">Previous</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="NextFindingsPageAsync" disabled="@isBusy || findings.Count < findingLimit">Next</button>
+            </div>
+        }
     </div>
 
     <table class="table table-sm align-middle">

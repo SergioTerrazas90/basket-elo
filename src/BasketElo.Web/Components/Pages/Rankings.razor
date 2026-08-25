@@ -13,7 +13,7 @@
 
 <PageTitle>Basket ELO @ViewTitle()</PageTitle>
 
-<div class="rankings-page">
+<div class="rankings-page @(IsGraphView ? "graph-page" : string.Empty)">
     <header class="rankings-header">
         <nav class="rating-pool-tabs" aria-label="Rating pools">
             @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
@@ -238,15 +238,18 @@
                     </div>
                     <div class="table-section-controls">
                         <span class="table-page-summary">@MoversContextLabel()</span>
-                        <div class="pager" aria-label="Movement table pagination">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
-                            <label class="page-jump" for="moversPageInput">
-                                <span>Page</span>
-                                <input id="moversPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
-                            </label>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
-                        </div>
+                        @if (CurrentTotalPages > 1)
+                        {
+                            <div class="pager" aria-label="Movement table pagination">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
+                                <label class="page-jump" for="moversPageInput">
+                                    <span>Page</span>
+                                    <input id="moversPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                                </label>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
+                            </div>
+                        }
                     </div>
                 </div>
 
@@ -409,15 +412,18 @@
                     </div>
                     <div class="table-section-controls">
                         <span class="table-page-summary">@TableContextLabel()</span>
-                        <div class="pager" aria-label="Ranking table pagination">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
-                            <label class="page-jump" for="rankingsPageInput">
-                                <span>Page</span>
-                                <input id="rankingsPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
-                            </label>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
-                        </div>
+                        @if (CurrentTotalPages > 1)
+                        {
+                            <div class="pager" aria-label="Ranking table pagination">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
+                                <label class="page-jump" for="rankingsPageInput">
+                                    <span>Page</span>
+                                    <input id="rankingsPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
+                                </label>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
+                            </div>
+                        }
                     </div>
                 </div>
 
@@ -712,6 +718,7 @@
                                                            HideAllSeriesRequested="@HideAllGraphTeamsAsync"
                                                            SharedTooltip="false"
                                                            HeightPixels="@ChartHeightPixels"
+                                                           FillAvailableHeight="@IsGraphView"
                                                            DataRevision="@evolutionDataRevision"
                                                            IsRefining="@isEvolutionRefining"
                                                            ViewportRefinementRequested="@QueueEvolutionRefinementAsync"
@@ -720,11 +727,14 @@
                                     }
                                 </div>
                             </div>
-                            <div class="chart-actions">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ToggleChartSize">
-                                    @(isChartExpanded ? "Compact chart" : "Expand chart")
-                                </button>
-                            </div>
+                            @if (!IsGraphView)
+                            {
+                                <div class="chart-actions">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ToggleChartSize">
+                                        @(isChartExpanded ? "Compact chart" : "Expand chart")
+                                    </button>
+                                </div>
+                            }
                         }
                     </div>
                 }
@@ -891,6 +901,7 @@
         }
 
         CaptureActiveRankingsCacheEntry();
+        var preserveCurrentData = IsPageOnlyNavigation(currentUri, lastLoadedUri);
 
         selectedPool = EloPoolKeys.IsSupported(Pool?.Trim().ToLowerInvariant() ?? string.Empty)
             ? Pool!.Trim().ToLowerInvariant()
@@ -938,14 +949,20 @@
         ResetGraphSelection();
 
         activeRankingsCacheKey = null;
-        response = null;
-        movers = null;
-        results = null;
+        if (!preserveCurrentData)
+        {
+            response = null;
+            movers = null;
+            results = null;
+        }
         CloseResultExplanation();
-        evolution = null;
-        evolutionRankings = null;
-        evolutionChartSeries = [];
-        fullEvolution = null;
+        if (!preserveCurrentData)
+        {
+            evolution = null;
+            evolutionRankings = null;
+            evolutionChartSeries = [];
+            fullEvolution = null;
+        }
 
         await RefreshAsync();
         if (IsGraphView)
@@ -1085,8 +1102,18 @@
 
     private async Task LoadChartAsync()
     {
-        if (isChartLoading || evolution is not null || response is null)
+        if (isChartLoading || response is null)
         {
+            return;
+        }
+
+        if (evolution is not null)
+        {
+            if (!graphSelectionInitialized)
+            {
+                await EnsureGraphSelectionAsync();
+            }
+
             return;
         }
 
@@ -1116,6 +1143,14 @@
     {
         if (graphSelectionInitialized || response is null)
         {
+            return;
+        }
+
+        if (evolutionRankings is not null && evolutionRankings.Rankings.Count > 0)
+        {
+            graphTeamRows = MergeGraphTeamRows(evolutionRankings.Rankings);
+            graphTeamIds.UnionWith(evolutionRankings.Rankings.Select(row => row.TeamId));
+            graphSelectionInitialized = true;
             return;
         }
 
@@ -1755,9 +1790,28 @@
         NormalizeSelectedSeasonRange();
         targetPage = ClampRequestedPage(targetPage, CurrentTotalPages);
         page = targetPage;
-        lastLoadedUri = null;
 
         Navigation.NavigateTo(BuildRankingsHref(targetPage));
+    }
+
+    private static bool IsPageOnlyNavigation(string currentUri, string? previousUri)
+        => previousUri is not null &&
+           string.Equals(RemovePageParameter(currentUri), RemovePageParameter(previousUri), StringComparison.Ordinal);
+
+    private static string RemovePageParameter(string uri)
+    {
+        var separatorIndex = uri.IndexOf('?');
+        if (separatorIndex < 0)
+        {
+            return uri;
+        }
+
+        var queryParts = uri[(separatorIndex + 1)..]
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Where(parameter => !string.Equals(parameter.Split('=', 2)[0], "page", StringComparison.OrdinalIgnoreCase));
+
+        var remainingQuery = string.Join('&', queryParts);
+        return remainingQuery.Length == 0 ? uri[..separatorIndex] : $"{uri[..separatorIndex]}?{remainingQuery}";
     }
 
     private async Task RefreshSelectionAsync(int targetPage)
@@ -2359,7 +2413,10 @@
                 ? $"current and historical {TeamScopeNoun().ToLowerInvariant()}"
                 : "rated teams";
 
-        return $"Showing {rangeStart}-{rangeEnd} of {response.TotalCount} {scope}. Page {response.Page} of {response.TotalPages}.";
+        var pageDetail = response.TotalPages > 1
+            ? $" Page {response.Page} of {response.TotalPages}."
+            : ".";
+        return $"Showing {rangeStart}-{rangeEnd} of {response.TotalCount} {scope}{pageDetail}";
     }
 
     private string ScopeDetail()

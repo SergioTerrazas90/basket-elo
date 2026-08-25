@@ -17,7 +17,10 @@
                         </select>
                     </label>
                     <div class="elo-chart-range-buttons">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Reset zoom</button>
+                        @if (HasZoom)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Reset zoom</button>
+                        }
                         @if (ShowDiagnostics)
                         {
                             <button type="button"
@@ -99,6 +102,14 @@
                 {
                     <span>Change @FormatMovement(selectedPoint.EloDelta.Value)</span>
                 }
+                @if (ChartCompetitionLabel(selectedPoint) is { } selectedCompetition)
+                {
+                    <span>@selectedCompetition</span>
+                }
+                @if (ChartResultLabel(selectedPoint) is { } selectedResult)
+                {
+                    <span>Result @selectedResult</span>
+                }
                 @if (selectedPoint.Rank.HasValue)
                 {
                     <span>Rank #@selectedPoint.Rank</span>
@@ -155,6 +166,14 @@
                                         @if (point.EloDelta.HasValue)
                                         {
                                             <span>Change @FormatMovement(point.EloDelta.Value)</span>
+                                        }
+                                        @if (ChartCompetitionLabel(point) is { } competition)
+                                        {
+                                            <span>@competition</span>
+                                        }
+                                        @if (ChartResultLabel(point) is { } result)
+                                        {
+                                            <span>Result @result</span>
                                         }
                                         @if (point.Rank.HasValue)
                                         {
@@ -332,6 +351,27 @@
 
     private string ChartStyle => $"height: {Math.Clamp(HeightPixels, 260, 900)}px";
 
+    private bool HasZoom
+    {
+        get
+        {
+            const double tolerance = 0.0005;
+            if (viewStart > tolerance || viewEnd < 1d - tolerance)
+            {
+                return true;
+            }
+
+            if (!viewFromUtc.HasValue || !viewToUtc.HasValue)
+            {
+                return false;
+            }
+
+            var fullRange = GetVisibleDateRange(0, 1);
+            return fullRange.HasValue
+                && (viewFromUtc.Value > fullRange.Value.FromUtc || viewToUtc.Value < fullRange.Value.ToUtc);
+        }
+    }
+
     private bool ChartBusy => IsRefining || chartPaintPending;
 
     private string ChartBusyLabel => IsRefining ? "Refreshing chart detail" : "Rendering chart";
@@ -494,12 +534,28 @@
     }
 
     [JSInvokable("HandleDygraphPointClick")]
-    public async Task HandleDygraphPointClick(string teamName, double xMillis)
+    public Task HandleDygraphPointClick(string teamName, double xMillis)
+    {
+        return HandleDygraphPointClickCore(teamName, xMillis, null);
+    }
+
+    [JSInvokable("HandleDygraphPointClickByGameId")]
+    public Task HandleDygraphPointClickByGameId(string teamName, double xMillis, string? gameId)
+    {
+        return HandleDygraphPointClickCore(teamName, xMillis, gameId);
+    }
+
+    private async Task HandleDygraphPointClickCore(string teamName, double xMillis, string? gameId)
     {
         var date = DateTimeOffset.FromUnixTimeMilliseconds((long)xMillis).UtcDateTime;
-        selectedPoint = displaySeries
-            .FirstOrDefault(series => string.Equals(series.TeamName, teamName, StringComparison.Ordinal))?
-            .Points
+        var series = displaySeries.FirstOrDefault(candidate =>
+            string.Equals(candidate.TeamName, teamName, StringComparison.Ordinal));
+
+        selectedPoint = Guid.TryParse(gameId, out var parsedGameId)
+            ? series?.Points.FirstOrDefault(point => point.GameId == parsedGameId)
+            : null;
+
+        selectedPoint ??= series?.Points
             .OrderBy(point => Math.Abs((point.GameDateTimeUtc - date).Ticks))
             .FirstOrDefault();
 
@@ -768,6 +824,12 @@
                 signature.Add(point.EloDelta);
                 signature.Add(point.Rank);
                 signature.Add(point.GameId);
+                signature.Add(point.Competition, StringComparer.Ordinal);
+                signature.Add(point.Season, StringComparer.Ordinal);
+                signature.Add(point.Opponent, StringComparer.Ordinal);
+                signature.Add(point.WasHome);
+                signature.Add(point.TeamScore);
+                signature.Add(point.OpponentScore);
             }
         }
 
@@ -793,7 +855,13 @@
                     y = (double)point.Elo,
                     delta = point.EloDelta.HasValue ? (double?)point.EloDelta.Value : null,
                     rank = point.Rank,
-                    gameId = point.GameId?.ToString("D")
+                    gameId = point.GameId?.ToString("D"),
+                    competition = point.Competition,
+                    season = point.Season,
+                    opponent = point.Opponent,
+                    wasHome = point.WasHome,
+                    teamScore = point.TeamScore,
+                    opponentScore = point.OpponentScore
                 }).ToList()
             }).ToList()
         };
@@ -977,6 +1045,26 @@
 
     private static string FormatDate(DateTime value)
         => value.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.CurrentCulture);
+
+    private static string? ChartCompetitionLabel(EloChartPoint point)
+    {
+        var labels = new[] { point.Competition, point.Season }
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+        var label = string.Join(" · ", labels);
+        return string.IsNullOrWhiteSpace(label) ? null : label;
+    }
+
+    private static string? ChartResultLabel(EloChartPoint point)
+    {
+        var opponent = string.IsNullOrWhiteSpace(point.Opponent)
+            ? null
+            : $"{(point.WasHome == false ? "at" : "vs")} {point.Opponent}";
+        var score = point.TeamScore.HasValue && point.OpponentScore.HasValue
+            ? $"{point.TeamScore}-{point.OpponentScore}"
+            : null;
+        var label = string.Join(" · ", new[] { opponent, score }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        return string.IsNullOrWhiteSpace(label) ? null : label;
+    }
 
     private string FormatCategoryAxis(object value)
     {

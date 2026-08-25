@@ -82,6 +82,8 @@ using (var scope = app.Services.CreateScope())
     {
         await eloController.GetBrowse(pool.Key, null, null, null, 100);
     }
+
+    await eloController.WarmRankingCachesAsync();
 }
 
 app.UseSwagger();

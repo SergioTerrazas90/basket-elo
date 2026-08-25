@@ -545,6 +545,18 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .HasForeignKey(x => x.OpponentTeamId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.EloPoolKey, x.TeamId, x.RulesetVersion, x.GameDateTimeUtc });
+            entity.HasIndex(x => new { x.EloPoolKey, x.GameDateTimeUtc, x.TeamId });
+            entity.HasIndex(x => new { x.EloPoolKey, x.RulesetVersion, x.GameId });
+            entity.HasIndex(x => new
+                {
+                    x.EloPoolKey,
+                    x.RulesetVersion,
+                    x.TeamId,
+                    x.GameDateTimeUtc,
+                    x.Id
+                })
+                .IsDescending(false, false, false, true, true)
+                .IncludeProperties(x => new { x.EloDelta, x.OpponentTeamId, x.ActualScore });
             entity.HasIndex(x => new { x.EloPoolKey, x.GameId, x.TeamId, x.RulesetVersion }).IsUnique();
         });
 

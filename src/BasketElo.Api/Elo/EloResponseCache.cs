@@ -8,6 +8,8 @@ public sealed class EloResponseCache(
     IMemoryCache cache,
     ILogger<EloResponseCache> logger)
 {
+    public const string CurrentEuropeanTeamIdsCacheKey = "elo:current-european-team-ids";
+
     private readonly ConcurrentDictionary<string, CacheScope> trackedKeys = new(StringComparer.Ordinal);
 
     public bool TryGet<T>(string key, out T? value)
@@ -66,6 +68,7 @@ public sealed class EloResponseCache(
         }
 
         cache.Remove($"elo:ranking-filter-options:{poolKey}:{rulesetVersion}");
+        cache.Remove(CurrentEuropeanTeamIdsCacheKey);
         logger.LogInformation(
             "Invalidated {responseCount} cached ELO response(s) and ranking filter options for pool {poolKey}, ruleset {rulesetVersion} after rebuild {runId}.",
             removed,

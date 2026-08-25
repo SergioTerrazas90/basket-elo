@@ -61,41 +61,67 @@
     }
 
     function toRows(payload) {
-        const rowMap = new Map();
-        const metadata = [];
+        const rowsBySourceTime = new Map();
+        const rowsByChartTime = new Map();
+        const rows = [];
+
+        const createRow = sourceTime => {
+            // Dygraphs needs a unique x value for each row. Keep points from
+            // different series on the same timestamp together, but give
+            // duplicate points from one series their own nearby row instead
+            // of letting the later game overwrite the earlier game's data.
+            let chartTime = sourceTime;
+            while (rowsByChartTime.has(chartTime)) {
+                chartTime += 1;
+            }
+
+            const row = {
+                time: chartTime,
+                values: Array(payload.series.length).fill(null),
+                metadata: Array(payload.series.length).fill(null)
+            };
+            rowsByChartTime.set(chartTime, row);
+            rows.push(row);
+
+            const sourceRows = rowsBySourceTime.get(sourceTime) ?? [];
+            sourceRows.push(row);
+            rowsBySourceTime.set(sourceTime, sourceRows);
+            return row;
+        };
 
         payload.series.forEach((series, seriesIndex) => {
             series.points.forEach(point => {
-                const time = Number(point.x);
-                let row = rowMap.get(time);
+                const sourceTime = Number(point.x);
+                const sourceRows = rowsBySourceTime.get(sourceTime) ?? [];
+                let row = sourceRows.find(candidate => candidate.values[seriesIndex] == null);
                 if (!row) {
-                    row = {
-                        time,
-                        values: Array(payload.series.length).fill(null),
-                        metadata: Array(payload.series.length).fill(null)
-                    };
-                    rowMap.set(time, row);
+                    row = createRow(sourceTime);
                 }
 
                 row.values[seriesIndex] = Number(point.y);
                 row.metadata[seriesIndex] = {
-                    x: time,
+                    x: sourceTime,
                     y: Number(point.y),
                     delta: point.delta == null ? null : Number(point.delta),
                     rank: point.rank == null ? null : Number(point.rank),
                     gameId: point.gameId == null ? null : String(point.gameId),
+                    competition: point.competition == null ? null : String(point.competition),
+                    season: point.season == null ? null : String(point.season),
+                    opponent: point.opponent == null ? null : String(point.opponent),
+                    wasHome: point.wasHome == null ? null : Boolean(point.wasHome),
+                    teamScore: point.teamScore == null ? null : Number(point.teamScore),
+                    opponentScore: point.opponentScore == null ? null : Number(point.opponentScore),
                     name: series.name,
                     color: series.color
                 };
             });
         });
 
-        const sortedRows = Array.from(rowMap.values()).sort((left, right) => left.time - right.time);
-        sortedRows.forEach(row => metadata.push(row.metadata));
+        const sortedRows = rows.sort((left, right) => left.time - right.time);
 
         return {
             rows: sortedRows.map(row => [new Date(row.time), ...row.values]),
-            metadata,
+            metadata: sortedRows.map(row => row.metadata),
             min: sortedRows[0]?.time ?? Date.now(),
             max: sortedRows.at(-1)?.time ?? Date.now()
         };
@@ -141,6 +167,26 @@
         }
     }
 
+    function resolveHoverTarget(state, event, validPoints, row) {
+        const fallback = { point: validPoints[0], row };
+        if (!state.graph || !event) {
+            return fallback;
+        }
+
+        try {
+            const coords = state.graph.eventToDomCoords(event);
+            const closest = state.graph.findClosestPoint(coords[0], coords[1]);
+            const point = validPoints.find(candidate => candidate.name === closest?.seriesName);
+            if (point && closest?.row != null) {
+                return { point, row: closest.row };
+            }
+        } catch {
+            // The highlighted point is a sufficient fallback when browser event coordinates are unavailable.
+        }
+
+        return fallback;
+    }
+
     function renderTooltip(state, event, points, row) {
         if (!state.tooltip) {
             return;
@@ -157,10 +203,12 @@
             return;
         }
 
-        const visiblePoints = state.sharedTooltip ? validPoints : [validPoints[0]];
+        const target = resolveHoverTarget(state, event, validPoints, row);
+        const metadataRow = state.sharedTooltip ? row : target.row;
+        const visiblePoints = state.sharedTooltip ? validPoints : [target.point];
         const rows = visiblePoints.map(point => {
             const seriesIndex = state.labels.indexOf(point.name) - 1;
-            const meta = state.metadata[row]?.[seriesIndex];
+            const meta = state.metadata[metadataRow]?.[seriesIndex];
             if (!meta) {
                 return "";
             }
@@ -175,6 +223,14 @@
             if (meta.rank != null) {
                 detail.push(`<span>Rank #${meta.rank}</span>`);
             }
+            const competition = [meta.competition, meta.season].filter(Boolean).join(" · ");
+            if (competition) {
+                detail.push(`<span>${escapeHtml(competition)}</span>`);
+            }
+            const result = formatResult(meta);
+            if (result) {
+                detail.push(`<span>Result ${escapeHtml(result)}</span>`);
+            }
 
             return `<div class="elo-dygraph-tooltip-series" style="--active-team-color: ${escapeHtml(meta.color)}"><span class="elo-chart-active-swatch"></span><strong>${escapeHtml(meta.name)}</strong></div><div class="elo-dygraph-tooltip-details">${detail.join("")}</div>`;
         }).filter(Boolean);
@@ -186,7 +242,7 @@
 
         const first = visiblePoints[0];
         const firstSeriesIndex = state.labels.indexOf(first.name) - 1;
-        const firstMeta = state.metadata[row]?.[firstSeriesIndex];
+        const firstMeta = state.metadata[metadataRow]?.[firstSeriesIndex];
         state.tooltip.style.setProperty("--active-team-color", firstMeta?.color ?? "var(--color-accent)");
         state.tooltip.innerHTML = rows.join("");
         state.tooltip.hidden = false;
@@ -200,17 +256,29 @@
         state.tooltip.style.top = `${clamp(offsetY - height - 12, 8, Math.max(8, rect.height - height - 8))}px`;
     }
 
-    function notifyPointHover(state, points, row) {
+    function formatResult(metadata) {
+        const opponent = metadata?.opponent
+            ? `${metadata.wasHome === true ? "vs" : metadata.wasHome === false ? "at" : "vs"} ${metadata.opponent}`
+            : null;
+        const score = metadata?.teamScore != null && metadata?.opponentScore != null
+            ? `${metadata.teamScore}-${metadata.opponentScore}`
+            : null;
+        return [opponent, score].filter(Boolean).join(" · ") || null;
+    }
+
+    function notifyPointHover(state, event, points, row) {
         if (state.suppressHoverNotification || !state.dotNet) {
             return;
         }
 
         const validPoints = (points ?? []).filter(point => point.yval != null && !Number.isNaN(point.yval));
-        const first = validPoints[0];
-        const seriesIndex = first ? state.labels.indexOf(first.name) - 1 : -1;
-        const metadata = row == null || seriesIndex < 0
+        const target = validPoints.length > 0
+            ? resolveHoverTarget(state, event, validPoints, row)
+            : null;
+        const seriesIndex = target?.point ? state.labels.indexOf(target.point.name) - 1 : -1;
+        const metadata = target == null || target.row == null || seriesIndex < 0
             ? null
-            : state.metadata[row]?.[seriesIndex];
+            : state.metadata[target.row]?.[seriesIndex];
         const gameId = metadata?.gameId ?? null;
         if (state.lastHoveredGameId === gameId) {
             return;
@@ -877,7 +945,7 @@
             },
             highlightCallback: (event, x, points, row) => {
                 renderTooltip(state, event, points, row);
-                notifyPointHover(state, points, row);
+                notifyPointHover(state, event, points, row);
             },
             unhighlightCallback: () => {
                 if (state.tooltip) state.tooltip.hidden = true;
@@ -903,19 +971,17 @@
                     return;
                 }
 
-                let seriesName = points?.find(point => point.yval != null)?.name;
-                try {
-                    const coords = state.graph.eventToDomCoords(event);
-                    seriesName = state.graph.findClosestPoint(coords[0], coords[1])?.seriesName ?? seriesName;
-                } catch {
-                    // The highlighted point is a sufficient fallback when browser event coordinates are unavailable.
-                }
+                const validPoints = (points ?? []).filter(point => point.yval != null && !Number.isNaN(point.yval));
+                const target = validPoints.length > 0
+                    ? resolveHoverTarget(state, event, validPoints, row)
+                    : null;
+                const seriesName = target?.point?.name;
 
-                if (seriesName) {
+                if (seriesName && target.row != null) {
                     const seriesIndex = state.labels.indexOf(seriesName) - 1;
-                    const point = state.metadata[row]?.[seriesIndex];
+                    const point = state.metadata[target.row]?.[seriesIndex];
                     if (point) {
-                        state.dotNet.invokeMethodAsync("HandleDygraphPointClick", seriesName, point.x);
+                        state.dotNet.invokeMethodAsync("HandleDygraphPointClickByGameId", seriesName, point.x, point.gameId);
                     }
                 }
             }

@@ -21,6 +21,7 @@ public class Game
     public string Status { get; set; } = string.Empty;
     public string? CompetitionPhase { get; set; }
     public string? CompetitionRound { get; set; }
+    public bool? IsNeutralSite { get; set; }
     public bool EloEligible { get; set; } = true;
     public string? EloExclusionReason { get; set; }
     public bool HasManualResultOverride { get; set; }

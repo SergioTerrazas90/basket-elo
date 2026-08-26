@@ -23,7 +23,8 @@ public record BasketballProviderGame(
     string? CompetitionPhase = null,
     string? CompetitionRound = null,
     string? SourceHomeTeamCountryCode = null,
-    string? SourceAwayTeamCountryCode = null);
+    string? SourceAwayTeamCountryCode = null,
+    bool? IsNeutralSite = null);
 
 public sealed record BasketballProviderGameProvenance(
     string? SourceUrl,

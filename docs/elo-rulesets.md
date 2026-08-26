@@ -57,6 +57,44 @@ We chose `28` because FiveThirtyEight's NBA ELO methodology used the same basket
 
 This is a practical day-one default because it is basketball-specific, transparent, and already proven in a public ELO system. It can later be calibrated per competition or ruleset if Basket ELO has enough historical data to justify a learned factor.
 
+## Neutral-site games
+
+The ruleset value is a default, not a guarantee that every game has a home
+advantage. Each competition has a `HomeAdvantagePolicy`:
+
+- `automatic` keeps the normal home advantage except for hosted tournament
+  metadata such as `Final Four`, `Final Eight`, `Top Four`, and `Final Day`,
+  plus known hosted competitions such as FIBA final tournaments, `League Cup`,
+  `Leaders Cup`, and `Semaine des As`.
+- `neutral` sets the home advantage to `0` for every game in the competition.
+- `home` forces the normal home advantage, even when automatic metadata would
+  otherwise infer a neutral site.
+
+`games.IsNeutralSite` is a nullable per-game override. When it is set, it wins
+over the competition policy; `true` means neutral and `false` means the home
+advantage applies. The competition setting is available in the admin
+competition editor, so an edition or competition with a different format can
+be corrected without changing the ELO formula or rewriting provider parsers. The
+admin Games explorer exposes the same three choices for an individual game;
+selecting `Automatic` clears the override and returns to competition logic.
+
+FIBA final tournaments are treated as neutral by their exact competition name,
+including the catalogued `EuroBasket`, `AfroBasket`, `FIBA World Cup`, `Asian
+Games`, and `Summer Olympics` names. FIBA qualifier competitions are
+intentionally not treated as neutral by name: the current qualifier-window
+format is home-and-away, while exceptional historic neutral qualifier games
+can be corrected individually.
+
+The hosted tournament backfill also corrects imported games when API-Sports has
+no reliable stage or venue field. This includes the EuroLeague, Basketball
+Champions League, and ENBL final events, as well as the confirmed centralized
+domestic cup and supercup rounds. Ordinary two-leg finals, distributed cup
+rounds, and qualifiers remain home/away.
+
+The same policy is applied by rebuilds, Model Lab, upcoming-game probabilities,
+and game explanations. After changing a policy, queue the affected pool's ELO
+rebuild so the stored ratings match the new treatment.
+
 ## Point-Margin Adjustment
 
 The margin-adjusted ruleset still preserves normal ELO direction:

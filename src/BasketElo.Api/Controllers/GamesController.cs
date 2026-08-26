@@ -84,6 +84,11 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
                 x.GameDateTimeUtc,
                 CountryCode = x.Competition.CountryCode,
                 Competition = x.Competition.Name,
+                CompetitionType = x.Competition.Type,
+                CompetitionHomeAdvantagePolicy = x.Competition.HomeAdvantagePolicy,
+                x.CompetitionPhase,
+                x.CompetitionRound,
+                x.IsNeutralSite,
                 PoolKey = x.Competition.EloPoolKey,
                 HomeTeamId = x.HomeTeamId,
                 AwayTeamId = x.AwayTeamId,
@@ -144,10 +149,18 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
                 decimal? awayElo = game.PoolKey is not null && ratings.TryGetValue((game.PoolKey, game.AwayTeamId), out var away) ? away : null;
                 decimal? difference = homeElo.HasValue && awayElo.HasValue ? Math.Abs(homeElo.Value - awayElo.Value) : null;
                 decimal? minimum = homeElo.HasValue && awayElo.HasValue ? Math.Min(homeElo.Value, awayElo.Value) : null;
+                var gameRuleset = HomeAdvantagePolicy.Apply(
+                    rulesetParameters,
+                    game.IsNeutralSite,
+                    game.CompetitionHomeAdvantagePolicy,
+                    game.Competition,
+                    game.CompetitionType,
+                    game.CompetitionPhase,
+                    game.CompetitionRound);
                 decimal? homeWinProbability = homeElo.HasValue && awayElo.HasValue
                     ? EloCalculator.CalculateExpectedResult(
-                        homeElo.Value + rulesetParameters.HomeAdvantageElo - awayElo.Value,
-                        rulesetParameters.ProbabilityScale)
+                        homeElo.Value + gameRuleset.HomeAdvantageElo - awayElo.Value,
+                        gameRuleset.ProbabilityScale)
                     : null;
                 ranksByTeamId.TryGetValue(game.HomeTeamId, out var homeRank);
                 ranksByTeamId.TryGetValue(game.AwayTeamId, out var awayRank);
@@ -445,7 +458,10 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
                 x.AwayScore,
                 x.Status,
                 x.EloEligible,
-                x.EloExclusionReason
+                x.EloExclusionReason,
+                x.IsNeutralSite,
+                x.Competition.HomeAdvantagePolicy,
+                CompetitionType = x.Competition.Type
             })
             .ToListAsync(cancellationToken);
 
@@ -470,7 +486,15 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
                 x.EloEligible,
                 x.EloExclusionReason,
                 GetReviewReasons(x.Status, x.GameDateTimeUtc, x.HomeScore, x.AwayScore, x.EloEligible, x.EloExclusionReason).Count > 0,
-                GetReviewReasons(x.Status, x.GameDateTimeUtc, x.HomeScore, x.AwayScore, x.EloEligible, x.EloExclusionReason)))
+                GetReviewReasons(x.Status, x.GameDateTimeUtc, x.HomeScore, x.AwayScore, x.EloEligible, x.EloExclusionReason),
+                x.IsNeutralSite,
+                HomeAdvantagePolicy.IsNeutralSite(
+                    x.IsNeutralSite,
+                    x.HomeAdvantagePolicy,
+                    x.LeagueName,
+                    x.CompetitionType,
+                    x.CompetitionPhase,
+                    x.CompetitionRound)))
             .ToList();
 
         var filteredSummaryQuery = query.Select(x => new
@@ -547,6 +571,25 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
         game.EloExclusionReason = game.EloEligible ? null : "manual_result_not_eligible";
         game.UpdatedAtUtc = DateTime.UtcNow;
 
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPatch("{id:guid}/site-treatment")]
+    public async Task<IActionResult> UpdateSiteTreatment(
+        Guid id,
+        [FromBody] UpdateGameSiteTreatmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var game = await dbContext.Games.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (game is null)
+        {
+            return NotFound();
+        }
+
+        // Null means inherit the competition policy and automatic metadata.
+        game.IsNeutralSite = request.IsNeutralSite;
+        game.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return NoContent();
     }

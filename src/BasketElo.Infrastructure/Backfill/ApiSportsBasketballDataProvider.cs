@@ -145,6 +145,10 @@ public class ApiSportsBasketballDataProvider(
             var teams = item.GetProperty("teams");
             var home = teams.GetProperty("home");
             var away = teams.GetProperty("away");
+            var round = item.TryGetProperty("league", out var gameLeague) &&
+                        gameLeague.TryGetProperty("round", out var roundElement)
+                ? roundElement.GetString()
+                : null;
             var homeSourceTeamId = home.GetProperty("id").ToString();
             var awaySourceTeamId = away.GetProperty("id").ToString();
 
@@ -177,7 +181,9 @@ public class ApiSportsBasketballDataProvider(
                     season,
                     date,
                     homeSourceTeamId,
-                    awaySourceTeamId)));
+                    awaySourceTeamId),
+                CompetitionPhase: round,
+                CompetitionRound: round));
         }
 
         return (games, hasMorePages, warnings);

@@ -384,6 +384,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.EloPoolKey).HasMaxLength(30);
             entity.Property(x => x.CountryCode).HasMaxLength(3);
             entity.Property(x => x.SupportPolicy).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.HomeAdvantagePolicy).HasMaxLength(30).IsRequired();
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.HasIndex(x => new { x.Name, x.CountryCode }).IsUnique();
             entity.HasIndex(x => x.Name)
@@ -468,6 +469,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
             entity.Property(x => x.CompetitionPhase).HasMaxLength(100);
             entity.Property(x => x.CompetitionRound).HasMaxLength(100);
+            entity.Property(x => x.IsNeutralSite);
             entity.Property(x => x.EloExclusionReason).HasMaxLength(200);
             entity.Property(x => x.HasManualResultOverride).IsRequired();
             entity.Property(x => x.GameDateTimeUtc).IsRequired();

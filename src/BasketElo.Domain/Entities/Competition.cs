@@ -1,3 +1,5 @@
+using BasketElo.Domain.Elo;
+
 namespace BasketElo.Domain.Entities;
 
 public class Competition
@@ -10,6 +12,7 @@ public class Competition
     public int Tier { get; set; }
     public bool IsActive { get; set; } = true;
     public string SupportPolicy { get; set; } = CompetitionSupportPolicies.Supported;
+    public string HomeAdvantagePolicy { get; set; } = HomeAdvantagePolicies.Automatic;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public ICollection<CompetitionAlias> Aliases { get; set; } = new List<CompetitionAlias>();

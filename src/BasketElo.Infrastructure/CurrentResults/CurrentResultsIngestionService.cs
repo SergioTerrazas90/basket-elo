@@ -378,6 +378,11 @@ public sealed class CurrentResultsIngestionService(
         {
             throw new ArgumentException("New competition support policy is invalid.");
         }
+        var homeAdvantagePolicy = RequiredValue(create.HomeAdvantagePolicy, "New competition home-advantage policy", 30).ToLowerInvariant();
+        if (!HomeAdvantagePolicies.IsValid(homeAdvantagePolicy))
+        {
+            throw new ArgumentException("New competition home-advantage policy is invalid.");
+        }
 
         var countryCode = CountryCodeCatalog.Normalize(create.CountryCode);
         if (string.IsNullOrWhiteSpace(countryCode) && !NormalizeName(countryName).Equals("world", StringComparison.Ordinal))
@@ -400,6 +405,7 @@ public sealed class CurrentResultsIngestionService(
             Tier = Math.Max(0, create.Tier),
             IsActive = true,
             SupportPolicy = supportPolicy,
+            HomeAdvantagePolicy = homeAdvantagePolicy,
             CreatedAtUtc = timeProvider.GetUtcNow().UtcDateTime
         };
         dbContext.Competitions.Add(target);
@@ -742,6 +748,10 @@ public sealed class CurrentResultsIngestionService(
         game.AwayTeamId = away.Team.Id;
         game.CompetitionPhase = candidate.StageName;
         game.CompetitionRound = candidate.StageName;
+        if (candidate.IsNeutralSite.HasValue && !game.IsNeutralSite.HasValue)
+        {
+            game.IsNeutralSite = candidate.IsNeutralSite;
+        }
         game.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         if (review is not null && review.Status == CurrentResultReviewStatuses.Open && !tournamentCyclePendingConfirmation)

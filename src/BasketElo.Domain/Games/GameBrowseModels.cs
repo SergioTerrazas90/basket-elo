@@ -29,7 +29,9 @@ public record GameListItem(
     bool EloEligible,
     string? EloExclusionReason,
     bool NeedsReview,
-    IReadOnlyCollection<string> ReviewReasons);
+    IReadOnlyCollection<string> ReviewReasons,
+    bool? IsNeutralSite = null,
+    bool EffectiveNeutralSite = false);
 
 public record GameFilterOptions(
     IReadOnlyCollection<string> Countries,
@@ -55,3 +57,5 @@ public record UpdateGameResultRequest(
     short? HomeScore,
     short? AwayScore,
     string Status = "finished");
+
+public record UpdateGameSiteTreatmentRequest(bool? IsNeutralSite);

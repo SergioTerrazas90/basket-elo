@@ -1,5 +1,6 @@
 using BasketElo.Api.Auth;
 using BasketElo.Domain.Competitions;
+using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
@@ -66,6 +67,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
                 x.Tier,
                 x.IsActive,
                 x.SupportPolicy,
+                x.HomeAdvantagePolicy,
                 AliasCount = dbContext.CompetitionAliases.Count(alias => alias.CompetitionId == x.Id),
                 GameCount = dbContext.Games.Count(game => game.CompetitionId == x.Id),
                 OpenReviewCount = dbContext.CurrentResultReviews.Count(review =>
@@ -76,7 +78,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
         return Ok(new CompetitionAdminListResponse(
             rows.Select(x => new CompetitionAdminListItem(
                 x.Id, x.Name, x.Type, x.CountryCode, x.EloPoolKey, x.Tier, x.IsActive,
-                x.SupportPolicy, x.AliasCount, x.GameCount, x.OpenReviewCount)).ToList(),
+                x.SupportPolicy, x.HomeAdvantagePolicy, x.AliasCount, x.GameCount, x.OpenReviewCount)).ToList(),
             page, pageSize, totalCount, totalPages));
     }
 
@@ -88,7 +90,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
             .AsNoTracking()
             .Where(x => x.IsActive)
             .OrderBy(x => x.Name)
-            .Select(x => new CompetitionAdminOption(x.Id, x.Name, x.CountryCode, x.SupportPolicy))
+            .Select(x => new CompetitionAdminOption(x.Id, x.Name, x.CountryCode, x.SupportPolicy, x.HomeAdvantagePolicy))
             .ToListAsync(cancellationToken);
         return Ok(options);
     }
@@ -112,8 +114,8 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
         [FromBody] CreateCompetitionAdminRequest request,
         CancellationToken cancellationToken)
     {
-        (string Name, string Type, string? CountryCode, string SupportPolicy) values;
-        try { values = Validate(request.Name, request.Type, request.CountryCode, request.SupportPolicy); }
+        (string Name, string Type, string? CountryCode, string SupportPolicy, string HomeAdvantagePolicy) values;
+        try { values = Validate(request.Name, request.Type, request.CountryCode, request.SupportPolicy, request.HomeAdvantagePolicy); }
         catch (ArgumentException exception) { return BadRequest(exception.Message); }
         if (await dbContext.Competitions.AnyAsync(
                 x => x.Name == values.Name && x.CountryCode == values.CountryCode, cancellationToken))
@@ -131,6 +133,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
             Tier = Math.Max(0, request.Tier),
             IsActive = request.IsActive,
             SupportPolicy = values.SupportPolicy,
+            HomeAdvantagePolicy = values.HomeAdvantagePolicy,
             CreatedAtUtc = DateTime.UtcNow
         };
         dbContext.Competitions.Add(competition);
@@ -149,8 +152,8 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
             .SingleOrDefaultAsync(x => x.Id == competitionId, cancellationToken);
         if (competition is null) return NotFound("Competition was not found.");
 
-        (string Name, string Type, string? CountryCode, string SupportPolicy) values;
-        try { values = Validate(request.Name, request.Type, request.CountryCode, request.SupportPolicy); }
+        (string Name, string Type, string? CountryCode, string SupportPolicy, string HomeAdvantagePolicy) values;
+        try { values = Validate(request.Name, request.Type, request.CountryCode, request.SupportPolicy, request.HomeAdvantagePolicy); }
         catch (ArgumentException exception) { return BadRequest(exception.Message); }
         if (await dbContext.Competitions.AnyAsync(
                 x => x.Id != competitionId && x.Name == values.Name && x.CountryCode == values.CountryCode, cancellationToken))
@@ -165,6 +168,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
         competition.Tier = Math.Max(0, request.Tier);
         competition.IsActive = request.IsActive;
         competition.SupportPolicy = values.SupportPolicy;
+        competition.HomeAdvantagePolicy = values.HomeAdvantagePolicy;
         await dbContext.SaveChangesAsync(cancellationToken);
         return Ok(await BuildDetailAsync(competition, cancellationToken));
     }
@@ -256,17 +260,26 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
         return new CompetitionAdminDetail(
             competition.Id, competition.Name, competition.Type, competition.CountryCode,
             competition.EloPoolKey, competition.Tier, competition.IsActive, competition.SupportPolicy,
-            competition.CreatedAtUtc, gameCount, openReviewCount, aliases);
+            competition.HomeAdvantagePolicy, competition.CreatedAtUtc, gameCount, openReviewCount, aliases);
     }
 
-    private static (string Name, string Type, string? CountryCode, string SupportPolicy) Validate(
-        string name, string type, string? countryCode, string supportPolicy)
+    private static (string Name, string Type, string? CountryCode, string SupportPolicy, string HomeAdvantagePolicy) Validate(
+        string name,
+        string type,
+        string? countryCode,
+        string supportPolicy,
+        string homeAdvantagePolicy)
     {
         var normalizedName = Required(name, "Name", 200);
         var normalizedType = Required(type, "Type", 50);
         var normalizedPolicy = NormalizePolicy(supportPolicy) ?? throw new ArgumentException("Unknown support policy.");
+        var normalizedHomeAdvantagePolicy = homeAdvantagePolicy?.Trim().ToLowerInvariant();
+        if (!HomeAdvantagePolicies.IsValid(normalizedHomeAdvantagePolicy))
+        {
+            throw new ArgumentException("Unknown home-advantage policy.");
+        }
         var normalizedCountry = CountryCodeCatalog.Normalize(countryCode);
-        return (normalizedName, normalizedType, normalizedCountry, normalizedPolicy);
+        return (normalizedName, normalizedType, normalizedCountry, normalizedPolicy, normalizedHomeAdvantagePolicy!);
     }
 
     private static string Required(string? value, string label, int maxLength)

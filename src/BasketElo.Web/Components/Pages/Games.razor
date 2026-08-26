@@ -15,7 +15,7 @@
         <div>
             <p class="eyebrow">Data Browser</p>
             <h1>Games explorer</h1>
-            <p class="intro">Browse imported games, narrow down the dataset quickly, and inspect exactly what has landed in the database.</p>
+            <p class="intro">Browse imported games, edit results, and override the home-advantage treatment for individual games when the competition default is not enough.</p>
         </div>
         <div class="header-actions">
             <button class="btn btn-outline-secondary" @onclick="ResetFiltersAsync" disabled="@isBusy">Reset filters</button>
@@ -221,6 +221,7 @@
                             <th>League</th>
                             <th>Season</th>
                             <th>Tournament cycle</th>
+                            <th>Site treatment</th>
                             <th>Matchup</th>
                             <th>Score</th>
                             <th>Status</th>
@@ -233,7 +234,7 @@
                         @if (response.Games.Count == 0)
                         {
                             <tr>
-                                <td colspan="11" class="empty-state">No games match the current filters.</td>
+                                <td colspan="12" class="empty-state">No games match the current filters.</td>
                             </tr>
                         }
                         else
@@ -298,6 +299,17 @@
                                         }
                                     </td>
                                     <td>
+                                        <span class="site-treatment-label @(game.EffectiveNeutralSite ? "site-treatment-neutral" : "site-treatment-home")">@SiteTreatmentLabel(game)</span>
+                                        @if (game.IsNeutralSite is null)
+                                        {
+                                            <small class="source-game-id">competition / metadata</small>
+                                        }
+                                        else
+                                        {
+                                            <small class="source-game-id">manual override</small>
+                                        }
+                                    </td>
+                                    <td>
                                         <div class="game-actions">
                                             <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => LoadExplanationAsync(game.Id)" disabled="@IsExplanationLoading(game.Id)">
                                                 @(IsExplanationLoading(game.Id) ? "Loading" : "Explain")
@@ -312,6 +324,9 @@
                                                     @(editingGameId == game.Id ? "Editing" : "Edit result")
                                                 </button>
                                             }
+                                            <button type="button" class="btn btn-sm btn-outline-info" @onclick="() => BeginSiteEdit(game)" disabled="@isBusy">
+                                                @(editingSiteGameId == game.Id ? "Editing site" : "Edit site")
+                                            </button>
                                             @if (HasExplanationError(game.Id))
                                             {
                                                 <span class="explanation-error-indicator"
@@ -347,6 +362,24 @@
                                                 <div class="game-result-editor-actions">
                                                     <button type="button" class="btn btn-sm btn-primary" @onclick="SaveResultAsync" disabled="@isBusy">Save result</button>
                                                     <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelResultEdit" disabled="@isBusy">Cancel</button>
+                                                </div>
+                                            </div>
+                                        }
+                                        @if (editingSiteGameId == game.Id)
+                                        {
+                                            <div class="game-site-editor">
+                                                <label>
+                                                    Home-advantage treatment
+                                                    <select class="form-select form-select-sm" @bind="editingSiteTreatment">
+                                                        <option value="@HomeAdvantagePolicies.Automatic">Automatic (competition)</option>
+                                                        <option value="@HomeAdvantagePolicies.Neutral">Neutral site</option>
+                                                        <option value="@HomeAdvantagePolicies.Home">Home advantage</option>
+                                                    </select>
+                                                </label>
+                                                <small class="source-game-id">Automatic inherits competition rules and Final Four/Final Eight metadata.</small>
+                                                <div class="game-result-editor-actions">
+                                                    <button type="button" class="btn btn-sm btn-primary" @onclick="SaveSiteTreatmentAsync" disabled="@isBusy">Save site</button>
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelSiteEdit" disabled="@isBusy">Cancel</button>
                                                 </div>
                                             </div>
                                         }
@@ -441,9 +474,11 @@
     private bool isExplanationLoading;
     private string? explanationError;
     private Guid? editingGameId;
+    private Guid? editingSiteGameId;
     private string editingHomeScore = string.Empty;
     private string editingAwayScore = string.Empty;
     private string editingStatus = "finished";
+    private string editingSiteTreatment = HomeAdvantagePolicies.Automatic;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -657,6 +692,33 @@
     private static bool CanEditResult(GameListItem game)
         => !game.EloEligible || !game.HomeScore.HasValue || !game.AwayScore.HasValue;
 
+    private static string SiteTreatmentLabel(GameListItem game)
+        => game.IsNeutralSite switch
+        {
+            true => "Neutral (override)",
+            false => "Home (override)",
+            _ => game.EffectiveNeutralSite ? "Neutral (automatic)" : "Home (automatic)"
+        };
+
+    private void BeginSiteEdit(GameListItem game)
+    {
+        editingSiteGameId = game.Id;
+        editingSiteTreatment = game.IsNeutralSite switch
+        {
+            true => HomeAdvantagePolicies.Neutral,
+            false => HomeAdvantagePolicies.Home,
+            _ => HomeAdvantagePolicies.Automatic
+        };
+        errorMessage = null;
+        successMessage = null;
+    }
+
+    private void CancelSiteEdit()
+    {
+        editingSiteGameId = null;
+        editingSiteTreatment = HomeAdvantagePolicies.Automatic;
+    }
+
     private void BeginResultEdit(GameListItem game)
     {
         editingGameId = game.Id;
@@ -713,6 +775,51 @@
         catch (Exception ex)
         {
             errorMessage = $"Could not update game result: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SaveSiteTreatmentAsync()
+    {
+        if (editingSiteGameId is null)
+        {
+            return;
+        }
+
+        bool? isNeutralSite = editingSiteTreatment switch
+        {
+            HomeAdvantagePolicies.Neutral => true,
+            HomeAdvantagePolicies.Home => false,
+            _ => null
+        };
+
+        isBusy = true;
+        errorMessage = null;
+        successMessage = null;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/games/{editingSiteGameId.Value}/site-treatment")
+            {
+                Content = JsonContent.Create(new UpdateGameSiteTreatmentRequest(isNeutralSite))
+            };
+            using var responseMessage = await Http.SendAsync(request);
+            if (!responseMessage.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(responseMessage));
+            }
+
+            CancelSiteEdit();
+            await RefreshAsync();
+            successMessage = isNeutralSite.HasValue
+                ? "Game site treatment updated. Rebuild the affected ELO pool to include it in ratings."
+                : "Game site treatment reset to the competition default. Rebuild the affected ELO pool to include it in ratings.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not update game site treatment: {ex.Message}";
         }
         finally
         {

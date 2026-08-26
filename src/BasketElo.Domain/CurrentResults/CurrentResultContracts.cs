@@ -1,3 +1,5 @@
+using BasketElo.Domain.Elo;
+
 namespace BasketElo.Domain.CurrentResults;
 
 public static class CurrentResultStatuses
@@ -48,7 +50,8 @@ public sealed record CurrentResultCandidate(
     string RawStatus,
     string SourceRevision,
     string ParserVersion,
-    string? SourceCompetitionId = null);
+    string? SourceCompetitionId = null,
+    bool? IsNeutralSite = null);
 
 public sealed record CurrentResultFetchResult(
     DateOnly Date,
@@ -123,7 +126,8 @@ public sealed record CreateCompetitionFromMergeRequest(
     string? CountryCode,
     string? EloPoolKey,
     int Tier,
-    string SupportPolicy);
+    string SupportPolicy,
+    string HomeAdvantagePolicy = HomeAdvantagePolicies.Automatic);
 
 public sealed record MergeUnmatchedCompetitionRequest(
     string Source,

@@ -1586,6 +1586,14 @@ public class EloController(
         }
 
         var ruleset = EloCalculator.GetRulesetParameters(selectedRuleset);
+        var gameRuleset = HomeAdvantagePolicy.Apply(
+            ruleset,
+            game.IsNeutralSite,
+            game.Competition.HomeAdvantagePolicy,
+            game.Competition.Name,
+            game.Competition.Type,
+            game.CompetitionPhase,
+            game.CompetitionRound);
         var histories = await dbContext.RatingHistories
             .AsNoTracking()
             .Where(x => x.GameId == gameId && x.EloPoolKey == poolKey && x.RulesetVersion == selectedRuleset)
@@ -1625,12 +1633,12 @@ public class EloController(
             homeHistory is null ? null : ToGameTeamExplanation(homeHistory, true),
             awayHistory is null ? null : ToGameTeamExplanation(awayHistory, false),
             new EloGameRulesetExplanation(
-                ruleset.BaseRating,
-                ruleset.KFactor,
-                ruleset.HomeAdvantageElo,
-                ruleset.PointsPerEloMargin,
-                ruleset.CompetitionWeight,
-                ruleset.UsesMarginAdjustment)));
+                gameRuleset.BaseRating,
+                gameRuleset.KFactor,
+                gameRuleset.HomeAdvantageElo,
+                gameRuleset.PointsPerEloMargin,
+                gameRuleset.CompetitionWeight,
+                gameRuleset.UsesMarginAdjustment)));
     }
 
     [HttpGet("teams/{teamId:guid}")]

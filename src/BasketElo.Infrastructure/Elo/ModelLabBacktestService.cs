@@ -83,8 +83,13 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 x.Id,
                 x.CompetitionId,
                 x.Competition.Name,
+                x.Competition.Type,
+                x.Competition.HomeAdvantagePolicy,
                 x.GameDateTimeUtc,
                 x.Season.Label,
+                x.IsNeutralSite,
+                x.CompetitionPhase,
+                x.CompetitionRound,
                 x.HomeTeamId,
                 x.HomeTeam.CanonicalName,
                 x.AwayTeamId,
@@ -278,12 +283,21 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 continue;
             }
 
+            var gameRuleset = HomeAdvantagePolicy.Apply(
+                parameters,
+                game.IsNeutralSite,
+                game.CompetitionHomeAdvantagePolicy,
+                game.CompetitionName,
+                game.CompetitionType,
+                game.CompetitionPhase,
+                game.CompetitionRound);
+
             if (isScored)
             {
-                var eloDiff = home.Elo + parameters.HomeAdvantageElo - away.Elo;
-                var predictedHomeWinProbability = EloCalculator.CalculateExpectedResult(eloDiff, parameters.ProbabilityScale);
-                var predictedHomeMargin = parameters.PointsPerEloMargin.HasValue && parameters.PointsPerEloMargin.Value > 0
-                    ? eloDiff / parameters.PointsPerEloMargin.Value
+                var eloDiff = home.Elo + gameRuleset.HomeAdvantageElo - away.Elo;
+                var predictedHomeWinProbability = EloCalculator.CalculateExpectedResult(eloDiff, gameRuleset.ProbabilityScale);
+                var predictedHomeMargin = gameRuleset.PointsPerEloMargin.HasValue && gameRuleset.PointsPerEloMargin.Value > 0
+                    ? eloDiff / gameRuleset.PointsPerEloMargin.Value
                     : 0m;
                 var actualHomeMargin = game.HomeScore - game.AwayScore;
                 var pickedHome = predictedHomeWinProbability >= 0.5m;
@@ -317,7 +331,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 game.AwayScore,
                 home.Elo,
                 away.Elo,
-                parameters);
+                gameRuleset);
 
             home.RecentDeltas.Enqueue(calculation.HomeDelta);
             away.RecentDeltas.Enqueue(-calculation.HomeDelta);
@@ -482,8 +496,13 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         Guid Id,
         Guid CompetitionId,
         string CompetitionName,
+        string CompetitionType,
+        string CompetitionHomeAdvantagePolicy,
         DateTime GameDateTimeUtc,
         string Season,
+        bool? IsNeutralSite,
+        string? CompetitionPhase,
+        string? CompetitionRound,
         Guid HomeTeamId,
         string HomeTeamName,
         Guid AwayTeamId,

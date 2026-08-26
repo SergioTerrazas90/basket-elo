@@ -12,6 +12,8 @@ public class EloRebuildService(
     IEloRebuildNotificationPublisher notificationPublisher,
     ILogger<EloRebuildService> logger) : IEloRebuildService
 {
+    private const int RatingHistoryBatchSize = 250;
+
     public async Task<EloRebuildResult> RebuildAsync(Guid runId, CancellationToken cancellationToken)
     {
         var run = await dbContext.EloRebuildRuns.SingleAsync(x => x.Id == runId, cancellationToken);
@@ -78,22 +80,36 @@ public class EloRebuildService(
                     x.HomeTeamId,
                     x.AwayTeamId,
                     x.HomeScore!.Value,
-                    x.AwayScore!.Value))
+                    x.AwayScore!.Value,
+                    x.IsNeutralSite,
+                    x.Competition.Name,
+                    x.Competition.Type,
+                    x.Competition.HomeAdvantagePolicy,
+                    x.CompetitionPhase,
+                    x.CompetitionRound))
                 .ToListAsync(cancellationToken);
 
             var ratings = new Dictionary<Guid, RatingState>();
-            var histories = new List<RatingHistory>(games.Count * 2);
+            var historyBatch = new List<RatingHistory>(RatingHistoryBatchSize);
 
             foreach (var game in games)
             {
                 var home = GetRatingState(ratings, game.HomeTeamId);
                 var away = GetRatingState(ratings, game.AwayTeamId);
+                var gameRuleset = HomeAdvantagePolicy.Apply(
+                    ruleset,
+                    game.IsNeutralSite,
+                    game.CompetitionHomeAdvantagePolicy,
+                    game.CompetitionName,
+                    game.CompetitionType,
+                    game.CompetitionPhase,
+                    game.CompetitionRound);
                 var calculation = EloCalculator.Calculate(
                     game.HomeScore,
                     game.AwayScore,
                     home.Elo,
                     away.Elo,
-                    rulesetVersion);
+                    gameRuleset);
 
                 var homePreElo = home.Elo;
                 var awayPreElo = away.Elo;
@@ -109,7 +125,7 @@ public class EloRebuildService(
 
                 var positions = GetPositions(ratings, game.HomeTeamId, game.AwayTeamId);
 
-                histories.Add(new RatingHistory
+                historyBatch.Add(new RatingHistory
                 {
                     Id = Guid.NewGuid(),
                     GameId = game.Id,
@@ -131,7 +147,7 @@ public class EloRebuildService(
                     CreatedAtUtc = DateTime.UtcNow
                 });
 
-                histories.Add(new RatingHistory
+                historyBatch.Add(new RatingHistory
                 {
                     Id = Guid.NewGuid(),
                     GameId = game.Id,
@@ -152,9 +168,14 @@ public class EloRebuildService(
                     RatingPositionAfter = positions.AwayPosition,
                     CreatedAtUtc = DateTime.UtcNow
                 });
+
+                if (historyBatch.Count >= RatingHistoryBatchSize)
+                {
+                    await SaveRatingHistoryBatchAsync(historyBatch, cancellationToken);
+                }
             }
 
-            dbContext.RatingHistories.AddRange(histories);
+            await SaveRatingHistoryBatchAsync(historyBatch, cancellationToken);
             dbContext.TeamRatings.AddRange(ratings.Select(x => new TeamRating
             {
                 TeamId = x.Key,
@@ -180,6 +201,7 @@ public class EloRebuildService(
                 competitionWeight = ruleset.CompetitionWeight,
                 poolKey,
                 poolName = EloPoolKeys.DisplayName(poolKey),
+                homeAdvantagePolicy = "Competition policy plus per-game neutral-site overrides; automatic mode recognizes Final Four and Final Eight metadata.",
                 playoffPolicy = "Playoff and regular-season games use the current ruleset competition weight."
             });
 
@@ -215,6 +237,25 @@ public class EloRebuildService(
         }
 
         return ToResult(run, poolKey);
+    }
+
+    private async Task SaveRatingHistoryBatchAsync(
+        List<RatingHistory> historyBatch,
+        CancellationToken cancellationToken)
+    {
+        if (historyBatch.Count == 0)
+        {
+            return;
+        }
+
+        dbContext.RatingHistories.AddRange(historyBatch);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        foreach (var history in historyBatch)
+        {
+            dbContext.Entry(history).State = EntityState.Detached;
+        }
+
+        historyBatch.Clear();
     }
 
     private static EloRebuildResult ToResult(EloRebuildRun run, string poolKey) => new()
@@ -320,7 +361,13 @@ public class EloRebuildService(
         Guid HomeTeamId,
         Guid AwayTeamId,
         short HomeScore,
-        short AwayScore);
+        short AwayScore,
+        bool? IsNeutralSite,
+        string CompetitionName,
+        string CompetitionType,
+        string CompetitionHomeAdvantagePolicy,
+        string? CompetitionPhase,
+        string? CompetitionRound);
 
     private sealed class RatingState(decimal elo)
     {

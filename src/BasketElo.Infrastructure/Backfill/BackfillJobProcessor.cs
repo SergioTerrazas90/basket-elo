@@ -445,6 +445,7 @@ public class BackfillJobProcessor(
                         Status = providerGame.Status,
                         CompetitionPhase = providerGame.CompetitionPhase,
                         CompetitionRound = providerGame.CompetitionRound,
+                        IsNeutralSite = providerGame.IsNeutralSite,
                         EloEligible = providerGame.ExclusionReason is null,
                         EloExclusionReason = providerGame.ExclusionReason,
                         IngestedAtUtc = DateTime.UtcNow,
@@ -477,6 +478,10 @@ public class BackfillJobProcessor(
                         existingGame.Status = providerGame.Status;
                         existingGame.CompetitionPhase = providerGame.CompetitionPhase;
                         existingGame.CompetitionRound = providerGame.CompetitionRound;
+                        if (providerGame.IsNeutralSite.HasValue && !existingGame.IsNeutralSite.HasValue)
+                        {
+                            existingGame.IsNeutralSite = providerGame.IsNeutralSite;
+                        }
                         existingGame.EloEligible = providerGame.ExclusionReason is null;
                         existingGame.EloExclusionReason = providerGame.ExclusionReason;
                     }

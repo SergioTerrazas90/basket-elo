@@ -1,3 +1,5 @@
+using BasketElo.Domain.Elo;
+
 namespace BasketElo.Domain.Competitions;
 
 public sealed record CompetitionAdminListResponse(
@@ -16,6 +18,7 @@ public sealed record CompetitionAdminListItem(
     int Tier,
     bool IsActive,
     string SupportPolicy,
+    string HomeAdvantagePolicy,
     int AliasCount,
     int GameCount,
     int OpenReviewCount);
@@ -29,6 +32,7 @@ public sealed record CompetitionAdminDetail(
     int Tier,
     bool IsActive,
     string SupportPolicy,
+    string HomeAdvantagePolicy,
     DateTime CreatedAtUtc,
     int GameCount,
     int OpenReviewCount,
@@ -50,7 +54,8 @@ public sealed record CreateCompetitionAdminRequest(
     string? EloPoolKey,
     int Tier,
     bool IsActive,
-    string SupportPolicy);
+    string SupportPolicy,
+    string HomeAdvantagePolicy = HomeAdvantagePolicies.Automatic);
 
 public sealed record UpdateCompetitionAdminRequest(
     string Name,
@@ -59,7 +64,8 @@ public sealed record UpdateCompetitionAdminRequest(
     string? EloPoolKey,
     int Tier,
     bool IsActive,
-    string SupportPolicy);
+    string SupportPolicy,
+    string HomeAdvantagePolicy = HomeAdvantagePolicies.Automatic);
 
 public sealed record AddCompetitionAdminAliasRequest(
     string Source,
@@ -70,4 +76,5 @@ public sealed record CompetitionAdminOption(
     Guid Id,
     string Name,
     string? CountryCode,
-    string SupportPolicy);
+    string SupportPolicy,
+    string HomeAdvantagePolicy = HomeAdvantagePolicies.Automatic);

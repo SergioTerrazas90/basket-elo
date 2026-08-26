@@ -346,6 +346,42 @@ public sealed class IdentityHealthCheckServiceTests
     }
 
     [Fact]
+    public async Task AliasDecision_IsReusedWhenCanonicalTeamIdChanges()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var dbContext = new BasketEloDbContext(options);
+        var currentTeam = new Team { Id = Guid.NewGuid(), CanonicalName = "Current team", CountryCode = "ES" };
+        var previousTeamId = Guid.NewGuid();
+        dbContext.Teams.Add(currentTeam);
+        dbContext.TeamAliases.AddRange(
+            new TeamAlias { Id = Guid.NewGuid(), TeamId = currentTeam.Id, Source = "test", SourceTeamId = "42", AliasName = "Current name" },
+            new TeamAlias { Id = Guid.NewGuid(), TeamId = currentTeam.Id, Source = "test", SourceTeamId = "42", AliasName = "Historical name" });
+        dbContext.IdentityReviewDecisions.Add(new IdentityReviewDecision
+        {
+            Id = Guid.NewGuid(),
+            DecisionKey = $"alias_observation|team={previousTeamId:N}|source=test:42",
+            FindingType = IdentityFindingType.AliasObservation,
+            ResolutionAction = "accept_alias",
+            AffectedTeamId = previousTeamId,
+            Source = "test",
+            SourceTeamId = "42"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var service = new IdentityHealthCheckService(dbContext, null!);
+
+        var result = await service.RunAsync(
+            new IdentityHealthCheckRequest { Source = "test", Force = true },
+            CancellationToken.None);
+
+        Assert.Equal(IdentityHealthCheckStatus.Clean, result.Status);
+        Assert.Equal(0, result.FindingsCount);
+    }
+
+    [Fact]
     public async Task ReviewCandidates_GroupsAllFindingTypesForOnePair()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()

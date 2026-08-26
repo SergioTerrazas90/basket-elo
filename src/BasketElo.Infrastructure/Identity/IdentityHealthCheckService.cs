@@ -1827,6 +1827,16 @@ public class IdentityHealthCheckService(
         var storedDecisionKeys = storedDecisions
             .Select(x => x.DecisionKey)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Alias decisions are scoped to the provider identity, not to the
+        // current canonical team row. A later merge/reassignment can change
+        // the team id while the provider source/team id remains stable.
+        var reviewedAliasSourceKeys = storedDecisions
+            .Where(x =>
+                x.FindingType == IdentityFindingType.AliasObservation &&
+                !string.IsNullOrWhiteSpace(x.Source) &&
+                !string.IsNullOrWhiteSpace(x.SourceTeamId))
+            .Select(x => CreateAliasSourceDecisionKey(x.Source, x.SourceTeamId))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var distinctTeamDecisionKeys = storedDecisions
             .Where(x =>
                 x.ResolutionAction == "keep_separate" &&
@@ -1855,6 +1865,13 @@ public class IdentityHealthCheckService(
                 x.RelatedSourceTeamId
             })
             .ToListAsync(cancellationToken);
+        reviewedAliasSourceKeys.UnionWith(
+            resolvedFindingKeys
+                .Where(x =>
+                    x.FindingType == IdentityFindingType.AliasObservation &&
+                    !string.IsNullOrWhiteSpace(x.Source) &&
+                    !string.IsNullOrWhiteSpace(x.SourceTeamId))
+                .Select(x => CreateAliasSourceDecisionKey(x.Source, x.SourceTeamId)));
         var reviewedKeys = storedDecisionKeys
             .Concat(resolvedFindingKeys.Select(x => CreateDecisionKey(
                 x.FindingType,
@@ -1869,7 +1886,9 @@ public class IdentityHealthCheckService(
         return findings
             .Where(x =>
                 !IsDistinctTeamPairSuppressed(x, distinctTeamDecisionKeys) &&
-                !reviewedKeys.Contains(CreateDecisionKey(x)))
+                !reviewedKeys.Contains(CreateDecisionKey(x)) &&
+                !(x.FindingType == IdentityFindingType.AliasObservation &&
+                    reviewedAliasSourceKeys.Contains(CreateAliasSourceDecisionKey(x.Source, x.SourceTeamId))))
             .ToList();
     }
 
@@ -1887,11 +1906,21 @@ public class IdentityHealthCheckService(
             ? CreateDistinctTeamsDecisionKey(finding.AffectedTeamId.Value, finding.RelatedTeamId.Value)
             : CreateDecisionKey(finding);
         var exists = await dbContext.IdentityReviewDecisions
-            .AnyAsync(x => x.DecisionKey == decisionKey, cancellationToken);
+            .AnyAsync(x =>
+                x.DecisionKey == decisionKey ||
+                (finding.FindingType == IdentityFindingType.AliasObservation &&
+                    x.FindingType == IdentityFindingType.AliasObservation &&
+                    x.Source == finding.Source &&
+                    x.SourceTeamId == finding.SourceTeamId),
+                cancellationToken);
         var alreadyPending = dbContext.ChangeTracker
             .Entries<IdentityReviewDecision>()
             .Any(x => x.State != EntityState.Deleted &&
-                string.Equals(x.Entity.DecisionKey, decisionKey, StringComparison.OrdinalIgnoreCase));
+                (string.Equals(x.Entity.DecisionKey, decisionKey, StringComparison.OrdinalIgnoreCase) ||
+                    (finding.FindingType == IdentityFindingType.AliasObservation &&
+                        x.Entity.FindingType == IdentityFindingType.AliasObservation &&
+                        string.Equals(x.Entity.Source, finding.Source, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(x.Entity.SourceTeamId, finding.SourceTeamId, StringComparison.OrdinalIgnoreCase))));
         if (exists || alreadyPending)
         {
             return;
@@ -2349,6 +2378,9 @@ public class IdentityHealthCheckService(
             _ => $"{findingType}|team={pairKey}|source={sourceKey}|related={relatedSourceKey}"
         };
     }
+
+    private static string CreateAliasSourceDecisionKey(string? source, string? sourceTeamId)
+        => $"{source ?? "*"}:{sourceTeamId ?? "*"}";
 
     private static bool IsDistinctTeamPairSuppressed(
         IdentityHealthCheckFinding finding,

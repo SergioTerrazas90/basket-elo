@@ -244,6 +244,108 @@ public sealed class IdentityHealthCheckServiceTests
     }
 
     [Fact]
+    public async Task AliasFinding_ReassignsProviderIdentityToExistingTeam()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var dbContext = new BasketEloDbContext(options);
+        var currentTeam = new Team { Id = Guid.NewGuid(), CanonicalName = "Current team", CountryCode = "ES" };
+        var targetTeam = new Team { Id = Guid.NewGuid(), CanonicalName = "Correct team", CountryCode = "ES" };
+        var run = new IdentityHealthCheckRun { Id = Guid.NewGuid(), ScopeKey = "source=test" };
+        var finding = new IdentityHealthCheckFinding
+        {
+            Id = Guid.NewGuid(),
+            RunId = run.Id,
+            FindingType = IdentityFindingType.AliasObservation,
+            Severity = IdentityFindingSeverity.Blocker,
+            Source = "test",
+            SourceTeamId = "42",
+            AffectedTeamId = currentTeam.Id,
+            Evidence = "multiple names",
+            SuggestedAction = "choose an identity decision"
+        };
+
+        dbContext.Teams.AddRange(currentTeam, targetTeam);
+        dbContext.IdentityHealthCheckRuns.Add(run);
+        dbContext.IdentityHealthCheckFindings.Add(finding);
+        dbContext.TeamAliases.AddRange(
+            new TeamAlias { Id = Guid.NewGuid(), TeamId = currentTeam.Id, Source = "test", SourceTeamId = "42", AliasName = "Current name" },
+            new TeamAlias { Id = Guid.NewGuid(), TeamId = currentTeam.Id, Source = "test", SourceTeamId = "42", AliasName = "Historical name" });
+        await dbContext.SaveChangesAsync();
+
+        var service = new IdentityHealthCheckService(dbContext, null!);
+
+        var result = await service.ResolveFindingAsync(
+            finding.Id,
+            new ResolveIdentityFindingRequest
+            {
+                Action = "reassign_alias",
+                TargetTeamId = targetTeam.Id,
+                ResolvedBy = "test"
+            },
+            CancellationToken.None);
+
+        Assert.Equal(IdentityFindingStatus.Resolved, result.Status);
+        Assert.All(await dbContext.TeamAliases.ToListAsync(), alias => Assert.Equal(targetTeam.Id, alias.TeamId));
+        Assert.Contains(await dbContext.IdentityReviewDecisions.ToListAsync(), decision => decision.ResolutionAction == "reassign_alias");
+    }
+
+    [Fact]
+    public async Task AliasFinding_ExtractsProviderIdentityAsNewTeam()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var dbContext = new BasketEloDbContext(options);
+        var currentTeam = new Team { Id = Guid.NewGuid(), CanonicalName = "Current team", CountryCode = "ES" };
+        var run = new IdentityHealthCheckRun { Id = Guid.NewGuid(), ScopeKey = "source=test" };
+        var finding = new IdentityHealthCheckFinding
+        {
+            Id = Guid.NewGuid(),
+            RunId = run.Id,
+            FindingType = IdentityFindingType.AliasObservation,
+            Severity = IdentityFindingSeverity.Blocker,
+            Source = "test",
+            SourceTeamId = "42",
+            AffectedTeamId = currentTeam.Id,
+            Evidence = "multiple names",
+            SuggestedAction = "choose an identity decision"
+        };
+
+        dbContext.Teams.Add(currentTeam);
+        dbContext.IdentityHealthCheckRuns.Add(run);
+        dbContext.IdentityHealthCheckFindings.Add(finding);
+        dbContext.TeamAliases.AddRange(
+            new TeamAlias { Id = Guid.NewGuid(), TeamId = currentTeam.Id, Source = "test", SourceTeamId = "42", AliasName = "Current name" },
+            new TeamAlias { Id = Guid.NewGuid(), TeamId = currentTeam.Id, Source = "test", SourceTeamId = "42", AliasName = "Historical name" });
+        await dbContext.SaveChangesAsync();
+
+        var service = new IdentityHealthCheckService(dbContext, null!);
+
+        var result = await service.ResolveFindingAsync(
+            finding.Id,
+            new ResolveIdentityFindingRequest
+            {
+                Action = "extract_alias",
+                CanonicalName = "Historical club",
+                CountryCode = "ES",
+                IsActive = false,
+                ResolvedBy = "test"
+            },
+            CancellationToken.None);
+
+        var newTeam = Assert.Single(await dbContext.Teams.Where(team => team.Id != currentTeam.Id).ToListAsync());
+        Assert.Equal("Historical club", newTeam.CanonicalName);
+        Assert.False(newTeam.IsActive);
+        Assert.Equal(newTeam.Id, result.AffectedTeamId);
+        Assert.All(await dbContext.TeamAliases.ToListAsync(), alias => Assert.Equal(newTeam.Id, alias.TeamId));
+        Assert.Contains(await dbContext.IdentityReviewDecisions.ToListAsync(), decision => decision.ResolutionAction == "extract_alias");
+    }
+
+    [Fact]
     public async Task ReviewCandidates_GroupsAllFindingTypesForOnePair()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()

@@ -849,6 +849,13 @@ public class IdentityHealthCheckService(
             throw new InvalidOperationException("Only missing metadata findings can be resolved by editing team metadata.");
         }
 
+        if (finding.FindingType == IdentityFindingType.AliasObservation &&
+            action is not ("accept_alias" or "reassign_alias" or "extract_alias" or "ignore"))
+        {
+            throw new InvalidOperationException(
+                "Alias observations require one of these decisions: accept the aliases, map the provider identity to an existing team, or extract it as a new team.");
+        }
+
         if (action == "keep_separate")
         {
             await PopulateFindingTeamIdsAsync(finding, cancellationToken);
@@ -857,6 +864,14 @@ public class IdentityHealthCheckService(
         if (action == "merge_duplicate")
         {
             await MergeFindingTeamsAsync(finding, request, cancellationToken);
+        }
+        else if (action == "reassign_alias")
+        {
+            await ReassignFindingAliasesAsync(finding, request, cancellationToken);
+        }
+        else if (action == "extract_alias")
+        {
+            await ExtractFindingAliasesAsync(finding, request, cancellationToken);
         }
         else if (action == "edit_metadata")
         {
@@ -872,6 +887,13 @@ public class IdentityHealthCheckService(
         await SaveReviewDecisionAsync(finding, action, cancellationToken);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (action is "reassign_alias" or "extract_alias")
+        {
+            await InvalidateChangedScopeAsync(
+                new IdentityChangedScope { Source = finding.Source },
+                cancellationToken);
+        }
+
         await RefreshRunCountsAsync(finding.RunId, cancellationToken);
 
         return ToDto(finding);
@@ -1133,7 +1155,7 @@ public class IdentityHealthCheckService(
                 return NewFinding(
                     run,
                     IdentityFindingType.AliasObservation,
-                    IdentityFindingSeverity.Warning,
+                    IdentityFindingSeverity.Blocker,
                     first.Source,
                     first.SourceTeamId,
                     first.TeamId,
@@ -1141,7 +1163,7 @@ public class IdentityHealthCheckService(
                     null,
                     null,
                     $"Source team '{first.Source}:{first.SourceTeamId}' has multiple observed names: {names}.",
-                    "Accept the alias observation under the existing canonical team.",
+                    "Blocking decision required: accept these names as aliases, map the provider identity to an existing team, or extract it as a new team.",
                     now);
             });
     }
@@ -1474,6 +1496,149 @@ public class IdentityHealthCheckService(
         await MergeTeamsCoreAsync(sourceTeamId.Value, targetTeamId, request.ConfirmMergeWithRatings, cancellationToken);
     }
 
+    private async Task ReassignFindingAliasesAsync(
+        IdentityHealthCheckFinding finding,
+        ResolveIdentityFindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var sourceTeamId = await ResolveFindingAliasTeamIdAsync(finding, cancellationToken);
+        var targetTeamId = request.TargetTeamId
+            ?? throw new InvalidOperationException("Choose the existing team that should receive this provider identity.");
+
+        if (sourceTeamId == targetTeamId)
+        {
+            throw new InvalidOperationException("The existing target team must be different from the current canonical team.");
+        }
+
+        var targetTeam = await dbContext.Teams.FindAsync([targetTeamId], cancellationToken)
+            ?? throw new InvalidOperationException("The selected target team was not found.");
+        var aliases = await LoadFindingAliasesAsync(finding, sourceTeamId, cancellationToken);
+        var mappedTeamIds = aliases.Select(x => x.TeamId).Distinct().ToList();
+        if (mappedTeamIds.Count != 1 || mappedTeamIds[0] != sourceTeamId)
+        {
+            throw new InvalidOperationException(
+                "This provider identity is already mapped to multiple teams. Resolve its source-team split before reassigning it.");
+        }
+
+        var targetAliases = await dbContext.TeamAliases
+            .Where(x => x.TeamId == targetTeamId &&
+                x.Source == finding.Source &&
+                x.SourceTeamId == finding.SourceTeamId)
+            .ToListAsync(cancellationToken);
+        foreach (var alias in aliases)
+        {
+            var duplicate = targetAliases.FirstOrDefault(x => x.AliasName == alias.AliasName);
+            if (duplicate is not null)
+            {
+                dbContext.TeamAliases.Remove(alias);
+            }
+            else
+            {
+                alias.TeamId = targetTeam.Id;
+                targetAliases.Add(alias);
+            }
+        }
+
+        finding.AffectedTeamId = targetTeam.Id;
+        finding.AffectedTeam = targetTeam;
+    }
+
+    private async Task ExtractFindingAliasesAsync(
+        IdentityHealthCheckFinding finding,
+        ResolveIdentityFindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var sourceTeamId = await ResolveFindingAliasTeamIdAsync(finding, cancellationToken);
+        var aliases = await LoadFindingAliasesAsync(finding, sourceTeamId, cancellationToken);
+        var mappedTeamIds = aliases.Select(x => x.TeamId).Distinct().ToList();
+        if (mappedTeamIds.Count != 1 || mappedTeamIds[0] != sourceTeamId)
+        {
+            throw new InvalidOperationException(
+                "This provider identity is already mapped to multiple teams. Resolve its source-team split before extracting it.");
+        }
+
+        var canonicalName = request.CanonicalName?.Trim();
+        if (string.IsNullOrWhiteSpace(canonicalName))
+        {
+            canonicalName = aliases
+                .OrderBy(x => x.AliasName)
+                .Select(x => x.AliasName.Trim())
+                .FirstOrDefault();
+        }
+
+        if (string.IsNullOrWhiteSpace(canonicalName))
+        {
+            throw new InvalidOperationException("A canonical name is required for the new team.");
+        }
+
+        if (canonicalName.Length > 200)
+        {
+            throw new InvalidOperationException("The new canonical team name cannot exceed 200 characters.");
+        }
+
+        var sourceTeam = await dbContext.Teams.FindAsync([sourceTeamId], cancellationToken)
+            ?? throw new InvalidOperationException("The current canonical team was not found.");
+        var newTeam = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = canonicalName,
+            CountryCode = NormalizeCountryCode(request.CountryCode) ?? sourceTeam.CountryCode,
+            IsActive = request.IsActive ?? sourceTeam.IsActive,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        dbContext.Teams.Add(newTeam);
+        foreach (var alias in aliases)
+        {
+            alias.TeamId = newTeam.Id;
+        }
+
+        // Keep the finding tied to the provider identity so the review decision
+        // suppresses the same observation on the next identity scan.
+        finding.AffectedTeamId = newTeam.Id;
+        finding.AffectedTeam = newTeam;
+    }
+
+    private async Task<Guid> ResolveFindingAliasTeamIdAsync(
+        IdentityHealthCheckFinding finding,
+        CancellationToken cancellationToken)
+    {
+        if (finding.FindingType != IdentityFindingType.AliasObservation)
+        {
+            throw new InvalidOperationException("This action is only available for alias observations.");
+        }
+
+        if (string.IsNullOrWhiteSpace(finding.Source) || string.IsNullOrWhiteSpace(finding.SourceTeamId))
+        {
+            throw new InvalidOperationException("The finding does not contain a provider source and team ID.");
+        }
+
+        return finding.AffectedTeamId ?? await ResolveSourceAliasTeamIdAsync(
+            finding.Source,
+            finding.SourceTeamId,
+            cancellationToken);
+    }
+
+    private async Task<List<TeamAlias>> LoadFindingAliasesAsync(
+        IdentityHealthCheckFinding finding,
+        Guid sourceTeamId,
+        CancellationToken cancellationToken)
+    {
+        var aliases = await dbContext.TeamAliases
+            .Where(x => x.Source == finding.Source && x.SourceTeamId == finding.SourceTeamId)
+            .ToListAsync(cancellationToken);
+        if (aliases.Count == 0)
+        {
+            throw new InvalidOperationException("The provider identity no longer has any aliases to update.");
+        }
+
+        if (aliases.All(x => x.TeamId != sourceTeamId))
+        {
+            throw new InvalidOperationException("The provider identity is no longer attached to the affected canonical team.");
+        }
+
+        return aliases;
+    }
+
     private async Task PopulateFindingTeamIdsAsync(
         IdentityHealthCheckFinding finding,
         CancellationToken cancellationToken)
@@ -1675,6 +1840,8 @@ public class IdentityHealthCheckService(
                 x.Status != IdentityFindingStatus.Open &&
                 (x.ResolutionAction == "keep_separate" ||
                     x.ResolutionAction == "accept_alias" ||
+                    x.ResolutionAction == "reassign_alias" ||
+                    x.ResolutionAction == "extract_alias" ||
                     x.ResolutionAction == "ignore" ||
                     x.ResolutionAction == "merge_duplicate"))
             .Select(x => new
@@ -1711,7 +1878,7 @@ public class IdentityHealthCheckService(
         string action,
         CancellationToken cancellationToken)
     {
-        if (action is not ("keep_separate" or "accept_alias" or "ignore" or "merge_duplicate"))
+        if (action is not ("keep_separate" or "accept_alias" or "reassign_alias" or "extract_alias" or "ignore" or "merge_duplicate"))
         {
             return;
         }
@@ -1903,7 +2070,7 @@ public class IdentityHealthCheckService(
     private static string NormalizeResolutionAction(string action)
     {
         var normalized = action.Trim().ToLowerInvariant();
-        return normalized is "accept_alias" or "merge_duplicate" or "keep_separate" or "edit_metadata" or "ignore" or "defer_review" or "resolve"
+        return normalized is "accept_alias" or "reassign_alias" or "extract_alias" or "merge_duplicate" or "keep_separate" or "edit_metadata" or "ignore" or "defer_review" or "resolve"
             ? normalized
             : throw new InvalidOperationException("Unsupported identity finding resolution action.");
     }

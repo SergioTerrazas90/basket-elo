@@ -1182,57 +1182,159 @@ public class IdentityHealthCheckService(
     {
         var findings = new List<IdentityHealthCheckFinding>();
         var rows = aliases
-            .GroupBy(x => new { x.TeamId, x.Source, x.SourceTeamId, NormalizedName = NormalizeTeamName(x.AliasName) })
+            .Select(x => new AliasObservation(x, NormalizeTeamName(x.AliasName)))
+            .GroupBy(x => new
+            {
+                x.Alias.TeamId,
+                x.Alias.Source,
+                x.Alias.SourceTeamId,
+                x.NormalizedName
+            })
             .Select(x => x.First())
             .ToList();
         var teamCompetitionIds = BuildTeamCompetitionIds(gameRows);
         var seen = new HashSet<string>();
+        var rowsByCompetition = new Dictionary<Guid, List<int>>();
 
-        for (var i = 0; i < rows.Count; i++)
+        for (var index = 0; index < rows.Count; index++)
         {
-            for (var j = i + 1; j < rows.Count; j++)
+            if (!teamCompetitionIds.TryGetValue(rows[index].Alias.TeamId, out var competitionIds))
+            {
+                continue;
+            }
+
+            foreach (var competitionId in competitionIds)
+            {
+                if (!rowsByCompetition.TryGetValue(competitionId, out var competitionRows))
+                {
+                    competitionRows = [];
+                    rowsByCompetition[competitionId] = competitionRows;
+                }
+
+                competitionRows.Add(index);
+            }
+        }
+
+        var candidateMarks = new int[rows.Count];
+        var candidateStamp = 0;
+
+        foreach (var competitionRows in rowsByCompetition.Values)
+        {
+            var shortNameRows = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+            var bigramRows = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+
+            foreach (var index in competitionRows)
+            {
+                var normalizedName = rows[index].NormalizedName;
+                if (normalizedName.Length < 4)
+                {
+                    if (!shortNameRows.TryGetValue(normalizedName, out var exactRows))
+                    {
+                        exactRows = [];
+                        shortNameRows[normalizedName] = exactRows;
+                    }
+
+                    exactRows.Add(index);
+                    continue;
+                }
+
+                foreach (var bigram in GetDistinctBigrams(normalizedName))
+                {
+                    if (!bigramRows.TryGetValue(bigram, out var matchingRows))
+                    {
+                        matchingRows = [];
+                        bigramRows[bigram] = matchingRows;
+                    }
+
+                    matchingRows.Add(index);
+                }
+            }
+
+            foreach (var i in competitionRows)
             {
                 var left = rows[i];
-                var right = rows[j];
-
-                if (left.TeamId == right.TeamId ||
-                    !AreCountriesCompatible(left.Team.CountryCode, right.Team.CountryCode) ||
-                    !HaveCompetitionOverlap(left.TeamId, right.TeamId, teamCompetitionIds) ||
-                    !AreSimilarNames(left.AliasName, right.AliasName))
+                candidateStamp++;
+                if (left.NormalizedName.Length < 4)
                 {
+                    if (!shortNameRows.TryGetValue(left.NormalizedName, out var exactRows))
+                    {
+                        continue;
+                    }
+
+                    foreach (var j in exactRows)
+                    {
+                        if (j > i)
+                        {
+                            AddSimilarAliasFinding(i, j);
+                        }
+                    }
+
                     continue;
                 }
 
-                var sameSource = left.Source == right.Source;
-                var findingType = sameSource
-                    ? IdentityFindingType.PossibleDuplicate
-                    : IdentityFindingType.PossibleCrossSourceMatch;
-                var key = $"{findingType}:{OrderedPairKey(left.TeamId, right.TeamId)}:{NormalizeTeamName(left.AliasName)}";
-
-                if (!seen.Add(key))
+                foreach (var bigram in GetDistinctBigrams(left.NormalizedName))
                 {
-                    continue;
-                }
+                    if (!bigramRows.TryGetValue(bigram, out var matchingRows))
+                    {
+                        continue;
+                    }
 
-                findings.Add(NewFinding(
-                    run,
-                    findingType,
-                    IdentityFindingSeverity.Blocker,
-                    left.Source,
-                    left.SourceTeamId,
-                    left.TeamId,
-                    right.Source,
-                    right.SourceTeamId,
-                    right.TeamId,
-                    $"Teams '{left.Team.CanonicalName}' and '{right.Team.CanonicalName}' have similar observed names in overlapping competition data.",
-                    sameSource
-                        ? "Review whether different provider ids represent one team; merge or keep separate."
-                        : "Review whether cross-source team observations should map to one canonical team.",
-                    now));
+                    foreach (var j in matchingRows)
+                    {
+                        if (j <= i || candidateMarks[j] == candidateStamp)
+                        {
+                            continue;
+                        }
+
+                        candidateMarks[j] = candidateStamp;
+                        AddSimilarAliasFinding(i, j);
+                    }
+                }
             }
         }
 
         return findings;
+
+        void AddSimilarAliasFinding(int leftIndex, int rightIndex)
+        {
+            var left = rows[leftIndex];
+            var right = rows[rightIndex];
+
+            if (left.Alias.TeamId == right.Alias.TeamId ||
+                !AreCountriesCompatible(left.Alias.Team.CountryCode, right.Alias.Team.CountryCode) ||
+                !HaveCompetitionOverlap(left.Alias.TeamId, right.Alias.TeamId, teamCompetitionIds) ||
+                !AreSimilarNormalizedNames(left.NormalizedName, right.NormalizedName))
+            {
+                return;
+            }
+
+            var sameSource = left.Alias.Source == right.Alias.Source;
+            var findingType = sameSource
+                ? IdentityFindingType.PossibleDuplicate
+                : IdentityFindingType.PossibleCrossSourceMatch;
+            var key = $"{findingType}:{OrderedPairKey(left.Alias.TeamId, right.Alias.TeamId)}:{left.NormalizedName}";
+
+            if (!seen.Add(key))
+            {
+                return;
+            }
+
+            findings.Add(NewFinding(
+                run,
+                findingType,
+                IdentityFindingSeverity.Blocker,
+                left.Alias.Source,
+                left.Alias.SourceTeamId,
+                left.Alias.TeamId,
+                right.Alias.Source,
+                right.Alias.SourceTeamId,
+                right.Alias.TeamId,
+                $"Teams '{left.Alias.Team.CanonicalName}' and '{right.Alias.Team.CanonicalName}' have similar observed names in overlapping competition data.",
+                sameSource
+                    ? "Review whether different provider ids represent one team; merge or keep separate."
+                    : "Review whether cross-source team observations should map to one canonical team.",
+                now));
+        }
     }
 
     private static IEnumerable<IdentityHealthCheckFinding> BuildCrossSeasonSplitFindings(
@@ -1248,53 +1350,75 @@ public class IdentityHealthCheckService(
             .ToDictionary(x => x.Key, x => x.ToList());
         var seen = new HashSet<string>();
 
-        foreach (var left in appearances)
+        // A full Europe scan contains tens of thousands of team/competition/season
+        // appearances. Comparing every appearance with every other appearance is
+        // quadratic and made the health check take several minutes. Sort within
+        // each competition and only inspect the time window in which
+        // AreNearbySeasons can possibly return true.
+        foreach (var competitionAppearances in appearances
+            .GroupBy(x => x.CompetitionId)
+            .Select(x => x
+                .OrderBy(appearance => appearance.SeasonStartUtc)
+                .ThenBy(appearance => appearance.SeasonEndUtc)
+                .ThenBy(appearance => appearance.TeamId)
+                .ToList()))
         {
-            foreach (var right in appearances)
+            for (var i = 0; i < competitionAppearances.Count; i++)
             {
-                if (left.TeamId == right.TeamId ||
-                    left.CompetitionId != right.CompetitionId ||
-                    !AreNearbySeasons(left, right))
+                var left = competitionAppearances[i];
+                var latestPossibleStart = left.SeasonEndUtc.AddDays(370);
+
+                for (var j = i + 1; j < competitionAppearances.Count; j++)
                 {
-                    continue;
+                    var right = competitionAppearances[j];
+                    if (right.SeasonStartUtc > latestPossibleStart)
+                    {
+                        break;
+                    }
+
+                    if (left.TeamId == right.TeamId ||
+                        !AreNearbySeasons(left, right))
+                    {
+                        continue;
+                    }
+
+                    if (!aliasesByTeam.TryGetValue(left.TeamId, out var leftAliases) ||
+                        !aliasesByTeam.TryGetValue(right.TeamId, out var rightAliases))
+                    {
+                        continue;
+                    }
+
+                    var matchingLeftAlias = leftAliases.FirstOrDefault(a =>
+                        rightAliases.Any(b => AreSimilarNames(a.AliasName, b.AliasName)));
+                    var matchingRightAlias = matchingLeftAlias is null
+                        ? null
+                        : rightAliases.First(a => AreSimilarNames(matchingLeftAlias.AliasName, a.AliasName));
+
+                    if (matchingLeftAlias is null || matchingRightAlias is null)
+                    {
+                        continue;
+                    }
+
+                    var key = $"cross-season:{OrderedPairKey(left.TeamId, right.TeamId)}:{left.CompetitionId}";
+                    if (!seen.Add(key))
+                    {
+                        continue;
+                    }
+
+                    findings.Add(NewFinding(
+                        run,
+                        IdentityFindingType.PossibleCrossSeasonSplit,
+                        IdentityFindingSeverity.Blocker,
+                        matchingLeftAlias.Source,
+                        matchingLeftAlias.SourceTeamId,
+                        left.TeamId,
+                        matchingRightAlias.Source,
+                        matchingRightAlias.SourceTeamId,
+                        right.TeamId,
+                        $"Teams '{matchingLeftAlias.Team.CanonicalName}' and '{matchingRightAlias.Team.CanonicalName}' have similar observed names '{matchingLeftAlias.AliasName}' and '{matchingRightAlias.AliasName}' in nearby seasons '{left.Season}' and '{right.Season}' for the same competition.",
+                        "Review whether this is a sponsor/name change, duplicate provider id, or separate team.",
+                        now));
                 }
-
-                if (!aliasesByTeam.TryGetValue(left.TeamId, out var leftAliases) ||
-                    !aliasesByTeam.TryGetValue(right.TeamId, out var rightAliases))
-                {
-                    continue;
-                }
-
-                var matchingLeftAlias = leftAliases.FirstOrDefault(a =>
-                    rightAliases.Any(b => AreSimilarNames(a.AliasName, b.AliasName)));
-                var matchingRightAlias = matchingLeftAlias is null
-                    ? null
-                    : rightAliases.First(a => AreSimilarNames(matchingLeftAlias.AliasName, a.AliasName));
-
-                if (matchingLeftAlias is null || matchingRightAlias is null)
-                {
-                    continue;
-                }
-
-                var key = $"cross-season:{OrderedPairKey(left.TeamId, right.TeamId)}:{left.CompetitionId}";
-                if (!seen.Add(key))
-                {
-                    continue;
-                }
-
-                findings.Add(NewFinding(
-                    run,
-                    IdentityFindingType.PossibleCrossSeasonSplit,
-                    IdentityFindingSeverity.Blocker,
-                    matchingLeftAlias.Source,
-                    matchingLeftAlias.SourceTeamId,
-                    left.TeamId,
-                    matchingRightAlias.Source,
-                    matchingRightAlias.SourceTeamId,
-                    right.TeamId,
-                    $"Teams '{matchingLeftAlias.Team.CanonicalName}' and '{matchingRightAlias.Team.CanonicalName}' have similar observed names '{matchingLeftAlias.AliasName}' and '{matchingRightAlias.AliasName}' in nearby seasons '{left.Season}' and '{right.Season}' for the same competition.",
-                    "Review whether this is a sponsor/name change, duplicate provider id, or separate team.",
-                    now));
             }
         }
 
@@ -1813,11 +1937,24 @@ public class IdentityHealthCheckService(
         return new string(characters);
     }
 
-    private static bool AreSimilarNames(string left, string right)
+    private static IEnumerable<string> GetDistinctBigrams(string normalizedName)
     {
-        var normalizedLeft = NormalizeTeamName(left);
-        var normalizedRight = NormalizeTeamName(right);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < normalizedName.Length - 1; index++)
+        {
+            var bigram = normalizedName.Substring(index, 2);
+            if (seen.Add(bigram))
+            {
+                yield return bigram;
+            }
+        }
+    }
 
+    private static bool AreSimilarNames(string left, string right)
+        => AreSimilarNormalizedNames(NormalizeTeamName(left), NormalizeTeamName(right));
+
+    private static bool AreSimilarNormalizedNames(string normalizedLeft, string normalizedRight)
+    {
         if (normalizedLeft.Length < 4 || normalizedRight.Length < 4)
         {
             return normalizedLeft == normalizedRight;
@@ -1831,37 +1968,78 @@ public class IdentityHealthCheckService(
         }
 
         var maxLength = Math.Max(normalizedLeft.Length, normalizedRight.Length);
-        var distance = LevenshteinDistance(normalizedLeft, normalizedRight);
+        var maximumDistance = (int)Math.Floor((1 - SimilarNameThreshold) * maxLength);
+        if (Math.Abs(normalizedLeft.Length - normalizedRight.Length) > maximumDistance)
+        {
+            return false;
+        }
+
+        var distance = LevenshteinDistance(normalizedLeft, normalizedRight, maximumDistance);
         var similarity = 1 - (double)distance / maxLength;
         return similarity >= SimilarNameThreshold;
     }
 
-    private static int LevenshteinDistance(string left, string right)
+    private static int LevenshteinDistance(string left, string right, int maximumDistance)
     {
-        var distances = new int[left.Length + 1, right.Length + 1];
-
-        for (var i = 0; i <= left.Length; i++)
+        if (left.Length < right.Length)
         {
-            distances[i, 0] = i;
+            (left, right) = (right, left);
         }
+
+        if (left.Length - right.Length > maximumDistance)
+        {
+            return maximumDistance + 1;
+        }
+
+        Span<int> previous = right.Length <= 256
+            ? stackalloc int[right.Length + 1]
+            : new int[right.Length + 1];
+        Span<int> current = right.Length <= 256
+            ? stackalloc int[right.Length + 1]
+            : new int[right.Length + 1];
 
         for (var j = 0; j <= right.Length; j++)
         {
-            distances[0, j] = j;
+            previous[j] = j;
         }
 
         for (var i = 1; i <= left.Length; i++)
         {
-            for (var j = 1; j <= right.Length; j++)
+            current[0] = i;
+            var rowMinimum = current[0];
+            var start = Math.Max(1, i - maximumDistance);
+            var end = Math.Min(right.Length, i + maximumDistance);
+
+            for (var j = 1; j < start; j++)
+            {
+                current[j] = maximumDistance + 1;
+            }
+
+            for (var j = start; j <= end; j++)
             {
                 var cost = left[i - 1] == right[j - 1] ? 0 : 1;
-                distances[i, j] = Math.Min(
-                    Math.Min(distances[i - 1, j] + 1, distances[i, j - 1] + 1),
-                    distances[i - 1, j - 1] + cost);
+                current[j] = Math.Min(
+                    Math.Min(previous[j] + 1, current[j - 1] + 1),
+                    previous[j - 1] + cost);
+                rowMinimum = Math.Min(rowMinimum, current[j]);
             }
+
+            for (var j = end + 1; j <= right.Length; j++)
+            {
+                current[j] = maximumDistance + 1;
+            }
+
+            if (rowMinimum > maximumDistance)
+            {
+                return maximumDistance + 1;
+            }
+
+            var completedRow = previous;
+            previous = current;
+            current = completedRow;
         }
 
-        return distances[left.Length, right.Length];
+        return previous[right.Length];
     }
 
     private static bool AreCountriesCompatible(string? left, string? right)
@@ -2173,6 +2351,8 @@ public class IdentityHealthCheckService(
         string Season,
         DateTime SeasonStartUtc,
         DateTime SeasonEndUtc);
+
+    private sealed record AliasObservation(TeamAlias Alias, string NormalizedName);
 
     private sealed record SourceTeamKey(string Source, string SourceTeamId);
 

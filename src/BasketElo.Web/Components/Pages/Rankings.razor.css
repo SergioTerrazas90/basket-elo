@@ -737,6 +737,13 @@
     font-size: 0.72rem;
 }
 
+.fixture-timezone-hint {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--color-muted);
+    font-size: 0.78rem;
+}
+
 .fixture-matchup {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);

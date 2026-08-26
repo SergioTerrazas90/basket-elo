@@ -418,6 +418,7 @@
                     <div>
                         <h2>Upcoming fixtures</h2>
                         <p>@FixturesContextLabel()</p>
+                        <small class="fixture-timezone-hint">Start times are shown in UTC.</small>
                     </div>
                 </div>
 
@@ -2335,7 +2336,7 @@
             : decimal.MaxValue;
 
     private static string FormatFixtureDate(DateTime value)
-        => value.ToLocalTime().ToString("ddd, MMM d · HH:mm");
+        => DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("ddd, MMM d · HH:mm 'UTC'");
 
     private static string FormatFixtureRating(decimal? value)
         => value.HasValue ? value.Value.ToString("0") : "—";

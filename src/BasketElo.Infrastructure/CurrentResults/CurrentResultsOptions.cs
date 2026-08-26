@@ -19,7 +19,7 @@ public sealed class LiveScoreOptions
 
     public bool Enabled { get; set; }
     public string BaseUrl { get; set; } = "https://www.livescores.com";
-    public string SourceTimeZoneId { get; set; } = "Europe/Madrid";
+    public string SourceTimeZoneId { get; set; } = "UTC";
     public string UserAgent { get; set; } = "BasketElo current-results/1.0";
     public int RequestDelayMilliseconds { get; set; } = 750;
 }

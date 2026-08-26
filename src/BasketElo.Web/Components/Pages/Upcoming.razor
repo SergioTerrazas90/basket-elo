@@ -11,7 +11,7 @@
         <div>
             <p class="eyebrow">Forward schedule</p>
             <h1>Upcoming games</h1>
-            <p class="intro">The next seven days, ranked with the current ELO snapshot when both teams are rated.</p>
+            <p class="intro">The next seven days, ranked with the current ELO snapshot when both teams are rated. Start times are shown in UTC.</p>
         </div>
         <button class="btn btn-outline-primary" @onclick="RefreshAsync" disabled="@isBusy">Refresh</button>
     </section>
@@ -38,7 +38,7 @@
     {
         <section class="summary-panel">
             <div class="summary-card"><span class="summary-label">Games</span><strong>@response.TotalCount</strong></div>
-            <div class="summary-card"><span class="summary-label">Window</span><strong>@response.FromUtc.ToLocalTime().ToString("MMM d") – @response.ToUtc.ToLocalTime().ToString("MMM d")</strong></div>
+            <div class="summary-card"><span class="summary-label">Window</span><strong>@FormatUtcDay(response.FromUtc) – @FormatUtcDay(response.ToUtc)</strong></div>
         </section>
         <section class="table-section">
             <div class="table-responsive">
@@ -54,7 +54,7 @@
                         @foreach (var game in response.Games)
                         {
                             <tr>
-                                <td>@game.GameDateTimeUtc.ToLocalTime().ToString("ddd, MMM d HH:mm")</td>
+                                <td>@FormatUtcDate(game.GameDateTimeUtc)</td>
                                 <td><strong>@game.Competition</strong><br /><small>@game.Country</small></td>
                                 <td>@game.HomeTeam <span class="vs">vs</span> @game.AwayTeam</td>
                                 <td>@FormatElo(game.HomeElo) – @FormatElo(game.AwayElo)</td>
@@ -98,4 +98,10 @@
     }
 
     private static string FormatElo(decimal? value) => value.HasValue ? value.Value.ToString("0") : "—";
+
+    private static string FormatUtcDay(DateTime value)
+        => DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("MMM d 'UTC'");
+
+    private static string FormatUtcDate(DateTime value)
+        => DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("ddd, MMM d · HH:mm 'UTC'");
 }

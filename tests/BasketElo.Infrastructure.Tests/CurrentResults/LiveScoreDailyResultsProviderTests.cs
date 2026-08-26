@@ -68,6 +68,31 @@ public class LiveScoreDailyResultsProviderTests
     }
 
     [Fact]
+    public async Task FetchAsync_UsesEmbeddedEventTimestampAsUtc()
+    {
+        var epoch = new DateTimeOffset(2026, 8, 27, 18, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var html = $"""
+            <html><body><div class="group">
+              <div class="Pa"><span class="Sa">World</span><span class="Ta">Qualification</span></div>
+              <div class="Xe"><button data-eventId="1819479" data-favouritesDetails="basketball-1819479-{epoch}"></button><span class="Ih">18:00</span><div class="nf"><div class="vf">Lebanon</div><div class="vf">South Korea</div></div><div class="rf"></div></div>
+            </div></body></html>
+            """;
+        using var client = new HttpClient(new FixtureHandler(html))
+        {
+            BaseAddress = new Uri("https://www.livescores.com")
+        };
+        var provider = new LiveScoreDailyResultsProvider(
+            client,
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "Europe/Madrid" }));
+
+        var result = await provider.FetchAsync(new DateOnly(2026, 8, 27), CancellationToken.None);
+
+        var game = Assert.Single(result.Candidates);
+        Assert.Equal("1819479", game.SourceGameId);
+        Assert.Equal(new DateTime(2026, 8, 27, 18, 0, 0, DateTimeKind.Utc), game.GameDateTimeUtc);
+    }
+
+    [Fact]
     public async Task FetchAsync_RejectsDisabledProvider()
     {
         using var client = new HttpClient(new FixtureHandler("<html />")) { BaseAddress = new Uri("https://www.livescores.com") };

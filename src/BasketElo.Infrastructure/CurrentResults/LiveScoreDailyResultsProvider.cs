@@ -12,7 +12,7 @@ public sealed class LiveScoreDailyResultsProvider(
     HttpClient httpClient,
     IOptions<LiveScoreOptions> options) : ICurrentResultsProvider
 {
-    private const string ParserVersion = "livescore-daily-html-v1";
+    private const string ParserVersion = "livescore-daily-html-v2";
     private readonly LiveScoreOptions options = options.Value;
 
     public string Source => "livescore";
@@ -121,7 +121,8 @@ public sealed class LiveScoreDailyResultsProvider(
             .ToList() ?? [];
         var statusText = Clean(eventNode.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ih ')]")?.InnerText);
         var status = ToStatus(statusText, scoreValues.Count >= 2);
-        var gameDateTimeUtc = ParseDateTimeUtc(date, statusText, sourceTimeZoneId);
+        var gameDateTimeUtc = ExtractEventDateTimeUtc(eventNode)
+            ?? ParseDateTimeUtc(date, statusText, sourceTimeZoneId);
         var sourceGameId = ExtractSourceGameId(eventNode) ?? SyntheticSourceGameId(date, country, competition, teams[0], teams[1]);
         var sourceEventUrl = ExtractSourceUrl(eventNode, sourceUrl);
 
@@ -174,6 +175,44 @@ public sealed class LiveScoreDailyResultsProvider(
         return Uri.TryCreate(new Uri(pageUrl), href, out var absolute)
             ? absolute.ToString()
             : pageUrl;
+    }
+
+    private static DateTime? ExtractEventDateTimeUtc(HtmlNode eventNode)
+    {
+        var button = eventNode.SelectSingleNode(".//button[@data-favouritesDetails or @data-favouritesdetails]");
+        var favouritesDetails = button?.GetAttributeValue("data-favouritesDetails", string.Empty);
+        if (string.IsNullOrWhiteSpace(favouritesDetails))
+        {
+            favouritesDetails = button?.GetAttributeValue("data-favouritesdetails", string.Empty);
+        }
+
+        var match = Regex.Match(
+            favouritesDetails ?? string.Empty,
+            @"(?:^|-)(?<epoch>\d{10,13})$",
+            RegexOptions.CultureInvariant);
+        if (!match.Success ||
+            !long.TryParse(match.Groups["epoch"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epoch))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (match.Groups["epoch"].Value.Length <= 10)
+            {
+                epoch = checked(epoch * 1000);
+            }
+
+            return DateTimeOffset.FromUnixTimeMilliseconds(epoch).UtcDateTime;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+        catch (OverflowException)
+        {
+            return null;
+        }
     }
 
     private static DateTime ParseDateTimeUtc(DateOnly date, string statusText, string sourceTimeZoneId)

@@ -1,3 +1,6 @@
+using BasketElo.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -5,6 +8,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace BasketElo.Infrastructure.Persistence.Migrations;
 
 /// <inheritdoc />
+[DbContext(typeof(BasketEloDbContext))]
+[Migration("20260826120000_CorrectHostedTournamentGames")]
 public partial class CorrectHostedTournamentGames : Migration
 {
     /// <inheritdoc />

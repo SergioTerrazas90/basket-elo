@@ -26,7 +26,7 @@ services:
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo
       InternalAuth__SharedSecret: ${BASKET_ELO_INTERNAL_AUTH_SECRET:-local-dev-secret}
       ApiSports__BaseUrl: https://v1.basketball.api-sports.io
-      ApiSports__ApiKey: bef74529c17455cafe87dd1a6644deee
+      ApiSports__ApiKey: ${BASKET_ELO_API_SPORTS_API_KEY:-}
       ApiSports__MinSecondsBetweenRequests: 7
       ModelLab__FreeSavedModelLimit: ${BASKET_ELO_FREE_SAVED_MODEL_LIMIT:-1}
       ModelLab__FreeStoredRunLimit: ${BASKET_ELO_FREE_STORED_RUN_LIMIT:-1}
@@ -48,7 +48,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=basket_elo;Username=basket_elo;Password=basket_elo
       ApiSports__BaseUrl: https://v1.basketball.api-sports.io
-      ApiSports__ApiKey: bef74529c17455cafe87dd1a6644deee
+      ApiSports__ApiKey: ${BASKET_ELO_API_SPORTS_API_KEY:-}
       ApiSports__MinSecondsBetweenRequests: 7
     depends_on:
       postgres:

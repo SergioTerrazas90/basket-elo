@@ -16,25 +16,43 @@
 
 <div class="rankings-page @(IsGraphView ? "graph-page" : string.Empty)">
     <header class="rankings-header">
-        <nav class="rating-pool-tabs" aria-label="Rating pools">
-            @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
-            {
-                <button type="button" class="@PoolTabClass(option.Key)" @onclick="() => SelectPoolAsync(option.Key)" disabled="@isBusy">
-                    @(option.Key == EloPoolKeys.EuropeClubs ? "Europe" : option.Key == EloPoolKeys.NationalTeams ? "National teams" : option.DisplayName)
-                </button>
-            }
-        </nav>
-
-        <div class="rankings-context-bar">
+        <div class="rankings-page-heading">
             <div>
-                <strong>@PoolHeading()</strong>
+                <p class="eyebrow">Basketball intelligence / Live board</p>
+                <h1>Power rankings</h1>
+                <p class="rankings-intro">Compare teams across leagues, follow form, and inspect the rating signal behind every position.</p>
             </div>
-            <nav class="rankings-view-tabs" aria-label="Ranking views">
-                <button type="button" class='@ViewTabClass("rankings")' @onclick='() => SelectViewAsync("rankings")' disabled="@isBusy">Rankings</button>
-                <button type="button" class='@ViewTabClass("graph")' @onclick='() => SelectViewAsync("graph")' disabled="@isBusy">Graph</button>
-                <button type="button" class='@ViewTabClass("fixtures")' @onclick='() => SelectViewAsync("fixtures")' disabled="@isBusy">Fixtures</button>
-                <button type="button" class='@ViewTabClass("results")' @onclick='() => SelectViewAsync("results")' disabled="@isBusy">Results</button>
-            </nav>
+            <a class="rankings-method-note" href="how-it-works" aria-label="Read how the rankings work">
+                <span class="method-note-mark" aria-hidden="true">↗</span>
+                <div>
+                    <strong>A transparent signal</strong>
+                    <span>See the rules and assumptions behind every movement.</span>
+                </div>
+            </a>
+        </div>
+
+        <div class="rankings-workspace-bar">
+            <div class="workspace-control workspace-pool-control">
+                <span class="workspace-label" title="The group of teams included in these rankings">Pool</span>
+                <nav class="rating-pool-tabs" aria-label="Rating pools">
+                    @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
+                    {
+                        <button type="button" class="@PoolTabClass(option.Key)" @onclick="() => SelectPoolAsync(option.Key)" disabled="@isBusy">
+                            @(option.Key == EloPoolKeys.EuropeClubs ? "Europe" : option.Key == EloPoolKeys.NationalTeams ? "National teams" : option.DisplayName)
+                        </button>
+                    }
+                </nav>
+            </div>
+
+            <div class="workspace-control workspace-view-control">
+                <span class="workspace-label">View</span>
+                <nav class="rankings-view-tabs" aria-label="Ranking views">
+                    <button type="button" class='@ViewTabClass("rankings")' @onclick='() => SelectViewAsync("rankings")' disabled="@isBusy">Rankings</button>
+                    <button type="button" class='@ViewTabClass("graph")' @onclick='() => SelectViewAsync("graph")' disabled="@isBusy">Graph</button>
+                    <button type="button" class='@ViewTabClass("fixtures")' @onclick='() => SelectViewAsync("fixtures")' disabled="@isBusy">Fixtures</button>
+                    <button type="button" class='@ViewTabClass("results")' @onclick='() => SelectViewAsync("results")' disabled="@isBusy">Results</button>
+                </nav>
+            </div>
         </div>
     </header>
 
@@ -200,7 +218,7 @@
 
     @if (isBusy && response is null)
     {
-        <section class="loading-panel">Loading rankings...</section>
+        <section class="loading-panel" role="status" aria-live="polite">Loading rankings...</section>
     }
     else if (response is not null)
     {

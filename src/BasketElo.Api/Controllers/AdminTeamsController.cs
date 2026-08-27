@@ -1,5 +1,6 @@
 using BasketElo.Api.Auth;
 using BasketElo.Domain.Teams;
+using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
@@ -39,10 +40,13 @@ public class AdminTeamsController(
         if (!string.IsNullOrWhiteSpace(search))
         {
             var searchTerm = search.Trim();
+            var normalizedSearchTerm = InternationalTeamCatalog.NormalizeSearchTerm(searchTerm);
             query = query.Where(x =>
                 EF.Functions.ILike(x.CanonicalName, $"%{searchTerm}%") ||
                 x.Aliases.Any(alias => EF.Functions.ILike(alias.AliasName, $"%{searchTerm}%")) ||
-                x.Aliases.Any(alias => EF.Functions.ILike(alias.SourceTeamId, $"%{searchTerm}%")));
+                x.Aliases.Any(alias => EF.Functions.ILike(alias.SourceTeamId, $"%{searchTerm}%")) ||
+                (!string.IsNullOrWhiteSpace(normalizedSearchTerm) &&
+                    x.SearchNames.Any(name => name.NormalizedName.Contains(normalizedSearchTerm))));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

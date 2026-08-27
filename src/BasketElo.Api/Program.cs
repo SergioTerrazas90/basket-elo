@@ -6,6 +6,7 @@ using BasketElo.Api.Elo;
 using BasketElo.Api.Controllers;
 using BasketElo.Api.Auth;
 using BasketElo.Infrastructure.Identity;
+using BasketElo.Infrastructure.Teams;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -76,6 +77,7 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<BasketEloDbContext>();
     await dbContext.Database.MigrateAsync();
+    await TeamSearchNameSeeder.SeedInternationalTeamSearchNamesAsync(dbContext);
 
     var eloController = scope.ServiceProvider.GetRequiredService<EloController>();
     foreach (var pool in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))

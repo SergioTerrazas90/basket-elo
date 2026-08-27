@@ -5,31 +5,53 @@
 
 <PageTitle>Data sources - BasketElo</PageTitle>
 
-<div class="data-sources-page">
-    <section class="data-sources-hero">
-        <p class="eyebrow">Data trail</p>
-        <h1>Data sources</h1>
-        <p>See which seasons are accounted for and follow each competition back to the archive or data service behind it.</p>
-    </section>
+<div class="data-sources-page be-story">
+    <header class="be-story-hero be-reveal" style="--reveal-order: 0">
+        <div class="be-story-hero-copy">
+            <p class="be-story-kicker">Data trail</p>
+            <h1 class="be-story-title">Every rating should have a trail.</h1>
+            <p class="be-story-lede">See which seasons are accounted for and follow each competition back to the archive or data service behind it.</p>
+            <dl class="source-stats" aria-label="Catalog summary">
+                <div><dt>Regions</dt><dd>@RegionCount</dd></div>
+                <div><dt>Leagues</dt><dd>@LeagueCount</dd></div>
+                <div><dt>Source paths</dt><dd>@SourceCount</dd></div>
+            </dl>
+        </div>
+        <div class="be-story-orbit" aria-hidden="true">
+            <div class="be-story-orbit-core">
+                <span>Configured catalog</span>
+                <strong>@SourceCount</strong>
+                <small>traceable source paths</small>
+            </div>
+        </div>
+    </header>
 
-    <section class="data-sources-note" aria-label="Coverage note">
+    <aside class="be-story-note be-reveal" style="--reveal-order: 1" aria-label="Coverage note">
         <strong>Coverage is not the same as completeness.</strong>
         <span>A listed season means it is part of the ingestion catalog. Provider warnings, source gaps, and partial seasons remain recorded in the ingestion run history.</span>
-    </section>
+    </aside>
 
-    <section class="data-source-list" aria-label="Configured leagues and sources">
-        @foreach (var region in regions)
+    <section class="data-source-list be-reveal" style="--reveal-order: 2" aria-labelledby="catalog-heading">
+        <div class="source-list-heading">
+            <p class="be-story-kicker">Coverage index</p>
+            <h2 id="catalog-heading">Configured leagues and sources</h2>
+            <p>Select a region to inspect its competitions, providers, and seasons.</p>
+        </div>
+
+        @for (var regionIndex = 0; regionIndex < regions.Count; regionIndex++)
         {
-            <section class="data-source-region" aria-labelledby="region-@region.Slug">
-                <div class="data-source-region-heading">
-                    <p class="eyebrow">Coverage region</p>
-                    <h2 id="region-@region.Slug">@region.Name</h2>
-                </div>
-
+            var region = regions[regionIndex];
+            <details class="data-source-region" open="@(regionIndex == 0)">
+                <summary id="region-@region.Slug">
+                    <span class="source-region-index">@((regionIndex + 1).ToString("00"))</span>
+                    <strong>@region.Name</strong>
+                    <span>@region.Leagues.Count @((region.Leagues.Count == 1) ? "league" : "leagues")</span>
+                    <span class="source-region-toggle" aria-hidden="true"></span>
+                </summary>
                 <div class="data-source-region-list">
                     @foreach (var league in region.Leagues)
                     {
-                        <article class="data-source-card">
+                        <article class="data-source-entry">
                             <div class="data-source-heading">
                                 <h3>@league.LeagueName</h3>
                                 <span class="data-source-pool">@PoolLabel(league.EloPoolKey)</span>
@@ -51,14 +73,17 @@
                         </article>
                     }
                 </div>
-            </section>
+            </details>
         }
     </section>
-
 </div>
 
 @code {
     private IReadOnlyList<RegionView> regions = [];
+
+    private int RegionCount => regions.Count;
+    private int LeagueCount => regions.Sum(region => region.Leagues.Count);
+    private int SourceCount => regions.Sum(region => region.Leagues.Sum(league => league.Sources.Count));
 
     protected override void OnInitialized()
     {

@@ -6,6 +6,7 @@ using BasketElo.Infrastructure.Elo;
 using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
+using BasketElo.Infrastructure.Teams;
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -664,6 +665,7 @@ public class EloController(
         var currentNationalTeamIds = poolKey == EloPoolKeys.NationalTeams
             ? await GetCurrentNationalTeamIdsAsync(competition, cancellationToken)
             : null;
+        var teamFilterIds = await TeamSearchResolver.ResolveTeamIdsAsync(dbContext, team, cancellationToken);
 
         if (asOfDate.HasValue)
         {
@@ -717,9 +719,7 @@ public class EloController(
 
             if (!string.IsNullOrWhiteSpace(team))
             {
-                archiveFilteredTeamIds.IntersectWith(globalArchiveRatings
-                    .Where(x => x.TeamName.Contains(team, StringComparison.OrdinalIgnoreCase))
-                    .Select(x => x.TeamId));
+                archiveFilteredTeamIds.IntersectWith(teamFilterIds);
             }
 
             if (minimumGames > 0)
@@ -855,9 +855,7 @@ public class EloController(
 
         if (!string.IsNullOrWhiteSpace(team))
         {
-            filteredTeamIds.IntersectWith(globalRatings
-                .Where(x => x.TeamName.Contains(team, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.TeamId));
+            filteredTeamIds.IntersectWith(teamFilterIds);
         }
 
         if (minimumGames > 0)
@@ -1229,6 +1227,7 @@ public class EloController(
         var currentNationalTeamIds = poolKey == EloPoolKeys.NationalTeams
             ? await GetCurrentNationalTeamIdsAsync(competition, cancellationToken)
             : null;
+        var teamFilterIds = await TeamSearchResolver.ResolveTeamIdsAsync(dbContext, team, cancellationToken);
 
         var latestGameUtc = await dbContext.RatingHistories
             .AsNoTracking()
@@ -1294,9 +1293,7 @@ public class EloController(
 
         if (!string.IsNullOrWhiteSpace(team))
         {
-            filteredTeamIds.IntersectWith(currentRatings
-                .Where(x => x.Team.CanonicalName.Contains(team, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.TeamId));
+            filteredTeamIds.IntersectWith(teamFilterIds);
         }
 
         if (minimumGames > 0)
@@ -1485,9 +1482,10 @@ public class EloController(
 
         if (!string.IsNullOrWhiteSpace(team))
         {
-            var teamTerm = team.Trim().ToLowerInvariant();
-            query = query.Where(x => x.HomeTeam.CanonicalName.ToLower().Contains(teamTerm) ||
-                x.AwayTeam.CanonicalName.ToLower().Contains(teamTerm));
+            var teamFilterIds = await TeamSearchResolver.ResolveTeamIdsAsync(dbContext, team, cancellationToken);
+            query = teamFilterIds.Count == 0
+                ? query.Where(_ => false)
+                : query.Where(x => teamFilterIds.Contains(x.HomeTeamId) || teamFilterIds.Contains(x.AwayTeamId));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

@@ -4,6 +4,12 @@ using BasketElo.Infrastructure.Identity;
 
 namespace BasketElo.Infrastructure.Backfill;
 
+public sealed record InternationalTeamSearchName(
+    string CanonicalName,
+    string CountryCode,
+    string Locale,
+    string Name);
+
 /// <summary>
 /// Canonical identity rules for national teams. Provider codes remain useful
 /// as stable source identifiers, but they must never become the displayed team
@@ -175,8 +181,71 @@ public static class InternationalTeamCatalog
 
     private static readonly IReadOnlyDictionary<string, string> CodesByName =
         NamesByCode
-            .GroupBy(x => NormalizeName(x.Value), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(x => NormalizeSearchTerm(x.Value), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.First().Key, StringComparer.OrdinalIgnoreCase);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> LocalizedNameOverrides =
+        new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Chinese Taipei"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["es"] = "Taipéi Chino",
+                ["it"] = "Taipei Cinese",
+                ["fr"] = "Taipei chinois",
+                ["de"] = "Chinesisch-Taipeh"
+            },
+            ["England"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["es"] = "Inglaterra",
+                ["it"] = "Inghilterra",
+                ["fr"] = "Angleterre",
+                ["de"] = "England"
+            },
+            ["French Polynesia"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["es"] = "Polinesia Francesa",
+                ["it"] = "Polinesia francese",
+                ["fr"] = "Polynésie française",
+                ["de"] = "Französisch-Polynesien"
+            },
+            ["Great Britain"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["es"] = "Gran Bretaña",
+                ["it"] = "Gran Bretagna",
+                ["fr"] = "Grande-Bretagne",
+                ["de"] = "Großbritannien"
+            },
+            ["Scotland"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["es"] = "Escocia",
+                ["it"] = "Scozia",
+                ["fr"] = "Écosse",
+                ["de"] = "Schottland"
+            },
+            ["Spain"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["es"] = "España",
+                ["it"] = "Spagna",
+                ["fr"] = "Espagne",
+                ["de"] = "Spanien"
+            },
+            ["Tahiti"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["es"] = "Tahití",
+                ["it"] = "Tahiti",
+                ["fr"] = "Tahiti",
+                ["de"] = "Tahiti"
+            },
+            ["Wales"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["es"] = "Gales",
+                ["it"] = "Galles",
+                ["fr"] = "Pays de Galles",
+                ["de"] = "Wales"
+            }
+        };
+
+    private static readonly string[] SearchLocales = ["es", "it", "fr", "de"];
 
     private static readonly IReadOnlySet<string> HistoricalCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -225,7 +294,7 @@ public static class InternationalTeamCatalog
             }
         }
 
-        var normalizedName = NormalizeName(observedName);
+        var normalizedName = NormalizeSearchTerm(observedName);
         if (normalizedName == "FRYUGOSLAVIA")
         {
             canonicalName = "Serbia and Montenegro";
@@ -258,6 +327,63 @@ public static class InternationalTeamCatalog
         return false;
     }
 
+    /// <summary>
+    /// Returns the canonical and localized names used by the public team
+    /// search. The catalog is intentionally curated around national-team
+    /// identities, while provider aliases remain a separate concern.
+    /// </summary>
+    public static IReadOnlyList<InternationalTeamSearchName> GetSearchNames()
+    {
+        var results = new List<InternationalTeamSearchName>();
+        var identities = NamesByCode
+            .Select(x => new
+            {
+                CanonicalName = x.Value,
+                CountryCode = CanonicalCode(x.Key)
+            })
+            .DistinctBy(x => $"{x.CanonicalName}\u001f{x.CountryCode}");
+
+        foreach (var identity in identities)
+        {
+            if (IsHistoricalIdentity(identity.CanonicalName, identity.CountryCode))
+            {
+                continue;
+            }
+
+            var hasOverride = LocalizedNameOverrides.TryGetValue(identity.CanonicalName, out var overrides);
+            if (identity.CountryCode.Length != 2 && !hasOverride)
+            {
+                continue;
+            }
+
+            results.Add(new InternationalTeamSearchName(
+                identity.CanonicalName,
+                identity.CountryCode,
+                "canonical",
+                identity.CanonicalName));
+
+            foreach (var locale in SearchLocales)
+            {
+                var localizedName = hasOverride && overrides!.TryGetValue(locale, out var overrideName)
+                    ? overrideName
+                    : TryGetRegionName(locale, identity.CountryCode);
+                if (string.IsNullOrWhiteSpace(localizedName) ||
+                    string.Equals(NormalizeSearchTerm(localizedName), NormalizeSearchTerm(identity.CanonicalName), StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                results.Add(new InternationalTeamSearchName(
+                    identity.CanonicalName,
+                    identity.CountryCode,
+                    locale,
+                    localizedName));
+            }
+        }
+
+        return results;
+    }
+
     public static string NormalizeCode(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -274,9 +400,21 @@ public static class InternationalTeamCatalog
     private static string CanonicalCode(string code)
         => CountryCodeCatalog.Normalize(code) ?? code.ToUpperInvariant();
 
-    private static string NormalizeName(string? value)
+    public static string NormalizeSearchTerm(string? value)
         => string.Concat((value ?? string.Empty)
             .Normalize(NormalizationForm.FormD)
             .Where(character => CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark && char.IsLetterOrDigit(character)))
             .ToUpperInvariant();
+
+    private static string? TryGetRegionName(string locale, string countryCode)
+    {
+        try
+        {
+            return new RegionInfo($"{locale}-{countryCode}").NativeName;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
 }

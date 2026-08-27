@@ -5,6 +5,7 @@ using BasketElo.Domain.Games;
 using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
+using BasketElo.Infrastructure.Teams;
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -68,10 +69,10 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
 
         if (!string.IsNullOrWhiteSpace(team))
         {
-            var teamPattern = $"%{team.Trim()}%";
-            query = query.Where(x =>
-                EF.Functions.ILike(x.HomeTeam.CanonicalName, teamPattern) ||
-                EF.Functions.ILike(x.AwayTeam.CanonicalName, teamPattern));
+            var teamFilterIds = await TeamSearchResolver.ResolveTeamIdsAsync(dbContext, team, cancellationToken);
+            query = teamFilterIds.Count == 0
+                ? query.Where(_ => false)
+                : query.Where(x => teamFilterIds.Contains(x.HomeTeamId) || teamFilterIds.Contains(x.AwayTeamId));
         }
 
         var games = await query
@@ -396,16 +397,20 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
         }
         else if (!string.IsNullOrWhiteSpace(team))
         {
-            query = query.Where(x =>
-                EF.Functions.ILike(x.HomeTeam.CanonicalName, $"%{team}%") ||
-                EF.Functions.ILike(x.AwayTeam.CanonicalName, $"%{team}%"));
+            var teamIds = await TeamSearchResolver.ResolveTeamIdsAsync(dbContext, team, cancellationToken);
+            query = teamIds.Count == 0
+                ? query.Where(_ => false)
+                : query.Where(x => teamIds.Contains(x.HomeTeamId) || teamIds.Contains(x.AwayTeamId));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
+            var searchTeamIds = await TeamSearchResolver.ResolveTeamIdsAsync(dbContext, search, cancellationToken);
             query = query.Where(x =>
                 EF.Functions.ILike(x.HomeTeam.CanonicalName, $"%{search}%") ||
                 EF.Functions.ILike(x.AwayTeam.CanonicalName, $"%{search}%") ||
+                (searchTeamIds.Count > 0 &&
+                    (searchTeamIds.Contains(x.HomeTeamId) || searchTeamIds.Contains(x.AwayTeamId))) ||
                 EF.Functions.ILike(x.Competition.Name, $"%{search}%") ||
                 EF.Functions.ILike(x.Season.Label, $"%{search}%") ||
                 EF.Functions.ILike(x.Status, $"%{search}%"));

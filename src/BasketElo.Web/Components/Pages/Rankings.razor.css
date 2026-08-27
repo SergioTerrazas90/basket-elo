@@ -1,7 +1,7 @@
 .rankings-page {
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--space-5);
 }
 
 .rankings-header,
@@ -15,65 +15,149 @@
 .rankings-header {
     align-items: stretch;
     flex-direction: column;
-    gap: 0.3rem;
-    padding: 0 0 0.35rem;
-    border-bottom: 1px solid var(--color-border);
+    gap: var(--space-6);
+    padding: var(--space-4) 0 0;
 }
 
-.rankings-context-bar {
+.rankings-page-heading {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: space-between;
-    gap: var(--space-3);
-    padding: 0.05rem 0;
+    gap: var(--space-6);
 }
 
-.rankings-context-bar strong,
-.rankings-context-bar span {
+.rankings-page-heading .eyebrow {
+    margin-bottom: var(--space-2);
+}
+
+.rankings-page-heading h1 {
+    margin: 0 0 0.45rem;
+    color: var(--color-text);
+    font-family: var(--font-display);
+    font-size: clamp(2.65rem, 5.2vw, 4.7rem);
+    font-weight: 600;
+    letter-spacing: -0.052em;
+    line-height: 0.92;
+}
+
+.rankings-intro {
+    max-width: 42rem;
+    margin: 0;
+    color: var(--color-muted);
+    font-size: 0.94rem;
+}
+
+.rankings-method-note {
+    display: flex;
+    max-width: 21rem;
+    align-items: flex-start;
+    gap: 0.65rem;
+    padding: 0.75rem 0;
+    color: inherit;
+    text-decoration: none;
+    transition: transform var(--motion-standard);
+}
+
+.rankings-method-note:hover,
+.rankings-method-note:focus-visible {
+    transform: translateX(0.25rem);
+}
+
+.method-note-mark {
+    display: inline-flex;
+    flex: 0 0 1.65rem;
+    width: 1.65rem;
+    height: 1.65rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-accent);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-accent-dark);
+    font-size: 1rem;
+    font-weight: 900;
+}
+
+.rankings-method-note strong,
+.rankings-method-note span {
     display: block;
 }
 
-.rankings-context-bar strong {
+.rankings-method-note strong {
     color: var(--color-text);
-    font-size: 1.05rem;
-    line-height: 1.15;
+    font-size: 0.78rem;
+    font-weight: 850;
 }
 
-.rankings-context-bar span {
+.rankings-method-note span {
+    margin-top: 0.12rem;
     color: var(--color-muted);
-    font-size: 0.76rem;
+    font-size: 0.74rem;
+    line-height: 1.35;
+}
+
+.rankings-workspace-bar {
+    display: flex;
+    align-items: flex-end;
+    gap: clamp(1rem, 2vw, 2rem);
+    min-height: 5.15rem;
+    padding: 0.9rem 1rem;
+    border-radius: var(--radius-md);
+    background: rgba(238, 239, 233, 0.72);
+}
+
+.workspace-control > span {
+    display: block;
+}
+
+.workspace-label {
+    color: var(--color-subtle);
+    font-size: 0.68rem;
+    font-weight: 850;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+}
+
+.workspace-control {
+    display: grid;
+    flex: 0 1 auto;
+    gap: 0.28rem;
+}
+
+.workspace-pool-control {
+    flex: 1 1 auto;
+}
+
+.workspace-view-control {
+    flex: 0 0 auto;
 }
 
 .rankings-view-tabs {
     display: inline-flex;
     flex: 0 0 auto;
-    gap: 0.15rem;
-    padding: 0.15rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
+    gap: 1rem;
 }
 
 .view-tab {
-    min-height: 1.9rem;
-    padding: 0.25rem 0.65rem;
+    min-height: 2rem;
+    padding: 0.3rem 0 0.5rem;
     border: 0;
-    border-radius: calc(var(--radius-md) - 4px);
+    border-bottom: 2px solid transparent;
     background: transparent;
     color: var(--color-muted);
     font-size: 0.76rem;
     font-weight: 800;
+    transition: color var(--motion-fast), border-color var(--motion-fast);
 }
 
 .view-tab:hover,
 .view-tab:focus-visible {
-    background: var(--color-surface-muted);
     color: var(--color-brand-dark);
 }
 
 .view-tab.active {
-    background: var(--color-brand-dark);
-    color: var(--color-inverse);
+    border-color: var(--color-accent);
+    color: var(--color-text);
 }
 
 .rankings-heading {
@@ -84,9 +168,10 @@
 }
 
 .rankings-header h1 {
-    margin: 0 0 0.2rem;
-    font-size: clamp(1.65rem, 3vw, 2.35rem);
-    line-height: 1.05;
+    margin: 0 0 0.45rem;
+    font-size: clamp(2rem, 4vw, 3.15rem);
+    letter-spacing: -0.045em;
+    line-height: 0.98;
 }
 
 .rankings-heading h1,
@@ -133,18 +218,20 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: end;
-    padding: 0.1rem 0 0.35rem;
-    border-bottom: 1px solid var(--color-border);
 }
 
 .ranking-toolbar {
-    min-height: 3.35rem;
+    min-height: 4.3rem;
+    padding: 0.9rem 0;
+    background: transparent;
 }
 
 .advanced-filters {
     align-items: end;
-    border-bottom: 0;
-    padding: 0.15rem 0 0.45rem;
+    margin-top: -1.25rem;
+    padding: 1.15rem;
+    background: var(--color-surface-muted);
+    animation: be-content-rise var(--motion-standard) both;
 }
 
 .scope-control-block {
@@ -177,6 +264,10 @@
     gap: 0.45rem;
     padding: 0.35rem 0.7rem;
     height: 2.35rem;
+}
+
+.filter-toggle {
+    box-shadow: 0 2px 8px rgba(24, 45, 44, 0.04);
 }
 
 .filter-toggle:hover,
@@ -385,35 +476,30 @@
 }
 
 .rating-pool-tabs {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    width: 100%;
-    padding: 0.2rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    box-shadow: none;
+    display: flex;
+    width: auto;
+    gap: 1rem;
 }
 
 .pool-tab {
     min-height: 2.2rem;
-    padding: 0.35rem 0.7rem;
+    padding: 0.35rem 0 0.5rem;
     border: 0;
-    border-radius: calc(var(--radius-md) - 4px);
+    border-bottom: 2px solid transparent;
     background: transparent;
     color: var(--color-muted);
     font-weight: 800;
+    transition: color var(--motion-fast), border-color var(--motion-fast);
 }
 
 .pool-tab:hover,
 .pool-tab:focus-visible {
     color: var(--color-brand-dark);
-    background: var(--color-surface-muted);
 }
 
 .pool-tab.active {
-    color: #fff;
-    background: var(--color-brand-dark);
+    border-color: var(--color-accent);
+    color: var(--color-text);
 }
 
 .clearable-field {
@@ -496,7 +582,10 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-4);
-    padding: 0.1rem 0;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: rgba(255, 254, 250, 0.74);
 }
 
 .results-context {
@@ -1537,8 +1626,25 @@
 }
 
 @media (max-width: 760px) {
+    .rankings-workspace-bar {
+        display: grid;
+        grid-template-columns: 1fr;
+        align-items: stretch;
+        gap: var(--space-4);
+    }
+
+    .workspace-control {
+        min-width: 0;
+    }
+
+    .workspace-divider {
+        width: 100%;
+        height: 1px;
+    }
+
     .rating-pool-tabs {
         width: 100%;
+        justify-content: space-between;
     }
 
     .pool-tab {
@@ -1560,13 +1666,23 @@
         align-items: stretch;
     }
 
-    .rankings-context-bar {
+    .rankings-page-heading {
         align-items: stretch;
         flex-direction: column;
+        gap: var(--space-4);
+    }
+
+    .rankings-page-heading h1 {
+        font-size: clamp(2.25rem, 12vw, 3rem);
+    }
+
+    .rankings-method-note {
+        max-width: none;
     }
 
     .rankings-view-tabs {
         width: 100%;
+        justify-content: space-between;
     }
 
     .view-tab {

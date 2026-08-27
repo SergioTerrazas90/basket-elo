@@ -975,6 +975,8 @@
     private bool isGraphSearchBusy;
     private CancellationTokenSource? graphSearchCancellation;
     private CancellationTokenSource? teamSearchDebounceCancellation;
+    private CancellationTokenSource? teamSearchRequestCancellation;
+    private long teamSearchRequestVersion;
 
     private sealed record RankingsClientCacheKey(
         string Pool,
@@ -1162,42 +1164,66 @@
 
     private async Task TeamSearchChangedAsync()
     {
-        teamSearchDebounceCancellation?.Cancel();
-        teamSearchDebounceCancellation?.Dispose();
+        CancelTeamSearchDebounce();
 
-        var cancellation = new CancellationTokenSource();
-        teamSearchDebounceCancellation = cancellation;
+        var requestVersion = ++teamSearchRequestVersion;
+        var searchText = teamSearch;
+
+        var debounceCancellation = new CancellationTokenSource();
+        var requestCancellation = new CancellationTokenSource();
+        teamSearchDebounceCancellation = debounceCancellation;
+        teamSearchRequestCancellation = requestCancellation;
         try
         {
-            await Task.Delay(300, cancellation.Token);
-            if (cancellation.IsCancellationRequested)
+            await Task.Delay(300, debounceCancellation.Token);
+            if (debounceCancellation.IsCancellationRequested ||
+                !IsCurrentTeamSearchRequest(requestVersion, searchText))
             {
                 return;
             }
 
-            await RefreshSelectionAsync(1);
+            await RefreshSelectionAsync(1, requestCancellation.Token, requestVersion, searchText);
         }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        catch (OperationCanceledException) when (debounceCancellation.IsCancellationRequested || requestCancellation.IsCancellationRequested)
         {
             // A newer keystroke replaced this pending search.
         }
         finally
         {
-            if (ReferenceEquals(teamSearchDebounceCancellation, cancellation))
+            if (ReferenceEquals(teamSearchDebounceCancellation, debounceCancellation))
             {
                 teamSearchDebounceCancellation = null;
             }
 
-            cancellation.Dispose();
+            if (ReferenceEquals(teamSearchRequestCancellation, requestCancellation))
+            {
+                teamSearchRequestCancellation = null;
+            }
+
+            debounceCancellation.Dispose();
+            requestCancellation.Dispose();
         }
     }
 
     private void CancelTeamSearchDebounce()
     {
-        teamSearchDebounceCancellation?.Cancel();
-        teamSearchDebounceCancellation?.Dispose();
+        teamSearchRequestVersion++;
+
+        var debounceCancellation = teamSearchDebounceCancellation;
         teamSearchDebounceCancellation = null;
+        debounceCancellation?.Cancel();
+        debounceCancellation?.Dispose();
+
+        var requestCancellation = teamSearchRequestCancellation;
+        teamSearchRequestCancellation = null;
+        requestCancellation?.Cancel();
+        requestCancellation?.Dispose();
     }
+
+    private bool IsCurrentTeamSearchRequest(long? requestVersion, string? searchText)
+        => !requestVersion.HasValue ||
+            (requestVersion.Value == teamSearchRequestVersion &&
+             string.Equals(teamSearch, searchText, StringComparison.Ordinal));
 
     private async Task ClearCountryFilterAsync()
     {
@@ -1721,17 +1747,31 @@
         }
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(
+        CancellationToken cancellationToken = default,
+        long? expectedTeamSearchVersion = null,
+        string? expectedTeamSearch = null)
     {
+        if (!IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+        {
+            return;
+        }
+
         isBusy = true;
         errorMessage = null;
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var rankingsUri = BuildApiUri();
             var cacheKey = BuildRankingsClientCacheKey(rankingsUri);
             if (rankingsClientCache.TryGetValue(cacheKey, out var cachedEntry))
             {
+                if (!IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+                {
+                    return;
+                }
+
                 RestoreRankingsCacheEntry(cacheKey, cachedEntry);
                 return;
             }
@@ -1740,7 +1780,13 @@
                 !string.Equals(rankingsUri, lastRankingsApiUri, StringComparison.Ordinal) ||
                 activeRankingsCacheKey != cacheKey)
             {
-                response = await Http.GetFromJsonAsync<EloRankingsResponse>(rankingsUri);
+                var fetchedResponse = await Http.GetFromJsonAsync<EloRankingsResponse>(rankingsUri, cancellationToken);
+                if (!IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+                {
+                    return;
+                }
+
+                response = fetchedResponse;
                 lastRankingsApiUri = rankingsUri;
             }
 
@@ -1755,7 +1801,13 @@
                 var moversUri = BuildMoversApiUri();
                 if (movers is null || !string.Equals(moversUri, lastMoversApiUri, StringComparison.Ordinal))
                 {
-                    movers = await Http.GetFromJsonAsync<EloMoversResponse>(moversUri);
+                    var fetchedMovers = await Http.GetFromJsonAsync<EloMoversResponse>(moversUri, cancellationToken);
+                    if (!IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+                    {
+                        return;
+                    }
+
+                    movers = fetchedMovers;
                     lastMoversApiUri = moversUri;
                 }
 
@@ -1770,7 +1822,13 @@
                 var resultsUri = BuildResultsApiUri();
                 if (results is null || !string.Equals(resultsUri, lastResultsApiUri, StringComparison.Ordinal))
                 {
-                    results = await Http.GetFromJsonAsync<EloResultsResponse>(resultsUri);
+                    var fetchedResults = await Http.GetFromJsonAsync<EloResultsResponse>(resultsUri, cancellationToken);
+                    if (!IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+                    {
+                        return;
+                    }
+
+                    results = fetchedResults;
                     lastResultsApiUri = resultsUri;
                 }
 
@@ -1787,7 +1845,13 @@
                 var fixturesUri = BuildFixturesApiUri();
                 if (fixtures is null || !string.Equals(fixturesUri, lastFixturesApiUri, StringComparison.Ordinal))
                 {
-                    fixtures = await Http.GetFromJsonAsync<UpcomingGamesResponse>(fixturesUri);
+                    var fetchedFixtures = await Http.GetFromJsonAsync<UpcomingGamesResponse>(fixturesUri, cancellationToken);
+                    if (!IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+                    {
+                        return;
+                    }
+
+                    fixtures = fetchedFixtures;
                     lastFixturesApiUri = fixturesUri;
                 }
 
@@ -1800,15 +1864,28 @@
                 // The ranking response must remain the first meaningful data surface.
             }
 
-            StoreRankingsCacheEntry(cacheKey);
+            if (IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+            {
+                StoreRankingsCacheEntry(cacheKey);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A newer team search or navigation replaced this request.
         }
         catch (Exception ex)
         {
-            errorMessage = $"Could not load rankings: {ex.Message}";
+            if (IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+            {
+                errorMessage = $"Could not load rankings: {ex.Message}";
+            }
         }
         finally
         {
-            isBusy = false;
+            if (IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+            {
+                isBusy = false;
+            }
         }
     }
 
@@ -2028,8 +2105,17 @@
         return remainingQuery.Length == 0 ? uri[..separatorIndex] : $"{uri[..separatorIndex]}?{remainingQuery}";
     }
 
-    private async Task RefreshSelectionAsync(int targetPage)
+    private async Task RefreshSelectionAsync(
+        int targetPage,
+        CancellationToken cancellationToken = default,
+        long? expectedTeamSearchVersion = null,
+        string? expectedTeamSearch = null)
     {
+        if (!IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+        {
+            return;
+        }
+
         NormalizeSelectedSeasonRange();
         CloseResultExplanation();
         page = ClampRequestedPage(targetPage, CurrentTotalPages);
@@ -2052,8 +2138,8 @@
         isChartExpanded = false;
         isChartLoading = false;
         CancelEvolutionRefinement();
-        await RefreshAsync();
-        if (IsGraphView)
+        await RefreshAsync(cancellationToken, expectedTeamSearchVersion, expectedTeamSearch);
+        if (IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch) && IsGraphView)
         {
             await LoadChartAsync();
         }

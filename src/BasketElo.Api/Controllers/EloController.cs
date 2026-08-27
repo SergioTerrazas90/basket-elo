@@ -2095,7 +2095,7 @@ public class EloController(
         }
 
         var normalized = rulesetVersion.Trim().ToLowerInvariant();
-        return EloRulesetVersions.All.Contains(normalized) ? normalized : null;
+        return EloRulesetVersions.Known.Contains(normalized) ? normalized : null;
     }
 
     private static bool IsDefaultRankingsRequest(
@@ -2373,14 +2373,6 @@ public class EloController(
             cancellationToken))
         {
             return resolved;
-        }
-
-        if (string.IsNullOrWhiteSpace(rulesetVersion) &&
-            await dbContext.TeamRatings.AsNoTracking().AnyAsync(
-                x => x.EloPoolKey == poolKey && x.RulesetVersion == EloRulesetVersions.PointMarginEloV1,
-                cancellationToken))
-        {
-            return EloRulesetVersions.PointMarginEloV1;
         }
 
         return resolved;

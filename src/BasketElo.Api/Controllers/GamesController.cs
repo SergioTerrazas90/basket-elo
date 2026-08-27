@@ -36,7 +36,7 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
         var to = toUtc ?? from.AddDays(7);
         var ruleset = string.IsNullOrWhiteSpace(rulesetVersion) ? EloRulesetVersions.Default : rulesetVersion.Trim().ToLowerInvariant();
         var teamScope = EloTeamScopes.Normalize(teams);
-        if (!EloRulesetVersions.All.Contains(ruleset, StringComparer.Ordinal))
+        if (!EloRulesetVersions.Known.Contains(ruleset, StringComparer.Ordinal))
         {
             return BadRequest(new ProblemDetails { Detail = $"Unknown ELO ruleset '{ruleset}'." });
         }

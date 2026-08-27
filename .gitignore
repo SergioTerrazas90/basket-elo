@@ -6,6 +6,7 @@
 *.cache
 artifacts/
 tmp/
+.codex-remote-attachments/
 .env
 .env.*
 !.env.example

@@ -1485,9 +1485,9 @@ public class EloController(
 
         if (!string.IsNullOrWhiteSpace(team))
         {
-            var teamTerm = team.Trim();
-            query = query.Where(x => x.HomeTeam.CanonicalName.Contains(teamTerm) ||
-                x.AwayTeam.CanonicalName.Contains(teamTerm));
+            var teamTerm = team.Trim().ToLowerInvariant();
+            query = query.Where(x => x.HomeTeam.CanonicalName.ToLower().Contains(teamTerm) ||
+                x.AwayTeam.CanonicalName.ToLower().Contains(teamTerm));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

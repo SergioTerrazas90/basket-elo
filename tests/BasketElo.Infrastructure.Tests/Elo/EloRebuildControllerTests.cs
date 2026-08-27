@@ -104,6 +104,55 @@ public class EloRebuildControllerTests
     }
 
     [Fact]
+    public async Task ResultsCanSearchByTeamNameCaseInsensitively()
+    {
+        await using var dbContext = CreateDbContext();
+        var matchingTeam = new Team { Id = Guid.NewGuid(), CanonicalName = "Real Madrid", CountryCode = "ES" };
+        var matchingOpponent = new Team { Id = Guid.NewGuid(), CanonicalName = "Barcelona", CountryCode = "ES" };
+        var otherHome = new Team { Id = Guid.NewGuid(), CanonicalName = "Valencia", CountryCode = "ES" };
+        var otherAway = new Team { Id = Guid.NewGuid(), CanonicalName = "Baskonia", CountryCode = "ES" };
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "ACB",
+            Type = "league",
+            CountryCode = "ES",
+            EloPoolKey = EloPoolKeys.EuropeClubs
+        };
+        var season = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Competition = competition,
+            Label = "2025-2026"
+        };
+        var matchingGame = CreateResultGame("matching", competition, season, matchingTeam, matchingOpponent);
+        var otherGame = CreateResultGame("other", competition, season, otherHome, otherAway);
+        dbContext.AddRange(matchingTeam, matchingOpponent, otherHome, otherAway, competition, season);
+        dbContext.Games.AddRange(matchingGame, otherGame);
+        await dbContext.SaveChangesAsync();
+
+        var controller = CreateController(dbContext, new ScopedIdentityHealthService(EloPoolKeys.EuropeClubs));
+
+        var result = await controller.GetResults(
+            rulesetVersion: null,
+            pool: EloPoolKeys.EuropeClubs,
+            country: null,
+            competition: null,
+            fromUtc: null,
+            toUtc: null,
+            team: "real madrid",
+            page: 1,
+            pageSize: 25,
+            cancellationToken: CancellationToken.None);
+
+        var response = Assert.IsType<EloResultsResponse>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        var row = Assert.Single(response.Results);
+        Assert.Equal(matchingGame.Id, row.GameId);
+        Assert.Equal("Real Madrid", row.HomeTeam);
+    }
+
+    [Fact]
     public async Task RankingsRejectCompetitionFromAnotherPool()
     {
         await using var dbContext = CreateDbContext();
@@ -511,6 +560,32 @@ public class EloRebuildControllerTests
         Assert.Equal(EloPoolKeys.Nba, Assert.Single(identityService.Requests).EloPoolKey);
         Assert.Empty(dbContext.EloRebuildRuns);
     }
+
+    private static Game CreateResultGame(
+        string sourceGameId,
+        Competition competition,
+        Season season,
+        Team home,
+        Team away)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            Source = "test",
+            SourceGameId = sourceGameId,
+            CompetitionId = competition.Id,
+            Competition = competition,
+            SeasonId = season.Id,
+            Season = season,
+            GameDateTimeUtc = new DateTime(2026, 1, 10, 19, 0, 0, DateTimeKind.Utc),
+            HomeTeamId = home.Id,
+            HomeTeam = home,
+            AwayTeamId = away.Id,
+            AwayTeam = away,
+            HomeScore = 88,
+            AwayScore = 76,
+            Status = "finished",
+            EloEligible = true
+        };
 
     private static BasketEloDbContext CreateDbContext() => new(
         new DbContextOptionsBuilder<BasketEloDbContext>()

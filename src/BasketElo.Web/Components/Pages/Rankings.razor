@@ -64,7 +64,7 @@
         <div class="filter-field team-search-field">
             <label for="teamSearch">Team</label>
             <div class="clearable-field">
-                <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" placeholder="Search teams" />
+                <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" @bind:after="TeamSearchChangedAsync" placeholder="Search teams" />
                 <button type="button" class="clear-filter" aria-label="Clear team search" title="Clear team search" @onclick="ClearTeamSearch" disabled="@(!HasTeamSearch)">
                     &times;
                 </button>
@@ -974,6 +974,7 @@
     private bool isGraphSelectionBusy;
     private bool isGraphSearchBusy;
     private CancellationTokenSource? graphSearchCancellation;
+    private CancellationTokenSource? teamSearchDebounceCancellation;
 
     private sealed record RankingsClientCacheKey(
         string Pool,
@@ -1015,6 +1016,7 @@
             return;
         }
 
+        CancelTeamSearchDebounce();
         CaptureActiveRankingsCacheEntry();
         var preserveCurrentData = IsPageOnlyNavigation(currentUri, lastLoadedUri);
 
@@ -1106,11 +1108,13 @@
 
     private async Task ApplyFiltersAsync()
     {
+        CancelTeamSearchDebounce();
         await RefreshSelectionAsync(1);
     }
 
     private async Task ResetFiltersAsync()
     {
+        CancelTeamSearchDebounce();
         selectedTeamScope = EloTeamScopes.Current;
         selectedCountry = null;
         selectedCompetition = null;
@@ -1130,6 +1134,7 @@
 
     private Task SelectPoolAsync(string poolKey)
     {
+        CancelTeamSearchDebounce();
         selectedPool = EloPoolKeys.Normalize(poolKey);
         selectedTeamScope = EloTeamScopes.Current;
         selectedCountry = null;
@@ -1150,8 +1155,48 @@
 
     private async Task ClearTeamSearch()
     {
+        CancelTeamSearchDebounce();
         teamSearch = null;
         await RefreshSelectionAsync(1);
+    }
+
+    private async Task TeamSearchChangedAsync()
+    {
+        teamSearchDebounceCancellation?.Cancel();
+        teamSearchDebounceCancellation?.Dispose();
+
+        var cancellation = new CancellationTokenSource();
+        teamSearchDebounceCancellation = cancellation;
+        try
+        {
+            await Task.Delay(300, cancellation.Token);
+            if (cancellation.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await RefreshSelectionAsync(1);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // A newer keystroke replaced this pending search.
+        }
+        finally
+        {
+            if (ReferenceEquals(teamSearchDebounceCancellation, cancellation))
+            {
+                teamSearchDebounceCancellation = null;
+            }
+
+            cancellation.Dispose();
+        }
+    }
+
+    private void CancelTeamSearchDebounce()
+    {
+        teamSearchDebounceCancellation?.Cancel();
+        teamSearchDebounceCancellation?.Dispose();
+        teamSearchDebounceCancellation = null;
     }
 
     private async Task ClearCountryFilterAsync()

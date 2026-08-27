@@ -686,21 +686,12 @@
     gap: var(--space-2);
 }
 
-.fixture-highlight-kicker {
-    color: var(--color-accent-dark);
-    font-size: 0.7rem;
-    font-weight: 850;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-}
-
 .fixture-highlight-card h3 {
-    margin: 0.15rem 0 0;
+    margin: 0;
     font-size: 1.05rem;
 }
 
 .fixture-highlight-card > p {
-    min-height: 2.4rem;
     margin: 0;
     color: var(--color-muted);
     font-size: 0.78rem;

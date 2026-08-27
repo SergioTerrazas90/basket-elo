@@ -422,13 +422,13 @@
                     </div>
                 </div>
 
-                @if (isBusy && fixtures is null)
+                @if (isBusy && (upcomingFixtures is null || fixtures is null))
                 {
                     <div class="loading-panel" role="status">Loading fixtures...</div>
                 }
-                else if (fixtures is null || fixtures.TotalCount == 0)
+                else if (upcomingFixtures is null || upcomingFixtures.TotalCount == 0)
                 {
-                    <div class="empty-state">No upcoming fixtures match the current filters.</div>
+                    <div class="empty-state">No upcoming fixtures are available in the next nine days.</div>
                 }
                 else
                 {
@@ -438,7 +438,6 @@
                             <article class="fixture-highlight-card">
                                 <div class="fixture-highlight-heading">
                                     <div>
-                                        <span class="fixture-highlight-kicker">Highlight</span>
                                         <h3>@highlight.Title</h3>
                                     </div>
                                     <span class="fixture-highlight-count">@highlight.Games.Count</span>
@@ -473,13 +472,23 @@
                         <div class="section-head">
                             <div>
                                 <h2>All fixtures</h2>
-                                <p>Every scheduled game in the next nine days, ordered by start time.</p>
+                                <p>Every scheduled game in the next nine days matching the active filters, ordered by start time.</p>
                             </div>
-                            <span class="fixture-list-count">@fixtures.TotalCount games</span>
+                            <span class="fixture-list-count">@(fixtures?.TotalCount ?? 0) games</span>
                         </div>
 
-                        <div class="table-responsive ranking-table-wrap">
-                            <table class="table table-hover align-middle fixtures-table">
+                        @if (fixtures is null)
+                        {
+                            <div class="loading-panel" role="status">Loading filtered fixtures...</div>
+                        }
+                        else if (fixtures.TotalCount == 0)
+                        {
+                            <div class="empty-state">No fixtures match the current filters.</div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive ranking-table-wrap">
+                                <table class="table table-hover align-middle fixtures-table">
                                 <thead>
                                     <tr>
                                         <th>Date</th>
@@ -507,8 +516,9 @@
                                         </tr>
                                     }
                                 </tbody>
-                            </table>
-                        </div>
+                                </table>
+                            </div>
+                        }
                     </section>
                 }
             </section>
@@ -913,6 +923,7 @@
     private EloMoversResponse? movers;
     private EloResultsResponse? results;
     private UpcomingGamesResponse? fixtures;
+    private UpcomingGamesResponse? upcomingFixtures;
     private EloRankingsEvolutionResponse? evolution;
     private EloRankingsEvolutionResponse? fullEvolution;
     private EloRankingsResponse? evolutionRankings;
@@ -948,6 +959,7 @@
     private string? lastMoversApiUri;
     private string? lastResultsApiUri;
     private string? lastFixturesApiUri;
+    private string? lastUpcomingFixturesApiUri;
     private string? lastEvolutionRankingsApiUri;
     private string? lastEvolutionApiUri;
     private RankingsClientCacheKey? activeRankingsCacheKey;
@@ -991,6 +1003,7 @@
         public EloMoversResponse? Movers { get; set; }
         public EloResultsResponse? Results { get; set; }
         public UpcomingGamesResponse? Fixtures { get; set; }
+        public UpcomingGamesResponse? UpcomingFixtures { get; set; }
         public EloRankingsEvolutionResponse? Evolution { get; set; }
         public EloRankingsEvolutionResponse? FullEvolution { get; set; }
         public EloRankingsResponse? EvolutionRankings { get; set; }
@@ -1000,6 +1013,7 @@
         public string? MoversApiUri { get; set; }
         public string? ResultsApiUri { get; set; }
         public string? FixturesApiUri { get; set; }
+        public string? UpcomingFixturesApiUri { get; set; }
         public string? EvolutionRankingsApiUri { get; set; }
         public string? EvolutionApiUri { get; set; }
         public long EvolutionDataRevision { get; set; }
@@ -1091,6 +1105,7 @@
             movers = null;
             results = null;
             fixtures = null;
+            upcomingFixtures = null;
         }
         CloseResultExplanation();
         if (!preserveCurrentData)
@@ -1149,6 +1164,7 @@
         lastRankingsApiUri = null;
         lastMoversApiUri = null;
         lastFixturesApiUri = null;
+        lastUpcomingFixturesApiUri = null;
         lastEvolutionRankingsApiUri = null;
         lastEvolutionApiUri = null;
         NavigateToRankings(1);
@@ -1842,7 +1858,28 @@
             }
             else if (selectedView == "fixtures")
             {
-                var fixturesUri = BuildFixturesApiUri();
+                var fixturesFromUtc = DateTime.UtcNow;
+                var fixturesToUtc = fixturesFromUtc.AddDays(9);
+                var upcomingFixturesUri = BuildFixturesApiUri(
+                    includeFilters: false,
+                    fixturesFromUtc: fixturesFromUtc,
+                    fixturesToUtc: fixturesToUtc);
+                if (upcomingFixtures is null || !string.Equals(upcomingFixturesUri, lastUpcomingFixturesApiUri, StringComparison.Ordinal))
+                {
+                    var fetchedUpcomingFixtures = await Http.GetFromJsonAsync<UpcomingGamesResponse>(upcomingFixturesUri, cancellationToken);
+                    if (!IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
+                    {
+                        return;
+                    }
+
+                    upcomingFixtures = fetchedUpcomingFixtures;
+                    lastUpcomingFixturesApiUri = upcomingFixturesUri;
+                }
+
+                var fixturesUri = BuildFixturesApiUri(
+                    includeFilters: true,
+                    fixturesFromUtc: fixturesFromUtc,
+                    fixturesToUtc: fixturesToUtc);
                 if (fixtures is null || !string.Equals(fixturesUri, lastFixturesApiUri, StringComparison.Ordinal))
                 {
                     var fetchedFixtures = await Http.GetFromJsonAsync<UpcomingGamesResponse>(fixturesUri, cancellationToken);
@@ -1991,6 +2028,7 @@
         entry.Movers = movers;
         entry.Results = results;
         entry.Fixtures = fixtures;
+        entry.UpcomingFixtures = upcomingFixtures;
         entry.Evolution = evolution;
         entry.FullEvolution = fullEvolution;
         entry.EvolutionRankings = evolutionRankings;
@@ -2000,6 +2038,7 @@
         entry.MoversApiUri = lastMoversApiUri;
         entry.ResultsApiUri = lastResultsApiUri;
         entry.FixturesApiUri = lastFixturesApiUri;
+        entry.UpcomingFixturesApiUri = lastUpcomingFixturesApiUri;
         entry.EvolutionRankingsApiUri = lastEvolutionRankingsApiUri;
         entry.EvolutionApiUri = lastEvolutionApiUri;
         entry.EvolutionDataRevision = evolutionDataRevision;
@@ -2015,6 +2054,7 @@
         entry.Movers = movers;
         entry.Results = results;
         entry.Fixtures = fixtures;
+        entry.UpcomingFixtures = upcomingFixtures;
         entry.Evolution = evolution;
         entry.FullEvolution = fullEvolution;
         entry.EvolutionRankings = evolutionRankings;
@@ -2024,6 +2064,7 @@
         entry.MoversApiUri = lastMoversApiUri;
         entry.ResultsApiUri = lastResultsApiUri;
         entry.FixturesApiUri = lastFixturesApiUri;
+        entry.UpcomingFixturesApiUri = lastUpcomingFixturesApiUri;
         entry.EvolutionRankingsApiUri = lastEvolutionRankingsApiUri;
         entry.EvolutionApiUri = lastEvolutionApiUri;
         entry.EvolutionDataRevision = evolutionDataRevision;
@@ -2040,6 +2081,7 @@
         movers = entry.Movers;
         results = entry.Results;
         fixtures = entry.Fixtures;
+        upcomingFixtures = entry.UpcomingFixtures;
         evolution = entry.Evolution;
         fullEvolution = entry.FullEvolution;
         evolutionRankings = entry.EvolutionRankings;
@@ -2054,6 +2096,7 @@
         lastMoversApiUri = entry.MoversApiUri;
         lastResultsApiUri = entry.ResultsApiUri;
         lastFixturesApiUri = entry.FixturesApiUri;
+        lastUpcomingFixturesApiUri = entry.UpcomingFixturesApiUri;
         lastEvolutionRankingsApiUri = entry.EvolutionRankingsApiUri;
         lastEvolutionApiUri = entry.EvolutionApiUri;
         evolutionDataRevision = entry.EvolutionDataRevision;
@@ -2124,12 +2167,14 @@
         lastMoversApiUri = null;
         lastResultsApiUri = null;
         lastFixturesApiUri = null;
+        lastUpcomingFixturesApiUri = null;
         lastEvolutionRankingsApiUri = null;
         lastEvolutionApiUri = null;
         ResetGraphSelection();
         movers = null;
         results = null;
         fixtures = null;
+        upcomingFixtures = null;
         evolution = null;
         fullEvolution = null;
         evolutionRankings = null;
@@ -2417,14 +2462,14 @@
     private int ChartHeightPixels => isChartExpanded ? 560 : 340;
 
     private IReadOnlyList<FixtureHighlight> FixtureHighlights
-        => BuildFixtureHighlights(fixtures?.Games);
+        => BuildFixtureHighlights(upcomingFixtures?.Games);
 
     private string FixturesContextLabel()
-        => fixtures is null
+        => upcomingFixtures is null
             ? string.Empty
-            : fixtures.TotalCount == 0
-                ? "No upcoming fixtures match the current filters."
-                : $"Showing {fixtures.TotalCount} upcoming games over the next nine days.";
+            : upcomingFixtures.TotalCount == 0
+                ? "No upcoming fixtures are available in the next nine days."
+                : $"Showing {upcomingFixtures.TotalCount} upcoming games over the next nine days. Highlights use the full slate; the table uses the active filters.";
 
     private static IReadOnlyList<FixtureHighlight> BuildFixtureHighlights(IReadOnlyCollection<UpcomingGameListItem>? source = null)
     {
@@ -2572,22 +2617,26 @@
         return $"api/elo/results?{string.Join("&", query)}";
     }
 
-    private string BuildFixturesApiUri()
+    private string BuildFixturesApiUri(
+        bool includeFilters,
+        DateTime fixturesFromUtc,
+        DateTime fixturesToUtc)
     {
-        var fromUtc = DateTime.UtcNow;
-        var toUtc = fromUtc.AddDays(9);
         var query = new List<string>
         {
-            $"fromUtc={Uri.EscapeDataString(fromUtc.ToString("O"))}",
-            $"toUtc={Uri.EscapeDataString(toUtc.ToString("O"))}",
+            $"fromUtc={Uri.EscapeDataString(fixturesFromUtc.ToString("O"))}",
+            $"toUtc={Uri.EscapeDataString(fixturesToUtc.ToString("O"))}",
             $"poolKey={Uri.EscapeDataString(selectedPool)}",
             "limit=2000"
         };
 
         Append(query, "rulesetVersion", response?.RulesetVersion);
-        Append(query, "country", selectedCountry);
-        Append(query, "competition", selectedCompetition);
-        Append(query, "team", teamSearch);
+        if (includeFilters)
+        {
+            Append(query, "country", selectedCountry);
+            Append(query, "competition", selectedCompetition);
+            Append(query, "team", teamSearch);
+        }
 
         return $"api/games/upcoming?{string.Join("&", query)}";
     }

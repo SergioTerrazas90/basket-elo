@@ -362,13 +362,13 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @if (results is null || results.Results.Count == 0)
+                            @if (VisibleResultRows.Count == 0)
                             {
                                 <tr><td colspan="6" class="empty-state">No completed results match the current filters.</td></tr>
                             }
                             else
                             {
-                                @foreach (var row in results.Results)
+                                @foreach (var row in VisibleResultRows)
                                 {
                                     <tr>
                                         <td>@FormatDate(row.GameDateTimeUtc)</td>
@@ -2277,15 +2277,47 @@
 
     private string ResultsContextLabel()
     {
-        if (results is null || results.TotalCount == 0)
+        var currentResults = CurrentResultsResponse;
+        if (currentResults is null || currentResults.TotalCount == 0)
         {
-            return "Completed games matching the current filters, newest first.";
+            return isBusy
+                ? "Loading completed results..."
+                : "Completed games matching the current filters, newest first.";
         }
 
-        var shown = results.Results.Count;
-        return shown < results.TotalCount
-            ? $"Showing the latest {shown} of {results.TotalCount} matching completed games, newest first."
-            : $"Showing all {results.TotalCount} matching completed games, newest first.";
+        var shown = VisibleResultRows.Count;
+        return shown < currentResults.TotalCount
+            ? $"Showing the latest {shown} of {currentResults.TotalCount} matching completed games, newest first."
+            : $"Showing all {currentResults.TotalCount} matching completed games, newest first.";
+    }
+
+    private EloResultsResponse? CurrentResultsResponse
+        => results is not null &&
+            string.Equals(lastResultsApiUri, BuildResultsApiUri(), StringComparison.Ordinal)
+            ? results
+            : null;
+
+    private IReadOnlyCollection<EloResultRow> VisibleResultRows
+    {
+        get
+        {
+            var currentResults = CurrentResultsResponse;
+            if (currentResults is null || currentResults.Results.Count == 0)
+            {
+                return [];
+            }
+
+            if (string.IsNullOrWhiteSpace(teamSearch))
+            {
+                return currentResults.Results;
+            }
+
+            var searchText = teamSearch.Trim();
+            return currentResults.Results
+                .Where(row => row.HomeTeam.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                    row.AwayTeam.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
     }
 
     private bool HasTeamSearch

@@ -1,198 +1,68 @@
-.sponsor-page {
-    display: grid;
-    gap: var(--space-8);
-    max-width: 1120px;
-    margin: 0 auto;
-}
-
-.sponsor-hero {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-8);
-    overflow: hidden;
-    border-radius: var(--radius-lg);
-    background:
-        radial-gradient(circle at 80% 20%, rgba(216, 135, 34, 0.32), transparent 18rem),
-        linear-gradient(145deg, #211813 0%, #173b4f 58%, #1e685b 100%);
-    color: var(--color-inverse);
-    box-shadow: var(--shadow-md);
-    padding: clamp(2rem, 5vw, 4.5rem);
-}
-
-.sponsor-hero-copy {
-    max-width: 48rem;
-}
-
-.sponsor-page .eyebrow {
-    margin: 0 0 var(--space-3);
-    color: var(--color-accent);
-    font-size: 0.76rem;
-    font-weight: 850;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-}
-
-.sponsor-hero h1 {
-    margin-bottom: var(--space-4);
-    color: var(--color-inverse);
-    font-size: clamp(2rem, 4.5vw, 3.8rem);
-    line-height: 1.04;
-}
-
-.sponsor-lede {
-    max-width: 42rem;
-    margin-bottom: var(--space-5);
-    color: rgba(255, 250, 240, 0.84);
-    font-size: 1.08rem;
-}
-
-.sponsor-cta {
-    padding-inline: 1.25rem;
-}
-
-.sponsor-hero-mark {
-    position: relative;
-    display: grid;
-    flex: 0 0 13rem;
-    min-height: 13rem;
-    place-items: center;
-    align-content: center;
-    border: 1px solid rgba(255, 250, 240, 0.24);
-    border-radius: 50%;
-    background: rgba(255, 253, 248, 0.08);
-    transform: rotate(8deg);
-}
-
-.sponsor-mark-ring {
-    position: absolute;
-    inset: 0.85rem;
-    border: 1px dashed rgba(253, 233, 200, 0.62);
-    border-radius: 50%;
-}
-
-.sponsor-mark-value {
-    color: var(--color-accent);
-    font-size: 2.2rem;
-    font-weight: 900;
-    letter-spacing: 0.08em;
-}
-
-.sponsor-mark-caption {
-    color: rgba(255, 250, 240, 0.76);
-    font-size: 0.68rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-}
-
-.sponsor-section {
-    border-top: 1px solid var(--color-border);
-    padding-top: var(--space-6);
-}
-
-.sponsor-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-    gap: var(--space-8);
-}
-
-.sponsor-section h2,
-.sponsor-detail-card h2,
-.sponsor-contact h2 {
-    margin-bottom: var(--space-3);
-    color: var(--color-text);
-    font-size: clamp(1.35rem, 2vw, 2rem);
-    line-height: 1.1;
-}
-
-.sponsor-copy {
-    color: var(--color-muted);
-    font-size: 1rem;
-}
-
-.sponsor-copy p:last-child {
-    margin-bottom: 0;
-}
-
-.sponsor-details {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-4);
-}
-
-.sponsor-detail-card {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: rgba(255, 253, 248, 0.72);
-    padding: var(--space-5);
-}
-
-.sponsor-detail-number {
-    display: block;
-    margin-bottom: var(--space-5);
-    color: var(--color-accent-dark);
-    font-size: 0.76rem;
-    font-weight: 850;
-    letter-spacing: 0.12em;
-}
-
-.sponsor-detail-card p {
-    margin: 0;
-    color: var(--color-muted);
-}
-
-.sponsor-contact {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-5);
-    border: 1px solid rgba(36, 92, 122, 0.2);
-    border-radius: var(--radius-lg);
-    background: var(--color-brand-soft);
-    padding: var(--space-6);
-}
-
-.sponsor-contact p:last-child {
-    max-width: 48rem;
-    margin: 0;
-    color: var(--color-muted);
-}
-
 .sponsor-contact-link {
-    flex: 0 0 auto;
-    white-space: nowrap;
+    display: grid;
+    gap: 0.3rem;
+    align-content: center;
+    align-self: stretch;
+    padding: var(--space-6);
+    border: 1px solid rgba(15, 75, 82, 0.18);
+    border-radius: var(--radius-xl);
+    background: linear-gradient(145deg, var(--color-brand-dark), #155b61);
+    color: var(--color-inverse);
+    text-decoration: none;
+    transition: transform var(--motion-standard), box-shadow var(--motion-standard);
 }
 
-@media (max-width: 800px) {
-    .sponsor-hero {
-        align-items: flex-start;
-        flex-direction: column;
-    }
+.sponsor-contact-link:hover,
+.sponsor-contact-link:focus-visible { color: var(--color-inverse); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.sponsor-contact-link > span { color: #ffc489; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.sponsor-contact-link strong { color: var(--color-inverse); font-family: var(--font-display); font-size: 1.5rem; font-weight: 600; }
+.sponsor-contact-link small { color: rgba(255, 249, 238, 0.7); }
 
-    .sponsor-hero-mark {
-        align-self: flex-end;
-        flex-basis: 10rem;
-        min-height: 10rem;
-        width: 10rem;
-    }
-
-    .sponsor-grid,
-    .sponsor-details {
-        grid-template-columns: 1fr;
-    }
-
-    .sponsor-contact {
-        align-items: flex-start;
-        flex-direction: column;
-    }
+.sponsor-fit {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(1.5rem, 4vw, 4rem);
+    margin-top: var(--space-6);
 }
 
-@media (max-width: 520px) {
-    .sponsor-hero {
-        padding: var(--space-5);
-    }
+.sponsor-fit article { padding-top: var(--space-4); border-top: 1px solid var(--color-border-strong); }
+.sponsor-fit h3 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: 1.45rem; font-weight: 600; }
+.sponsor-fit p { margin: 0; color: var(--color-muted); line-height: 1.68; }
+.sponsor-note { max-width: 46rem; margin: var(--space-7) 0 0; color: var(--color-muted); }
 
-    .sponsor-hero-mark {
-        align-self: center;
-    }
+.support-placeholder {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: var(--space-6);
+    align-items: center;
+    margin: var(--space-6) 0 var(--space-8);
+    padding: var(--space-5) var(--space-6);
+    border: 1px dashed rgba(200, 135, 65, 0.58);
+    border-radius: var(--radius-lg);
+    background: rgba(255, 248, 231, 0.58);
+}
+
+.support-placeholder .info-kicker {
+    margin-bottom: 0.2rem;
+    color: var(--color-accent-dark);
+}
+
+.support-placeholder h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    font-weight: 600;
+}
+
+.support-placeholder > p:last-child {
+    max-width: 34rem;
+    margin: 0;
+    color: var(--color-muted);
+    line-height: 1.6;
+}
+
+@media (max-width: 620px) {
+    .sponsor-fit { grid-template-columns: 1fr; }
+
+    .support-placeholder { grid-template-columns: 1fr; gap: var(--space-3); }
 }

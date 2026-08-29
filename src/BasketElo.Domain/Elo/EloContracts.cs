@@ -6,9 +6,12 @@ public static class EloRulesetVersions
 {
     public const string AdjustedV1 = "adjusted-v1";
     public const string BasicEloV1 = "basic-elo-v1";
+    // Retained so historical ratings and explanations remain readable, but no
+    // longer advertised or included in new rebuild queues.
     public const string PointMarginEloV1 = "point-margin-elo-v1";
 
-    public static readonly IReadOnlyList<string> All = [AdjustedV1, BasicEloV1, PointMarginEloV1];
+    public static readonly IReadOnlyList<string> All = [AdjustedV1, BasicEloV1];
+    public static readonly IReadOnlyList<string> Known = [AdjustedV1, BasicEloV1, PointMarginEloV1];
     public const string Default = AdjustedV1;
 }
 
@@ -118,6 +121,7 @@ public sealed record EloRankingRow(
     IReadOnlyCollection<EloRecentFormGame>? RecentForm = null);
 
 public sealed record EloRecentFormGame(
+    Guid GameId,
     DateTime GameDateTimeUtc,
     string Opponent,
     bool IsWin,
@@ -163,7 +167,8 @@ public sealed record EloRankingFilterOptions(
 
 public sealed record EloRankingCompetitionOption(
     string Name,
-    string? Country);
+    string? Country,
+    string? Context = null);
 
 public sealed record EloRankingSummary(
     int RatedTeams,

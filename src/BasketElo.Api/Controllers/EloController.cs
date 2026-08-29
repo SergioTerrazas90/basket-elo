@@ -6,6 +6,7 @@ using BasketElo.Infrastructure.Elo;
 using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
+using BasketElo.Infrastructure.Teams;
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -664,6 +665,7 @@ public class EloController(
         var currentNationalTeamIds = poolKey == EloPoolKeys.NationalTeams
             ? await GetCurrentNationalTeamIdsAsync(competition, cancellationToken)
             : null;
+        var teamFilterIds = await TeamSearchResolver.ResolveTeamIdsAsync(dbContext, team, cancellationToken);
 
         if (asOfDate.HasValue)
         {
@@ -717,9 +719,7 @@ public class EloController(
 
             if (!string.IsNullOrWhiteSpace(team))
             {
-                archiveFilteredTeamIds.IntersectWith(globalArchiveRatings
-                    .Where(x => x.TeamName.Contains(team, StringComparison.OrdinalIgnoreCase))
-                    .Select(x => x.TeamId));
+                archiveFilteredTeamIds.IntersectWith(teamFilterIds);
             }
 
             if (minimumGames > 0)
@@ -855,9 +855,7 @@ public class EloController(
 
         if (!string.IsNullOrWhiteSpace(team))
         {
-            filteredTeamIds.IntersectWith(globalRatings
-                .Where(x => x.TeamName.Contains(team, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.TeamId));
+            filteredTeamIds.IntersectWith(teamFilterIds);
         }
 
         if (minimumGames > 0)
@@ -1229,6 +1227,7 @@ public class EloController(
         var currentNationalTeamIds = poolKey == EloPoolKeys.NationalTeams
             ? await GetCurrentNationalTeamIdsAsync(competition, cancellationToken)
             : null;
+        var teamFilterIds = await TeamSearchResolver.ResolveTeamIdsAsync(dbContext, team, cancellationToken);
 
         var latestGameUtc = await dbContext.RatingHistories
             .AsNoTracking()
@@ -1294,9 +1293,7 @@ public class EloController(
 
         if (!string.IsNullOrWhiteSpace(team))
         {
-            filteredTeamIds.IntersectWith(currentRatings
-                .Where(x => x.Team.CanonicalName.Contains(team, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.TeamId));
+            filteredTeamIds.IntersectWith(teamFilterIds);
         }
 
         if (minimumGames > 0)
@@ -1485,9 +1482,10 @@ public class EloController(
 
         if (!string.IsNullOrWhiteSpace(team))
         {
-            var teamTerm = team.Trim().ToLowerInvariant();
-            query = query.Where(x => x.HomeTeam.CanonicalName.ToLower().Contains(teamTerm) ||
-                x.AwayTeam.CanonicalName.ToLower().Contains(teamTerm));
+            var teamFilterIds = await TeamSearchResolver.ResolveTeamIdsAsync(dbContext, team, cancellationToken);
+            query = teamFilterIds.Count == 0
+                ? query.Where(_ => false)
+                : query.Where(x => teamFilterIds.Contains(x.HomeTeamId) || teamFilterIds.Contains(x.AwayTeamId));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
@@ -2097,7 +2095,7 @@ public class EloController(
         }
 
         var normalized = rulesetVersion.Trim().ToLowerInvariant();
-        return EloRulesetVersions.All.Contains(normalized) ? normalized : null;
+        return EloRulesetVersions.Known.Contains(normalized) ? normalized : null;
     }
 
     private static bool IsDefaultRankingsRequest(
@@ -2375,14 +2373,6 @@ public class EloController(
             cancellationToken))
         {
             return resolved;
-        }
-
-        if (string.IsNullOrWhiteSpace(rulesetVersion) &&
-            await dbContext.TeamRatings.AsNoTracking().AnyAsync(
-                x => x.EloPoolKey == poolKey && x.RulesetVersion == EloRulesetVersions.PointMarginEloV1,
-                cancellationToken))
-        {
-            return EloRulesetVersions.PointMarginEloV1;
         }
 
         return resolved;
@@ -2712,6 +2702,7 @@ public class EloController(
 
     private sealed record RecentFormRow(
         Guid Id,
+        Guid GameId,
         Guid TeamId,
         DateTime GameDateTimeUtc,
         string Opponent,
@@ -2721,6 +2712,8 @@ public class EloController(
     private sealed class RecentFormSqlRow
     {
         public Guid Id { get; set; }
+
+        public Guid GameId { get; set; }
 
         public Guid TeamId { get; set; }
 
@@ -2818,7 +2811,10 @@ public class EloController(
                 return new EloRankingFilterOptions(
                     countries.Select(DisplayCountryFromCode).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x).ToList(),
                     competitionRows
-                        .Select(x => new EloRankingCompetitionOption(x.Name, DisplayCountryFromCode(x.CountryCode)))
+                        .Select(x => new EloRankingCompetitionOption(
+                            x.Name,
+                            DisplayCountryFromCode(x.CountryCode),
+                            CompetitionContext(x.Name, x.CountryCode)))
                         .ToList(),
                     seasons
                         .Select(NormalizeSeasonFilterInput)
@@ -2891,6 +2887,7 @@ public class EloController(
                 .ThenByDescending(x => x.Id)
                 .Select(x => new RecentFormRow(
                     x.Id,
+                    x.GameId,
                     x.TeamId,
                     x.GameDateTimeUtc,
                     x.OpponentTeam.CanonicalName,
@@ -2907,7 +2904,7 @@ public class EloController(
                     .OrderByDescending(x => x.GameDateTimeUtc)
                     .ThenByDescending(x => x.Id)
                     .Reverse()
-                    .Select(x => new EloRecentFormGame(x.GameDateTimeUtc, x.Opponent, x.IsWin, x.EloDelta))
+                    .Select(x => new EloRecentFormGame(x.GameId, x.GameDateTimeUtc, x.Opponent, x.IsWin, x.EloDelta))
                     .ToList());
     }
 
@@ -2936,6 +2933,7 @@ public class EloController(
 
         var sql = $"""
             SELECT ranked."Id",
+                   ranked."GameId",
                    ranked."TeamId",
                    ranked."GameDateTimeUtc",
                    ranked."Opponent",
@@ -2943,6 +2941,7 @@ public class EloController(
                    ranked."EloDelta"
             FROM (
                 SELECT r."Id",
+                       r."GameId",
                        r."TeamId",
                        r."GameDateTimeUtc",
                        opponent."CanonicalName" AS "Opponent",
@@ -2965,7 +2964,7 @@ public class EloController(
             .ToListAsync(cancellationToken);
 
         return sqlRows
-            .Select(x => new RecentFormRow(x.Id, x.TeamId, x.GameDateTimeUtc, x.Opponent, x.IsWin, x.EloDelta))
+            .Select(x => new RecentFormRow(x.Id, x.GameId, x.TeamId, x.GameDateTimeUtc, x.Opponent, x.IsWin, x.EloDelta))
             .ToList();
     }
 
@@ -3166,8 +3165,42 @@ public class EloController(
             : countryCode.Trim();
     }
 
+    private static string? CompetitionContext(string name, string? countryCode)
+    {
+        var normalizedName = name.Trim().ToLowerInvariant();
+        var normalizedCountry = countryCode?.Trim().ToUpperInvariant();
+
+        if (normalizedCountry is "AME") return "FIBA · Americas";
+        if (normalizedCountry is "OCE") return "FIBA · Oceania";
+        if (normalizedCountry is "WOR") return normalizedName.Contains("olympic") ? "Olympics · Global" : "FIBA · Global";
+
+        if (!string.IsNullOrWhiteSpace(countryCode))
+        {
+            return DisplayCountryFromCode(countryCode);
+        }
+
+        if (normalizedName.StartsWith("fiba afro") || normalizedName.Contains("afrobasket")) return "FIBA · Africa";
+        if (normalizedName.StartsWith("fiba ameri") || normalizedName.Contains("centrobasket") || normalizedName.Contains("cocaba") || normalizedName.Contains("caribbean")) return "FIBA · Americas";
+        if (normalizedName.StartsWith("fiba asia") || normalizedName == "asian games") return "FIBA · Asia";
+        if (normalizedName.Contains("eurobasket") || normalizedName.StartsWith("fiba euro")) return "FIBA · Europe";
+        if (normalizedName.Contains("world cup")) return "FIBA · Global";
+        if (normalizedName.Contains("olympic")) return "Olympics · Global";
+        if (normalizedName.Contains("latvia-estonian")) return "Estonia–Latvia";
+        if (normalizedName.Contains("baltic")) return "Baltics";
+        if (normalizedName is "aba league" or "aba supercup" or "bibl") return "Balkans";
+        if (normalizedName.Contains("alpe adria")) return "Central Europe";
+        if (normalizedName.Contains("bnxt")) return "Belgium–Netherlands";
+        if (normalizedName is "liga unike") return "Albania–Kosovo";
+        if (normalizedName is "enbl") return "Northern Europe";
+        if (normalizedName.Contains("champions league")) return "FIBA · Europe";
+        if (normalizedName.Contains("euro") || normalizedName.Contains("uleb") || normalizedName.Contains("saporta") || normalizedName.Contains("korac") || normalizedName.Contains("suproleague")) return "Europe";
+
+        return "International / regional";
+    }
+
     private static readonly IReadOnlyDictionary<string, string> CountryNameOverrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
+        ["AME"] = "Americas",
         ["CZ"] = "Czech Republic",
         ["CZE"] = "Czech Republic",
         ["EL"] = "Greece",
@@ -3175,12 +3208,14 @@ public class EloController(
         ["GRC"] = "Greece",
         ["RU"] = "Russia",
         ["RUS"] = "Russia",
+        ["OCE"] = "Oceania",
         ["SCT"] = "Scotland",
         ["UK"] = "United Kingdom",
         ["GB"] = "United Kingdom",
         ["GBR"] = "United Kingdom",
         ["USA"] = "United States",
-        ["US"] = "United States"
+        ["US"] = "United States",
+        ["WOR"] = "Global"
     };
 
     private static readonly IReadOnlyDictionary<string, string> CountryNames = BuildCountryNameLookup();

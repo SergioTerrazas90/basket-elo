@@ -7,10 +7,12 @@ Basket ELO stores ratings by ruleset version from the start, so a new formula ca
 Ruleset names follow short model-style slugs:
 
 - `basic-elo-v1`: plain win/loss ELO.
-- `point-margin-elo-v1`: legacy ELO with a point-margin adjustment.
 - `adjusted-v1`: default public ELO with point-margin adjustment and issue #8 constants.
 
 `adjusted-v1` is the default public ruleset.
+
+`point-margin-elo-v1` is retired. It remains readable for historical ratings and
+explanations, but is no longer advertised or included in new rebuilds.
 
 ## Adjusted V1 Constants
 
@@ -29,7 +31,7 @@ The home advantage value comes from the accepted `adjusted-v1` ruleset contract.
 
 ## Legacy Constants
 
-`basic-elo-v1` and `point-margin-elo-v1` preserve the original day-one home advantage of `100` ELO points so historical runs can coexist with `adjusted-v1` without silent formula drift.
+`basic-elo-v1` preserves the original day-one home advantage of `100` ELO points so historical runs can coexist with `adjusted-v1` without silent formula drift.
 
 Both legacy rulesets use:
 
@@ -42,7 +44,7 @@ The home advantage value is intentionally aligned with FiveThirtyEight's publish
 
 ## Point-Margin Conversion
 
-`adjusted-v1` and `point-margin-elo-v1` convert ELO difference into expected point margin with:
+`adjusted-v1` converts ELO difference into expected point margin with:
 
 ```text
 expectedMargin = eloDiff / 28

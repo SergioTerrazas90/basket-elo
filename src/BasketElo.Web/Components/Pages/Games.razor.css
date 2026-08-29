@@ -1,7 +1,10 @@
 .games-page {
     display: flex;
+    width: min(1900px, calc(100vw - 2rem));
     flex-direction: column;
     gap: var(--space-5);
+    margin-left: 50%;
+    transform: translateX(-50%);
 }
 
 .page-header,
@@ -128,7 +131,21 @@
 }
 
 .games-table th {
-    white-space: nowrap;
+    line-height: 1.2;
+}
+
+.games-table {
+    width: 100%;
+    font-size: clamp(0.7rem, 0.72vw, 0.82rem);
+}
+
+.games-table > :not(caption) > * > * {
+    padding: 0.45rem 0.38rem;
+}
+
+.games-table td {
+    overflow-wrap: anywhere;
+    vertical-align: top;
 }
 
 .matchup {
@@ -314,6 +331,12 @@
 }
 
 @media (max-width: 900px) {
+    .games-page {
+        width: 100%;
+        margin-left: 0;
+        transform: none;
+    }
+
     .page-header,
     .section-head {
         flex-direction: column;

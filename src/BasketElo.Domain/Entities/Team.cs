@@ -15,4 +15,5 @@ public class Team
     public Team? SuccessorTeam { get; set; }
 
     public ICollection<TeamAlias> Aliases { get; set; } = new List<TeamAlias>();
+    public ICollection<TeamSearchName> SearchNames { get; set; } = new List<TeamSearchName>();
 }

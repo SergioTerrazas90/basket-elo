@@ -12,7 +12,7 @@ The same source game is upserted by `(Source, SourceGameId)`. Manual result edit
 
 Administrators manage canonical competitions at `/admin/competitions`. The page supports creating competitions, changing their current-results policy, and adding or removing source-specific aliases with an optional source competition ID. From `/admin/current-results-review`, an unmatched source competition can be merged into an existing supported competition or create a new supported competition, with an optional tournament-cycle assignment. For FIBA and Olympic families, the merge form can reuse an existing cycle or create one such as `worldcup-2031` or `olympics-2028`; the assignment is stored on the detected source reviews and does not make the cycle global to the competition. The merge saves the alias for future runs. An unmatched source can also be marked unsupported and inactive, which creates the persistent skip policy, preserves the alias for future recognition, and ignores its existing reviews.
 
-After the complete date range has been ingested, changed Elo pools are identity-checked and the three configured rulesets are queued once per pool. The worker then processes those rebuild jobs. This avoids rebuilding once per game while still rerunning ratings after the daily batch.
+After the complete date range has been ingested, changed Elo pools are identity-checked and the two active rulesets are queued once per pool. The worker then processes those rebuild jobs. This avoids rebuilding once per game while still rerunning ratings after the daily batch.
 
 `GET /api/games/upcoming` returns the next schedule with current team ratings, Elo difference, and an optional `minElo` threshold. The admin UI is available at `/upcoming`.
 

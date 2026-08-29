@@ -253,8 +253,8 @@ public class CurrentResultsIngestionServiceTests
         Assert.Equal((short)88, updatedGame.HomeScore);
         Assert.Equal((short)76, updatedGame.AwayScore);
         Assert.Equal(CurrentResultStatuses.Finished, updatedGame.Status);
-        Assert.Equal(3, result.EloRunsQueued);
-        Assert.Equal(3, await dbContext.EloRebuildRuns.CountAsync());
+        Assert.Equal(2, result.EloRunsQueued);
+        Assert.Equal(2, await dbContext.EloRebuildRuns.CountAsync());
     }
 
     [Fact]

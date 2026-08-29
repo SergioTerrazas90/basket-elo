@@ -261,6 +261,17 @@
                                         }
                                     </td>
                                     <td>
+                                        <span class="site-treatment-label @(game.EffectiveNeutralSite ? "site-treatment-neutral" : "site-treatment-home")">@SiteTreatmentLabel(game)</span>
+                                        @if (game.IsNeutralSite is null)
+                                        {
+                                            <small class="source-game-id">competition / metadata</small>
+                                        }
+                                        else
+                                        {
+                                            <small class="source-game-id">manual override</small>
+                                        }
+                                    </td>
+                                    <td>
                                         <div class="matchup">
                                             <span>@game.HomeTeam</span>
                                             <span class="vs">vs</span>
@@ -296,17 +307,6 @@
                                         else
                                         {
                                             <span class="muted-cell">-</span>
-                                        }
-                                    </td>
-                                    <td>
-                                        <span class="site-treatment-label @(game.EffectiveNeutralSite ? "site-treatment-neutral" : "site-treatment-home")">@SiteTreatmentLabel(game)</span>
-                                        @if (game.IsNeutralSite is null)
-                                        {
-                                            <small class="source-game-id">competition / metadata</small>
-                                        }
-                                        else
-                                        {
-                                            <small class="source-game-id">manual override</small>
                                         }
                                     </td>
                                     <td>

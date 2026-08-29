@@ -2,39 +2,63 @@
 @page "/rankings"
 @page "/movers"
 @rendermode @(new InteractiveServerRenderMode(prerender: true))
+@implements IDisposable
 @using System.Globalization
 @using System.Text.Json
 @using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.Extensions.Caching.Memory
 @using Microsoft.AspNetCore.Components.Authorization
 @using BasketElo.Domain.Elo
 @using BasketElo.Domain.Entities
 @using BasketElo.Domain.Games
 @inject HttpClient Http
 @inject NavigationManager Navigation
+@inject PersistentComponentState PersistentState
+@inject IMemoryCache PrerenderCache
+@inject ILogger<Rankings> Logger
 
 <PageTitle>Basket ELO @ViewTitle()</PageTitle>
 
-<div class="rankings-page @(IsGraphView ? "graph-page" : string.Empty)">
+<div id="rankings-interactive-page" data-permanent class="rankings-page @(IsGraphView ? "graph-page" : string.Empty)">
     <header class="rankings-header">
-        <nav class="rating-pool-tabs" aria-label="Rating pools">
-            @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
-            {
-                <button type="button" class="@PoolTabClass(option.Key)" @onclick="() => SelectPoolAsync(option.Key)" disabled="@isBusy">
-                    @(option.Key == EloPoolKeys.EuropeClubs ? "Europe" : option.Key == EloPoolKeys.NationalTeams ? "National teams" : option.DisplayName)
-                </button>
-            }
-        </nav>
-
-        <div class="rankings-context-bar">
+        <div class="rankings-page-heading">
             <div>
-                <strong>@PoolHeading()</strong>
+                <p class="eyebrow">Basketball intelligence / Live board</p>
+                <h1>Power rankings</h1>
+                <p class="rankings-intro">Compare teams across leagues, follow form, and inspect the rating signal behind every position.</p>
             </div>
-            <nav class="rankings-view-tabs" aria-label="Ranking views">
-                <button type="button" class='@ViewTabClass("rankings")' @onclick='() => SelectViewAsync("rankings")' disabled="@isBusy">Rankings</button>
-                <button type="button" class='@ViewTabClass("graph")' @onclick='() => SelectViewAsync("graph")' disabled="@isBusy">Graph</button>
-                <button type="button" class='@ViewTabClass("fixtures")' @onclick='() => SelectViewAsync("fixtures")' disabled="@isBusy">Fixtures</button>
-                <button type="button" class='@ViewTabClass("results")' @onclick='() => SelectViewAsync("results")' disabled="@isBusy">Results</button>
-            </nav>
+            <a class="rankings-method-note" href="how-it-works" aria-label="Read how the rankings work">
+                <span class="method-note-mark" aria-hidden="true">↗</span>
+                <div>
+                    <strong>A transparent signal</strong>
+                    <span>See the rules and assumptions behind every movement.</span>
+                </div>
+            </a>
+        </div>
+
+        <div class="rankings-workspace-bar">
+            <div class="workspace-control workspace-pool-control">
+                <span class="workspace-label" title="The group of teams included in these rankings">Pool</span>
+                <nav class="rating-pool-tabs" aria-label="Rating pools">
+                    @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
+                    {
+                        <button type="button" class="@PoolTabClass(option.Key)" @onclick="() => SelectPoolAsync(option.Key)" disabled="@isBusy">
+                            @(option.Key == EloPoolKeys.EuropeClubs ? "Europe" : option.Key == EloPoolKeys.NationalTeams ? "National teams" : option.DisplayName)
+                        </button>
+                    }
+                </nav>
+            </div>
+
+            <div class="workspace-control workspace-view-control">
+                <span class="workspace-label">View</span>
+                <nav class="rankings-view-tabs" aria-label="Ranking views">
+                    <button type="button" class='@ViewTabClass("rankings")' @onclick='() => SelectViewAsync("rankings")' disabled="@isBusy">Rankings</button>
+                    <button type="button" class='@ViewTabClass("graph")' @onclick='() => SelectViewAsync("graph")' disabled="@isBusy">Graph</button>
+                    <button type="button" class='@ViewTabClass("fixtures")' @onclick='() => SelectViewAsync("fixtures")' disabled="@isBusy">Fixtures</button>
+                    <button type="button" class='@ViewTabClass("results")' @onclick='() => SelectViewAsync("results")' disabled="@isBusy">Results</button>
+                </nav>
+            </div>
         </div>
     </header>
 
@@ -133,29 +157,75 @@
         <section id="advanced-ranking-filters" class="advanced-filters" aria-label="Additional ranking filters">
             @if (HasCountryFilter)
             {
-                <div class="filter-field">
-                    <label for="countryFilter">Country</label>
-                    <select id="countryFilter" class="form-select" @bind="selectedCountry" @bind:after="CountryFilterChanged">
-                        <option value="">All countries</option>
-                        @foreach (var option in response?.Filters.Countries ?? [])
+                <div class="filter-field searchable-filter-field">
+                    <span class="filter-label-row">
+                        <label for="countryFilter">Country</label>
+                        <button type="button" class="filter-info" title="Search accepts English and common local country names; the selected filter is shown in English." aria-label="About country search">i</button>
+                    </span>
+                    <div class="filter-combobox">
+                        <input id="countryFilter"
+                               class="form-control"
+                               role="combobox"
+                               aria-autocomplete="list"
+                               aria-expanded="@showCountrySuggestions"
+                               aria-controls="countryFilterOptions"
+                               autocomplete="off"
+                               placeholder="Search countries"
+                               @onfocus="ShowCountrySuggestions"
+                               @onblur="HideCountrySuggestions"
+                               @bind="countrySearch"
+                               @bind:event="oninput"
+                               @bind:after="CountrySearchChanged" />
+                        @if (showCountrySuggestions && CountrySuggestions.Count > 0)
                         {
-                            <option value="@option">@option</option>
+                            <div id="countryFilterOptions" class="filter-suggestions" role="listbox" aria-label="Country suggestions">
+                                @foreach (var option in CountrySuggestions)
+                                {
+                                    <button type="button" role="option" @onmousedown:preventDefault @onclick="() => SelectCountrySuggestion(option)">@option</button>
+                                }
+                            </div>
                         }
-                    </select>
+                    </div>
                 </div>
             }
 
             @if (HasCompetitionFilter)
             {
-                <div class="filter-field">
-                    <label for="competitionFilter">Competition</label>
-                    <select id="competitionFilter" class="form-select" @bind="selectedCompetition">
-                        <option value="">All competitions</option>
-                        @foreach (var option in FilteredCompetitionOptions)
+                <div class="filter-field searchable-filter-field">
+                    <span class="filter-label-row">
+                        <label for="competitionFilter">Competition</label>
+                        <button type="button" class="filter-info" title="Search also matches translated country names, while suggestions stay in the site's current language and show geographic context." aria-label="About competition search">i</button>
+                    </span>
+                    <div class="filter-combobox">
+                        <input id="competitionFilter"
+                               class="form-control"
+                               role="combobox"
+                               aria-autocomplete="list"
+                               aria-expanded="@showCompetitionSuggestions"
+                               aria-controls="competitionFilterOptions"
+                               autocomplete="off"
+                               placeholder="Search competitions"
+                               @onfocus="ShowCompetitionSuggestions"
+                               @onblur="HideCompetitionSuggestions"
+                               @bind="competitionSearch"
+                               @bind:event="oninput"
+                               @bind:after="CompetitionSearchChanged" />
+                        @if (showCompetitionSuggestions && CompetitionSuggestions.Count > 0)
                         {
-                            <option value="@option.Name">@option.Name</option>
+                            <div id="competitionFilterOptions" class="filter-suggestions" role="listbox" aria-label="Competition suggestions">
+                                @foreach (var option in CompetitionSuggestions)
+                                {
+                                    <button type="button" role="option" @onmousedown:preventDefault @onclick="() => SelectCompetitionSuggestion(option)">
+                                        <strong>@option.Name</strong>
+                                        @if (!string.IsNullOrWhiteSpace(option.Context))
+                                        {
+                                            <span>@option.Context</span>
+                                        }
+                                    </button>
+                                }
+                            </div>
                         }
-                    </select>
+                    </div>
                 </div>
             }
 
@@ -164,7 +234,7 @@
                 <div class="season-range-field">
                     <span class="filter-label">Seasons</span>
                     <div class="season-range-control">
-                        <select id="fromSeasonFilter" class="form-select" aria-label="From season" @bind="selectedFromSeason">
+                        <select id="fromSeasonFilter" class="form-select" aria-label="From season" @bind="selectedFromSeason" @bind:after="FromSeasonChanged">
                             <option value="">All history</option>
                             @foreach (var option in response?.Filters.Seasons ?? [])
                             {
@@ -174,7 +244,7 @@
                         <span aria-hidden="true">to</span>
                         <select id="toSeasonFilter" class="form-select" aria-label="To season" @bind="selectedToSeason">
                             <option value="">Current</option>
-                            @foreach (var option in response?.Filters.Seasons ?? [])
+                            @foreach (var option in FilteredToSeasonOptions)
                             {
                                 <option value="@option">@option</option>
                             }
@@ -200,7 +270,7 @@
 
     @if (isBusy && response is null)
     {
-        <section class="loading-panel">Loading rankings...</section>
+        <section class="loading-panel" role="status" aria-live="polite">Loading rankings...</section>
     }
     else if (response is not null)
     {
@@ -222,9 +292,42 @@
                     <dt>@LeaderLabel()</dt>
                     <dd>@(response.Summary.TopTeamName ?? "-") <span>(@FormatRating(response.Summary.TopTeamElo))</span></dd>
                 </div>
-                <div>
-                    <dt>Ruleset</dt>
-                    <dd>@response.RulesetVersion</dd>
+                <div class="snapshot-model">
+                    <dt>
+                        <span>Rating model</span>
+                        <span class="snapshot-model-help">
+                            <button type="button"
+                                    class="snapshot-model-info"
+                                    title="About the rating models"
+                                    aria-label="@(showRulesetHelp ? "Close rating model explanation" : "Explain the rating models")"
+                                    aria-expanded="@(showRulesetHelp ? "true" : "false")"
+                                    aria-controls="rating-model-help"
+                                    @onclick="ToggleRulesetHelp">i</button>
+                            @if (showRulesetHelp)
+                            {
+                                <span id="rating-model-help" class="snapshot-model-popover" role="note">
+                                    <strong>Two ways to read the same games.</strong>
+                                    <span>Basic ELO is a vanilla win/loss baseline. Adjusted ELO pulls in the basketball levers: home advantage and score margin.</span>
+                                    <a href="/how-it-works#rulesets-heading">Read the full method <span aria-hidden="true">→</span></a>
+                                </span>
+                            }
+                        </span>
+                    </dt>
+                    <dd>
+                        <div class="rating-model-switch" role="group" aria-label="Rating model">
+                            @foreach (var ruleset in EloRulesetVersions.All)
+                            {
+                                <button type="button"
+                                        class="rating-model-option @(string.Equals(selectedRuleset, ruleset, StringComparison.Ordinal) ? "is-active" : null)"
+                                        aria-pressed="@(string.Equals(selectedRuleset, ruleset, StringComparison.Ordinal) ? "true" : "false")"
+                                        title="@RulesetDisplayName(ruleset)"
+                                        disabled="@isBusy"
+                                        @onclick="() => SelectRulesetAsync(ruleset)">
+                                    @RulesetShortName(ruleset)
+                                </button>
+                            }
+                        </div>
+                    </dd>
                 </div>
             </dl>
         </section>
@@ -449,13 +552,19 @@
                                         <div class="fixture-highlight-game">
                                             <div class="fixture-game-date">@FormatFixtureDate(game.GameDateTimeUtc)</div>
                                             <div class="fixture-matchup">
-                                                <strong>@game.HomeTeam</strong>
-                                                <span>vs</span>
-                                                <strong>@game.AwayTeam</strong>
+                                                <div class="fixture-team-row">
+                                                    <strong>@game.HomeTeam</strong>
+                                                    <span class="fixture-team-rating"><b>@FormatFixtureRating(game.HomeElo)</b> ELO · <b>@FormatFixtureRank(game.HomeRank)</b></span>
+                                                </div>
+                                                <span class="fixture-versus">vs</span>
+                                                <div class="fixture-team-row">
+                                                    <strong>@game.AwayTeam</strong>
+                                                    <span class="fixture-team-rating"><b>@FormatFixtureRating(game.AwayElo)</b> ELO · <b>@FormatFixtureRank(game.AwayRank)</b></span>
+                                                </div>
                                             </div>
                                             <div class="fixture-game-meta">
                                                 <span>@game.Competition</span>
-                                                <span>@FormatFixtureRank(game.HomeRank) · @FormatFixtureRank(game.AwayRank)</span>
+                                                <span>@game.Country</span>
                                             </div>
                                             <div class="fixture-game-probability" aria-label="Expected win probability">
                                                 <span>Home <strong>@FormatFixtureProbability(game.HomeWinProbability)</strong></span>
@@ -582,7 +691,7 @@
                                 }
                                 @if (ShowRankingColumn("form"))
                                 {
-                                    <th class="numeric" scope="col">Form</th>
+                                    <th class="numeric" scope="col">Last games</th>
                                 }
                             </tr>
                         </thead>
@@ -644,10 +753,15 @@
                                                     {
                                                         @foreach (var game in form)
                                                         {
-                                                            <span class="ranking-form-box @(game.IsWin ? "is-win" : "is-loss")"
-                                                                  title="@(game.IsWin ? "Win" : "Loss") vs @game.Opponent · @FormatMovement(game.EloDelta) ELO">
+                                                            <button type="button"
+                                                                    class="ranking-form-box @(game.IsWin ? "is-win" : "is-loss") @(IsResultExplanationLoading(game.GameId) ? "is-loading" : string.Empty)"
+                                                                    title="@(game.IsWin ? "Win" : "Loss") vs @game.Opponent · @FormatMovement(game.EloDelta) ELO · Open explanation"
+                                                                    aria-label="Open ELO explanation for the game against @game.Opponent on @FormatDate(game.GameDateTimeUtc)"
+                                                                    @onclick="() => LoadResultExplanationAsync(game.GameId)"
+                                                                    @onclick:stopPropagation="true"
+                                                                    disabled="@isResultExplanationLoading">
                                                                 @FormatMovement(game.EloDelta)
-                                                            </span>
+                                                            </button>
                                                         }
                                                     }
                                                     else
@@ -874,6 +988,9 @@
     [CascadingParameter]
     private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
 
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
     [SupplyParameterFromQuery(Name = "pool")]
     public string? Pool { get; set; }
 
@@ -882,6 +999,9 @@
 
     [SupplyParameterFromQuery(Name = "competition")]
     public string? Competition { get; set; }
+
+    [SupplyParameterFromQuery(Name = "ruleset")]
+    public string? Ruleset { get; set; }
 
     [SupplyParameterFromQuery(Name = "season")]
     public string? Season { get; set; }
@@ -943,6 +1063,12 @@
     private string? errorMessage;
     private string? selectedCountry;
     private string? selectedCompetition;
+    private string? countrySearch;
+    private string? competitionSearch;
+    private bool showCountrySuggestions;
+    private bool showCompetitionSuggestions;
+    private bool showRulesetHelp;
+    private string selectedRuleset = EloRulesetVersions.Default;
     private string selectedPool = EloPoolKeys.Default;
     private string selectedTeamScope = EloTeamScopes.Current;
     private string? selectedFromSeason;
@@ -989,6 +1115,8 @@
     private CancellationTokenSource? teamSearchDebounceCancellation;
     private CancellationTokenSource? teamSearchRequestCancellation;
     private long teamSearchRequestVersion;
+    private PersistingComponentStateSubscription? persistingSubscription;
+    private const string PersistedPageStateKey = "rankings-page-state";
 
     private sealed record RankingsClientCacheKey(
         string Pool,
@@ -1019,14 +1147,78 @@
         public long EvolutionDataRevision { get; set; }
     }
 
-    protected override async Task OnParametersSetAsync()
+    private sealed record PersistedRankingsPageState(
+        string RelativeUri,
+        EloRankingsResponse Rankings,
+        EloMoversResponse? Movers,
+        string? RankingsApiUri,
+        string? MoversApiUri);
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += HandleLocationChanged;
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        var path = Navigation.ToBaseRelativePath(args.Location).Split('?', 2)[0].Trim('/');
+        if (path is not ("" or "rankings" or "movers"))
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            ApplyQueryParametersFromUri(args.Location);
+            await LoadPageForUriAsync(args.Location);
+            StateHasChanged();
+        });
+    }
+
+    private void ApplyQueryParametersFromUri(string uri)
+    {
+        var query = QueryHelpers.ParseQuery(new Uri(uri).Query);
+        string? Value(string name)
+            => query.TryGetValue(name, out var values) ? values.FirstOrDefault() : null;
+
+        Pool = Value("pool");
+        Country = Value("country");
+        Competition = Value("competition");
+        Ruleset = Value("ruleset");
+        Season = Value("season");
+        FromSeason = Value("fromSeason");
+        ToSeason = Value("toSeason");
+        From = ParseQueryDate(Value("from"));
+        To = ParseQueryDate(Value("to"));
+        MinGames = ParseQueryInt(Value("minGames"));
+        Team = Value("team");
+        Teams = Value("teams");
+        View = Value("view");
+        Movement = Value("movement");
+        WindowDays = ParseQueryInt(Value("windowDays"));
+        Page = ParseQueryInt(Value("page"));
+    }
+
+    private static DateTime? ParseQueryDate(string? value)
+        => DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+            ? parsed
+            : null;
+
+    private static int? ParseQueryInt(string? value)
+        => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+
+    protected override Task OnParametersSetAsync()
+        => LoadPageForUriAsync(Navigation.Uri);
+
+    private async Task LoadPageForUriAsync(string currentUri)
     {
         var authenticationState = AuthenticationStateTask is null
             ? null
             : await AuthenticationStateTask;
         isAdmin = authenticationState?.User.IsInRole(ApplicationRoleKeys.Admin) == true;
 
-        var currentUri = Navigation.Uri;
         if (currentUri == lastLoadedUri)
         {
             return;
@@ -1034,7 +1226,8 @@
 
         CancelTeamSearchDebounce();
         CaptureActiveRankingsCacheEntry();
-        var preserveCurrentData = IsPageOnlyNavigation(currentUri, lastLoadedUri);
+        var preserveCurrentData = IsPageOnlyNavigation(currentUri, lastLoadedUri) ||
+            IsRankingsMoversNavigation(currentUri, lastLoadedUri);
 
         selectedPool = EloPoolKeys.IsSupported(Pool?.Trim().ToLowerInvariant() ?? string.Empty)
             ? Pool!.Trim().ToLowerInvariant()
@@ -1044,6 +1237,11 @@
             : EloTeamScopes.Current;
         selectedCountry = Country;
         selectedCompetition = Competition;
+        countrySearch = selectedCountry;
+        competitionSearch = selectedCompetition;
+        selectedRuleset = EloRulesetVersions.All.Contains(Ruleset?.Trim(), StringComparer.OrdinalIgnoreCase)
+            ? Ruleset!.Trim().ToLowerInvariant()
+            : EloRulesetVersions.Default;
         selectedFromSeason = FromSeason;
         selectedToSeason = ToSeason;
         if (!string.IsNullOrWhiteSpace(Season) && string.IsNullOrWhiteSpace(selectedFromSeason) && string.IsNullOrWhiteSpace(selectedToSeason))
@@ -1116,16 +1314,100 @@
             fullEvolution = null;
         }
 
+        if (IsEnhancedNavigationServerRequest())
+        {
+            return;
+        }
+
+        try
+        {
+            if (TryRestorePersistedPageState(currentUri))
+            {
+                RegisterPersistenceAtEndOfInitialization();
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not restore prerendered rankings state; loading it again interactively.");
+        }
+
         await RefreshAsync();
         if (IsGraphView)
         {
             await LoadChartAsync();
         }
+
+        RegisterPersistenceAtEndOfInitialization();
+    }
+
+    private void RegisterPersistenceAtEndOfInitialization()
+        => persistingSubscription ??= PersistentState.RegisterOnPersisting(PersistPageStateAsync);
+
+    private bool IsEnhancedNavigationServerRequest()
+        => HttpContext?.Request.Headers.Accept.ToString()
+            .Contains("blazor-enhanced-nav=on", StringComparison.OrdinalIgnoreCase) == true;
+
+    private bool TryRestorePersistedPageState(string currentUri)
+    {
+        if (!PersistentState.TryTakeFromJson<string>(PersistedPageStateKey, out var cacheToken) ||
+            string.IsNullOrWhiteSpace(cacheToken) ||
+            !PrerenderCache.TryGetValue<PersistedRankingsPageState>(cacheToken, out var persistedState) ||
+            persistedState is null ||
+            !string.Equals(
+                persistedState.RelativeUri,
+                Navigation.ToBaseRelativePath(currentUri),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        PrerenderCache.Remove(cacheToken);
+
+        response = persistedState.Rankings;
+        movers = persistedState.Movers;
+        lastRankingsApiUri = persistedState.RankingsApiUri;
+        lastMoversApiUri = persistedState.MoversApiUri;
+        page = selectedView == "movers" && movers is not null ? movers.Page : response.Page;
+        requestedPage = page;
+        isBusy = false;
+
+        var cacheKey = BuildRankingsClientCacheKey(BuildApiUri());
+        StoreRankingsCacheEntry(cacheKey);
+        return true;
+    }
+
+    private Task PersistPageStateAsync()
+    {
+        if (response is not null && selectedView is "rankings" or "movers")
+        {
+            var cacheToken = Guid.NewGuid().ToString("N");
+            PrerenderCache.Set(
+                cacheToken,
+                new PersistedRankingsPageState(
+                    Navigation.ToBaseRelativePath(Navigation.Uri),
+                    response,
+                    selectedView == "movers" ? movers : null,
+                    lastRankingsApiUri,
+                    selectedView == "movers" ? lastMoversApiUri : null),
+                TimeSpan.FromMinutes(2));
+            PersistentState.PersistAsJson(
+                PersistedPageStateKey,
+                cacheToken);
+        }
+
+        return Task.CompletedTask;
     }
 
     private async Task ApplyFiltersAsync()
     {
         CancelTeamSearchDebounce();
+        countrySearch = selectedCountry;
+        var selectedCompetitionOption = FilteredCompetitionOptions.FirstOrDefault(option =>
+            string.Equals(option.Name, selectedCompetition, StringComparison.OrdinalIgnoreCase));
+        competitionSearch = selectedCompetitionOption is null ? selectedCompetition : CompetitionOptionDisplay(selectedCompetitionOption);
+        showCountrySuggestions = false;
+        showCompetitionSuggestions = false;
         await RefreshSelectionAsync(1);
     }
 
@@ -1135,6 +1417,10 @@
         selectedTeamScope = EloTeamScopes.Current;
         selectedCountry = null;
         selectedCompetition = null;
+        countrySearch = null;
+        competitionSearch = null;
+        showCountrySuggestions = false;
+        showCompetitionSuggestions = false;
         selectedFromSeason = null;
         selectedToSeason = null;
         minimumGames = 0;
@@ -1156,6 +1442,10 @@
         selectedTeamScope = EloTeamScopes.Current;
         selectedCountry = null;
         selectedCompetition = null;
+        countrySearch = null;
+        competitionSearch = null;
+        showCountrySuggestions = false;
+        showCompetitionSuggestions = false;
         selectedFromSeason = null;
         selectedToSeason = null;
         minimumGames = 0;
@@ -1244,23 +1534,91 @@
     private async Task ClearCountryFilterAsync()
     {
         selectedCountry = null;
+        countrySearch = null;
+        showCountrySuggestions = false;
         await RefreshSelectionAsync(1);
     }
 
-    private void CountryFilterChanged()
+    private void CountrySearchChanged()
     {
+        showCountrySuggestions = true;
+        selectedCountry = ResolveCountrySearch(countrySearch);
         if (!string.IsNullOrWhiteSpace(selectedCompetition) &&
             !FilteredCompetitionOptions.Any(option =>
                 string.Equals(option.Name, selectedCompetition, StringComparison.OrdinalIgnoreCase)))
         {
             selectedCompetition = null;
+            competitionSearch = null;
         }
     }
 
     private async Task ClearCompetitionFilterAsync()
     {
         selectedCompetition = null;
+        competitionSearch = null;
+        showCompetitionSuggestions = false;
         await RefreshSelectionAsync(1);
+    }
+
+    private void CompetitionSearchChanged()
+    {
+        showCompetitionSuggestions = true;
+        selectedCompetition = ResolveCompetitionSearch(competitionSearch)?.Name;
+    }
+
+    private void ShowCountrySuggestions() => showCountrySuggestions = true;
+
+    private void HideCountrySuggestions() => showCountrySuggestions = false;
+
+    private void ShowCompetitionSuggestions() => showCompetitionSuggestions = true;
+
+    private void HideCompetitionSuggestions() => showCompetitionSuggestions = false;
+
+    private void SelectCountrySuggestion(string country)
+    {
+        countrySearch = country;
+        selectedCountry = country;
+        showCountrySuggestions = false;
+        if (!string.IsNullOrWhiteSpace(selectedCompetition) &&
+            !FilteredCompetitionOptions.Any(option => string.Equals(option.Name, selectedCompetition, StringComparison.OrdinalIgnoreCase)))
+        {
+            selectedCompetition = null;
+            competitionSearch = null;
+        }
+    }
+
+    private void SelectCompetitionSuggestion(EloRankingCompetitionOption option)
+    {
+        selectedCompetition = option.Name;
+        competitionSearch = CompetitionOptionDisplay(option);
+        showCompetitionSuggestions = false;
+    }
+
+    private Task SelectRulesetAsync(string ruleset)
+    {
+        if (!EloRulesetVersions.All.Contains(ruleset, StringComparer.Ordinal) ||
+            string.Equals(selectedRuleset, ruleset, StringComparison.Ordinal))
+        {
+            return Task.CompletedTask;
+        }
+
+        showRulesetHelp = false;
+        selectedRuleset = ruleset;
+        NavigateToRankings(1);
+        return Task.CompletedTask;
+    }
+
+    private void ToggleRulesetHelp()
+        => showRulesetHelp = !showRulesetHelp;
+
+    private void FromSeasonChanged()
+    {
+        if (TryParseSeasonStartYear(selectedFromSeason, out var fromYear) &&
+            TryParseSeasonStartYear(selectedToSeason, out var toYear) &&
+            toYear < fromYear)
+        {
+            selectedToSeason = null;
+        }
     }
 
     private async Task ClearSeasonFilterAsync()
@@ -1793,8 +2151,7 @@
             }
 
             if (response is null ||
-                !string.Equals(rankingsUri, lastRankingsApiUri, StringComparison.Ordinal) ||
-                activeRankingsCacheKey != cacheKey)
+                !string.Equals(rankingsUri, lastRankingsApiUri, StringComparison.Ordinal))
             {
                 var fetchedResponse = await Http.GetFromJsonAsync<EloRankingsResponse>(rankingsUri, cancellationToken);
                 if (!IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
@@ -2132,6 +2489,17 @@
         => previousUri is not null &&
            string.Equals(RemovePageParameter(currentUri), RemovePageParameter(previousUri), StringComparison.Ordinal);
 
+    private static bool IsRankingsMoversNavigation(string currentUri, string? previousUri)
+        => previousUri is not null &&
+           IsRankingsOrMoversPath(currentUri) &&
+           IsRankingsOrMoversPath(previousUri);
+
+    private static bool IsRankingsOrMoversPath(string uri)
+    {
+        var path = new Uri(uri).AbsolutePath.Trim('/');
+        return path is "" or "rankings" or "movers";
+    }
+
     private static string RemovePageParameter(string uri)
     {
         var separatorIndex = uri.IndexOf('?');
@@ -2205,6 +2573,7 @@
                 : null,
             ["movement"] = view == "movers" ? selectedMoverDirection : null,
             ["windowDays"] = view == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
+            ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
             ["country"] = selectedCountry,
             ["competition"] = selectedCompetition,
             ["fromSeason"] = ShowsSeasonFilter ? selectedFromSeason : null,
@@ -2417,12 +2786,132 @@
                 string.Equals(option.Country, selectedCountry, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
+    private IReadOnlyList<string> FilteredToSeasonOptions
+        => (response?.Filters.Seasons ?? [])
+            .Where(option => !TryParseSeasonStartYear(selectedFromSeason, out var fromYear) ||
+                (TryParseSeasonStartYear(option, out var optionYear) && optionYear >= fromYear))
+            .ToList();
+
     private int ActiveFilterCount
         => (HasTeamSearch ? 1 : 0)
             + (!string.IsNullOrWhiteSpace(selectedCountry) ? 1 : 0)
             + (!string.IsNullOrWhiteSpace(selectedCompetition) ? 1 : 0)
             + (ShowsSeasonFilter && (!string.IsNullOrWhiteSpace(selectedFromSeason) || !string.IsNullOrWhiteSpace(selectedToSeason)) ? 1 : 0)
             + (ShowsMinimumGamesFilter && minimumGames > 0 ? 1 : 0);
+
+    private static readonly IReadOnlyDictionary<string, string[]> CountryAliases =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Austria"] = ["Österreich", "Autriche"],
+            ["Belgium"] = ["België", "Belgique", "Bélgica", "Belgien"],
+            ["Croatia"] = ["Hrvatska", "Croacia", "Croatie", "Kroatien"],
+            ["Czech Republic"] = ["Česko", "Czechia", "República Checa", "Tchéquie", "Tschechien"],
+            ["Denmark"] = ["Danmark", "Dinamarca", "Danemark", "Dänemark"],
+            ["Finland"] = ["Suomi", "Finlandia", "Finnland"],
+            ["France"] = ["Francia", "Frankreich"],
+            ["Germany"] = ["Deutschland", "Alemania", "Allemagne", "Germania"],
+            ["Greece"] = ["Ελλάδα", "Grecia", "Grèce", "Griechenland"],
+            ["Hungary"] = ["Magyarország", "Hungría", "Hongrie", "Ungarn"],
+            ["Israel"] = ["ישראל", "Israël"],
+            ["Italy"] = ["Italia", "Italie", "Italien"],
+            ["Lithuania"] = ["Lietuva", "Lituania", "Lituanie", "Litauen"],
+            ["Montenegro"] = ["Crna Gora", "Monténégro"],
+            ["Netherlands"] = ["Nederland", "Países Bajos", "Pays-Bas", "Niederlande"],
+            ["Poland"] = ["Polska", "Polonia", "Pologne", "Polen"],
+            ["Portugal"] = ["Portugals"],
+            ["Romania"] = ["România", "Rumanía", "Roumanie", "Rumänien"],
+            ["Russia"] = ["Россия", "Rusia", "Russie", "Russland"],
+            ["Serbia"] = ["Srbija", "Србија", "Serbie", "Serbien"],
+            ["Slovenia"] = ["Slovenija", "Eslovenia", "Slovénie", "Slowenien"],
+            ["Spain"] = ["España", "Espagne", "Spanien", "Spagna"],
+            ["Sweden"] = ["Sverige", "Suecia", "Suède", "Schweden"],
+            ["Switzerland"] = ["Schweiz", "Suisse", "Suiza", "Svizzera"],
+            ["Türkiye"] = ["Turkey", "Turquía", "Turquie", "Türkei"],
+            ["Ukraine"] = ["Україна", "Ucrania"],
+            ["United Kingdom"] = ["Reino Unido", "Royaume-Uni", "Vereinigtes Königreich"],
+            ["United States"] = ["USA", "Estados Unidos", "États-Unis", "Vereinigte Staaten"],
+            ["Americas"] = ["Américas", "Amériques"],
+            ["Oceania"] = ["Oceanía", "Océanie", "Ozeanien"],
+            ["Global"] = ["World", "Mundial", "Monde", "Welt"]
+        };
+
+    private IReadOnlyList<string> CountrySuggestions
+        => (response?.Filters.Countries ?? [])
+            .Where(country => SearchMatches(countrySearch, CountrySearchText(country)))
+            .Take(12)
+            .ToList();
+
+    private IReadOnlyList<EloRankingCompetitionOption> CompetitionSuggestions
+        => FilteredCompetitionOptions
+            .Where(option => SearchMatches(competitionSearch, CompetitionSearchText(option)))
+            .Take(12)
+            .ToList();
+
+    private string? ResolveCountrySearch(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var countries = response?.Filters.Countries ?? [];
+        var canonical = countries.FirstOrDefault(country =>
+            string.Equals(country, value.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (canonical is not null)
+        {
+            return canonical;
+        }
+
+        return countries.FirstOrDefault(country =>
+            CountryAliases.TryGetValue(country, out var aliases) &&
+            aliases.Any(alias => string.Equals(alias, value.Trim(), StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private EloRankingCompetitionOption? ResolveCompetitionSearch(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var search = value.Trim();
+        return FilteredCompetitionOptions.FirstOrDefault(option =>
+                   string.Equals(CompetitionOptionDisplay(option), search, StringComparison.OrdinalIgnoreCase))
+               ?? FilteredCompetitionOptions.FirstOrDefault(option =>
+                   string.Equals(option.Name, search, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string CompetitionOptionDisplay(EloRankingCompetitionOption option)
+        => string.IsNullOrWhiteSpace(option.Context)
+            ? option.Name
+            : $"{option.Name} ({option.Context})";
+
+    private static bool SearchMatches(string? query, string searchText)
+        => string.IsNullOrWhiteSpace(query) || searchText.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string CountrySearchText(string country)
+        => CountryAliases.TryGetValue(country, out var aliases)
+            ? $"{country} {string.Join(' ', aliases)}"
+            : country;
+
+    private static string CompetitionSearchText(EloRankingCompetitionOption option)
+        => $"{option.Name} {option.Context} {option.Country} {CountrySearchText(option.Country ?? string.Empty)}";
+
+    private static string RulesetDisplayName(string ruleset)
+        => ruleset switch
+        {
+            EloRulesetVersions.BasicEloV1 => "Basic ELO",
+            EloRulesetVersions.AdjustedV1 => "Adjusted ELO",
+            _ => ruleset
+        };
+
+    private static string RulesetShortName(string ruleset)
+        => ruleset switch
+        {
+            EloRulesetVersions.BasicEloV1 => "Basic",
+            EloRulesetVersions.AdjustedV1 => "Adjusted",
+            _ => RulesetDisplayName(ruleset)
+        };
 
     private bool ShowRankingColumn(string column)
         => column switch
@@ -2587,6 +3076,7 @@
 
         Append(query, "country", selectedCountry);
         Append(query, "competition", selectedCompetition);
+        Append(query, "rulesetVersion", selectedRuleset);
         Append(query, "fromUtc", ShowsSeasonFilter ? seasonRange.FromUtc?.ToString("O") : null);
         Append(query, "toUtc", ShowsSeasonFilter ? seasonRange.ToUtc?.ToString("O") : null);
         Append(query, "asOfDate", ShowsSeasonFilter ? seasonRange.AsOfUtc?.ToString("O") : null);
@@ -2607,7 +3097,7 @@
             $"pool={Uri.EscapeDataString(selectedPool)}"
         };
 
-        Append(query, "rulesetVersion", response?.RulesetVersion);
+        Append(query, "rulesetVersion", selectedRuleset);
         Append(query, "country", selectedCountry);
         Append(query, "competition", selectedCompetition);
         Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
@@ -2630,7 +3120,7 @@
             "limit=2000"
         };
 
-        Append(query, "rulesetVersion", response?.RulesetVersion);
+        Append(query, "rulesetVersion", selectedRuleset);
         if (includeFilters)
         {
             Append(query, "country", selectedCountry);
@@ -2653,7 +3143,7 @@
             $"windowDays={selectedWindowDays}"
         };
 
-        Append(query, "rulesetVersion", response?.RulesetVersion);
+        Append(query, "rulesetVersion", selectedRuleset);
         Append(query, "country", selectedCountry);
         Append(query, "competition", selectedCompetition);
         Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
@@ -2717,7 +3207,7 @@
         var teamIds = string.Join(",", selectedTeamIds);
         var query = new List<string>
         {
-            $"rulesetVersion={Uri.EscapeDataString(response?.RulesetVersion ?? string.Empty)}",
+            $"rulesetVersion={Uri.EscapeDataString(selectedRuleset)}",
             $"pool={Uri.EscapeDataString(selectedPool)}",
             $"teamIds={Uri.EscapeDataString(teamIds)}",
             $"pointsPerTeam={EloEvolutionLimits.DefaultPointsPerTeam}"
@@ -2873,6 +3363,7 @@
 
         Append(query, "country", selectedCountry);
         Append(query, "competition", selectedCompetition);
+        Append(query, "rulesetVersion", selectedRuleset);
         Append(query, "fromUtc", seasonRange.FromUtc?.ToString("O"));
         Append(query, "toUtc", seasonRange.ToUtc?.ToString("O"));
         Append(query, "asOfDate", seasonRange.AsOfUtc?.ToString("O"));
@@ -2886,7 +3377,7 @@
     private string BuildTeamHref(Guid teamId)
     {
         var returnUrl = Navigation.ToBaseRelativePath(Navigation.Uri);
-        return $"/teams/{teamId}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
+        return $"/teams/{teamId}?pool={Uri.EscapeDataString(selectedPool)}&ruleset={Uri.EscapeDataString(selectedRuleset)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
     }
 
     private string RankingsContextHref(string? country = null, string? competition = null)
@@ -2895,6 +3386,7 @@
             ["pool"] = selectedPool,
             ["country"] = country ?? selectedCountry,
             ["competition"] = competition ?? selectedCompetition,
+            ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
             ["fromSeason"] = selectedFromSeason,
             ["toSeason"] = selectedToSeason,
             ["teams"] = IsHistoricalTeamScope ? selectedTeamScope : null
@@ -3173,8 +3665,10 @@
             .ToList();
     }
 
-    public void Dispose()
+    void IDisposable.Dispose()
     {
+        Navigation.LocationChanged -= HandleLocationChanged;
+        persistingSubscription?.Dispose();
         CancelGraphSearch();
         CancelEvolutionRefinement();
     }

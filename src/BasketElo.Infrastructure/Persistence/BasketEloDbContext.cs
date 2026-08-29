@@ -21,6 +21,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<ModelLabRunMetricBreakdown> ModelLabRunMetricBreakdowns => Set<ModelLabRunMetricBreakdown>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamAlias> TeamAliases => Set<TeamAlias>();
+    public DbSet<TeamSearchName> TeamSearchNames => Set<TeamSearchName>();
     public DbSet<Competition> Competitions => Set<Competition>();
     public DbSet<CompetitionAlias> CompetitionAliases => Set<CompetitionAlias>();
     public DbSet<Season> Seasons => Set<Season>();
@@ -373,6 +374,22 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasIndex(x => new { x.Source, x.SourceTeamId });
             entity.HasIndex(x => new { x.Source, x.SourceTeamId, x.AliasName }).IsUnique();
             entity.HasIndex(x => new { x.TeamId, x.AliasName });
+        });
+
+        modelBuilder.Entity<TeamSearchName>(entity =>
+        {
+            entity.ToTable("team_search_names");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Locale).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.NormalizedName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasOne(x => x.Team)
+                .WithMany(x => x.SearchNames)
+                .HasForeignKey(x => x.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.TeamId, x.Locale, x.NormalizedName }).IsUnique();
+            entity.HasIndex(x => x.NormalizedName);
         });
 
         modelBuilder.Entity<Competition>(entity =>

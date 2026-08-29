@@ -41,6 +41,20 @@ public sealed class InternationalTeamCatalogTests
     }
 
     [Fact]
+    public void IncludesLocalizedSearchNamesForSpain()
+    {
+        var names = InternationalTeamCatalog.GetSearchNames()
+            .Where(x => x.CanonicalName == "Spain")
+            .ToDictionary(x => x.Locale, x => x.Name);
+
+        Assert.Equal("Spain", names["canonical"]);
+        Assert.Equal("España", names["es"]);
+        Assert.Equal("Spagna", names["it"]);
+        Assert.Equal("Espagne", names["fr"]);
+        Assert.Equal("Spanien", names["de"]);
+    }
+
+    [Fact]
     public void KeepsHistoricalYugoslaviaSeparateFromPost1992Federation()
     {
         Assert.True(InternationalTeamCatalog.TryResolve("YUG", "Yugoslavia", null, out var historicalName, out var historicalCode));

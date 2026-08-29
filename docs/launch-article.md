@@ -34,7 +34,7 @@ The system grew around that seam:
 - ELO rebuilds are queued separately from ingestion;
 - the web app can show the state of the data instead of pretending everything is complete.
 
-The first surprise was that the basic ELO calculation was not the difficult part. A rating can start at 1500, use a K-factor of 20, account for home advantage, and adjust for margin. The harder question was how to change that formula later without rewriting history invisibly. So ratings became ruleset-versioned from the beginning: `basic-elo-v1`, `point-margin-elo-v1`, and the public `adjusted-v1` ruleset can coexist and be rebuilt independently.
+The first surprise was that the basic ELO calculation was not the difficult part. A rating can start at 1500, use a K-factor of 20, account for home advantage, and adjust for margin. The harder question was how to change that formula later without rewriting history invisibly. So ratings became ruleset-versioned from the beginning: the comparison `basic-elo-v1` and public `adjusted-v1` rulesets can coexist and be rebuilt independently, while retired historical rulesets remain readable when needed.
 
 The formula was quick. Making it explainable, reproducible, and safe to evolve took longer.
 

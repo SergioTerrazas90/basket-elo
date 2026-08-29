@@ -31,7 +31,7 @@
     outline: none;
 }
 
-.data-attribution {
+.site-footer {
     display: flex;
     width: min(100%, 1500px);
     align-items: center;
@@ -40,30 +40,80 @@
     margin: 0 auto;
     background: rgba(238, 239, 233, 0.55);
     color: var(--color-muted);
-    padding: var(--space-4) clamp(var(--space-4), 3vw, var(--space-8));
+    padding: var(--space-5) clamp(var(--space-4), 3vw, var(--space-8));
     font-size: 0.78rem;
 }
 
-.data-attribution nav {
-    display: flex;
-    align-items: center;
+.footer-identity {
+    display: grid;
+    gap: 0.2rem;
 }
 
-.data-attribution a {
+.footer-identity strong {
+    color: var(--color-text);
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 650;
+}
+
+.footer-links {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    margin-inline: auto;
+}
+
+.footer-links a,
+.footer-support {
     color: var(--color-brand);
     font-weight: 750;
     text-decoration-thickness: 0.08em;
     text-underline-offset: 0.18em;
 }
 
-.data-attribution a:focus-visible {
+.footer-links a:focus-visible,
+.footer-support:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 3px;
 }
 
-.footer-separator {
-    margin-inline: var(--space-2);
-    color: var(--color-subtle);
+.footer-support {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid rgba(200, 135, 65, 0.38);
+    border-radius: var(--radius-md);
+    background: rgba(255, 248, 231, 0.72);
+    text-decoration: none;
+    transition: border-color var(--motion-standard), background var(--motion-standard), transform var(--motion-standard);
+}
+
+.footer-support:hover {
+    border-color: var(--color-accent);
+    background: rgba(255, 244, 219, 0.95);
+    transform: translateY(-1px);
+}
+
+.footer-support-icon {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.footer-support span:last-child {
+    display: grid;
+    gap: 0.08rem;
+}
+
+.footer-support strong {
+    color: var(--color-text);
+    font-size: 0.78rem;
+}
+
+.footer-support small {
+    color: var(--color-muted);
+    font-size: 0.68rem;
+    font-weight: 600;
 }
 
 .app-navigation-loading {
@@ -156,9 +206,13 @@
 }
 
 @media (max-width: 760px) {
-    .data-attribution {
+    .site-footer {
         align-items: flex-start;
         flex-direction: column;
         gap: var(--space-2);
+    }
+
+    .footer-links {
+        margin-inline: 0;
     }
 }

@@ -5,6 +5,7 @@ public static class EloCalculator
     public const decimal BaseRating = 1500m;
     public const int KFactor = 20;
     public const decimal AdjustedV1HomeAdvantageElo = 70m;
+    public const decimal BasicEloHomeAdvantageElo = 0m;
     public const decimal LegacyHomeAdvantageElo = 100m;
     public const decimal ProbabilityScale = 400m;
     public const decimal PointsPerEloMargin = 28m;
@@ -71,7 +72,7 @@ public static class EloCalculator
             EloRulesetVersions.BasicEloV1 => new EloRulesetParameters(
                 BaseRating,
                 KFactor,
-                LegacyHomeAdvantageElo,
+                BasicEloHomeAdvantageElo,
                 null,
                 CompetitionWeight,
                 false,

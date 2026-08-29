@@ -1,9 +1,17 @@
 @using System.Globalization
 @using BasketElo.Domain.Elo
 
-@if (IsLoading || !string.IsNullOrWhiteSpace(ErrorMessage) || Explanation is not null)
+@if (IsOpen || isDismissShieldVisible)
 {
-    <section class="game-elo-explainer" role="dialog" aria-modal="false" aria-live="polite" aria-labelledby="game-elo-explainer-title">
+    <div class="game-elo-explainer-backdrop"
+         aria-hidden="true"
+         @onclick:preventDefault="true"
+         @onclick:stopPropagation="true"></div>
+}
+
+@if (IsOpen)
+{
+    <section class="game-elo-explainer" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="game-elo-explainer-title">
         <div class="explainer-head">
             <div>
                 <p class="eyebrow">ELO explainer</p>
@@ -13,7 +21,11 @@
                     <p>@Explanation.Competition &middot; @Explanation.Season &middot; @FormatDate(Explanation.GameDateTimeUtc)</p>
                 }
             </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OnClose">Close</button>
+            <button type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    @onclick="CloseAsync"
+                    @onclick:preventDefault="true"
+                    @onclick:stopPropagation="true">Close</button>
         </div>
 
         @if (IsLoading)
@@ -86,6 +98,24 @@
 
     [Parameter]
     public EventCallback OnClose { get; set; }
+
+    private bool isDismissShieldVisible;
+
+    private bool IsOpen
+        => IsLoading || !string.IsNullOrWhiteSpace(ErrorMessage) || Explanation is not null;
+
+    private async Task CloseAsync()
+    {
+        isDismissShieldVisible = true;
+        await OnClose.InvokeAsync();
+        await InvokeAsync(StateHasChanged);
+
+        // Keep the page shielded until the pointer sequence that closed the
+        // dialog is fully complete, preventing click-through navigation.
+        await Task.Delay(400);
+        isDismissShieldVisible = false;
+        await InvokeAsync(StateHasChanged);
+    }
 
     private string Title
         => Explanation is null

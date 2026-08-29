@@ -16,16 +16,6 @@
         <button class="btn btn-outline-primary" @onclick="RefreshAsync" disabled="@isBusy">Refresh</button>
     </section>
 
-    <section class="filters-panel">
-        <div class="filter-field">
-            <label for="minElo">Minimum team ELO</label>
-            <input id="minElo" class="form-control" type="number" @bind="minElo" />
-        </div>
-        <div class="filter-field actions">
-            <button class="btn btn-primary" @onclick="RefreshAsync" disabled="@isBusy">Apply</button>
-        </div>
-    </section>
-
     @if (!string.IsNullOrWhiteSpace(errorMessage))
     {
         <div class="alert alert-danger">@errorMessage</div>
@@ -72,7 +62,6 @@
 
 @code {
     private UpcomingGamesResponse? response;
-    private decimal? minElo = 1800;
     private bool isBusy;
     private string? errorMessage;
 
@@ -84,8 +73,7 @@
         errorMessage = null;
         try
         {
-            var query = minElo.HasValue ? $"?minElo={minElo.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : string.Empty;
-            response = await Http.GetFromJsonAsync<UpcomingGamesResponse>($"api/games/upcoming{query}");
+            response = await Http.GetFromJsonAsync<UpcomingGamesResponse>("api/games/upcoming");
         }
         catch (Exception exception)
         {

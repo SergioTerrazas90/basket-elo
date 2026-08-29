@@ -2,102 +2,89 @@
 
 <PageTitle>How It Works - BasketElo</PageTitle>
 
-<div class="method-page be-story">
-    <header class="be-story-hero be-reveal" style="--reveal-order: 0">
-        <div class="be-story-hero-copy">
-            <p class="be-story-kicker">How BasketElo works</p>
-            <h1 class="be-story-title">A rating that changes as the evidence changes.</h1>
-            <p class="be-story-lede">Every game becomes a small correction to what the model thought it knew. The method is simple enough to explain, but explicit enough to question.</p>
+<div class="info-page method-page">
+    <header class="info-hero be-reveal" style="--reveal-order: 0">
+        <div class="info-hero-copy">
+            <p class="info-kicker">Method</p>
+            <h1>How the rating works.</h1>
+            <p class="info-lede">A team starts at 1,500. After every game, its rating moves by an amount shaped by the opponent, the result, home court, and the score margin.</p>
         </div>
-        <div class="be-story-orbit" aria-hidden="true">
-            <div class="be-story-orbit-core">
-                <span>Public ruleset</span>
-                <strong>± ELO</strong>
-                <small>updates after every result</small>
-            </div>
-        </div>
+        <dl class="info-facts" aria-label="Method at a glance">
+            <div><dt>Starting rating</dt><dd>1,500</dd></div>
+            <div><dt>Default model</dt><dd>Adjusted ELO</dd></div>
+            <div><dt>Updated</dt><dd>After every result</dd></div>
+        </dl>
     </header>
 
-    <section class="be-story-section be-reveal" style="--reveal-order: 1" aria-labelledby="history-heading">
-        <div class="be-story-meta"><span class="be-story-index">01</span><span>A short history</span></div>
-        <div class="be-story-body">
-            <h2 id="history-heading" class="be-story-heading">From chess boards to basketball courts.</h2>
-            <div class="be-story-copy method-copy-columns">
-                <p>ELO was developed by Arpad Elo, a physicist and chess player, for the World Chess Federation. The idea was practical: give every player a rating, compare those ratings before a match, then update them using the result.</p>
-                <p>A win against a highly rated opponent tells us more than a routine win against a lower-rated one. Over time, ratings become a running record of performance relative to the field.</p>
-                <p>Basketball adds margins, home courts, leagues, seasons, and uneven data. BasketElo keeps the original idea, then makes those basketball-specific choices visible.</p>
+    <nav class="info-jump-links be-reveal" style="--reveal-order: 1" aria-label="On this page">
+        <span>On this page</span>
+        <a href="#short-version">The short version</a>
+        <a href="#models">The two models</a>
+        <a href="#example">Worked example</a>
+        <a href="#limits">What ELO misses</a>
+    </nav>
+
+    <section id="short-version" class="info-section be-reveal" style="--reveal-order: 2" aria-labelledby="short-version-heading">
+        <div class="info-section-label"><span>01</span><span>The short version</span></div>
+        <div class="info-section-body">
+            <h2 id="short-version-heading">Every result corrects an expectation.</h2>
+            <p class="info-section-intro">Before a game, the rating gap becomes a win probability. After the game, the model compares that expectation with what actually happened.</p>
+            <ol class="method-steps">
+                <li><span>1</span><div><h3>Compare</h3><p>Higher-rated teams are expected to win more often. Home advantage is included before that probability is calculated.</p></div></li>
+                <li><span>2</span><div><h3>Observe</h3><p>The final result—and, in the adjusted model, the score margin—shows how far reality was from the expectation.</p></div></li>
+                <li><span>3</span><div><h3>Update</h3><p>The winner gains exactly what the loser gives up. Surprises move the ratings more than expected results.</p></div></li>
+            </ol>
+        </div>
+    </section>
+
+    <section id="models" class="info-section be-reveal" style="--reveal-order: 3" aria-labelledby="models-heading">
+        <div class="info-section-label"><span>02</span><span>Two views</span></div>
+        <div class="info-section-body">
+            <h2 id="models-heading">Basic and Adjusted ELO answer slightly different questions.</h2>
+            <div class="model-comparison">
+                <article>
+                    <div class="model-heading"><span>Baseline</span><h3>Basic ELO</h3></div>
+                    <p>Looks only at who won, who lost, and how strong each team was beforehand. It is the clearest reference model.</p>
+                    <ul><li>Win or loss</li><li>Opponent strength</li><li>No extra adjustments</li></ul>
+                </article>
+                <article class="is-default">
+                    <div class="model-heading"><span>Used by default</span><h3>Adjusted ELO</h3></div>
+                    <p>Adds the information in the final score. A convincing win can matter more than a narrow one, within a controlled limit.</p>
+                    <ul><li>Everything in Basic</li><li>Score margin</li><li>Competition weight</li></ul>
+                </article>
+            </div>
+            <p class="method-plain-note"><strong>“Default” simply means this is the model shown first in the public rankings.</strong> You can switch models there; their histories remain separate.</p>
+        </div>
+    </section>
+
+    <section id="example" class="info-section be-reveal" style="--reveal-order: 4" aria-labelledby="example-heading">
+        <div class="info-section-label"><span>03</span><span>Worked example</span></div>
+        <div class="info-section-body">
+            <h2 id="example-heading">A 1,600 team hosts a 1,500 team.</h2>
+            <p class="info-section-intro">Using the current adjusted model, the calculation starts like this:</p>
+            <div class="formula-example">
+                <article><span>Effective gap</span><code>1,600 + 70 − 1,500 = 170</code><p>The home team receives a 70-point home-court adjustment.</p></article>
+                <article><span>Win expectation</span><code>170 points → 73%</code><p>That gap makes the home team roughly a 73% favourite.</p></article>
+                <article><span>Base update</span><code>20 × (1 − 0.73) = +5.4</code><p>An expected win earns a modest increase before the score-margin adjustment.</p></article>
+            </div>
+            <div class="method-constants" aria-label="Current model constants">
+                <span><strong>20</strong> K-factor</span>
+                <span><strong>70</strong> home advantage</span>
+                <span><strong>400</strong> probability scale</span>
+                <span><strong>28</strong> rating points per expected point</span>
+            </div>
+            <a class="info-text-link" href="model-lab">Test different assumptions in Model Lab <span aria-hidden="true">→</span></a>
+        </div>
+    </section>
+
+    <section id="limits" class="info-section info-section-last be-reveal" style="--reveal-order: 5" aria-labelledby="limits-heading">
+        <div class="info-section-label"><span>04</span><span>Limits</span></div>
+        <div class="info-section-body">
+            <h2 id="limits-heading">A useful signal, not a verdict.</h2>
+            <div class="method-limits">
+                <p>ELO describes what past results support right now. It does not know about injuries, line-ups, travel, motivation, or a tactical change that has not appeared in the results yet.</p>
+                <p>Every rating is tied to a versioned model, so an improved formula can be tested and rebuilt without silently rewriting an older history.</p>
             </div>
         </div>
     </section>
-
-    <section class="be-story-section be-reveal" style="--reveal-order: 2" aria-labelledby="rulesets-heading">
-        <div class="be-story-meta"><span class="be-story-index">02</span><span>Different lenses</span></div>
-        <div class="be-story-body">
-            <h2 id="rulesets-heading" class="be-story-heading">The difference is in what a game tells the model.</h2>
-            <p class="be-story-copy method-section-intro">There is no single universally correct way to apply ELO to basketball. We keep the choices explicit so they can be tested, compared, and improved.</p>
-            <div class="ruleset-grid">
-                <article class="ruleset-item"><span class="ruleset-tag">Simple baseline</span><h3>Basic ELO</h3><p>A plain win/loss model. Easy to understand, and a useful reference point for every other experiment.</p></article>
-                <article class="ruleset-item"><span class="ruleset-tag">Margin-aware</span><h3>Point-margin ELO</h3><p>A close win and a large win carry different amounts of information, so score margin strengthens or softens the normal movement.</p></article>
-                <article class="ruleset-item is-public"><span class="ruleset-tag">Public default</span><h3>Adjusted ELO</h3><p>The calibrated public version: margin adjustment, a 70-point home advantage, and documented constants for every public rating.</p></article>
-            </div>
-            <aside class="method-inline-note"><strong>These are modelling choices, not laws of basketball.</strong><span>Keeping rulesets separate lets us compare them honestly instead of quietly changing the numbers underneath.</span></aside>
-        </div>
-    </section>
-
-    <section class="be-story-section be-reveal" style="--reveal-order: 3" aria-labelledby="formula-heading">
-        <div class="be-story-meta"><span class="be-story-index">03</span><span>One game</span></div>
-        <div class="be-story-body">
-            <h2 id="formula-heading" class="be-story-heading">What the numbers are doing.</h2>
-            <p class="be-story-copy method-section-intro">A simplified example using the public adjusted ruleset shows the shape of the calculation without hiding its assumptions behind notation.</p>
-            <div class="formula-track">
-                <article><span>01 / Home edge</span><code>1,600 + 70 − 1,500 = 170</code><p>The home team begins with an effective difference of 170 points.</p></article>
-                <article><span>02 / Expectation</span><code>170-point gap → about 73%</code><p>On a 400-point probability scale, the home side is expected to win roughly 73% of the time.</p></article>
-                <article><span>03 / Update</span><code>20 × (1 − 0.73) = +5.4</code><p>A win adds about 5.4 points before margin and competition weight are applied.</p></article>
-            </div>
-        </div>
-    </section>
-
-    <section class="be-story-section be-reveal" style="--reveal-order: 4" aria-labelledby="levers-heading">
-        <div class="be-story-meta"><span class="be-story-index">04</span><span>Model levers</span></div>
-        <div class="be-story-body">
-            <h2 id="levers-heading" class="be-story-heading">The assumptions an experiment can move.</h2>
-            <p class="be-story-copy method-section-intro">Model Lab exposes the parameters that can reasonably vary between leagues or questions.</p>
-            <div class="lever-list">
-                <article><span>01</span><div><h3>K-factor</h3><p>How quickly a rating reacts. The public starting point is 20; higher values follow recent form more closely.</p></div></article>
-                <article><span>02</span><div><h3>Home advantage</h3><p>How much home court contributes before the result is evaluated. The public ruleset uses 70 ELO points.</p></div></article>
-                <article><span>03</span><div><h3>Probability scale</h3><p>How large a rating gap must be before an expected result becomes strongly one-sided. The current scale is 400.</p></div></article>
-                <article><span>04</span><div><h3>Point-margin scale</h3><p>How an ELO gap translates into expected scoring margin. The current scale is 28 points per ELO margin.</p></div></article>
-                <article><span>05</span><div><h3>Margin dampener and cap</h3><p>How quickly margin matters, and how far it can amplify a normal update without letting one blowout dominate.</p></div></article>
-                <article><span>06</span><div><h3>Competition weight</h3><p>Whether results from one competition move the shared rating pool more or less. It is currently 1.0.</p></div></article>
-            </div>
-        </div>
-    </section>
-
-    <section class="be-story-section be-reveal" style="--reveal-order: 5" aria-labelledby="implementation-heading">
-        <div class="be-story-meta"><span class="be-story-index">05</span><span>Versioning</span></div>
-        <div class="be-story-body method-version-block">
-            <h2 id="implementation-heading" class="be-story-heading">The implementation is versioned, too.</h2>
-            <div class="be-story-copy"><p>Every rating is tied to a ruleset version. A history can be rebuilt with a new formula without silently mixing it with ratings produced by an older one. Inputs, scope, seasons, and parameters stay reviewable alongside the result.</p></div>
-            <a class="method-text-link" href="model-lab">Explore Model Lab <span aria-hidden="true">→</span></a>
-        </div>
-    </section>
-
-    <section class="be-story-section be-reveal" style="--reveal-order: 6" aria-labelledby="identity-nightmare-heading">
-        <div class="be-story-meta"><span class="be-story-index">06</span><span>Case file</span></div>
-        <div class="be-story-body identity-case">
-            <p class="identity-case-label">Identity investigation / Serbia</p>
-            <h2 id="identity-nightmare-heading" class="be-story-heading">The Radnički continuity nightmare.</h2>
-            <div class="identity-case-copy">
-                <p>Team identity is often harder than the rating formula. One provider may reuse a name or ID across decades while historical sources distinguish clubs that share a city and sponsor.</p>
-                <p>Radnički is a good example. One catch-all record held 755 games belonging to several clubs. Timelines, aliases, competitions, seasons, and venue evidence had to be considered together. PearlBasket’s Belgrade venue evidence supported <a href="https://en.wikipedia.org/wiki/BKK_Radni%C4%8Dki">BKK Radnički</a>, while <a href="https://en.wikipedia.org/wiki/KK_Radni%C4%8Dki_KG_06">Radnički KG 06</a> accounted for the 2006–07 and 2008–09 BIBL games.</p>
-                <p>The correction moved 328 games to Radnički Beograd, 32 to KG 06, 243 to <a href="https://en.wikipedia.org/wiki/KK_Radni%C4%8Dki_Kragujevac_(2009%E2%80%932014)">Radnički Kragujevac (2009–2014)</a>, and 152 to <a href="https://en.wikipedia.org/wiki/KK_SPD_Radni%C4%8Dki">SPD Radnički (2015–present)</a>.</p>
-                <p>A shared name is not proof of continuity, and a source ID is not a historical club identity. Provenance and season boundaries matter because a refounded club may share a city, colours, and name while still needing a fresh rating history.</p>
-            </div>
-        </div>
-    </section>
-
-    <aside class="be-story-note be-reveal" style="--reveal-order: 7">
-        <strong>A rating is a useful signal, not a verdict.</strong>
-        <span>It describes what the results support right now. Injuries, line-ups, travel, motivation, and future change can all sit outside the model.</span>
-    </aside>
 </div>

@@ -121,6 +121,7 @@ public sealed record EloRankingRow(
     IReadOnlyCollection<EloRecentFormGame>? RecentForm = null);
 
 public sealed record EloRecentFormGame(
+    Guid GameId,
     DateTime GameDateTimeUtc,
     string Opponent,
     bool IsWin,
@@ -166,7 +167,8 @@ public sealed record EloRankingFilterOptions(
 
 public sealed record EloRankingCompetitionOption(
     string Name,
-    string? Country);
+    string? Country,
+    string? Context = null);
 
 public sealed record EloRankingSummary(
     int RatedTeams,

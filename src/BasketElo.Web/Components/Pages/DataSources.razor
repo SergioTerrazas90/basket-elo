@@ -5,47 +5,91 @@
 
 <PageTitle>Data sources - BasketElo</PageTitle>
 
-<div class="data-sources-page be-story">
-    <header class="be-story-hero be-reveal" style="--reveal-order: 0">
-        <div class="be-story-hero-copy">
-            <p class="be-story-kicker">Data trail</p>
-            <h1 class="be-story-title">Every rating should have a trail.</h1>
-            <p class="be-story-lede">See which seasons are accounted for and follow each competition back to the archive or data service behind it.</p>
-            <dl class="source-stats" aria-label="Catalog summary">
-                <div><dt>Regions</dt><dd>@RegionCount</dd></div>
-                <div><dt>Leagues</dt><dd>@LeagueCount</dd></div>
-                <div><dt>Source paths</dt><dd>@SourceCount</dd></div>
-            </dl>
+<div class="data-sources-page info-page">
+    <header class="info-hero be-reveal" style="--reveal-order: 0">
+        <div class="info-hero-copy">
+            <p class="info-kicker">Sources</p>
+            <h1>Where the games come from.</h1>
+            <p class="info-lede">Browse the archives and data services behind the ratings, with the seasons currently accounted for in each competition.</p>
         </div>
-        <div class="be-story-orbit" aria-hidden="true">
-            <div class="be-story-orbit-core">
-                <span>Configured catalog</span>
-                <strong>@SourceCount</strong>
-                <small>traceable source paths</small>
-            </div>
-        </div>
+        <dl class="info-facts" aria-label="Catalog summary">
+            <div><dt>FIBA competitions</dt><dd>@FibaCompetitionCount</dd></div>
+            <div><dt>Club &amp; domestic</dt><dd>@ClubCompetitionCount</dd></div>
+            <div><dt>Source paths</dt><dd>@SourceCount</dd></div>
+        </dl>
     </header>
 
-    <aside class="be-story-note be-reveal" style="--reveal-order: 1" aria-label="Coverage note">
+    <aside class="info-note be-reveal" style="--reveal-order: 1" aria-label="Coverage note">
         <strong>Coverage is not the same as completeness.</strong>
         <span>A listed season means it is part of the ingestion catalog. Provider warnings, source gaps, and partial seasons remain recorded in the ingestion run history.</span>
     </aside>
 
-    <section class="data-source-list be-reveal" style="--reveal-order: 2" aria-labelledby="catalog-heading">
-        <div class="source-list-heading">
-            <p class="be-story-kicker">Coverage index</p>
-            <h2 id="catalog-heading">Configured leagues and sources</h2>
-            <p>Select a region to inspect its competitions, providers, and seasons.</p>
-        </div>
+    <details class="source-catalog-group fiba-catalog be-reveal" style="--reveal-order: 2" open>
+        <summary class="source-catalog-summary">
+            <span class="info-kicker">International</span>
+            <span><strong>FIBA competitions</strong><small>World tournaments and continental national teams</small></span>
+            <span class="source-catalog-count">@FibaCompetitionCount competitions</span>
+            <span class="source-catalog-toggle" aria-hidden="true"></span>
+        </summary>
 
-        @for (var regionIndex = 0; regionIndex < regions.Count; regionIndex++)
-        {
-            var region = regions[regionIndex];
-            <details class="data-source-region" open="@(regionIndex == 0)">
-                <summary id="region-@region.Slug">
+        <div class="source-catalog-body fiba-region-grid">
+            @for (var regionIndex = 0; regionIndex < fibaRegions.Count; regionIndex++)
+            {
+                var region = fibaRegions[regionIndex];
+                <article class="fiba-region-card" id="fiba-@region.Slug">
+                    <header>
+                        <span class="source-region-index">@((regionIndex + 1).ToString("00"))</span>
+                        <div><h3>@region.Name</h3><p>@RegionDescription(region.Name)</p></div>
+                        <span>@region.Leagues.Count</span>
+                    </header>
+                    <div class="fiba-competition-list">
+                        @foreach (var league in region.Leagues)
+                        {
+                            <details class="fiba-competition">
+                                <summary>
+                                    <strong>@league.LeagueName</strong>
+                                    <span class="source-region-toggle" aria-hidden="true"></span>
+                                </summary>
+                                <div class="fiba-competition-sources">
+                                    @foreach (var source in league.Sources)
+                                    {
+                                        <div class="data-source-row">
+                                            <div class="data-source-provider">
+                                                <a href="@source.Url" target="_blank" rel="noopener noreferrer">@source.Name</a>
+                                                <span>@source.CoverageLabel</span>
+                                            </div>
+                                            <div class="data-source-seasons">
+                                                <span class="data-source-label">Seasons accounted for</span>
+                                                <p>@string.Join(", ", source.Seasons)</p>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </details>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    </details>
+
+    <details class="source-catalog-group data-source-list be-reveal" style="--reveal-order: 3">
+        <summary class="source-catalog-summary">
+            <span class="info-kicker">Club basketball</span>
+            <span><strong>Club and domestic sources</strong><small>European clubs, domestic competitions, regional leagues, and the NBA</small></span>
+            <span class="source-catalog-count">@ClubCompetitionCount competitions</span>
+            <span class="source-catalog-toggle" aria-hidden="true"></span>
+        </summary>
+
+        <div class="source-catalog-body">
+            @for (var regionIndex = 0; regionIndex < clubRegions.Count; regionIndex++)
+            {
+                var region = clubRegions[regionIndex];
+                <details class="data-source-region">
+                <summary id="club-@region.Slug">
                     <span class="source-region-index">@((regionIndex + 1).ToString("00"))</span>
                     <strong>@region.Name</strong>
-                    <span>@region.Leagues.Count @((region.Leagues.Count == 1) ? "league" : "leagues")</span>
+                    <span>@region.Leagues.Count @((region.Leagues.Count == 1) ? "competition" : "competitions")</span>
                     <span class="source-region-toggle" aria-hidden="true"></span>
                 </summary>
                 <div class="data-source-region-list">
@@ -57,42 +101,47 @@
                                 <span class="data-source-pool">@PoolLabel(league.EloPoolKey)</span>
                             </div>
 
-                            @foreach (var source in league.Sources)
-                            {
-                                <div class="data-source-row">
-                                    <div class="data-source-provider">
-                                        <a href="@source.Url" target="_blank" rel="noopener noreferrer">@source.Name</a>
-                                        <span>@source.CoverageLabel</span>
+                            <div class="data-source-rows">
+                                @foreach (var source in league.Sources)
+                                {
+                                    <div class="data-source-row">
+                                        <div class="data-source-provider">
+                                            <a href="@source.Url" target="_blank" rel="noopener noreferrer">@source.Name</a>
+                                            <span>@source.CoverageLabel</span>
+                                        </div>
+                                        <div class="data-source-seasons">
+                                            <span class="data-source-label">Seasons accounted for</span>
+                                            <p>@string.Join(", ", source.Seasons)</p>
+                                        </div>
                                     </div>
-                                    <div class="data-source-seasons">
-                                        <span class="data-source-label">Seasons accounted for</span>
-                                        <p>@string.Join(", ", source.Seasons)</p>
-                                    </div>
-                                </div>
-                            }
+                                }
+                            </div>
                         </article>
                     }
                 </div>
-            </details>
-        }
-    </section>
+                </details>
+            }
+        </div>
+    </details>
 </div>
 
 @code {
-    private IReadOnlyList<RegionView> regions = [];
+    private IReadOnlyList<RegionView> fibaRegions = [];
+    private IReadOnlyList<RegionView> clubRegions = [];
 
-    private int RegionCount => regions.Count;
-    private int LeagueCount => regions.Sum(region => region.Leagues.Count);
-    private int SourceCount => regions.Sum(region => region.Leagues.Sum(league => league.Sources.Count));
+    private int FibaCompetitionCount => fibaRegions.Sum(region => region.Leagues.Count);
+    private int ClubCompetitionCount => clubRegions.Sum(region => region.Leagues.Count);
+    private int SourceCount => AllRegions.Sum(region => region.Leagues.Sum(league => league.Sources.Count));
+    private IEnumerable<RegionView> AllRegions => fibaRegions.Concat(clubRegions);
 
     protected override void OnInitialized()
     {
         var catalog = new BackfillCatalog();
-        regions = catalog.GetLeagues()
+        var allRegions = catalog.GetLeagues()
             .GroupBy(x => new { Country = NormalizeCountry(x.Country), x.LeagueName, x.EloPoolKey })
             .GroupBy(x => x.Key.Country)
-            .OrderBy(x => x.Key == "World" ? 0 : 1)
-            .ThenBy(x => x.Key)
+            .OrderBy(x => RegionSortOrder(x.Key))
+            .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
             .Select(region => new RegionView(
                 region.Key,
                 Slug(region.Key),
@@ -116,7 +165,42 @@
                             .ToList()))
                     .ToList()))
             .ToList();
+
+        fibaRegions = FilterRegions(allRegions, league => league.EloPoolKey == EloPoolKeys.NationalTeams);
+        clubRegions = FilterRegions(allRegions, league => league.EloPoolKey != EloPoolKeys.NationalTeams);
     }
+
+    private static IReadOnlyList<RegionView> FilterRegions(
+        IReadOnlyList<RegionView> regions,
+        Func<LeagueView, bool> include)
+        => regions
+            .Select(region => region with { Leagues = region.Leagues.Where(include).ToList() })
+            .Where(region => region.Leagues.Count > 0)
+            .ToList();
+
+    private static int RegionSortOrder(string region)
+        => region switch
+        {
+            "World" => 0,
+            "Africa" => 1,
+            "Americas" => 2,
+            "Asia" => 3,
+            "Europe" => 4,
+            "Oceania" => 5,
+            _ => 10
+        };
+
+    private static string RegionDescription(string region)
+        => region switch
+        {
+            "World" => "World Cup & Olympics",
+            "Africa" => "AfroBasket",
+            "Americas" => "AmeriCup",
+            "Asia" => "Asia Cup",
+            "Europe" => "EuroBasket",
+            "Oceania" => "Oceania Championship",
+            _ => "National teams"
+        };
 
     private static string SeasonLabel(string season)
         => SeasonLabelNormalizer.ToFullSeasonLabel(season);

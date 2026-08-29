@@ -17,6 +17,7 @@ const string devPersonaCookieName = "BasketElo.DevPersona";
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddMemoryCache();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddRadzenComponents();

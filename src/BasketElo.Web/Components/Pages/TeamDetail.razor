@@ -36,7 +36,7 @@
                         <span class="team-status-badge @TeamHeaderStatusClass(team)">@TeamHeaderStatusLabel(team)</span>
                     }
                 </div>
-                <p class="intro">Adjusted ELO profile, latest rated games, and the team's continuous rating path.</p>
+                <p class="intro">@RulesetDisplayName(team.RulesetVersion) profile, latest rated games, and the team's continuous rating path.</p>
             </div>
             <div class="team-rank-card">
                 <span>Pool rank</span>
@@ -359,6 +359,9 @@
     [SupplyParameterFromQuery(Name = "pool")]
     public string? Pool { get; set; }
 
+    [SupplyParameterFromQuery(Name = "ruleset")]
+    public string? Ruleset { get; set; }
+
     private EloTeamDetailResponse? team;
     private bool isBusy;
     private bool isAdmin;
@@ -404,7 +407,10 @@
         try
         {
             var poolKey = string.IsNullOrWhiteSpace(Pool) ? EloPoolKeys.Default : Pool;
-            team = await Http.GetFromJsonAsync<EloTeamDetailResponse>($"api/elo/teams/{TeamId}?pool={Uri.EscapeDataString(poolKey)}");
+            var ruleset = EloRulesetVersions.All.Contains(Ruleset?.Trim(), StringComparer.OrdinalIgnoreCase)
+                ? Ruleset!.Trim().ToLowerInvariant()
+                : EloRulesetVersions.Default;
+            team = await Http.GetFromJsonAsync<EloTeamDetailResponse>($"api/elo/teams/{TeamId}?pool={Uri.EscapeDataString(poolKey)}&rulesetVersion={Uri.EscapeDataString(ruleset)}");
             if (team is not null)
             {
                 fullTeamHistoryGames = team.RecentGames.ToList();
@@ -815,6 +821,9 @@
 
     private static string FormatRank(int? rank)
         => rank.HasValue ? $"#{rank.Value}" : "-";
+
+    private static string RulesetDisplayName(string ruleset)
+        => ruleset == EloRulesetVersions.BasicEloV1 ? "Basic ELO" : "Adjusted ELO";
 
     private static string RecentMovementOpponentLabel(EloTeamDetailResponse team)
         => string.IsNullOrWhiteSpace(team.RecentMovementOpponent)

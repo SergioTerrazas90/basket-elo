@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">BasketElo</title>
+  <desc id="desc">A basketball crossed by a rising rating line</desc>
+  <circle cx="32" cy="32" r="30" fill="#0b343a"/>
+  <circle cx="32" cy="32" r="22" fill="none" stroke="#fff9ee" stroke-width="2.5"/>
+  <path d="M31 10c-6 12-6 32 1 44M11 29c12-5 31-4 42 5" fill="none" stroke="#fff9ee" stroke-linecap="round" stroke-width="2.25" opacity=".78"/>
+  <path d="M14 45l11-10 9 4 15-18" fill="none" stroke="#e9782d" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+  <circle cx="14" cy="45" r="2.6" fill="#e9782d"/>
+  <path d="M42 21h7v7" fill="none" stroke="#e9782d" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+</svg>

@@ -10,10 +10,10 @@ public class EloCalculatorTests
     {
         var result = EloCalculator.Calculate(90, 80, 1500m, 1500m, EloRulesetVersions.BasicEloV1);
 
-        Assert.InRange(result.ExpectedHomeResult, 0.6400m, 0.6401m);
+        Assert.Equal(0.5m, result.ExpectedHomeResult);
         Assert.Equal(1m, result.HomeActualResult);
         Assert.Equal(1m, result.MarginMultiplier);
-        Assert.InRange(result.HomeDelta, 7.19m, 7.21m);
+        Assert.InRange(result.HomeDelta, 9.99m, 10.01m);
     }
 
     [Fact]
@@ -22,7 +22,7 @@ public class EloCalculatorTests
         var result = EloCalculator.Calculate(80, 81, 1500m, 1500m, EloRulesetVersions.BasicEloV1);
 
         Assert.Equal(0m, result.HomeActualResult);
-        Assert.InRange(result.HomeDelta, -12.81m, -12.79m);
+        Assert.InRange(result.HomeDelta, -10.01m, -9.99m);
         Assert.Equal(1500m, 1500m + result.HomeDelta - result.HomeDelta);
     }
 
@@ -125,12 +125,12 @@ public class EloCalculatorTests
     }
 
     [Fact]
-    public void LegacyRulesets_KeepExistingHomeAdvantage()
+    public void PublicAndLegacyRulesets_UseTheirDefinedHomeAdvantage()
     {
         var basic = EloCalculator.GetRulesetParameters(EloRulesetVersions.BasicEloV1);
         var pointMargin = EloCalculator.GetRulesetParameters(EloRulesetVersions.PointMarginEloV1);
 
-        Assert.Equal(100m, basic.HomeAdvantageElo);
+        Assert.Equal(0m, basic.HomeAdvantageElo);
         Assert.Null(basic.PointsPerEloMargin);
         Assert.False(basic.UsesMarginAdjustment);
         Assert.Equal(100m, pointMargin.HomeAdvantageElo);

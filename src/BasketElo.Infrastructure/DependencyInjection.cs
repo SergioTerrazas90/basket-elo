@@ -308,6 +308,9 @@ public static class DependencyInjection
         services.AddScoped<IModelLabBacktestService, ModelLabBacktestService>();
         services.AddScoped<IModelLabModelService, ModelLabModelService>();
         services.AddScoped<IModelLabRunService, ModelLabRunService>();
+        services.AddScoped<IModelLabRunJobProcessor, ModelLabRunJobProcessor>();
+        services.AddScoped<IModelLabJobDispatcher, ModelLabJobDispatcher>();
+        services.AddScoped<ModelLabRunJob>();
         services.AddScoped<IModelLabEntitlementService, ModelLabEntitlementService>();
         services.AddSingleton<IEloRebuildNotificationPublisher, PostgresEloRebuildNotificationPublisher>();
         services.AddScoped<IIdentityHealthCheckService, IdentityHealthCheckService>();

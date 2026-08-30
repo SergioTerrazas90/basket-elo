@@ -239,7 +239,7 @@ public sealed class ModelLabController(
             var ownerUserId = GetCurrentUserId();
             var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
             var run = await runService.CreateAsync(ownerUserId, entitlement, request, cancellationToken);
-            return run is null ? NotFound() : CreatedAtAction(nameof(GetRun), new { runId = run.RunId }, run);
+            return run is null ? NotFound() : AcceptedAtAction(nameof(GetRun), new { runId = run.RunId }, run);
         }
         catch (ModelLabLimitException ex)
         {

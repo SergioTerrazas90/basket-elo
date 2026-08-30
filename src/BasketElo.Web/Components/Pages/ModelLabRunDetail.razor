@@ -1,9 +1,11 @@
 @page "/model-lab/runs/{RunId:guid}"
 @rendermode InteractiveServer
+@implements IAsyncDisposable
 @using System.Net
 @using System.Net.Http.Json
 @using System.Text.Json
 @using BasketElo.Domain.Elo
+@using BasketElo.Domain.Entities
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
@@ -27,7 +29,7 @@
         <div class="run-hero-actions">
             @if (detail is not null)
             {
-                <button type="button" class="btn btn-outline-danger" @onclick="DeleteRunAsync" disabled="@isDeleting">
+                <button type="button" class="btn btn-outline-danger" @onclick="DeleteRunAsync" disabled="@(isDeleting || IsActiveRun)">
                     @(confirmDelete ? "Confirm delete" : isDeleting ? "Deleting..." : "Delete run")
                 </button>
             }
@@ -73,6 +75,38 @@
             </div>
         </section>
 
+        @if (IsActiveRun)
+        {
+            <section class="run-progress-panel" aria-live="polite">
+                <div class="run-progress-heading">
+                    <div>
+                        <span>@detail.Run.ProgressStage</span>
+                        <strong>@detail.Run.ProgressPercent%</strong>
+                    </div>
+                    @if (detail.Run.Status == ModelLabRunStatuses.Queued)
+                    {
+                        <small>Queue position #@(detail.Run.QueuePosition ?? 1). System ELO jobs have priority.</small>
+                    }
+                    else
+                    {
+                        <small>The result page will update automatically when the run finishes.</small>
+                    }
+                </div>
+                <div class="progress" role="progressbar" aria-valuenow="@detail.Run.ProgressPercent" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar" style="width: @(detail.Run.ProgressPercent)%"></div>
+                </div>
+            </section>
+        }
+        else if (detail.Run.Status == ModelLabRunStatuses.Failed)
+        {
+            <section class="alert alert-danger" role="alert">
+                <strong>The run failed.</strong>
+                <span>@(detail.Run.ErrorMessage ?? "No failure details were recorded.")</span>
+            </section>
+        }
+
+        @if (IsCompletedRun)
+        {
         <section class="result-summary">
             <div>
                 <span>Scored games</span>
@@ -311,6 +345,7 @@
                 </div>
             }
         </section>
+        }
     }
 </div>
 
@@ -328,6 +363,12 @@
     private bool isDeleting;
     private string? errorMessage;
     private int predictionSkip;
+    private CancellationTokenSource? pollingCancellation;
+    private Task? pollingTask;
+
+    private bool IsActiveRun => detail?.Run.Status is ModelLabRunStatuses.Queued or ModelLabRunStatuses.Running;
+
+    private bool IsCompletedRun => detail?.Run.Status == ModelLabRunStatuses.Completed;
 
     private bool CanGoPrevious => predictionPage is not null && predictionPage.Skip > 0 && !isLoadingPredictions;
 
@@ -342,14 +383,27 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        await StopPollingAsync();
         await LoadRunAsync();
+        if (IsActiveRun)
+        {
+            pollingCancellation = new CancellationTokenSource();
+            pollingTask = PollRunAsync(pollingCancellation.Token);
+        }
     }
 
-    private async Task LoadRunAsync()
+    private async Task LoadRunAsync(bool showLoading = true)
     {
-        isLoading = true;
+        if (showLoading)
+        {
+            isLoading = true;
+        }
         errorMessage = null;
-        predictionSkip = 0;
+        var wasCompleted = IsCompletedRun;
+        if (showLoading)
+        {
+            predictionSkip = 0;
+        }
 
         try
         {
@@ -368,7 +422,10 @@
 
             detail = await response.Content.ReadFromJsonAsync<ModelLabRunDetailResponse>()
                 ?? throw new InvalidOperationException("The saved run response was empty.");
-            await LoadPredictionsAsync();
+            if (IsCompletedRun && (!wasCompleted || predictionPage is null))
+            {
+                await LoadPredictionsAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -376,8 +433,57 @@
         }
         finally
         {
-            isLoading = false;
+            if (showLoading)
+            {
+                isLoading = false;
+            }
         }
+    }
+
+    private async Task PollRunAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadRunAsync(showLoading: false);
+                    StateHasChanged();
+                });
+
+                if (!IsActiveRun)
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task StopPollingAsync()
+    {
+        if (pollingCancellation is null)
+        {
+            return;
+        }
+
+        await pollingCancellation.CancelAsync();
+        if (pollingTask is not null)
+        {
+            await pollingTask;
+        }
+        pollingCancellation.Dispose();
+        pollingCancellation = null;
+        pollingTask = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopPollingAsync();
     }
 
     private async Task LoadPredictionsAsync()
@@ -466,7 +572,7 @@
             "completed" => "status-pill status-completed",
             "failed" => "status-pill status-failed",
             "running" => "status-pill status-progress",
-            "pending" => "status-pill status-warning",
+            "queued" => "status-pill status-warning",
             _ => "status-pill status-empty"
         };
 

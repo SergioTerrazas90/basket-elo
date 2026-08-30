@@ -5,11 +5,13 @@
 @using System.Net.Http.Json
 @using System.Text.Json
 @using BasketElo.Domain.Elo
+@using BasketElo.Domain.Entities
 @using BasketElo.Infrastructure.Identity
 @using BasketElo.Web.Auth
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.Options
 @inject HttpClient Http
+@inject NavigationManager Navigation
 @inject IOptions<AuthOptions> AuthOptions
 
 <SeoHead Title="Basketball ELO Model Lab & Backtesting | BasketElo"
@@ -137,7 +139,24 @@
                                                 <strong>@run.ModelName</strong>
                                                 <small>@run.LeagueName &middot; @FormatRunDate(run.CreatedAtUtc)</small>
                                             </span>
-                                            <span class="saved-run-metric">@run.Summary.WinnerAccuracy.ToString("0.0")%</span>
+                                            <span class="saved-run-metric">
+                                                @if (run.Status == ModelLabRunStatuses.Queued)
+                                                {
+                                                    <text>Queue #@(run.QueuePosition ?? 1)</text>
+                                                }
+                                                else if (run.Status == ModelLabRunStatuses.Running)
+                                                {
+                                                    <text>@run.ProgressPercent%</text>
+                                                }
+                                                else if (run.Status == ModelLabRunStatuses.Failed)
+                                                {
+                                                    <text>Failed</text>
+                                                }
+                                                else
+                                                {
+                                                    <text>@run.Summary.WinnerAccuracy.ToString("0.0")%</text>
+                                                }
+                                            </span>
                                         </a>
                                         <button type="button"
                                                 class="btn btn-sm btn-outline-danger"
@@ -609,7 +628,7 @@
                         @if (CanSaveModels)
                         {
                             <button type="button" class="btn btn-outline-primary" @onclick="CreateStoredRunAsync" disabled="@(!CanCreateStoredRun)">
-                                @(isSavingRun ? "Saving..." : "Save run")
+                                @(isSavingRun ? "Queueing..." : "Save and queue run")
                             </button>
                         }
                         <button type="button" class="btn btn-outline-secondary" @onclick="ResetDefaults" disabled="@isRunning">Reset</button>
@@ -931,8 +950,12 @@
             !isRunning &&
             !isSavingRun &&
             !isSavingModel &&
+            !HasActiveRun &&
             !IsKnownStoredRunLimitReached &&
             !string.Equals(lastSavedRunSignature, BuildCurrentRunSignature(), StringComparison.Ordinal);
+
+    private bool HasActiveRun => savedRuns.Any(run =>
+        run.Status is ModelLabRunStatuses.Queued or ModelLabRunStatuses.Running);
 
     private bool IsKnownStoredRunLimitReached
         => runQuota?.IsLimitReached == true ||
@@ -964,6 +987,11 @@
             if (IsKnownStoredRunLimitReached)
             {
                 return StoredRunLimitMessage;
+            }
+
+            if (HasActiveRun)
+            {
+                return "Wait for the active Model Lab run to finish before queueing another.";
             }
 
             if (string.Equals(lastSavedRunSignature, BuildCurrentRunSignature(), StringComparison.Ordinal))
@@ -1597,7 +1625,6 @@
             var createdRun = await response.Content.ReadFromJsonAsync<ModelLabRunCreateResponse>()
                 ?? throw new InvalidOperationException("The saved run response was empty.");
 
-            result = createdRun.Result;
             selectedModelIdText = model.Id.ToString();
             lastSavedRunSignature = BuildCurrentRunSignature();
             loadedModel = model;
@@ -1606,7 +1633,7 @@
             await LoadSavedModelsAsync();
             selectedModelIdText = model.Id.ToString();
             await LoadSavedRunsAsync();
-            modelStatusMessage = $"Saved {model.Name} v{model.CurrentVersion.VersionNumber} and run {createdRun.RunId.ToString()[..8]}.";
+            Navigation.NavigateTo($"model-lab/runs/{createdRun.RunId}");
         }
         catch (Exception ex)
         {

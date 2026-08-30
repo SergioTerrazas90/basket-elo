@@ -60,6 +60,48 @@
     color: var(--color-subtle);
 }
 
+.run-progress-panel {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-5);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.run-progress-heading,
+.run-progress-heading > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.run-progress-heading {
+    flex-wrap: wrap;
+}
+
+.run-progress-heading span,
+.run-progress-heading small {
+    color: var(--color-muted);
+}
+
+.run-progress-heading strong {
+    color: var(--color-brand-dark);
+    font-size: 1.2rem;
+}
+
+.run-progress-panel .progress {
+    height: 0.7rem;
+    background: var(--color-surface-muted);
+}
+
+.run-progress-panel .progress-bar {
+    background: var(--color-brand);
+    transition: width 240ms ease;
+}
+
 .result-summary {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));

@@ -1,6 +1,7 @@
 using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.CurrentResults;
 using BasketElo.Infrastructure.Elo;
+using BasketElo.Infrastructure.Jobs;
 
 namespace BasketElo.Worker;
 
@@ -31,6 +32,7 @@ public class Worker : BackgroundService
         {
             using var scope = _scopeFactory.CreateScope();
             var eloProcessor = scope.ServiceProvider.GetRequiredService<IEloRebuildJobProcessor>();
+            var modelLabProcessor = scope.ServiceProvider.GetRequiredService<IModelLabRunJobProcessor>();
             var backfillProcessor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
             var refreshQueued = false;
             var currentResultsQueued = false;
@@ -76,6 +78,7 @@ public class Worker : BackgroundService
 
             var processed = refreshQueued || currentResultsQueued ||
                 await eloProcessor.TryProcessNextPendingJobAsync(stoppingToken) ||
+                await modelLabProcessor.TryProcessNextPendingJobAsync(stoppingToken) ||
                 await backfillProcessor.TryProcessNextPendingJobAsync(stoppingToken);
 
             if (_logger.IsEnabled(LogLevel.Information) && !processed)

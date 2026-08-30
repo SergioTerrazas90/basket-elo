@@ -152,7 +152,10 @@ public sealed record ModelLabRunCreateResponse(
     string Status,
     DateTime CreatedAtUtc,
     DateTime? CompletedAtUtc,
-    ModelLabBacktestResponse Result);
+    ModelLabBacktestResponse? Result,
+    int? QueuePosition,
+    int ProgressPercent,
+    string ProgressStage);
 
 public sealed record ModelLabRunSummaryResponse(
     Guid Id,
@@ -163,8 +166,13 @@ public sealed record ModelLabRunSummaryResponse(
     string EloPoolKey,
     string ScopeType,
     string Status,
+    int? QueuePosition,
+    int ProgressPercent,
+    string ProgressStage,
     DateTime CreatedAtUtc,
+    DateTime? StartedAtUtc,
     DateTime? CompletedAtUtc,
+    string? ErrorMessage,
     ModelLabBacktestWindow InitializationWindow,
     ModelLabBacktestWindow ScoredWindow,
     ModelLabBacktestSummary Summary,

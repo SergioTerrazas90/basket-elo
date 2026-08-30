@@ -10,6 +10,8 @@ public interface IModelLabRunService
         CreateModelLabRunRequest request,
         CancellationToken cancellationToken);
 
+    Task ExecuteAsync(Guid runId, CancellationToken cancellationToken);
+
     Task<IReadOnlyCollection<ModelLabRunSummaryResponse>> ListAsync(
         Guid ownerUserId,
         int take,

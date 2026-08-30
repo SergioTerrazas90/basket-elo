@@ -10,7 +10,11 @@ public class ModelLabRun
     public string LeagueName { get; set; } = string.Empty;
     public string EloPoolKey { get; set; } = string.Empty;
     public string ScopeType { get; set; } = string.Empty;
-    public string Status { get; set; } = ModelLabRunStatuses.Completed;
+    public string Status { get; set; } = ModelLabRunStatuses.Queued;
+    public string? HangfireJobId { get; set; }
+    public string? RequestCompetitionIdsJson { get; set; }
+    public int ProgressPercent { get; set; }
+    public string ProgressStage { get; set; } = "Waiting for a worker";
     public DateTime InitializationFromUtc { get; set; }
     public DateTime InitializationToUtc { get; set; }
     public int InitializationGames { get; set; }
@@ -31,6 +35,7 @@ public class ModelLabRun
     public decimal BaselineAverageMarginError { get; set; }
     public decimal BaselineAveragePredictedHomeWinProbability { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? StartedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }
     public string? ErrorMessage { get; set; }
 
@@ -46,6 +51,10 @@ public class ModelLabRun
 
 public static class ModelLabRunStatuses
 {
+    public const string Queued = "queued";
+    public const string Running = "running";
     public const string Completed = "completed";
     public const string Failed = "failed";
+
+    public static readonly IReadOnlyCollection<string> Active = [Queued, Running];
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Persistence;
@@ -46,54 +47,110 @@ public sealed class ModelLabRunService(
         var scopeType = NormalizeScopeType(request.ScopeType);
         EnforceScopeLimit(entitlement, model.LeagueName, scopeType);
         await EnforceStoredRunLimitAsync(ownerUserId, entitlement, cancellationToken);
+        await EnforceSingleActiveRunAsync(ownerUserId, entitlement, cancellationToken);
 
-        var backtestRequest = new ModelLabBacktestRequest(
-            model.Name,
-            ToParameterSet(version),
-            model.LeagueName,
-            request.InitializationFromUtc,
-            request.InitializationToUtc,
-            request.ScoredFromUtc,
-            request.ScoredToUtc,
-            scopeType,
-            request.CompetitionIds,
-            request.EloPoolKey);
-
-        var execution = await backtestService.RunDetailedAsync(backtestRequest, cancellationToken);
+        var poolKey = await ResolvePoolKeyAsync(model.LeagueName, request, cancellationToken);
         var now = DateTime.UtcNow;
-        var result = execution.Response;
         var run = new ModelLabRun
         {
             OwnerUserId = ownerUserId,
             ModelId = model.Id,
             ModelVersionId = version.Id,
             ModelName = model.Name,
-            LeagueName = result.LeagueName,
-            EloPoolKey = result.EloPoolKey ?? throw new InvalidOperationException("The Model Lab run did not resolve an ELO pool."),
+            LeagueName = model.LeagueName,
+            EloPoolKey = poolKey,
             ScopeType = scopeType,
-            Status = ModelLabRunStatuses.Completed,
-            InitializationFromUtc = result.InitializationWindow.FromUtc,
-            InitializationToUtc = result.InitializationWindow.ToUtc,
-            InitializationGames = result.InitializationWindow.Games,
-            ScoredFromUtc = result.ScoredWindow.FromUtc,
-            ScoredToUtc = result.ScoredWindow.ToUtc,
-            ScoredGames = result.Summary.ScoredGames,
-            CorrectWinners = result.Summary.CorrectWinners,
-            WinnerAccuracy = result.Summary.WinnerAccuracy,
-            BrierScore = result.Summary.BrierScore,
-            LogLoss = result.Summary.LogLoss,
-            AverageMarginError = result.Summary.AverageMarginError,
-            AveragePredictedHomeWinProbability = result.Summary.AveragePredictedHomeWinProbability,
-            BaselineScoredGames = result.BaselineSummary.ScoredGames,
-            BaselineCorrectWinners = result.BaselineSummary.CorrectWinners,
-            BaselineWinnerAccuracy = result.BaselineSummary.WinnerAccuracy,
-            BaselineBrierScore = result.BaselineSummary.BrierScore,
-            BaselineLogLoss = result.BaselineSummary.LogLoss,
-            BaselineAverageMarginError = result.BaselineSummary.AverageMarginError,
-            BaselineAveragePredictedHomeWinProbability = result.BaselineSummary.AveragePredictedHomeWinProbability,
+            Status = ModelLabRunStatuses.Queued,
+            RequestCompetitionIdsJson = JsonSerializer.Serialize(request.CompetitionIds ?? []),
+            ProgressPercent = 0,
+            ProgressStage = "Waiting for a worker",
+            InitializationFromUtc = request.InitializationFromUtc,
+            InitializationToUtc = request.InitializationToUtc,
+            ScoredFromUtc = request.ScoredFromUtc,
+            ScoredToUtc = request.ScoredToUtc,
             CreatedAtUtc = now,
-            CompletedAtUtc = now
+            CompletedAtUtc = null
         };
+
+        dbContext.ModelLabRuns.Add(run);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            dbContext.Entry(run).State = EntityState.Detached;
+            if (await HasActiveRunAsync(ownerUserId, run.Id, cancellationToken))
+            {
+                throw ActiveRunLimitException(entitlement);
+            }
+
+            throw;
+        }
+
+        var queuePosition = await GetQueuePositionAsync(run, cancellationToken);
+        return new ModelLabRunCreateResponse(
+            run.Id,
+            run.ModelId,
+            run.ModelVersionId,
+            run.Status,
+            run.CreatedAtUtc,
+            run.CompletedAtUtc,
+            null,
+            queuePosition,
+            run.ProgressPercent,
+            run.ProgressStage);
+    }
+
+    public async Task ExecuteAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        var run = await dbContext.ModelLabRuns
+            .Include(x => x.ModelVersion)
+            .SingleAsync(x => x.Id == runId, cancellationToken);
+
+        if (run.Status != ModelLabRunStatuses.Running)
+        {
+            throw new InvalidOperationException($"Model Lab run '{runId}' is not running.");
+        }
+
+        var competitionIds = string.IsNullOrWhiteSpace(run.RequestCompetitionIdsJson)
+            ? Array.Empty<Guid>()
+            : JsonSerializer.Deserialize<Guid[]>(run.RequestCompetitionIdsJson) ?? [];
+        var backtestRequest = new ModelLabBacktestRequest(
+            run.ModelName,
+            ToParameterSet(run.ModelVersion),
+            run.LeagueName,
+            run.InitializationFromUtc,
+            run.InitializationToUtc,
+            run.ScoredFromUtc,
+            run.ScoredToUtc,
+            run.ScopeType,
+            competitionIds,
+            run.EloPoolKey);
+
+        var execution = await backtestService.RunDetailedAsync(backtestRequest, cancellationToken);
+        var result = execution.Response;
+        run.ProgressPercent = 85;
+        run.ProgressStage = "Saving results";
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        run.LeagueName = result.LeagueName;
+        run.EloPoolKey = result.EloPoolKey ?? throw new InvalidOperationException("The Model Lab run did not resolve an ELO pool.");
+        run.InitializationGames = result.InitializationWindow.Games;
+        run.ScoredGames = result.Summary.ScoredGames;
+        run.CorrectWinners = result.Summary.CorrectWinners;
+        run.WinnerAccuracy = result.Summary.WinnerAccuracy;
+        run.BrierScore = result.Summary.BrierScore;
+        run.LogLoss = result.Summary.LogLoss;
+        run.AverageMarginError = result.Summary.AverageMarginError;
+        run.AveragePredictedHomeWinProbability = result.Summary.AveragePredictedHomeWinProbability;
+        run.BaselineScoredGames = result.BaselineSummary.ScoredGames;
+        run.BaselineCorrectWinners = result.BaselineSummary.CorrectWinners;
+        run.BaselineWinnerAccuracy = result.BaselineSummary.WinnerAccuracy;
+        run.BaselineBrierScore = result.BaselineSummary.BrierScore;
+        run.BaselineLogLoss = result.BaselineSummary.LogLoss;
+        run.BaselineAverageMarginError = result.BaselineSummary.AverageMarginError;
+        run.BaselineAveragePredictedHomeWinProbability = result.BaselineSummary.AveragePredictedHomeWinProbability;
 
         foreach (var scope in execution.ScopeCompetitions)
         {
@@ -109,7 +166,7 @@ public sealed class ModelLabRunService(
         {
             run.Predictions.Add(new ModelLabRunPrediction
             {
-                OwnerUserId = ownerUserId,
+                OwnerUserId = run.OwnerUserId,
                 GameId = prediction.GameId,
                 CompetitionId = prediction.CompetitionId,
                 CompetitionName = prediction.CompetitionName,
@@ -133,7 +190,7 @@ public sealed class ModelLabRunService(
         {
             run.Ratings.Add(new ModelLabRunRating
             {
-                OwnerUserId = ownerUserId,
+                OwnerUserId = run.OwnerUserId,
                 Rank = rating.Rank,
                 TeamId = rating.TeamId,
                 TeamName = rating.TeamName,
@@ -147,7 +204,7 @@ public sealed class ModelLabRunService(
         {
             run.PeriodMetrics.Add(new ModelLabRunPeriodMetric
             {
-                OwnerUserId = ownerUserId,
+                OwnerUserId = run.OwnerUserId,
                 PeriodKey = period.Label,
                 Games = period.Games,
                 WinnerAccuracy = period.WinnerAccuracy,
@@ -156,7 +213,7 @@ public sealed class ModelLabRunService(
         }
 
         foreach (var breakdown in BuildMetricBreakdowns(
-            ownerUserId,
+            run.OwnerUserId,
             result.Summary,
             result.BaselineSummary,
             execution.Predictions,
@@ -165,26 +222,28 @@ public sealed class ModelLabRunService(
             run.MetricBreakdowns.Add(breakdown);
         }
 
+        run.Status = ModelLabRunStatuses.Completed;
+        run.ProgressPercent = 100;
+        run.ProgressStage = "Completed";
+        run.CompletedAtUtc = DateTime.UtcNow;
+        run.ErrorMessage = null;
+
+        dbContext.ModelLabRunScopes.AddRange(run.Scopes);
+        dbContext.ModelLabRunPredictions.AddRange(run.Predictions);
+        dbContext.ModelLabRunRatings.AddRange(run.Ratings);
+        dbContext.ModelLabRunPeriodMetrics.AddRange(run.PeriodMetrics);
+        dbContext.ModelLabRunMetricBreakdowns.AddRange(run.MetricBreakdowns);
+        dbContext.ChangeTracker.DetectChanges();
         var autoDetectChanges = dbContext.ChangeTracker.AutoDetectChangesEnabled;
         dbContext.ChangeTracker.AutoDetectChangesEnabled = false;
         try
         {
-            dbContext.ModelLabRuns.Add(run);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         finally
         {
             dbContext.ChangeTracker.AutoDetectChangesEnabled = autoDetectChanges;
         }
-
-        return new ModelLabRunCreateResponse(
-            run.Id,
-            run.ModelId,
-            run.ModelVersionId,
-            run.Status,
-            run.CreatedAtUtc,
-            run.CompletedAtUtc,
-            result with { RunId = run.Id });
     }
 
     public async Task<IReadOnlyCollection<ModelLabRunSummaryResponse>> ListAsync(
@@ -201,7 +260,12 @@ public sealed class ModelLabRunService(
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        return runs.Select(ToSummaryResponse).ToList();
+        var queuePositions = await GetQueuePositionsAsync(cancellationToken);
+        return runs
+            .Select(run => ToSummaryResponse(
+                run,
+                queuePositions.TryGetValue(run.Id, out var position) ? position : null))
+            .ToList();
     }
 
     public async Task<ModelLabRunQuotaResponse> GetQuotaAsync(
@@ -280,8 +344,10 @@ public sealed class ModelLabRunService(
             .Where(x => x.RunId == runId && x.OwnerUserId == ownerUserId)
             .ToListAsync(cancellationToken);
 
+        var queuePosition = await GetQueuePositionAsync(run, cancellationToken);
+
         return new ModelLabRunDetailResponse(
-            ToSummaryResponse(run),
+            ToSummaryResponse(run, queuePosition),
             scopes,
             ratings,
             biggestMisses,
@@ -343,6 +409,107 @@ public sealed class ModelLabRunService(
         dbContext.ModelLabRuns.Remove(run);
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
+    }
+
+    private async Task<string> ResolvePoolKeyAsync(
+        string leagueName,
+        CreateModelLabRunRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(request.EloPoolKey))
+        {
+            if (!EloPoolKeys.IsSupported(request.EloPoolKey))
+            {
+                throw new ArgumentException($"Unknown ELO pool '{request.EloPoolKey}'.");
+            }
+
+            return EloPoolKeys.Normalize(request.EloPoolKey);
+        }
+
+        var requestedCompetitionIds = request.CompetitionIds?.Distinct().ToList() ?? [];
+        var poolKeys = requestedCompetitionIds.Count > 0
+            ? await dbContext.Competitions
+                .AsNoTracking()
+                .Where(x => requestedCompetitionIds.Contains(x.Id))
+                .Select(x => x.EloPoolKey)
+                .Distinct()
+                .ToListAsync(cancellationToken)
+            : await dbContext.Competitions
+                .AsNoTracking()
+                .Where(x => x.Name == leagueName)
+                .Select(x => x.EloPoolKey)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+        var supportedPools = poolKeys
+            .Where(EloPoolKeys.IsSupported)
+            .Select(EloPoolKeys.Normalize)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (supportedPools.Count != 1)
+        {
+            throw new ArgumentException("The selected competitions must resolve to exactly one ELO pool.");
+        }
+
+        return supportedPools[0];
+    }
+
+    private async Task EnforceSingleActiveRunAsync(
+        Guid ownerUserId,
+        ModelLabEntitlement entitlement,
+        CancellationToken cancellationToken)
+    {
+        if (await HasActiveRunAsync(ownerUserId, null, cancellationToken))
+        {
+            throw ActiveRunLimitException(entitlement);
+        }
+    }
+
+    private Task<bool> HasActiveRunAsync(
+        Guid ownerUserId,
+        Guid? excludedRunId,
+        CancellationToken cancellationToken)
+        => dbContext.ModelLabRuns
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.OwnerUserId == ownerUserId &&
+                (!excludedRunId.HasValue || x.Id != excludedRunId.Value) &&
+                (x.Status == ModelLabRunStatuses.Queued || x.Status == ModelLabRunStatuses.Running),
+                cancellationToken);
+
+    private static ModelLabLimitException ActiveRunLimitException(ModelLabEntitlement entitlement)
+        => new(
+            "model_lab_run_already_active",
+            "Only one Model Lab run can be queued or running per user. Wait for the active run to finish before starting another.",
+            false,
+            entitlement.SavedModelLimit,
+            entitlement.RequiredLeagueName,
+            entitlement.StoredRunLimit);
+
+    private async Task<Dictionary<Guid, int>> GetQueuePositionsAsync(CancellationToken cancellationToken)
+    {
+        var queuedIds = await dbContext.ModelLabRuns
+            .AsNoTracking()
+            .Where(x => x.Status == ModelLabRunStatuses.Queued)
+            .OrderBy(x => x.CreatedAtUtc)
+            .ThenBy(x => x.Id)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        return queuedIds
+            .Select((id, index) => new { id, Position = index + 1 })
+            .ToDictionary(x => x.id, x => x.Position);
+    }
+
+    private async Task<int?> GetQueuePositionAsync(ModelLabRun run, CancellationToken cancellationToken)
+    {
+        if (run.Status != ModelLabRunStatuses.Queued)
+        {
+            return null;
+        }
+
+        var positions = await GetQueuePositionsAsync(cancellationToken);
+        return positions.TryGetValue(run.Id, out var position) ? position : null;
     }
 
     private static void EnforceScopeLimit(ModelLabEntitlement entitlement, string leagueName, string scopeType)
@@ -563,7 +730,7 @@ public sealed class ModelLabRunService(
             version.MarginDampenerFactor,
             version.MaxMarginMultiplier);
 
-    private static ModelLabRunSummaryResponse ToSummaryResponse(ModelLabRun run)
+    private static ModelLabRunSummaryResponse ToSummaryResponse(ModelLabRun run, int? queuePosition)
         => new(
             run.Id,
             run.ModelId,
@@ -573,8 +740,13 @@ public sealed class ModelLabRunService(
             run.EloPoolKey,
             run.ScopeType,
             run.Status,
+            queuePosition,
+            run.ProgressPercent,
+            run.ProgressStage,
             run.CreatedAtUtc,
+            run.StartedAtUtc,
             run.CompletedAtUtc,
+            run.ErrorMessage,
             new ModelLabBacktestWindow(
                 run.InitializationFromUtc,
                 run.InitializationToUtc,

@@ -34,6 +34,13 @@ public interface IModelLabRunService
         int take,
         CancellationToken cancellationToken);
 
+    Task<ModelLabRunEvolutionResponse?> GetEvolutionAsync(
+        Guid ownerUserId,
+        Guid runId,
+        int teamCount,
+        int pointsPerTeam,
+        CancellationToken cancellationToken);
+
     Task<bool> DeleteAsync(
         Guid ownerUserId,
         Guid runId,

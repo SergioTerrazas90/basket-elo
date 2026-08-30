@@ -200,6 +200,28 @@ public sealed class ModelLabRunService(
             });
         }
 
+        foreach (var teamEvolution in execution.Evolution.GroupBy(x => x.TeamId))
+        {
+            var sampledPoints = EloEvolutionLimits.EvenlySample(
+                teamEvolution.OrderBy(x => x.GameDateTimeUtc).ThenBy(x => x.GameId).ToList());
+            foreach (var point in sampledPoints)
+            {
+                run.EvolutionPoints.Add(new ModelLabRunEvolutionPoint
+                {
+                    OwnerUserId = run.OwnerUserId,
+                    TeamId = point.TeamId,
+                    TeamName = point.TeamName,
+                    GameId = point.GameId,
+                    GameDateTimeUtc = point.GameDateTimeUtc,
+                    CompetitionName = point.CompetitionName,
+                    Season = point.Season,
+                    Elo = point.Elo,
+                    EloDelta = point.EloDelta,
+                    Rank = point.Rank
+                });
+            }
+        }
+
         foreach (var period in result.Periods)
         {
             run.PeriodMetrics.Add(new ModelLabRunPeriodMetric
@@ -231,6 +253,7 @@ public sealed class ModelLabRunService(
         dbContext.ModelLabRunScopes.AddRange(run.Scopes);
         dbContext.ModelLabRunPredictions.AddRange(run.Predictions);
         dbContext.ModelLabRunRatings.AddRange(run.Ratings);
+        dbContext.ModelLabRunEvolutionPoints.AddRange(run.EvolutionPoints);
         dbContext.ModelLabRunPeriodMetrics.AddRange(run.PeriodMetrics);
         dbContext.ModelLabRunMetricBreakdowns.AddRange(run.MetricBreakdowns);
         dbContext.ChangeTracker.DetectChanges();
@@ -391,6 +414,64 @@ public sealed class ModelLabRunService(
             .ToListAsync(cancellationToken);
 
         return new ModelLabRunPredictionPageResponse(runId, total, safeSkip, pageSize, rows);
+    }
+
+    public async Task<ModelLabRunEvolutionResponse?> GetEvolutionAsync(
+        Guid ownerUserId,
+        Guid runId,
+        int teamCount,
+        int pointsPerTeam,
+        CancellationToken cancellationToken)
+    {
+        var exists = await dbContext.ModelLabRuns
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == runId && x.OwnerUserId == ownerUserId, cancellationToken);
+        if (!exists)
+        {
+            return null;
+        }
+
+        var safeTeamCount = Math.Clamp(teamCount <= 0 ? 10 : teamCount, 1, 20);
+        var safePointCount = EloEvolutionLimits.NormalizePointsPerTeam(pointsPerTeam);
+        var teamIds = await dbContext.ModelLabRunRatings
+            .AsNoTracking()
+            .Where(x => x.RunId == runId && x.OwnerUserId == ownerUserId)
+            .OrderBy(x => x.Rank)
+            .Take(safeTeamCount)
+            .Select(x => x.TeamId)
+            .ToListAsync(cancellationToken);
+
+        var points = await dbContext.ModelLabRunEvolutionPoints
+            .AsNoTracking()
+            .Where(x => x.RunId == runId &&
+                x.OwnerUserId == ownerUserId &&
+                teamIds.Contains(x.TeamId))
+            .OrderBy(x => x.GameDateTimeUtc)
+            .ThenBy(x => x.GameId)
+            .ToListAsync(cancellationToken);
+
+        var series = points
+            .GroupBy(x => new { x.TeamId, x.TeamName })
+            .OrderBy(group => teamIds.IndexOf(group.Key.TeamId))
+            .Select(group =>
+            {
+                var allPoints = group
+                    .Select(x => new EloTeamEvolutionPoint(
+                        x.GameDateTimeUtc,
+                        x.Elo,
+                        x.EloDelta,
+                        x.Rank,
+                        x.GameId))
+                    .ToList();
+                return new EloTeamEvolutionSeries(
+                    group.Key.TeamId,
+                    group.Key.TeamName,
+                    EloEvolutionLimits.EvenlySample(allPoints, safePointCount),
+                    allPoints.Count);
+            })
+            .ToList();
+
+        return new ModelLabRunEvolutionResponse(runId, series);
     }
 
     public async Task<bool> DeleteAsync(

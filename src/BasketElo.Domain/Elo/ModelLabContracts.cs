@@ -198,6 +198,10 @@ public sealed record ModelLabRunPredictionPageResponse(
     int Take,
     IReadOnlyCollection<ModelLabPredictionRow> Items);
 
+public sealed record ModelLabRunEvolutionResponse(
+    Guid RunId,
+    IReadOnlyCollection<EloTeamEvolutionSeries> Series);
+
 public sealed record ModelLabRunMetricBreakdownResponse(
     string SegmentType,
     string SegmentKey,

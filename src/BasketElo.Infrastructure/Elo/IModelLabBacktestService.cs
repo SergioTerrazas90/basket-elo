@@ -18,4 +18,16 @@ public sealed record ModelLabBacktestExecutionResult(
     IReadOnlyCollection<ModelLabCompetitionOption> ScopeCompetitions,
     IReadOnlyCollection<ModelLabPredictionRow> Predictions,
     IReadOnlyCollection<ModelLabPredictionRow> BaselinePredictions,
-    IReadOnlyCollection<ModelLabRatingRow> Ratings);
+    IReadOnlyCollection<ModelLabRatingRow> Ratings,
+    IReadOnlyCollection<ModelLabEvolutionSnapshot> Evolution);
+
+public sealed record ModelLabEvolutionSnapshot(
+    Guid TeamId,
+    string TeamName,
+    Guid GameId,
+    DateTime GameDateTimeUtc,
+    string CompetitionName,
+    string Season,
+    decimal Elo,
+    decimal EloDelta,
+    int Rank);

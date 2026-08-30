@@ -45,6 +45,7 @@ public class ModelLabRun
     public ICollection<ModelLabRunScope> Scopes { get; set; } = new List<ModelLabRunScope>();
     public ICollection<ModelLabRunPrediction> Predictions { get; set; } = new List<ModelLabRunPrediction>();
     public ICollection<ModelLabRunRating> Ratings { get; set; } = new List<ModelLabRunRating>();
+    public ICollection<ModelLabRunEvolutionPoint> EvolutionPoints { get; set; } = new List<ModelLabRunEvolutionPoint>();
     public ICollection<ModelLabRunPeriodMetric> PeriodMetrics { get; set; } = new List<ModelLabRunPeriodMetric>();
     public ICollection<ModelLabRunMetricBreakdown> MetricBreakdowns { get; set; } = new List<ModelLabRunMetricBreakdown>();
 }

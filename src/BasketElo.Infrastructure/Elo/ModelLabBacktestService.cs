@@ -141,7 +141,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             scope.Competitions,
             custom.ScoredPredictions,
             baseline.ScoredPredictions,
-            custom.Ratings);
+            custom.Ratings,
+            custom.Evolution);
     }
 
     private async Task<IReadOnlyCollection<LeagueOption>> GetLeagueOptionsAsync(CancellationToken cancellationToken)
@@ -344,6 +345,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
     {
         var ratings = new Dictionary<Guid, RatingState>();
         var predictions = new List<ModelLabPredictionRow>();
+        var evolution = new List<ModelLabEvolutionSnapshot>();
         var initializationGames = 0;
 
         foreach (var game in games)
@@ -418,6 +420,27 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             away.Elo -= calculation.HomeDelta;
             home.GamesPlayed += 1;
             away.GamesPlayed += 1;
+
+            evolution.Add(new ModelLabEvolutionSnapshot(
+                game.HomeTeamId,
+                game.HomeTeamName,
+                game.Id,
+                game.GameDateTimeUtc,
+                game.CompetitionName,
+                game.Season,
+                RoundRating(home.Elo),
+                RoundRating(calculation.HomeDelta),
+                GetRank(ratings, game.HomeTeamId)));
+            evolution.Add(new ModelLabEvolutionSnapshot(
+                game.AwayTeamId,
+                game.AwayTeamName,
+                game.Id,
+                game.GameDateTimeUtc,
+                game.CompetitionName,
+                game.Season,
+                RoundRating(away.Elo),
+                RoundRating(-calculation.HomeDelta),
+                GetRank(ratings, game.AwayTeamId)));
         }
 
         return new SimulationResult(
@@ -425,7 +448,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             predictions,
             BuildSummary(predictions),
             BuildRatings(ratings),
-            BuildPeriods(predictions));
+            BuildPeriods(predictions),
+            evolution);
     }
 
     private static ModelLabBacktestSummary BuildSummary(IReadOnlyCollection<ModelLabPredictionRow> predictions)
@@ -472,6 +496,15 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 x.Value.GamesPlayed,
                 RoundRating(x.Value.RecentDeltas.Sum())))
             .ToList();
+
+    private static int GetRank(IReadOnlyDictionary<Guid, RatingState> ratings, Guid teamId)
+    {
+        var target = ratings[teamId];
+        return 1 + ratings.Count(entry =>
+            entry.Value.Elo > target.Elo ||
+            (entry.Value.Elo == target.Elo &&
+                string.Compare(entry.Value.TeamName, target.TeamName, StringComparison.OrdinalIgnoreCase) < 0));
+    }
 
     private static IReadOnlyCollection<ModelLabPeriodMetric> BuildPeriods(IReadOnlyCollection<ModelLabPredictionRow> predictions)
         => predictions
@@ -592,7 +625,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         IReadOnlyCollection<ModelLabPredictionRow> ScoredPredictions,
         ModelLabBacktestSummary Summary,
         IReadOnlyCollection<ModelLabRatingRow> Ratings,
-        IReadOnlyCollection<ModelLabPeriodMetric> Periods);
+        IReadOnlyCollection<ModelLabPeriodMetric> Periods,
+        IReadOnlyCollection<ModelLabEvolutionSnapshot> Evolution);
 
     private sealed class RatingState(string teamName, decimal elo)
     {

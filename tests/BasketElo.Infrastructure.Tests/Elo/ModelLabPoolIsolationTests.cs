@@ -45,11 +45,14 @@ public class ModelLabPoolIsolationTests
             ModelLabScopeTypes.AllCompetitions,
             EloPoolKey: EloPoolKeys.Nba);
 
-        var result = await service.RunAsync(request, CancellationToken.None);
+        var execution = await service.RunDetailedAsync(request, CancellationToken.None);
+        var result = execution.Response;
 
         Assert.Equal(EloPoolKeys.Nba, result.EloPoolKey);
         Assert.Equal(1, result.Summary.ScoredGames);
         Assert.StartsWith("All NBA", result.LeagueName);
+        Assert.Equal(2, execution.Evolution.Count);
+        Assert.All(execution.Evolution, point => Assert.Equal("NBA", point.CompetitionName));
     }
 
     [Fact]

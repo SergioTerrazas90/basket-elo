@@ -208,6 +208,28 @@ public sealed class ModelLabController(
         return page is null ? NotFound() : Ok(page);
     }
 
+    [HttpGet("runs/{runId:guid}/evolution")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunEvolutionResponse>> GetRunEvolution(
+        Guid runId,
+        [FromQuery] int teams,
+        [FromQuery] int pointsPerTeam,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        var evolution = await runService.GetEvolutionAsync(
+            GetCurrentUserId(),
+            runId,
+            teams,
+            pointsPerTeam,
+            cancellationToken);
+        return evolution is null ? NotFound() : Ok(evolution);
+    }
+
     [HttpDelete("runs/{runId:guid}")]
     [RequireInternalUser]
     public async Task<ActionResult> DeleteRun(

@@ -61,6 +61,15 @@ public class ModelLabAsyncRunTests
         Assert.NotNull(run.StartedAtUtc);
         Assert.NotNull(run.CompletedAtUtc);
         Assert.Equal(1, run.ScoredGames);
+        Assert.Single(await dbContext.ModelLabRunEvolutionPoints.AsNoTracking().ToListAsync());
+        var evolution = await service.GetEvolutionAsync(
+            ownerId,
+            created.RunId,
+            10,
+            EloEvolutionLimits.DefaultPointsPerTeam,
+            CancellationToken.None);
+        Assert.NotNull(evolution);
+        Assert.Single(evolution.Series);
     }
 
     [Fact]
@@ -153,6 +162,9 @@ public class ModelLabAsyncRunTests
 
     private sealed class FakeBacktestService : IModelLabBacktestService
     {
+        private static readonly Guid TeamId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+        private static readonly Guid GameId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+
         public int ExecutionCount { get; private set; }
 
         public Task<ModelLabOptionsResponse> GetOptionsAsync(CancellationToken cancellationToken) =>
@@ -177,11 +189,27 @@ public class ModelLabAsyncRunTests
                 new ModelLabBacktestWindow(request.ScoredFromUtc, request.ScoredToUtc, 1),
                 summary,
                 summary,
-                [],
+                [new ModelLabRatingRow(1, TeamId, "Top team", 1512m, 1, 12m)],
                 [],
                 [],
                 EloPoolKey: EloPoolKeys.Nba);
-            return Task.FromResult(new ModelLabBacktestExecutionResult(response, [], [], [], []));
+            var evolution = new ModelLabEvolutionSnapshot(
+                TeamId,
+                "Top team",
+                GameId,
+                request.ScoredFromUtc,
+                "NBA",
+                "2024-2025",
+                1512m,
+                12m,
+                1);
+            return Task.FromResult(new ModelLabBacktestExecutionResult(
+                response,
+                [],
+                [],
+                [],
+                response.Ratings,
+                [evolution]));
         }
     }
 }

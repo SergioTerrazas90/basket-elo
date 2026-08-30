@@ -17,6 +17,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<ModelLabRunScope> ModelLabRunScopes => Set<ModelLabRunScope>();
     public DbSet<ModelLabRunPrediction> ModelLabRunPredictions => Set<ModelLabRunPrediction>();
     public DbSet<ModelLabRunRating> ModelLabRunRatings => Set<ModelLabRunRating>();
+    public DbSet<ModelLabRunEvolutionPoint> ModelLabRunEvolutionPoints => Set<ModelLabRunEvolutionPoint>();
     public DbSet<ModelLabRunPeriodMetric> ModelLabRunPeriodMetrics => Set<ModelLabRunPeriodMetric>();
     public DbSet<ModelLabRunMetricBreakdown> ModelLabRunMetricBreakdowns => Set<ModelLabRunMetricBreakdown>();
     public DbSet<Team> Teams => Set<Team>();
@@ -367,6 +368,36 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasIndex(x => x.PredecessorTeamId);
             entity.HasIndex(x => x.SuccessorTeamId);
             entity.HasIndex(x => x.CanonicalName);
+        });
+
+        modelBuilder.Entity<ModelLabRunEvolutionPoint>(entity =>
+        {
+            entity.ToTable("model_lab_run_evolution_points");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.TeamName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.CompetitionName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Season).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.Elo).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.EloDelta).HasPrecision(10, 2).IsRequired();
+            entity.HasOne(x => x.Run)
+                .WithMany(x => x.EvolutionPoints)
+                .HasForeignKey(x => x.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.OwnerUser)
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Team)
+                .WithMany()
+                .HasForeignKey(x => x.TeamId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.Game)
+                .WithMany()
+                .HasForeignKey(x => x.GameId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.RunId, x.TeamId, x.GameId }).IsUnique();
+            entity.HasIndex(x => new { x.RunId, x.TeamId, x.GameDateTimeUtc });
+            entity.HasIndex(x => new { x.OwnerUserId, x.RunId });
         });
 
         modelBuilder.Entity<TeamAlias>(entity =>

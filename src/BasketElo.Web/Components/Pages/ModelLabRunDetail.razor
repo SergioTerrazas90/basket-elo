@@ -130,6 +130,33 @@
             </div>
         </section>
 
+        <section class="result-panel run-evolution-panel">
+            <div class="section-head compact">
+                <div>
+                    <h2>Rating evolution</h2>
+                    <p>Game-by-game ELO paths for the final top 10 teams, calculated only from this run's pool and scope.</p>
+                </div>
+            </div>
+            @if (isLoadingEvolution)
+            {
+                <div class="loading-panel compact-loading">Loading rating evolution...</div>
+            }
+            else if (evolutionChartSeries.Count == 0)
+            {
+                <div class="empty-state compact-empty">No rating evolution was stored for this run.</div>
+            }
+            else
+            {
+                <EloEvolutionChart Series="@evolutionChartSeries"
+                                   HeightPixels="400"
+                                   ShowLegend="true"
+                                   ShowSeriesControls="true"
+                                   EnableRangeNavigation="true"
+                                   AllowExpand="true"
+                                   DataRevision="@evolutionDataRevision" />
+            }
+        </section>
+
         <section class="result-panel">
             <div class="section-head compact">
                 <div>
@@ -359,10 +386,13 @@
     private ModelLabRunPredictionPageResponse? predictionPage;
     private bool isLoading = true;
     private bool isLoadingPredictions;
+    private bool isLoadingEvolution;
     private bool confirmDelete;
     private bool isDeleting;
     private string? errorMessage;
     private int predictionSkip;
+    private IReadOnlyList<EloChartSeries> evolutionChartSeries = [];
+    private long evolutionDataRevision;
     private CancellationTokenSource? pollingCancellation;
     private Task? pollingTask;
 
@@ -424,7 +454,7 @@
                 ?? throw new InvalidOperationException("The saved run response was empty.");
             if (IsCompletedRun && (!wasCompleted || predictionPage is null))
             {
-                await LoadPredictionsAsync();
+                await Task.WhenAll(LoadPredictionsAsync(), LoadEvolutionAsync());
             }
         }
         catch (Exception ex)
@@ -509,6 +539,54 @@
         finally
         {
             isLoadingPredictions = false;
+        }
+    }
+
+    private async Task LoadEvolutionAsync()
+    {
+        isLoadingEvolution = true;
+        try
+        {
+            using var response = await Http.GetAsync(
+                $"api/model-lab/runs/{RunId}/evolution?teams=10&pointsPerTeam={EloEvolutionLimits.DefaultPointsPerTeam}");
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            var evolution = await response.Content.ReadFromJsonAsync<ModelLabRunEvolutionResponse>()
+                ?? throw new InvalidOperationException("The rating evolution response was empty.");
+            evolutionChartSeries = evolution.Series
+                .Select((series, index) =>
+                {
+                    var color = ChartColor(index);
+                    return new EloChartSeries(
+                        series.TeamId,
+                        series.TeamName,
+                        color,
+                        series.Points
+                            .OrderBy(point => point.GameDateTimeUtc)
+                            .Select(point => new EloChartPoint(
+                                point.GameDateTimeUtc,
+                                point.Elo,
+                                series.TeamName,
+                                color,
+                                point.EloDelta,
+                                point.Rank,
+                                point.GameId))
+                            .ToList(),
+                        series.RatedPointCount);
+                })
+                .ToList();
+            evolutionDataRevision++;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load rating evolution: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingEvolution = false;
         }
     }
 
@@ -652,6 +730,16 @@
         }
 
         return value < 0 ? value.ToString("0") : "0";
+    }
+
+    private static string ChartColor(int index)
+    {
+        string[] colors =
+        [
+            "#245c7a", "#d88722", "#1f7a68", "#b55431", "#7456a6",
+            "#2f6f9f", "#8d6a22", "#9b3f62", "#4f6f52", "#c46f2f"
+        ];
+        return colors[index % colors.Length];
     }
 
     private static string MovementClass(decimal value)

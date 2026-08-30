@@ -182,12 +182,13 @@
     min-height: 2.25rem;
     padding: 0.35rem 0.8rem;
     border: 0;
+    border-bottom: 2px solid transparent;
     background: transparent;
     color: var(--color-muted);
     font-size: 0.76rem;
     font-weight: 750;
     text-decoration: none;
-    transition: color var(--motion-fast);
+    transition: color var(--motion-fast), border-color var(--motion-fast);
 }
 
 .pool-tab:hover,
@@ -199,10 +200,7 @@
 
 .pool-tab.active,
 .view-tab.active {
-    background-image: radial-gradient(circle, var(--color-accent) 0 45%, transparent 50%);
-    background-position: left 0.15rem center;
-    background-repeat: no-repeat;
-    background-size: 0.35rem 0.35rem;
+    border-bottom-color: var(--color-accent);
     color: var(--color-text);
     font-weight: 820;
 }

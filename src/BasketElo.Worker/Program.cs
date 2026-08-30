@@ -6,12 +6,14 @@ using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddCheck<HangfireStorageHealthCheck>("hangfire-storage")
+    .AddCheck<HangfireServerHealthCheck>("hangfire-server");
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddHangfireServer((serviceProvider, options) =>
 {
     var jobOptions = serviceProvider.GetRequiredService<IOptions<EloJobOptions>>().Value;
-    options.WorkerCount = Math.Clamp(jobOptions.WorkerCount, 1, 3);
+    options.WorkerCount = jobOptions.EffectiveWorkerCount;
     options.Queues = EloJobQueues.InPriorityOrder;
     options.ServerName = $"basket-elo-worker:{Environment.MachineName}";
 });

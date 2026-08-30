@@ -38,6 +38,16 @@ public class ModelLabAsyncRunTests
     {
         await using var dbContext = CreateContext();
         var (ownerId, model, version) = await SeedModelAsync(dbContext);
+        var canonicalRating = new TeamRating
+        {
+            TeamId = Guid.NewGuid(),
+            EloPoolKey = EloPoolKeys.Nba,
+            RulesetVersion = "canonical-v1",
+            Elo = 1610m,
+            GamesPlayed = 12
+        };
+        dbContext.TeamRatings.Add(canonicalRating);
+        await dbContext.SaveChangesAsync();
         var backtest = new FakeBacktestService();
         var service = new ModelLabRunService(dbContext, backtest, new RecordingDispatcher());
         var created = await service.CreateAsync(
@@ -70,6 +80,16 @@ public class ModelLabAsyncRunTests
             CancellationToken.None);
         Assert.NotNull(evolution);
         Assert.Single(evolution.Series);
+        Assert.Null(await service.GetEvolutionAsync(
+            Guid.NewGuid(),
+            created.RunId,
+            10,
+            EloEvolutionLimits.DefaultPointsPerTeam,
+            CancellationToken.None));
+        var unchangedCanonicalRating = await dbContext.TeamRatings.AsNoTracking().SingleAsync();
+        Assert.Equal(1610m, unchangedCanonicalRating.Elo);
+        Assert.Equal(12, unchangedCanonicalRating.GamesPlayed);
+        Assert.Empty(await dbContext.RatingHistories.AsNoTracking().ToListAsync());
     }
 
     [Fact]

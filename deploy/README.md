@@ -17,6 +17,12 @@ This deploy shape mirrors a simple VPS setup:
 
 The frontend and backend are intentionally kept as separate services. The web app is Blazor Server and calls the API from the server side through `ApiBaseUrl`, so the API does not need to be public.
 
+The worker hosts at most three shared ELO workers. Canonical/public rebuilds use
+the higher-priority queue and Model Lab backtests use the lower-priority queue.
+Set `EloJobs__WorkerCount=3` in the environment file; values outside 1–3 are
+clamped. Both queues and the Hangfire dashboard use the existing PostgreSQL
+connection and database.
+
 ## First-time VPS setup
 
 Copy the deploy templates to the VPS:
@@ -131,6 +137,22 @@ curl http://127.0.0.1:5100/health
 curl http://127.0.0.1:5101/health
 curl http://127.0.0.1:5102/health
 ```
+
+The worker check includes PostgreSQL-backed Hangfire storage and the Hangfire
+server heartbeat. A non-200 response means the worker is not ready to accept ELO
+jobs even if its systemd process is running. Inspect it with:
+
+```bash
+sudo journalctl -u basket-elo-worker --since "15 minutes ago" --no-pager
+sudo systemctl status basket-elo-worker
+```
+
+After signing in with an email listed in `Auth__AdminEmails`, open
+`/admin/jobs` on the public web URL to inspect queues, failures, and job history.
+The dashboard is admin-only and must not be reverse-proxied separately.
+
+For the migration, backup, deployment order, failed-job retry, and rollback
+runbook, see [`docs/hangfire-elo-jobs.md`](../docs/hangfire-elo-jobs.md).
 
 From your browser:
 

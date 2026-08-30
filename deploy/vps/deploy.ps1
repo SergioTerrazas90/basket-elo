@@ -111,7 +111,9 @@ if ($LASTEXITCODE -ne 0) {
 
 $restartCommand = @(
     "sudo systemctl restart basket-elo-api",
+    "curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 2 http://127.0.0.1:5101/health >/dev/null",
     "sudo systemctl restart basket-elo-worker",
+    "curl --fail --silent --show-error --retry 15 --retry-connrefused --retry-delay 2 http://127.0.0.1:5102/health >/dev/null",
     "sudo systemctl restart basket-elo-web",
     "sudo systemctl --no-pager --full status basket-elo-api basket-elo-worker basket-elo-web"
 ) -join " && "

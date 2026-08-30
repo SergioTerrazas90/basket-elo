@@ -5,6 +5,8 @@ public sealed class EloJobOptions
     public const string SectionName = "EloJobs";
 
     public int WorkerCount { get; set; } = 3;
+
+    public int EffectiveWorkerCount => Math.Clamp(WorkerCount, 1, 3);
 }
 
 public static class EloJobQueues

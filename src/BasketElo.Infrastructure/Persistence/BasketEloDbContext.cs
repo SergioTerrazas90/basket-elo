@@ -600,11 +600,13 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.RulesetVersion).HasMaxLength(30).IsRequired();
             entity.Property(x => x.CompetitionName).HasMaxLength(200).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            entity.Property(x => x.HangfireJobId).HasMaxLength(100);
             entity.Property(x => x.GamesProcessed).IsRequired();
             entity.Property(x => x.TeamsRated).IsRequired();
             entity.Property(x => x.Notes).HasMaxLength(4000);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.HasIndex(x => x.QueuedAtUtc);
+            entity.HasIndex(x => new { x.Status, x.HangfireJobId, x.QueuedAtUtc });
             entity.HasIndex(x => new { x.EloPoolKey, x.RulesetVersion })
                 .IsUnique()
                 .HasFilter("\"Status\" IN ('pending', 'running') AND \"EloPoolKey\" IS NOT NULL");

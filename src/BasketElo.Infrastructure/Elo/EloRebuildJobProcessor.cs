@@ -1,20 +1,20 @@
 using BasketElo.Domain.Elo;
+using BasketElo.Infrastructure.Jobs;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using System.Runtime;
 
 namespace BasketElo.Infrastructure.Elo;
 
 public sealed class EloRebuildJobProcessor(
     BasketEloDbContext dbContext,
-    IEloRebuildService rebuildService,
+    ISystemEloJobDispatcher jobDispatcher,
     ILogger<EloRebuildJobProcessor> logger) : IEloRebuildJobProcessor
 {
     public async Task<bool> TryProcessNextPendingJobAsync(CancellationToken cancellationToken)
     {
         var runId = await dbContext.EloRebuildRuns
-            .Where(x => x.Status == EloRebuildRunStatus.Pending)
+            .Where(x => x.Status == EloRebuildRunStatus.Pending && x.HangfireJobId == null)
             .OrderBy(x => x.QueuedAtUtc)
             .Select(x => (Guid?)x.Id)
             .FirstOrDefaultAsync(cancellationToken);
@@ -24,49 +24,48 @@ public sealed class EloRebuildJobProcessor(
             return false;
         }
 
-        var startedAtUtc = DateTime.UtcNow;
-        int claimed;
+        var hangfireJobId = jobDispatcher.EnqueueRebuild(runId.Value);
+        int linked;
         if (dbContext.Database.IsRelational())
         {
-            claimed = await dbContext.EloRebuildRuns
-                .Where(x => x.Id == runId.Value && x.Status == EloRebuildRunStatus.Pending)
+            linked = await dbContext.EloRebuildRuns
+                .Where(x => x.Id == runId.Value &&
+                    x.Status == EloRebuildRunStatus.Pending &&
+                    x.HangfireJobId == null)
                 .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(x => x.Status, EloRebuildRunStatus.Running)
-                    .SetProperty(x => x.StartedAtUtc, startedAtUtc), cancellationToken);
+                    .SetProperty(x => x.HangfireJobId, hangfireJobId), cancellationToken);
         }
         else
         {
             var pendingRun = await dbContext.EloRebuildRuns
-                .SingleOrDefaultAsync(x => x.Id == runId.Value && x.Status == EloRebuildRunStatus.Pending, cancellationToken);
+                .SingleOrDefaultAsync(x => x.Id == runId.Value &&
+                    x.Status == EloRebuildRunStatus.Pending &&
+                    x.HangfireJobId == null, cancellationToken);
             if (pendingRun is null)
             {
-                claimed = 0;
+                linked = 0;
             }
             else
             {
-                pendingRun.Status = EloRebuildRunStatus.Running;
-                pendingRun.StartedAtUtc = startedAtUtc;
+                pendingRun.HangfireJobId = hangfireJobId;
                 await dbContext.SaveChangesAsync(cancellationToken);
-                claimed = 1;
+                linked = 1;
             }
         }
 
-        if (claimed == 0)
+        if (linked == 0)
         {
+            logger.LogInformation(
+                "ELO rebuild run {runId} was already dispatched; duplicate Hangfire job {hangfireJobId} will safely no-op.",
+                runId.Value,
+                hangfireJobId);
             return true;
         }
 
-        logger.LogInformation("Processing ELO rebuild run {runId}.", runId.Value);
-        try
-        {
-            await rebuildService.RebuildAsync(runId.Value, cancellationToken);
-        }
-        finally
-        {
-            dbContext.ChangeTracker.Clear();
-            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
-            GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-        }
+        logger.LogInformation(
+            "Dispatched ELO rebuild run {runId} as high-priority Hangfire job {hangfireJobId}.",
+            runId.Value,
+            hangfireJobId);
         return true;
     }
 }

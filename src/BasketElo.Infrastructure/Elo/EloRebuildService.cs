@@ -217,6 +217,7 @@ public class EloRebuildService(
             dbContext.ChangeTracker.Clear();
             run = await dbContext.EloRebuildRuns.SingleAsync(x => x.Id == run.Id, CancellationToken.None);
             run.Status = EloRebuildRunStatus.Pending;
+            run.HangfireJobId = null;
             run.StartedAtUtc = null;
             run.FinishedAtUtc = null;
             run.Notes = "Worker stopped during the rebuild; the run was returned to the queue.";

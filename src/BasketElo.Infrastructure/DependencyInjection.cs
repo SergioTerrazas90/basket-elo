@@ -303,6 +303,8 @@ public static class DependencyInjection
         services.AddSingleton<IBackfillCatalog, BackfillCatalog>();
         services.AddScoped<IEloRebuildService, EloRebuildService>();
         services.AddScoped<IEloRebuildJobProcessor, EloRebuildJobProcessor>();
+        services.AddScoped<ISystemEloJobDispatcher, SystemEloJobDispatcher>();
+        services.AddScoped<SystemEloRebuildJob>();
         services.AddScoped<IModelLabBacktestService, ModelLabBacktestService>();
         services.AddScoped<IModelLabModelService, ModelLabModelService>();
         services.AddScoped<IModelLabRunService, ModelLabRunService>();

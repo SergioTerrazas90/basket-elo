@@ -1583,7 +1583,6 @@ public class EloController(
     }
 
     [HttpGet("games/{gameId:guid}/explanation")]
-    [RequireInternalUser]
     public async Task<ActionResult<EloGameExplanationResponse>> GetGameExplanation(
         Guid gameId,
         [FromQuery] string? rulesetVersion,

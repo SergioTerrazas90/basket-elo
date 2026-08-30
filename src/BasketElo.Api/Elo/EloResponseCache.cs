@@ -32,8 +32,7 @@ public sealed class EloResponseCache(
             value,
             new MemoryCacheEntryOptions
             {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15),
-                SlidingExpiration = TimeSpan.FromMinutes(5)
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1)
             });
 
         trackedKeys[key] = new CacheScope(poolKey, rulesetVersion);
@@ -112,7 +111,7 @@ public sealed class EloResponseCache(
         DateTime? fromUtc,
         DateTime? toUtc,
         int pointsPerTeam)
-        => $"elo:evolution:{poolKey}:{rulesetVersion}:{string.Join(',', teamIds)}:{Normalize(competition)}:{Normalize(season)}:{Normalize(tournamentCycle)}:{FormatDate(fromUtc)}:{FormatDate(toUtc)}:{pointsPerTeam}";
+        => $"elo:evolution:{poolKey}:{rulesetVersion}:{string.Join(',', teamIds.Order())}:{Normalize(competition)}:{Normalize(season)}:{Normalize(tournamentCycle)}:{FormatDate(fromUtc)}:{FormatDate(toUtc)}:{pointsPerTeam}";
 
     private static string Normalize(string? value) => value?.Trim().ToLowerInvariant() ?? string.Empty;
 

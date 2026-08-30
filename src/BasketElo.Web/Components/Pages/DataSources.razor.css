@@ -1,7 +1,15 @@
+.data-sources-page > .info-hero {
+    border-bottom: 0;
+}
+
 .fiba-catalog,
 .data-source-list {
     display: block;
-    margin-top: clamp(2.5rem, 5vw, 4.5rem);
+    margin-top: clamp(1.75rem, 3.5vw, 3rem);
+}
+
+.data-sources-page > .fiba-catalog {
+    border-top: 0;
 }
 
 .source-catalog-group {
@@ -14,10 +22,10 @@
 .source-catalog-summary {
     display: grid;
     grid-template-columns: minmax(8rem, 0.25fr) minmax(16rem, 1fr) auto 1.25rem;
-    gap: clamp(1.5rem, 4vw, 4rem);
+    gap: clamp(1.25rem, 3vw, 3rem);
     align-items: center;
-    min-height: 6.5rem;
-    padding: var(--space-5) 0;
+    min-height: 5.35rem;
+    padding: var(--space-4) 0;
     cursor: pointer;
     list-style: none;
 }
@@ -29,7 +37,7 @@
 
 .source-catalog-summary strong {
     font-family: var(--font-display);
-    font-size: clamp(1.75rem, 3vw, 2.6rem);
+    font-size: clamp(1.55rem, 2.5vw, 2.15rem);
     font-weight: 600;
     letter-spacing: -0.04em;
     line-height: 1;
@@ -63,7 +71,7 @@
 .source-catalog-group[open] .source-catalog-toggle::after { transform: rotate(0deg); }
 
 .source-catalog-body {
-    padding: 0 0 clamp(2.5rem, 5vw, 4rem);
+    padding: 0 0 clamp(1.75rem, 3vw, 2.75rem);
     animation: be-content-rise var(--motion-enter) both;
 }
 

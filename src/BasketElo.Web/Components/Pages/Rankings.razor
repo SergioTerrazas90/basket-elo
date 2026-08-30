@@ -18,15 +18,18 @@
 @inject IMemoryCache PrerenderCache
 @inject ILogger<Rankings> Logger
 
-<PageTitle>Basket ELO @ViewTitle()</PageTitle>
+<SeoHead Title="@SeoTitle()"
+         Description="@SeoDescription()"
+         CanonicalPath="@(selectedView == "movers" ? "/movers" : "/")"
+         SchemaType="CollectionPage" />
 
-<div id="rankings-interactive-page" data-permanent class="rankings-page @(IsGraphView ? "graph-page" : string.Empty)">
+<div id="rankings-interactive-page" class="rankings-page @(IsGraphView ? "graph-page" : string.Empty)">
     <header class="rankings-header">
         <div class="rankings-page-heading">
             <div>
                 <p class="eyebrow">Basketball intelligence / Live board</p>
-                <h1>Power rankings</h1>
-                <p class="rankings-intro">Compare teams across leagues, follow form, and inspect the rating signal behind every position.</p>
+                <h1>@(selectedView == "movers" ? "Biggest basketball ELO movers" : "Basketball ELO power rankings")</h1>
+                <p class="rankings-intro">Compare NBA, European club, and national-team ratings, follow recent form, and inspect the ELO signal behind every position.</p>
             </div>
             <a class="rankings-method-note" href="how-it-works" aria-label="Read how the rankings work">
                 <span class="method-note-mark" aria-hidden="true">↗</span>
@@ -50,15 +53,18 @@
                 </nav>
             </div>
 
-            <div class="workspace-control workspace-view-control">
-                <span class="workspace-label">View</span>
-                <nav class="rankings-view-tabs" aria-label="Ranking views">
-                    <button type="button" class='@ViewTabClass("rankings")' @onclick='() => SelectViewAsync("rankings")' disabled="@isBusy">Rankings</button>
-                    <button type="button" class='@ViewTabClass("graph")' @onclick='() => SelectViewAsync("graph")' disabled="@isBusy">Graph</button>
-                    <button type="button" class='@ViewTabClass("fixtures")' @onclick='() => SelectViewAsync("fixtures")' disabled="@isBusy">Fixtures</button>
-                    <button type="button" class='@ViewTabClass("results")' @onclick='() => SelectViewAsync("results")' disabled="@isBusy">Results</button>
-                </nav>
-            </div>
+            @if (!IsMoversView)
+            {
+                <div class="workspace-control workspace-view-control">
+                    <span class="workspace-label">View</span>
+                    <nav class="rankings-view-tabs" aria-label="Ranking views">
+                        <a class='@ViewTabClass("rankings")' href='@BuildRankingsHref(1, "rankings")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("rankings")'>Rankings</a>
+                        <a class='@ViewTabClass("graph")' href='@BuildRankingsHref(1, "graph")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("graph")'>Graph</a>
+                        <a class='@ViewTabClass("fixtures")' href='@BuildRankingsHref(1, "fixtures")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("fixtures")'>Fixtures</a>
+                        <a class='@ViewTabClass("results")' href='@BuildRankingsHref(1, "results")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("results")'>Results</a>
+                    </nav>
+                </div>
+            }
         </div>
     </header>
 
@@ -465,7 +471,11 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @if (VisibleResultRows.Count == 0)
+                            @if (CurrentResultsResponse is null)
+                            {
+                                <tr><td colspan="6" class="empty-state" role="status">Loading completed results...</td></tr>
+                            }
+                            else if (VisibleResultRows.Count == 0)
                             {
                                 <tr><td colspan="6" class="empty-state">No completed results match the current filters.</td></tr>
                             }
@@ -823,7 +833,10 @@
                     <div id="ranking-evolution-panel" class="evolution-panel" role="region" aria-label="ELO evolution chart">
                         @if (isChartLoading)
                         {
-                            <div class="loading-panel">Loading chart...</div>
+                            <div class="chart-loading-panel" role="status" aria-live="polite">
+                                <span class="spinner-border chart-loading-spinner" aria-hidden="true"></span>
+                                <span>Loading chart...</span>
+                            </div>
                         }
                         else
                         {
@@ -956,6 +969,7 @@
                                                            FillAvailableHeight="@IsGraphView"
                                                            DataRevision="@evolutionDataRevision"
                                                            IsRefining="@isEvolutionRefining"
+                                                           ViewportInteractionStarted="@CancelEvolutionRefinementAsync"
                                                            ViewportRefinementRequested="@QueueEvolutionRefinementAsync"
                                                            FullRangeRequested="@RestoreFullEvolutionAsync" />
 
@@ -982,14 +996,22 @@
                                  OnClose="CloseResultExplanation" />
 
     }
+
+    <section class="rankings-seo-summary" aria-labelledby="rankings-about-heading">
+        <div>
+            <p class="eyebrow">About the ratings</p>
+            <h2 id="rankings-about-heading">One transparent rating system for basketball teams worldwide</h2>
+        </div>
+        <div>
+            <p>BasketElo updates team ratings after every recorded result. The rankings cover the NBA, European domestic and continental competitions, and men’s national-team basketball in separate rating pools.</p>
+            <p>Use Adjusted ELO to account for opponent strength, home court, score margin, and competition weight, or switch to Basic ELO for a pure win-loss baseline. Read the <a href="how-it-works">full rating methodology</a> and inspect the <a href="data-sources">game sources and historical coverage</a>.</p>
+        </div>
+    </section>
 </div>
 
 @code {
     [CascadingParameter]
     private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
-
-    [CascadingParameter]
-    private HttpContext? HttpContext { get; set; }
 
     [SupplyParameterFromQuery(Name = "pool")]
     public string? Pool { get; set; }
@@ -1151,8 +1173,14 @@
         string RelativeUri,
         EloRankingsResponse Rankings,
         EloMoversResponse? Movers,
+        EloResultsResponse? Results,
+        UpcomingGamesResponse? Fixtures,
+        UpcomingGamesResponse? UpcomingFixtures,
         string? RankingsApiUri,
-        string? MoversApiUri);
+        string? MoversApiUri,
+        string? ResultsApiUri,
+        string? FixturesApiUri,
+        string? UpcomingFixturesApiUri);
 
     protected override void OnInitialized()
     {
@@ -1226,15 +1254,19 @@
 
         CancelTeamSearchDebounce();
         CaptureActiveRankingsCacheEntry();
+        var previousPool = selectedPool;
+        var previousTeamScope = selectedTeamScope;
         var preserveCurrentData = IsPageOnlyNavigation(currentUri, lastLoadedUri) ||
             IsRankingsMoversNavigation(currentUri, lastLoadedUri);
 
         selectedPool = EloPoolKeys.IsSupported(Pool?.Trim().ToLowerInvariant() ?? string.Empty)
             ? Pool!.Trim().ToLowerInvariant()
             : EloPoolKeys.Default;
+        var poolChanged = !string.Equals(previousPool, selectedPool, StringComparison.Ordinal);
         selectedTeamScope = SupportsTeamScope
             ? EloTeamScopes.Normalize(Teams)
             : EloTeamScopes.Current;
+        var teamScopeChanged = !string.Equals(previousTeamScope, selectedTeamScope, StringComparison.Ordinal);
         selectedCountry = Country;
         selectedCompetition = Competition;
         countrySearch = selectedCountry;
@@ -1306,17 +1338,15 @@
             upcomingFixtures = null;
         }
         CloseResultExplanation();
-        if (!preserveCurrentData)
+        // Keep the existing ranking table visible while a pool navigation
+        // refreshes, but never reuse its chart data: the series and legend
+        // belong to the selected pool and must be fetched as a unit.
+        if (!preserveCurrentData || poolChanged || teamScopeChanged)
         {
             evolution = null;
             evolutionRankings = null;
             evolutionChartSeries = [];
             fullEvolution = null;
-        }
-
-        if (IsEnhancedNavigationServerRequest())
-        {
-            return;
         }
 
         try
@@ -1331,73 +1361,107 @@
         {
             Logger.LogError(ex, "Could not restore prerendered rankings state; loading it again interactively.");
         }
-
         await RefreshAsync();
         if (IsGraphView)
         {
             await LoadChartAsync();
         }
 
+        CachePrerenderedPageState(currentUri);
         RegisterPersistenceAtEndOfInitialization();
     }
 
     private void RegisterPersistenceAtEndOfInitialization()
         => persistingSubscription ??= PersistentState.RegisterOnPersisting(PersistPageStateAsync);
 
-    private bool IsEnhancedNavigationServerRequest()
-        => HttpContext?.Request.Headers.Accept.ToString()
-            .Contains("blazor-enhanced-nav=on", StringComparison.OrdinalIgnoreCase) == true;
-
     private bool TryRestorePersistedPageState(string currentUri)
     {
-        if (!PersistentState.TryTakeFromJson<string>(PersistedPageStateKey, out var cacheToken) ||
-            string.IsNullOrWhiteSpace(cacheToken) ||
-            !PrerenderCache.TryGetValue<PersistedRankingsPageState>(cacheToken, out var persistedState) ||
-            persistedState is null ||
-            !string.Equals(
-                persistedState.RelativeUri,
-                Navigation.ToBaseRelativePath(currentUri),
-                StringComparison.Ordinal))
+        var relativeUri = Navigation.ToBaseRelativePath(currentUri);
+        PersistentState.TryTakeFromJson<string>(PersistedPageStateKey, out var persistedCacheKey);
+        PersistedRankingsPageState? persistedState = null;
+        if (!string.IsNullOrWhiteSpace(persistedCacheKey))
+        {
+            PrerenderCache.TryGetValue(persistedCacheKey, out persistedState);
+        }
+
+        if (persistedState is null ||
+            !string.Equals(persistedState.RelativeUri, relativeUri, StringComparison.Ordinal))
+        {
+            PrerenderCache.TryGetValue(BuildPrerenderCacheKey(relativeUri), out persistedState);
+        }
+
+        if (persistedState is null ||
+            !string.Equals(persistedState.RelativeUri, relativeUri, StringComparison.Ordinal))
         {
             return false;
         }
 
-        PrerenderCache.Remove(cacheToken);
-
         response = persistedState.Rankings;
         movers = persistedState.Movers;
+        results = persistedState.Results;
+        fixtures = persistedState.Fixtures;
+        upcomingFixtures = persistedState.UpcomingFixtures;
         lastRankingsApiUri = persistedState.RankingsApiUri;
         lastMoversApiUri = persistedState.MoversApiUri;
-        page = selectedView == "movers" && movers is not null ? movers.Page : response.Page;
+        lastResultsApiUri = persistedState.ResultsApiUri;
+        lastFixturesApiUri = persistedState.FixturesApiUri;
+        lastUpcomingFixturesApiUri = persistedState.UpcomingFixturesApiUri;
+        page = selectedView switch
+        {
+            "movers" when movers is not null => movers.Page,
+            "results" when results is not null => results.Page,
+            _ => response.Page
+        };
         requestedPage = page;
         isBusy = false;
 
-        var cacheKey = BuildRankingsClientCacheKey(BuildApiUri());
-        StoreRankingsCacheEntry(cacheKey);
+        var clientCacheKey = BuildRankingsClientCacheKey(BuildApiUri());
+        StoreRankingsCacheEntry(clientCacheKey);
         return true;
     }
 
     private Task PersistPageStateAsync()
     {
-        if (response is not null && selectedView is "rankings" or "movers")
+        var cacheKey = CachePrerenderedPageState(Navigation.Uri);
+        if (cacheKey is not null)
         {
-            var cacheToken = Guid.NewGuid().ToString("N");
-            PrerenderCache.Set(
-                cacheToken,
-                new PersistedRankingsPageState(
-                    Navigation.ToBaseRelativePath(Navigation.Uri),
-                    response,
-                    selectedView == "movers" ? movers : null,
-                    lastRankingsApiUri,
-                    selectedView == "movers" ? lastMoversApiUri : null),
-                TimeSpan.FromMinutes(2));
             PersistentState.PersistAsJson(
                 PersistedPageStateKey,
-                cacheToken);
+                cacheKey);
         }
 
         return Task.CompletedTask;
     }
+
+    private string? CachePrerenderedPageState(string currentUri)
+    {
+        if (response is null || selectedView is not ("rankings" or "movers" or "results" or "fixtures"))
+        {
+            return null;
+        }
+
+        var relativeUri = Navigation.ToBaseRelativePath(currentUri);
+        var cacheKey = BuildPrerenderCacheKey(relativeUri);
+        PrerenderCache.Set(
+            cacheKey,
+            new PersistedRankingsPageState(
+                relativeUri,
+                response,
+                selectedView == "movers" ? movers : null,
+                selectedView == "results" ? results : null,
+                selectedView == "fixtures" ? fixtures : null,
+                selectedView == "fixtures" ? upcomingFixtures : null,
+                lastRankingsApiUri,
+                selectedView == "movers" ? lastMoversApiUri : null,
+                selectedView == "results" ? lastResultsApiUri : null,
+                selectedView == "fixtures" ? lastFixturesApiUri : null,
+                selectedView == "fixtures" ? lastUpcomingFixturesApiUri : null),
+            TimeSpan.FromMinutes(2));
+        return cacheKey;
+    }
+
+    private static string BuildPrerenderCacheKey(string relativeUri)
+        => $"rankings-page-state:{relativeUri}";
 
     private async Task ApplyFiltersAsync()
     {
@@ -1428,17 +1492,31 @@
         await RefreshSelectionAsync(1);
     }
 
-    private Task SelectTeamScopeAsync(string teamScope)
+    private async Task SelectTeamScopeAsync(string teamScope)
     {
-        selectedTeamScope = EloTeamScopes.Normalize(teamScope);
-        NavigateToRankings(1);
-        return Task.CompletedTask;
+        var normalizedScope = EloTeamScopes.Normalize(teamScope);
+        if (string.Equals(selectedTeamScope, normalizedScope, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        selectedTeamScope = normalizedScope;
+        var targetUri = BuildRankingsHref(1);
+        await RefreshSelectionAsync(1);
+        lastLoadedUri = targetUri;
+        Navigation.NavigateTo(targetUri);
     }
 
-    private Task SelectPoolAsync(string poolKey)
+    private async Task SelectPoolAsync(string poolKey)
     {
         CancelTeamSearchDebounce();
-        selectedPool = EloPoolKeys.Normalize(poolKey);
+        var normalizedPool = EloPoolKeys.Normalize(poolKey);
+        if (string.Equals(selectedPool, normalizedPool, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        selectedPool = normalizedPool;
         selectedTeamScope = EloTeamScopes.Current;
         selectedCountry = null;
         selectedCompetition = null;
@@ -1457,8 +1535,15 @@
         lastUpcomingFixturesApiUri = null;
         lastEvolutionRankingsApiUri = null;
         lastEvolutionApiUri = null;
-        NavigateToRankings(1);
-        return Task.CompletedTask;
+
+        // Enhanced navigation can update the URL and active tab while the
+        // current interactive circuit remains mounted. Refresh this stateful
+        // surface explicitly so rankings, graph series, and legend always
+        // switch pools together.
+        var targetUri = BuildRankingsHref(1);
+        await RefreshSelectionAsync(1);
+        lastLoadedUri = targetUri;
+        Navigation.NavigateTo(targetUri);
     }
 
     private async Task ClearTeamSearch()
@@ -1637,36 +1722,6 @@
     private void ToggleAdvancedFilters()
         => showAdvancedFilters = !showAdvancedFilters;
 
-    private Task SelectViewAsync(string view)
-    {
-        selectedView = view switch
-        {
-            "results" => "results",
-            "fixtures" => "fixtures",
-            "graph" or "graph-svg" or "graph-canvas" => "graph",
-            _ => "rankings"
-        };
-        if (!ShowsTeamScopeFilter)
-        {
-            selectedTeamScope = EloTeamScopes.Current;
-        }
-
-        if (!ShowsSeasonFilter)
-        {
-            selectedFromSeason = null;
-            selectedToSeason = null;
-        }
-
-        if (!ShowsMinimumGamesFilter)
-        {
-            minimumGames = 0;
-        }
-
-        page = 1;
-        NavigateToRankings(1);
-        return Task.CompletedTask;
-    }
-
     private Task ChangeMoverDirectionAsync(ChangeEventArgs args)
     {
         selectedMoverDirection = string.Equals(args.Value?.ToString(), "fallers", StringComparison.OrdinalIgnoreCase)
@@ -1696,9 +1751,9 @@
         await LoadChartAsync();
     }
 
-    private async Task LoadChartAsync()
+    private async Task LoadChartAsync(bool force = false)
     {
-        if (isChartLoading || response is null)
+        if ((!force && isChartLoading) || response is null)
         {
             return;
         }
@@ -2549,26 +2604,40 @@
         evolutionChartSeries = [];
         isChartVisible = false;
         isChartExpanded = false;
-        isChartLoading = false;
+        isChartLoading = IsGraphView;
         CancelEvolutionRefinement();
-        await RefreshAsync(cancellationToken, expectedTeamSearchVersion, expectedTeamSearch);
-        if (IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch) && IsGraphView)
+        try
         {
-            await LoadChartAsync();
+            await RefreshAsync(cancellationToken, expectedTeamSearchVersion, expectedTeamSearch);
+            if (IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch) && IsGraphView)
+            {
+                await LoadChartAsync(force: true);
+            }
+        }
+        finally
+        {
+            if (!IsGraphView || response is null)
+            {
+                isChartLoading = false;
+            }
         }
     }
 
-    private string BuildRankingsHref(int targetPage)
+    private string BuildRankingsHref(int targetPage, string? targetView = null)
     {
-        var view = string.Equals(selectedView, "movers", StringComparison.OrdinalIgnoreCase)
+        var requestedView = targetView ?? selectedView;
+        var view = string.Equals(requestedView, "movers", StringComparison.OrdinalIgnoreCase)
             ? "movers"
-            : selectedView;
+            : requestedView;
         var route = view == "movers" ? "/movers" : "/rankings";
+        var targetShowsTeamScope = SupportsTeamScope && view is not ("results" or "fixtures" or "movers");
+        var targetShowsSeasonFilter = view is not "fixtures";
+        var targetShowsMinimumGamesFilter = view is "rankings" or "graph" or "movers";
 
         var query = new Dictionary<string, object?>
         {
             ["pool"] = selectedPool == EloPoolKeys.Default ? null : selectedPool,
-            ["teams"] = ShowsTeamScopeFilter && selectedTeamScope == EloTeamScopes.Historical
+            ["teams"] = targetShowsTeamScope && selectedTeamScope == EloTeamScopes.Historical
                 ? selectedTeamScope
                 : null,
             ["movement"] = view == "movers" ? selectedMoverDirection : null,
@@ -2576,9 +2645,9 @@
             ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
             ["country"] = selectedCountry,
             ["competition"] = selectedCompetition,
-            ["fromSeason"] = ShowsSeasonFilter ? selectedFromSeason : null,
-            ["toSeason"] = ShowsSeasonFilter ? selectedToSeason : null,
-            ["minGames"] = ShowsMinimumGamesFilter && minimumGames > 0 ? minimumGames : null,
+            ["fromSeason"] = targetShowsSeasonFilter ? selectedFromSeason : null,
+            ["toSeason"] = targetShowsSeasonFilter ? selectedToSeason : null,
+            ["minGames"] = targetShowsMinimumGamesFilter && minimumGames > 0 ? minimumGames : null,
             ["team"] = teamSearch,
             ["view"] = view == "rankings" ? null : view,
             ["page"] = targetPage > 1 ? targetPage : null
@@ -2932,15 +3001,18 @@
     private string ViewTabClass(string view)
         => selectedView == view ? "view-tab active" : "view-tab";
 
-    private string ViewTitle()
-        => selectedView switch
-        {
-            "results" => "Results",
-            "fixtures" => "Fixtures",
-            "graph" => "Graph",
-            "movers" => "Biggest Movers",
-            _ => "Rankings"
-        };
+    private string? ViewTabAriaCurrent(string view)
+        => selectedView == view ? "page" : null;
+
+    private string SeoTitle()
+        => selectedView == "movers"
+            ? "Biggest Basketball ELO Movers & Team Form | BasketElo"
+            : "Basketball ELO Rankings: NBA, Europe & National Teams | BasketElo";
+
+    private string SeoDescription()
+        => selectedView == "movers"
+            ? "Track the biggest basketball ELO risers and fallers across the NBA, European clubs, and national teams, with recent form and rating changes."
+            : "Explore transparent basketball ELO rankings for NBA, European club, and national teams. Compare ratings, form, results, fixtures, and historical trends.";
 
     private string TeamScopeClass(string teamScope)
         => selectedTeamScope == teamScope ? "franchise-scope-option active" : "franchise-scope-option";
@@ -3190,6 +3262,7 @@
         IReadOnlyCollection<Guid>? teamIdsOverride = null)
     {
         var seasonRange = GetSelectedSeasonDateRange();
+        var pointsPerTeam = EloEvolutionLimits.DefaultPointsPerTeam;
         var activeTeamIds = teamIdsOverride ?? (graphTeamIds.Count > 0
             ? graphTeamIds.ToArray()
             : evolutionChartSeries
@@ -3210,7 +3283,7 @@
             $"rulesetVersion={Uri.EscapeDataString(selectedRuleset)}",
             $"pool={Uri.EscapeDataString(selectedPool)}",
             $"teamIds={Uri.EscapeDataString(teamIds)}",
-            $"pointsPerTeam={EloEvolutionLimits.DefaultPointsPerTeam}"
+            $"pointsPerTeam={pointsPerTeam}"
         };
 
         Append(query, "fromUtc", (viewportFromUtc ?? seasonRange.FromUtc)?.ToString("O"));
@@ -3227,7 +3300,6 @@
         CancelEvolutionRefinement();
         var cancellation = new CancellationTokenSource();
         evolutionRefinementCancellation = cancellation;
-        isEvolutionRefining = true;
         _ = RefineEvolutionAsync(range, cancellation);
         return Task.CompletedTask;
     }
@@ -3237,6 +3309,13 @@
         try
         {
             await Task.Delay(EvolutionRefinementDebounceMilliseconds, cancellation.Token);
+            if (!ReferenceEquals(evolutionRefinementCancellation, cancellation))
+            {
+                return;
+            }
+
+            isEvolutionRefining = true;
+            await InvokeAsync(StateHasChanged);
             var fromUtc = DateTime.SpecifyKind(range.FromUtc.Date, DateTimeKind.Utc);
             var toUtc = DateTime.SpecifyKind(range.ToUtc.Date, DateTimeKind.Utc);
             var evolutionUri = BuildEvolutionApiUri(fromUtc, toUtc);
@@ -3329,6 +3408,12 @@
         evolutionRefinementCancellation = null;
         cancellation?.Cancel();
         isEvolutionRefining = false;
+    }
+
+    private Task CancelEvolutionRefinementAsync()
+    {
+        CancelEvolutionRefinement();
+        return InvokeAsync(StateHasChanged);
     }
 
     private async Task<EloRankingsResponse?> FetchEvolutionRankingsAsync()
@@ -3454,7 +3539,9 @@
         => selectedPool is EloPoolKeys.Nba or EloPoolKeys.EuropeClubs or EloPoolKeys.NationalTeams;
 
     private bool ShowsTeamScopeFilter
-        => SupportsTeamScope && selectedView is not ("results" or "fixtures");
+        => SupportsTeamScope && selectedView is not ("results" or "fixtures" or "movers");
+
+    private bool IsMoversView => selectedView == "movers";
 
     private bool ShowsSeasonFilter
         => selectedView is not "fixtures";

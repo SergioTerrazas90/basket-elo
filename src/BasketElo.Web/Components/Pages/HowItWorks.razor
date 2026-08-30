@@ -1,12 +1,14 @@
 @page "/how-it-works"
 
-<PageTitle>How It Works - BasketElo</PageTitle>
+<SeoHead Title="How Basketball ELO Ratings Work | BasketElo"
+         Description="Learn how BasketElo calculates basketball team ratings using opponent strength, home-court advantage, score margin, competition weight, and transparent ELO formulas."
+         CanonicalPath="/how-it-works" />
 
 <div class="info-page method-page">
     <header class="info-hero be-reveal" style="--reveal-order: 0">
         <div class="info-hero-copy">
             <p class="info-kicker">Method</p>
-            <h1>How the rating works.</h1>
+            <h1>How basketball ELO ratings work.</h1>
             <p class="info-lede">A team starts at 1,500. After every game, its rating moves by an amount shaped by the opponent, the result, home court, and the score margin.</p>
         </div>
         <dl class="info-facts" aria-label="Method at a glance">
@@ -16,28 +18,24 @@
         </dl>
     </header>
 
-    <nav class="info-jump-links be-reveal" style="--reveal-order: 1" aria-label="On this page">
-        <span>On this page</span>
-        <a href="#short-version">The short version</a>
-        <a href="#models">The two models</a>
-        <a href="#example">Worked example</a>
-        <a href="#limits">What ELO misses</a>
-    </nav>
-
-    <section id="short-version" class="info-section be-reveal" style="--reveal-order: 2" aria-labelledby="short-version-heading">
+    <section id="short-version" class="info-section be-reveal" style="--reveal-order: 1" aria-labelledby="short-version-heading">
         <div class="info-section-label"><span>01</span><span>The short version</span></div>
         <div class="info-section-body">
-            <h2 id="short-version-heading">Every result corrects an expectation.</h2>
-            <p class="info-section-intro">Before a game, the rating gap becomes a win probability. After the game, the model compares that expectation with what actually happened.</p>
+            <h2 id="short-version-heading">The chess idea, in three moves.</h2>
+            <p class="info-section-intro">ELO does not reward every win equally. It first estimates what should happen, then moves each rating according to how surprising the actual result was.</p>
             <ol class="method-steps">
-                <li><span>1</span><div><h3>Compare</h3><p>Higher-rated teams are expected to win more often. Home advantage is included before that probability is calculated.</p></div></li>
-                <li><span>2</span><div><h3>Observe</h3><p>The final result—and, in the adjusted model, the score margin—shows how far reality was from the expectation.</p></div></li>
-                <li><span>3</span><div><h3>Update</h3><p>The winner gains exactly what the loser gives up. Surprises move the ratings more than expected results.</p></div></li>
+                <li><span>1</span><div><h3>Expect</h3><p>The rating gap becomes an expected score. Equal players start at 50–50; a 400-point advantage is worth roughly 91%.</p></div></li>
+                <li><span>2</span><div><h3>Score</h3><p>Chess records 1 for a win, 0.5 for a draw, and 0 for a loss. Basketball uses 1 or 0 because rated games require a winner.</p></div></li>
+                <li><span>3</span><div><h3>Update</h3><p>The new rating is the old rating plus K × (actual − expected). An upset therefore moves more points than a routine win.</p></div></li>
             </ol>
+            <div class="method-core-formula" aria-label="Core ELO update formula">
+                <span>Classic ELO</span>
+                <code>new rating = old rating + K × (actual − expected)</code>
+            </div>
         </div>
     </section>
 
-    <section id="models" class="info-section be-reveal" style="--reveal-order: 3" aria-labelledby="models-heading">
+    <section id="models" class="info-section be-reveal" style="--reveal-order: 2" aria-labelledby="models-heading">
         <div class="info-section-label"><span>02</span><span>Two views</span></div>
         <div class="info-section-body">
             <h2 id="models-heading">Basic and Adjusted ELO answer slightly different questions.</h2>
@@ -57,15 +55,15 @@
         </div>
     </section>
 
-    <section id="example" class="info-section be-reveal" style="--reveal-order: 4" aria-labelledby="example-heading">
+    <section id="example" class="info-section be-reveal" style="--reveal-order: 3" aria-labelledby="example-heading">
         <div class="info-section-label"><span>03</span><span>Worked example</span></div>
         <div class="info-section-body">
             <h2 id="example-heading">A 1,600 team hosts a 1,500 team.</h2>
             <p class="info-section-intro">Using the current adjusted model, the calculation starts like this:</p>
             <div class="formula-example">
                 <article><span>Effective gap</span><code>1,600 + 70 − 1,500 = 170</code><p>The home team receives a 70-point home-court adjustment.</p></article>
-                <article><span>Win expectation</span><code>170 points → 73%</code><p>That gap makes the home team roughly a 73% favourite.</p></article>
-                <article><span>Base update</span><code>20 × (1 − 0.73) = +5.4</code><p>An expected win earns a modest increase before the score-margin adjustment.</p></article>
+                <article><span>Win expectation</span><code>1 ÷ (1 + 10^(-170 ÷ 400)) = 72.7%</code><p>The classic ELO curve uses 400 as its probability scale. Substituting the 170-point gap produces 0.72683, rounded here to 72.7%.</p></article>
+                <article><span>Base update</span><code>20 × (1 − 0.72683) = +5.46</code><p>If the favourite wins, it gains a modest 5.46 points before the score-margin adjustment.</p></article>
             </div>
             <div class="method-constants" aria-label="Current model constants">
                 <span><strong>20</strong> K-factor</span>
@@ -77,7 +75,7 @@
         </div>
     </section>
 
-    <section id="limits" class="info-section info-section-last be-reveal" style="--reveal-order: 5" aria-labelledby="limits-heading">
+    <section id="limits" class="info-section info-section-last be-reveal" style="--reveal-order: 4" aria-labelledby="limits-heading">
         <div class="info-section-label"><span>04</span><span>Limits</span></div>
         <div class="info-section-body">
             <h2 id="limits-heading">A useful signal, not a verdict.</h2>

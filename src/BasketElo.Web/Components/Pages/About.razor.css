@@ -1,6 +1,11 @@
+.about-page .info-section {
+    padding: clamp(1.25rem, 2vw, 1.75rem) 0;
+}
+
 .about-prose { max-width: 48rem; }
 .about-prose p { margin: 0; color: var(--color-muted); font-size: 1rem; line-height: 1.72; }
 .about-prose p + p { margin-top: var(--space-4); }
+.info-lede + .info-lede { margin-top: var(--space-3); }
 
 .about-journey {
     display: grid;
@@ -33,26 +38,35 @@
 .about-journey h3 { margin: 0 0 0.45rem; font-family: var(--font-display); font-size: 1.35rem; font-weight: 600; }
 .about-journey p { margin: 0; color: var(--color-muted); }
 
-.about-closing {
+.about-stack {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-7);
-    margin-top: clamp(2.5rem, 5vw, 4.5rem);
-    padding: clamp(1.5rem, 3vw, 2.5rem);
-    border-radius: var(--radius-xl);
-    background: var(--color-brand-dark);
-    color: var(--color-inverse);
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin: var(--space-6) 0;
 }
 
-.about-closing > div { display: grid; gap: 0.35rem; max-width: 38rem; }
-.about-closing > div > span { color: #ffc489; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
-.about-closing strong { color: var(--color-inverse); font-family: var(--font-display); font-size: clamp(1.4rem, 2.8vw, 2.25rem); font-weight: 500; line-height: 1.15; }
-.about-closing nav { display: grid; gap: var(--space-2); flex: 0 0 auto; }
-.about-closing a { color: var(--color-inverse); font-size: 0.82rem; font-weight: 800; text-underline-offset: 0.22em; }
+.about-stack span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.2rem;
+    border: 1px solid rgba(15, 75, 82, 0.22);
+    border-radius: var(--radius-pill);
+    background: rgba(224, 239, 233, 0.55);
+    color: var(--color-brand-dark);
+    padding: 0.35rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.about-stack-disclaimer {
+    border-left: 3px solid var(--color-accent);
+    background: rgba(255, 248, 231, 0.65);
+    padding: var(--space-4) var(--space-5);
+}
 
 @media (max-width: 760px) {
     .about-journey { grid-template-columns: 1fr; }
     .about-journey li { min-height: 0; }
-    .about-closing { align-items: flex-start; flex-direction: column; }
 }

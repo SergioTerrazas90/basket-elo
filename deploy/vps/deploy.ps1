@@ -19,6 +19,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $artifactRoot = Join-Path $repoRoot "artifacts\publish"
 $remote = "$User@$Server"
+$caddySite = Join-Path $repoRoot "deploy\caddy\basket-elo.caddy"
 
 $services = @(
     @{
@@ -50,6 +51,7 @@ if (Test-Path $artifactRoot) {
 New-Item -ItemType Directory -Path $artifactRoot | Out-Null
 
 foreach ($service in $services) {
+    Write-Host "Publishing $($service.Name) for $Runtime ($Configuration)..."
     $publishDir = Join-Path $artifactRoot $service.Name
     New-Item -ItemType Directory -Path $publishDir | Out-Null
 
@@ -72,6 +74,7 @@ foreach ($service in $services) {
 }
 
 foreach ($service in $services) {
+    Write-Host "Installing $($service.Name) on $remote..."
     $archive = Join-Path $artifactRoot "$($service.Name).tar.gz"
     $remoteArchive = "/tmp/basket-elo-$($service.Name).tar.gz"
     $remoteRelease = "$RemoteRoot/releases/$($service.Name)"
@@ -93,6 +96,19 @@ foreach ($service in $services) {
     }
 }
 
+Write-Host "Validating and reloading the BasketElo Caddy site..."
+$remoteCaddySite = "/tmp/basket-elo.caddy"
+scp -i $IdentityFile -P $SshPort $caddySite "${remote}:$remoteCaddySite"
+if ($LASTEXITCODE -ne 0) {
+    throw "Caddy site upload failed."
+}
+
+$caddyCommand = "sudo install -m 0644 '$remoteCaddySite' /etc/caddy/sites/basket-elo.caddy && rm '$remoteCaddySite' && sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy"
+ssh -i $IdentityFile -p $SshPort $remote $caddyCommand
+if ($LASTEXITCODE -ne 0) {
+    throw "Caddy validation or reload failed."
+}
+
 $restartCommand = @(
     "sudo systemctl restart basket-elo-api",
     "sudo systemctl restart basket-elo-worker",
@@ -105,4 +121,24 @@ if ($LASTEXITCODE -ne 0) {
     throw "Remote restart or status check failed."
 }
 
-Write-Host "Deployment completed. Open http://${Server}:8081/"
+Write-Host "Running VPS health, SEO, and server-rendering checks..."
+$verifyCommand = @(
+    "curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 2 http://127.0.0.1:5101/health >/dev/null",
+    "curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 2 http://127.0.0.1:5102/health >/dev/null",
+    "curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 2 http://127.0.0.1:5100/health >/dev/null",
+    "curl --fail --silent --show-error http://127.0.0.1:5100/robots.txt >/dev/null",
+    "curl --fail --silent --show-error http://127.0.0.1:5100/sitemap.xml >/dev/null",
+    "curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=results&pool=nba' | grep 'Recent results' >/dev/null",
+    "! curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=results&pool=nba' | grep 'Loading completed results' >/dev/null",
+    "curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=fixtures&pool=nba' | grep 'Upcoming fixtures' >/dev/null",
+    "! curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=fixtures&pool=nba' | grep 'Loading fixtures' >/dev/null"
+) -join " && "
+
+ssh -i $IdentityFile -p $SshPort $remote $verifyCommand
+if ($LASTEXITCODE -ne 0) {
+    throw "Post-deployment verification failed."
+}
+
+Write-Host "Deployment completed and verified."
+Write-Host "Public site: http://${Server}:8081/"
+Write-Host "Sitemap: http://${Server}:8081/sitemap.xml"

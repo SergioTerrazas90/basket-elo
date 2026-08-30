@@ -50,13 +50,6 @@
                             <span>@CurrentRatedPointCount sampled in view / @TotalRatedPointCount total rated games</span>
                         </span>
                     }
-                    <span class="elo-chart-refinement-slot" aria-live="polite">
-                        @if (ChartBusy)
-                        {
-                            <span class="spinner-border spinner-border-sm elo-chart-refinement-spinner" aria-hidden="true"></span>
-                            <span class="visually-hidden">@ChartBusyLabel</span>
-                        }
-                    </span>
                 </span>
             </div>
         }
@@ -115,6 +108,14 @@
                     <span>Rank #@selectedPoint.Rank</span>
                 }
                 <button type="button" class="elo-chart-selection-clear" @onclick="ClearSelection" aria-label="Clear selected chart point">×</button>
+            </div>
+        }
+
+        @if (ChartBusy)
+        {
+            <div class="elo-chart-loading-overlay" role="status" aria-live="polite">
+                <span class="spinner-border elo-chart-loading-spinner" aria-hidden="true"></span>
+                <span class="visually-hidden">@ChartBusyLabel</span>
             </div>
         }
 
@@ -289,6 +290,9 @@
     public EventCallback<EloChartViewportRange> ViewportRefinementRequested { get; set; }
 
     [Parameter]
+    public EventCallback ViewportInteractionStarted { get; set; }
+
+    [Parameter]
     public EventCallback FullRangeRequested { get; set; }
 
     [Parameter]
@@ -372,9 +376,12 @@
         }
     }
 
-    private bool ChartBusy => IsRefining || chartPaintPending;
+    // Keep the visible busy state for data refinement only. Local Dygraph
+    // repainting is intentionally silent so fast view changes do not flicker
+    // a spinner over an otherwise usable chart.
+    private bool ChartBusy => IsRefining;
 
-    private string ChartBusyLabel => IsRefining ? "Refreshing chart detail" : "Rendering chart";
+    private string ChartBusyLabel => "Refreshing chart detail";
 
     private string CategoryProperty => samplingMode == EloChartSamplingMode.GameByGame
         ? nameof(EloChartPoint.ActiveDateIndex)
@@ -618,6 +625,12 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    [JSInvokable("HandleDygraphRangeInteractionStart")]
+    public Task HandleDygraphRangeInteractionStart()
+        => ViewportInteractionStarted.HasDelegate
+            ? ViewportInteractionStarted.InvokeAsync()
+            : Task.CompletedTask;
+
     private async Task ShowFullRange()
     {
         ResetView();
@@ -849,22 +862,35 @@
             {
                 name = series.TeamName,
                 color = series.Color,
-                points = series.Points.Select(point => new
-                {
-                    x = ToUnixMilliseconds(point.GameDateTimeUtc),
-                    y = (double)point.Elo,
-                    delta = point.EloDelta.HasValue ? (double?)point.EloDelta.Value : null,
-                    rank = point.Rank,
-                    gameId = point.GameId?.ToString("D"),
-                    competition = point.Competition,
-                    season = point.Season,
-                    opponent = point.Opponent,
-                    wasHome = point.WasHome,
-                    teamScore = point.TeamScore,
-                    opponentScore = point.OpponentScore
-                }).ToList()
+                points = series.Points.Select(BuildDygraphPointPayload).ToList()
             }).ToList()
         };
+
+    private static object?[] BuildDygraphPointPayload(EloChartPoint point)
+    {
+        object?[] payload =
+        [
+            ToUnixMilliseconds(point.GameDateTimeUtc),
+            (double)point.Elo,
+            point.EloDelta.HasValue ? (double?)point.EloDelta.Value : null,
+            point.Rank,
+            point.GameId?.ToString("D"),
+            point.Competition,
+            point.Season,
+            point.Opponent,
+            point.WasHome,
+            point.TeamScore,
+            point.OpponentScore
+        ];
+
+        var lastValueIndex = payload.Length - 1;
+        while (lastValueIndex >= 2 && payload[lastValueIndex] is null)
+        {
+            lastValueIndex--;
+        }
+
+        return payload[..(lastValueIndex + 1)];
+    }
 
     private static long ToUnixMilliseconds(DateTime value)
         => new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc)).ToUnixTimeMilliseconds();

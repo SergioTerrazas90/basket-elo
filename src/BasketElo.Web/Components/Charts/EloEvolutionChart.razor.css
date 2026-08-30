@@ -177,21 +177,6 @@
     white-space: nowrap;
 }
 
-.elo-chart-refinement-slot {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 0.85rem;
-    height: 0.85rem;
-    flex: 0 0 0.85rem;
-}
-
-.elo-chart-refinement-spinner {
-    width: 0.75rem;
-    height: 0.75rem;
-    border-width: 0.12em;
-}
-
 .elo-dygraph-chart {
     position: relative;
     display: block;
@@ -364,6 +349,23 @@
 
 .elo-chart-selection-clear:hover {
     color: var(--color-text);
+}
+
+.elo-chart-loading-overlay {
+    position: absolute;
+    z-index: 15;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--color-surface) 58%, transparent);
+    pointer-events: none;
+}
+
+.elo-chart-loading-spinner {
+    width: 2rem;
+    height: 2rem;
+    border-width: 0.2em;
+    color: var(--color-accent);
 }
 
 /* Kept as a compatibility selector for older rendered chart state. */

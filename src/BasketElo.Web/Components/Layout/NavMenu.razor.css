@@ -108,27 +108,18 @@
     text-decoration: none;
 }
 
-.nav-information ::deep .nav-information-link::before {
-    width: 0;
-    height: 0.35rem;
-    margin-right: 0;
-    border-radius: 50%;
-    background: var(--color-accent);
-    content: "";
-    opacity: 0;
-    transition: width var(--motion-fast), margin var(--motion-fast), opacity var(--motion-fast);
-}
-
 .nav-information ::deep .nav-information-link:hover,
 .nav-information ::deep .nav-information-link:focus-visible,
 .nav-information ::deep .nav-information-link.active {
     color: var(--color-text);
 }
 
-.nav-information ::deep .nav-information-link.active::before {
-    width: 0.35rem;
-    margin-right: 0.35rem;
-    opacity: 1;
+.nav-information ::deep .nav-information-link.active {
+    background-image: radial-gradient(circle, var(--color-accent) 0 45%, transparent 50%);
+    background-position: left 0.15rem center;
+    background-repeat: no-repeat;
+    background-size: 0.35rem 0.35rem;
+    font-weight: 820;
 }
 
 .nav-primary ::deep .nav-link {
@@ -143,30 +134,18 @@
     text-decoration: none;
 }
 
-.nav-primary ::deep .nav-link::after {
-    position: absolute;
-    right: 0.8rem;
-    bottom: -1px;
-    left: 0.8rem;
-    height: 2px;
-    border-radius: var(--radius-pill);
-    background: var(--color-accent);
-    content: "";
-    transform: scaleX(0);
-    transform-origin: right;
-    transition: transform var(--motion-standard);
-}
-
 .nav-primary ::deep .nav-link:hover,
 .nav-primary ::deep .nav-link:focus-visible,
 .nav-primary ::deep .nav-link.active {
     color: var(--color-text);
 }
 
-.nav-primary ::deep .nav-link:hover::after,
-.nav-primary ::deep .nav-link.active::after {
-    transform: scaleX(1);
-    transform-origin: left;
+.nav-primary ::deep .nav-link.active {
+    background-image: radial-gradient(circle, var(--color-accent) 0 45%, transparent 50%);
+    background-position: left 0.15rem center;
+    background-repeat: no-repeat;
+    background-size: 0.35rem 0.35rem;
+    font-weight: 820;
 }
 
 .nav-utilities {
@@ -370,13 +349,8 @@
         justify-content: center;
         border: 0;
         border-radius: 0;
-        background: transparent;
+        background-color: transparent;
         padding: 0.45rem;
-    }
-
-    .nav-primary ::deep .nav-link::after {
-        right: 25%;
-        left: 25%;
     }
 
     .nav-utilities {
@@ -397,7 +371,7 @@
 
     .nav-information ::deep .nav-information-link {
         justify-content: flex-start;
-        padding-inline: 0;
+        padding-inline: 0.75rem;
     }
 
     .nav-disclosure > summary {
@@ -430,13 +404,6 @@
     .nav-primary ::deep .nav-link {
         justify-content: flex-start;
         padding-inline: 0.75rem;
-    }
-
-    .nav-primary ::deep .nav-link::after {
-        right: auto;
-        bottom: 0.45rem;
-        left: 0.75rem;
-        width: 1.25rem;
     }
 
     .nav-information {

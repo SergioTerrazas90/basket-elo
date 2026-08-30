@@ -1,4 +1,13 @@
 :8081 {
+    encode zstd gzip
+
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    @staticAssets path /app.css /BasketElo.Web.styles.css /bootstrap/* /_content/* /js/* /brand-mark.svg /favicon.png
+    header @staticAssets Cache-Control "public, max-age=604800"
+
     reverse_proxy 127.0.0.1:5100
 }
-

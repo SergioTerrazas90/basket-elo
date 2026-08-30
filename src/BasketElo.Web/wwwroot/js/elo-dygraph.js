@@ -90,7 +90,22 @@
         };
 
         payload.series.forEach((series, seriesIndex) => {
-            series.points.forEach(point => {
+            series.points.forEach(rawPoint => {
+                const point = Array.isArray(rawPoint)
+                    ? {
+                        x: rawPoint[0],
+                        y: rawPoint[1],
+                        delta: rawPoint[2] ?? null,
+                        rank: rawPoint[3] ?? null,
+                        gameId: rawPoint[4] ?? null,
+                        competition: rawPoint[5] ?? null,
+                        season: rawPoint[6] ?? null,
+                        opponent: rawPoint[7] ?? null,
+                        wasHome: rawPoint[8] ?? null,
+                        teamScore: rawPoint[9] ?? null,
+                        opponentScore: rawPoint[10] ?? null
+                    }
+                    : rawPoint;
                 const sourceTime = Number(point.x);
                 const sourceRows = rowsBySourceTime.get(sourceTime) ?? [];
                 let row = sourceRows.find(candidate => candidate.values[seriesIndex] == null);
@@ -144,6 +159,13 @@
     }
 
     function notifyViewChange(state, minDate, maxDate) {
+        // Dygraphs may emit delayed draw/zoom callbacks after updateOptions.
+        // A range-selector drag owns the viewport until release, so never
+        // request server refinement while that gesture is still active.
+        if (state.rangeDrag) {
+            return;
+        }
+
         const range = selectedRange(state, minDate, maxDate);
         if (state.lastNotifiedRange &&
             Math.abs(state.lastNotifiedRange.start - range.start) < 0.000001 &&
@@ -797,6 +819,11 @@
                 rightPosition: geometry.rightPosition,
                 startPointer: event.clientX
             };
+
+            if (state.dotNet) {
+                Promise.resolve(state.dotNet.invokeMethodAsync("HandleDygraphRangeInteractionStart"))
+                    .catch(error => console.error("Could not start Dygraphs range interaction.", error));
+            }
 
             document.addEventListener("pointermove", onDragMove, { capture: true, passive: false });
             document.addEventListener("pointerup", onDragEnd, true);

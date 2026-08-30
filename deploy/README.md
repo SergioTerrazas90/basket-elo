@@ -67,7 +67,7 @@ Do not replace the existing Caddyfile. The Basket ELO snippet listens on `:8081`
 .\deploy\vps\deploy.ps1 -User ubuntu -Server 152.228.139.241 -IdentityFile "$HOME\.ssh\ovh_vps-22091453"
 ```
 
-The script publishes the three apps and tools as `linux-x64` self-contained builds, uploads them, installs them under `/opt/basket-elo`, and restarts the three systemd services.
+The script publishes the three apps and tools as `linux-x64` self-contained builds, uploads them, installs them under `/opt/basket-elo`, validates and reloads the BasketElo Caddy site, and restarts the three systemd services. It finishes by checking all service health endpoints, `robots.txt`, `sitemap.xml`, and the server-rendered Results and Fixtures HTML; a failed check fails the deployment.
 
 It also publishes the one-shot historical-ingestion tools under
 `/opt/basket-elo/releases/tools`; the tools are not started as a service.

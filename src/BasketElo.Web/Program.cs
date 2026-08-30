@@ -7,9 +7,12 @@ using BasketElo.Web.Elo;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Radzen;
 using System.Security.Claims;
+using System.Text;
+using System.Xml.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
 const string devPersonaCookieName = "BasketElo.DevPersona";
@@ -110,6 +113,12 @@ if (authOptions.Enabled && isGoogleLoginConfigured)
 
 builder.Services.AddAuthorization();
 builder.Services.AddTransient<AuthenticatedApiHttpMessageHandler>();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedHost |
+        ForwardedHeaders.XForwardedProto;
+});
 
 builder.Services.AddHttpClient(
     "BasketElo.Api",
@@ -130,6 +139,8 @@ builder.Services.AddScoped(serviceProvider =>
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
@@ -139,6 +150,15 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStaticFiles();
+app.Use(async (httpContext, next) =>
+{
+    if (IsPrivateOrUtilityPath(httpContext.Request.Path))
+    {
+        httpContext.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+    }
+
+    await next(httpContext);
+});
 app.UseAuthentication();
 if (!authOptions.Enabled)
 {
@@ -223,8 +243,50 @@ app.MapGet("/dev/persona", (HttpContext httpContext, string? persona, string? re
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/robots.txt", (HttpContext httpContext, IConfiguration configuration) =>
+{
+    var siteRoot = ResolveSiteRoot(httpContext, configuration);
+    var robots = $"User-agent: *\nAllow: /\n\nSitemap: {siteRoot}sitemap.xml\n";
+    return Results.Text(robots, "text/plain", Encoding.UTF8);
+});
+app.MapGet("/sitemap.xml", (HttpContext httpContext, IConfiguration configuration) =>
+{
+    var siteRoot = ResolveSiteRoot(httpContext, configuration);
+    string[] publicPaths = ["", "movers", "browse", "model-lab", "how-it-works", "data-sources", "about", "sponsor"];
+    XNamespace ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
+    var sitemap = new XDocument(
+        new XElement(ns + "urlset",
+            publicPaths.Select(path =>
+                new XElement(ns + "url",
+                    new XElement(ns + "loc", new Uri(new Uri(siteRoot), path).AbsoluteUri)))));
+    return Results.Text(sitemap.ToString(SaveOptions.DisableFormatting), "application/xml", Encoding.UTF8);
+});
 
 app.Run();
+
+static string ResolveSiteRoot(HttpContext httpContext, IConfiguration configuration)
+{
+    var configuredUrl = configuration["Seo:SiteUrl"]?.Trim();
+    if (!string.IsNullOrWhiteSpace(configuredUrl))
+    {
+        return configuredUrl.TrimEnd('/') + "/";
+    }
+
+    return $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/";
+}
+
+static bool IsPrivateOrUtilityPath(PathString path)
+{
+    var value = path.Value ?? string.Empty;
+    string[] prefixes =
+    [
+        "/admin", "/backfill", "/games", "/upcoming", "/home", "/counter",
+        "/weather", "/error", "/auth", "/dev", "/signin-google", "/model-lab/runs", "/teams"
+    ];
+
+    return prefixes.Any(prefix => value.Equals(prefix, StringComparison.OrdinalIgnoreCase) ||
+        value.StartsWith(prefix + "/", StringComparison.OrdinalIgnoreCase));
+}
 
 static string NormalizeReturnUrl(HttpContext httpContext, string? returnUrl)
 {

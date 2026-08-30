@@ -576,6 +576,16 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 })
                 .IsDescending(false, false, false, true, true)
                 .IncludeProperties(x => new { x.EloDelta, x.OpponentTeamId, x.ActualScore });
+            entity.HasIndex(x => new
+                {
+                    x.EloPoolKey,
+                    x.RulesetVersion,
+                    x.TeamId,
+                    x.GameDateTimeUtc,
+                    x.PostElo
+                })
+                .HasDatabaseName("IX_rating_history_EvolutionOverview")
+                .IncludeProperties(x => new { x.GameId, x.EloDelta, x.RatingPositionAfter });
             entity.HasIndex(x => new { x.EloPoolKey, x.GameId, x.TeamId, x.RulesetVersion }).IsUnique();
         });
 

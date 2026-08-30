@@ -4,13 +4,15 @@
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
-<PageTitle>Browse @selectedPoolName</PageTitle>
+<SeoHead Title="Basketball Ratings Directory by League & Country | BasketElo"
+         Description="Browse basketball ratings by country, competition, season, and rating pool, including the NBA, European clubs, and national teams."
+         CanonicalPath="/browse" />
 
 <div class="browse-page">
     <header class="browse-header">
         <div>
             <p class="eyebrow">Ratings directory</p>
-            <h1>Browse @selectedPoolName</h1>
+            <h1>Browse @selectedPoolName basketball ratings</h1>
             <p class="intro">Start with a country, competition, or league tier, then move into the ratings and games that make up the context.</p>
         </div>
         <a class="btn btn-outline-secondary" href="@RankingsHref()">Open rankings</a>

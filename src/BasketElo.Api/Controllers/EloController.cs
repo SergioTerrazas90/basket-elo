@@ -604,7 +604,7 @@ public class EloController(
 
         foreach (var poolKey in new[] { EloPoolKeys.Default, EloPoolKeys.EuropeClubs })
         {
-            await GetRankings(
+            var rankingResult = await GetRankings(
                 rulesetVersion: null,
                 pool: poolKey,
                 country: null,
@@ -619,6 +619,31 @@ public class EloController(
                 page: 1,
                 pageSize: 50,
                 tournamentCycle: null,
+                cancellationToken: cancellationToken);
+
+            var rankings = rankingResult.Value ??
+                (rankingResult.Result as OkObjectResult)?.Value as EloRankingsResponse;
+            var overviewTeamIds = rankings?.Rankings
+                .Take(20)
+                .Select(row => row.TeamId)
+                .ToList() ?? [];
+            if (overviewTeamIds.Count == 0)
+            {
+                continue;
+            }
+
+            await GetRankingEvolution(
+                rulesetVersion: null,
+                pool: poolKey,
+                teamIds: string.Join(',', overviewTeamIds),
+                country: null,
+                competition: null,
+                season: null,
+                tournamentCycle: null,
+                fromUtc: null,
+                toUtc: null,
+                excludeTeamIds: null,
+                pointsPerTeam: EloEvolutionLimits.DefaultPointsPerTeam,
                 cancellationToken: cancellationToken);
         }
     }
@@ -997,7 +1022,7 @@ public class EloController(
 
         var includeDiagnostics = IsAdminDiagnosticsRequest();
         pointsPerTeam = EloEvolutionLimits.NormalizePointsPerTeam(pointsPerTeam);
-        var canCacheDefaultEvolution = !includeDiagnostics &&
+        var isDefaultEvolutionCacheCandidate = !includeDiagnostics &&
             IsDefaultResponseCachePool(poolKey) &&
             selectedRuleset == EloRulesetVersions.Default &&
             !string.IsNullOrWhiteSpace(teamIds) &&
@@ -1007,17 +1032,21 @@ public class EloController(
             string.IsNullOrWhiteSpace(tournamentCycle) &&
             !fromUtc.HasValue &&
             !toUtc.HasValue &&
-            pointsPerTeam == EloEvolutionLimits.DefaultPointsPerTeam &&
-            await IsDefaultEvolutionTeamSetAsync(poolKey, selectedRuleset, selectedTeamIds, cancellationToken);
-        var evolutionCacheKey = canCacheDefaultEvolution
+            pointsPerTeam == EloEvolutionLimits.DefaultPointsPerTeam;
+        var candidateEvolutionCacheKey = isDefaultEvolutionCacheCandidate
             ? EloResponseCache.EvolutionKey(poolKey, selectedRuleset, selectedTeamIds, competition, season, tournamentCycle, fromUtc, toUtc, pointsPerTeam)
             : null;
-        if (evolutionCacheKey is not null &&
-            responseCache.TryGet<EloRankingsEvolutionResponse>(evolutionCacheKey, out var cachedEvolution) &&
+        if (candidateEvolutionCacheKey is not null &&
+            responseCache.TryGet<EloRankingsEvolutionResponse>(candidateEvolutionCacheKey, out var cachedEvolution) &&
             cachedEvolution is not null)
         {
             return Ok(cachedEvolution);
         }
+
+        var evolutionCacheKey = candidateEvolutionCacheKey is not null &&
+            await IsDefaultEvolutionTeamSetAsync(poolKey, selectedRuleset, selectedTeamIds, cancellationToken)
+                ? candidateEvolutionCacheKey
+                : null;
 
         var cutoffUtc = toUtc.HasValue
             ? DateTime.SpecifyKind(toUtc.Value.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1)
@@ -1078,7 +1107,6 @@ public class EloController(
                 WITH ranked AS (
                     SELECT
                         rh."TeamId",
-                        t."CanonicalName" AS "TeamName",
                         rh."GameId",
                         rh."GameDateTimeUtc",
                         rh."PostElo" AS "Elo",
@@ -1090,7 +1118,6 @@ public class EloController(
                         ) AS "RowNumber",
                         count(*) OVER (PARTITION BY rh."TeamId") AS "TotalRows"
                     FROM rating_history rh
-                    INNER JOIN teams t ON t."Id" = rh."TeamId"
                 {evolutionFilterJoins}
                     WHERE rh."EloPoolKey" = @poolKey
                       AND rh."RulesetVersion" = @rulesetVersion
@@ -1098,33 +1125,30 @@ public class EloController(
                       AND rh."GameDateTimeUtc" >= @startUtc
                       AND rh."GameDateTimeUtc" <= @cutoffUtc
                 {evolutionFilterPredicates}
-                ), bucketed AS (
-                    SELECT
-                        *,
-                        CASE
-                            WHEN "TotalRows" <= @pointsPerTeam THEN "RowNumber"
-                            ELSE round(
-                                ("RowNumber" - 1) * (@pointsPerTeam - 1)::numeric /
-                                ("TotalRows" - 1)
-                            )::bigint
-                        END AS "SampleBucket"
-                    FROM ranked
                 ), sampled AS (
-                    SELECT DISTINCT ON ("TeamId", "SampleBucket")
-                        "TeamId", "TeamName", "GameId", "GameDateTimeUtc", "Elo", "EloDelta", "Rank", "TotalRows"
-                    FROM bucketed
-                    ORDER BY
-                        "TeamId",
-                        "SampleBucket",
-                        abs(
-                            ("RowNumber" - 1)::numeric -
-                            "SampleBucket" * ("TotalRows" - 1)::numeric /
+                    SELECT "TeamId", "GameId", "GameDateTimeUtc", "Elo", "EloDelta", "Rank", "TotalRows"
+                    FROM ranked
+                    WHERE "TotalRows" <= @pointsPerTeam
+                       OR "RowNumber" = 1 + round(
+                            round(
+                                (("RowNumber" - 1) * (@pointsPerTeam - 1))::numeric /
+                                ("TotalRows" - 1)
+                            ) * ("TotalRows" - 1)::numeric /
                             greatest(@pointsPerTeam - 1, 1)
                         )
                 )
-                SELECT "TeamId", "TeamName", "GameId", "GameDateTimeUtc", "Elo", "EloDelta", "Rank", "TotalRows"
+                SELECT
+                    sampled."TeamId",
+                    t."CanonicalName" AS "TeamName",
+                    sampled."GameId",
+                    sampled."GameDateTimeUtc",
+                    sampled."Elo",
+                    sampled."EloDelta",
+                    sampled."Rank",
+                    sampled."TotalRows"
                 FROM sampled
-                ORDER BY "TeamId", "GameDateTimeUtc", "Elo"
+                INNER JOIN teams t ON t."Id" = sampled."TeamId"
+                ORDER BY sampled."TeamId", sampled."GameDateTimeUtc", sampled."Elo"
                 """;
         var rows = await dbContext.Database
             .SqlQueryRaw<EvolutionHistorySqlRow>(evolutionSql, evolutionParameters.ToArray())
@@ -1155,6 +1179,12 @@ public class EloController(
 
     private bool IsAdminDiagnosticsRequest()
     {
+        var httpContext = ControllerContext.HttpContext;
+        if (httpContext is null)
+        {
+            return false;
+        }
+
         var expectedSecret = configuration?["InternalAuth:SharedSecret"];
         if (string.IsNullOrWhiteSpace(expectedSecret))
         {
@@ -1164,14 +1194,14 @@ public class EloController(
             }
         }
         else if (!string.Equals(
-            Request.Headers[InternalAuthHeaders.SharedSecret].ToString(),
+            httpContext.Request.Headers[InternalAuthHeaders.SharedSecret].ToString(),
             expectedSecret,
             StringComparison.Ordinal))
         {
             return false;
         }
 
-        var roles = Request.Headers[InternalAuthHeaders.Roles]
+        var roles = httpContext.Request.Headers[InternalAuthHeaders.Roles]
             .ToString()
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return roles.Contains(ApplicationRoleKeys.Admin, StringComparer.OrdinalIgnoreCase);

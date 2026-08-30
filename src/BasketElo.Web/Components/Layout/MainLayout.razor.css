@@ -1,6 +1,5 @@
 .page {
     display: flex;
-    min-height: 100vh;
     flex-direction: column;
 }
 
@@ -18,13 +17,12 @@
 .app-main {
     display: flex;
     min-width: 0;
-    min-height: calc(100vh - 4.5rem);
-    flex: 1;
+    flex: 0 0 auto;
     flex-direction: column;
 }
 
 .content {
-    flex: 1;
+    flex: 0 0 auto;
 }
 
 .content:focus {

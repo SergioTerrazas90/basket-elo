@@ -19,6 +19,41 @@
     padding: var(--space-4) 0 0;
 }
 
+.rankings-seo-summary {
+    display: grid;
+    grid-template-columns: minmax(16rem, 0.8fr) minmax(20rem, 1.2fr);
+    gap: clamp(2rem, 6vw, 6rem);
+    margin-top: clamp(3rem, 7vw, 6rem);
+    padding: clamp(2rem, 5vw, 4rem) 0 1rem;
+    border-top: 1px solid var(--be-border, rgba(255, 255, 255, 0.14));
+}
+
+.rankings-seo-summary h2 {
+    max-width: 19ch;
+    margin: 0;
+    font-size: clamp(1.55rem, 3vw, 2.4rem);
+    line-height: 1.08;
+}
+
+.rankings-seo-summary p {
+    max-width: 68ch;
+    color: var(--be-text-muted, #a8b2c1);
+    line-height: 1.75;
+}
+
+.rankings-seo-summary a {
+    color: inherit;
+    text-decoration-color: var(--be-accent, #f4b942);
+    text-underline-offset: 0.2em;
+}
+
+@media (max-width: 720px) {
+    .rankings-seo-summary {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+}
+
 .rankings-page-heading {
     display: flex;
     align-items: flex-end;
@@ -139,6 +174,9 @@
 }
 
 .view-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-height: 2rem;
     padding: 0.3rem 0 0.5rem;
     border: 0;
@@ -147,6 +185,7 @@
     color: var(--color-muted);
     font-size: 0.76rem;
     font-weight: 800;
+    text-decoration: none;
     transition: color var(--motion-fast), border-color var(--motion-fast);
 }
 
@@ -1902,6 +1941,24 @@
 .empty-state {
     padding: var(--space-8) var(--space-4);
     text-align: center;
+}
+
+.chart-loading-panel {
+    display: grid;
+    min-height: 320px;
+    place-items: center;
+    align-content: center;
+    gap: var(--space-3);
+    padding: var(--space-8) var(--space-4);
+    color: var(--color-muted);
+    text-align: center;
+}
+
+.chart-loading-spinner {
+    width: 2rem;
+    height: 2rem;
+    border-width: 0.2em;
+    color: var(--color-accent);
 }
 
 @media (max-width: 760px) {

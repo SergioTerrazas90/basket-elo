@@ -1,6 +1,7 @@
 using BasketElo.Web.Components;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Identity;
+using BasketElo.Infrastructure.Jobs;
 using BasketElo.Infrastructure.Persistence;
 using BasketElo.Web.Auth;
 using BasketElo.Web.Elo;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Hangfire;
 using Radzen;
 using System.Security.Claims;
 using System.Text;
@@ -35,6 +37,7 @@ var connectionString = builder.Configuration.GetConnectionString("Postgres")
 
 builder.Services.AddDbContext<BasketEloDbContext>(options =>
     options.UseNpgsql(connectionString));
+builder.Services.AddEloJobStorage(builder.Configuration);
 
 var googleClientId = builder.Configuration["Authentication:Google:ClientId"];
 var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
@@ -180,6 +183,10 @@ if (!authOptions.Enabled)
 }
 
 app.UseAuthorization();
+app.MapHangfireDashboard("/admin/jobs", new DashboardOptions
+{
+    Authorization = [new HangfireDashboardAuthorizationFilter()]
+});
 app.UseAntiforgery();
 
 app.MapGet("/auth/login", (HttpContext httpContext, IConfiguration configuration, string? returnUrl) =>

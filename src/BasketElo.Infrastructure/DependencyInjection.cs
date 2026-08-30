@@ -4,6 +4,7 @@ using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.CurrentResults;
 using BasketElo.Infrastructure.Elo;
 using BasketElo.Infrastructure.Identity;
+using BasketElo.Infrastructure.Jobs;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -20,6 +21,8 @@ public static class DependencyInjection
 
         services.AddDbContext<BasketEloDbContext>(options =>
             options.UseNpgsql(connectionString));
+
+        services.AddEloJobStorage(configuration);
 
         services.Configure<ApiSportsOptions>(configuration.GetSection(ApiSportsOptions.SectionName));
         services.Configure<AcbArchiveOptions>(configuration.GetSection(AcbArchiveOptions.SectionName));

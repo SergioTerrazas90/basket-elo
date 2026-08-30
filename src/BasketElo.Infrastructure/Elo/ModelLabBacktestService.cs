@@ -111,8 +111,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 x.AwayScore!.Value))
             .ToListAsync(cancellationToken);
 
-        var custom = RunSimulation(games, request, parameters);
-        var baseline = RunSimulation(games, request, baselineParameters);
+        var custom = RunSimulation(games, request, parameters, cancellationToken);
+        var baseline = RunSimulation(games, request, baselineParameters, cancellationToken);
 
         var response = new ModelLabBacktestResponse(
             string.IsNullOrWhiteSpace(request.ModelName) ? "Untitled model" : request.ModelName.Trim(),
@@ -341,7 +341,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
     private static SimulationResult RunSimulation(
         IReadOnlyCollection<BacktestGame> games,
         ModelLabBacktestRequest request,
-        EloRulesetParameters parameters)
+        EloRulesetParameters parameters,
+        CancellationToken cancellationToken)
     {
         var ratings = new Dictionary<Guid, RatingState>();
         var predictions = new List<ModelLabPredictionRow>();
@@ -350,6 +351,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
 
         foreach (var game in games)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var home = GetRatingState(ratings, game.HomeTeamId, game.HomeTeamName, parameters.BaseRating);
             var away = GetRatingState(ratings, game.AwayTeamId, game.AwayTeamName, parameters.BaseRating);
             var isInitialization = game.GameDateTimeUtc >= request.InitializationFromUtc &&

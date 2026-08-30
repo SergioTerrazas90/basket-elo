@@ -28,6 +28,7 @@ public class Worker : BackgroundService
     {
         var nextRefreshCheckUtc = DateTime.MinValue;
         var nextCurrentResultsCheckUtc = DateTime.MinValue;
+        var nextModelLabCleanupUtc = DateTime.MinValue;
         while (!stoppingToken.IsCancellationRequested)
         {
             using var scope = _scopeFactory.CreateScope();
@@ -36,6 +37,7 @@ public class Worker : BackgroundService
             var backfillProcessor = scope.ServiceProvider.GetRequiredService<IBackfillJobProcessor>();
             var refreshQueued = false;
             var currentResultsQueued = false;
+            var modelLabCleaned = false;
             if (_nbaRefreshOptions.Enabled && DateTime.UtcNow >= nextRefreshCheckUtc)
             {
                 try
@@ -76,7 +78,26 @@ public class Worker : BackgroundService
                 nextCurrentResultsCheckUtc = DateTime.UtcNow.AddMinutes(Math.Max(1, _currentResultsOptions.SchedulerCheckMinutes));
             }
 
-            var processed = refreshQueued || currentResultsQueued ||
+            if (DateTime.UtcNow >= nextModelLabCleanupUtc)
+            {
+                try
+                {
+                    var runService = scope.ServiceProvider.GetRequiredService<IModelLabRunService>();
+                    var deleted = await runService.CleanupExpiredTemporaryRunsAsync(stoppingToken);
+                    modelLabCleaned = deleted > 0;
+                    if (modelLabCleaned)
+                    {
+                        _logger.LogInformation("Deleted {count} expired temporary Model Lab runs.", deleted);
+                    }
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    _logger.LogError(exception, "Expired Model Lab run cleanup failed.");
+                }
+                nextModelLabCleanupUtc = DateTime.UtcNow.AddHours(1);
+            }
+
+            var processed = refreshQueued || currentResultsQueued || modelLabCleaned ||
                 await eloProcessor.TryProcessNextPendingJobAsync(stoppingToken) ||
                 await modelLabProcessor.TryProcessNextPendingJobAsync(stoppingToken) ||
                 await backfillProcessor.TryProcessNextPendingJobAsync(stoppingToken);

@@ -101,6 +101,10 @@ public sealed class ModelLabRunJob(
     {
         dbContext.ChangeTracker.Clear();
         var run = await dbContext.ModelLabRuns.SingleAsync(x => x.Id == runId, CancellationToken.None);
+        if (run.Status == ModelLabRunStatuses.Canceled)
+        {
+            return;
+        }
         run.Status = status;
         run.ProgressPercent = progressPercent;
         run.ProgressStage = progressStage;

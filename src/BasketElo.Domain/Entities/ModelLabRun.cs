@@ -15,6 +15,8 @@ public class ModelLabRun
     public string? RequestCompetitionIdsJson { get; set; }
     public int ProgressPercent { get; set; }
     public string ProgressStage { get; set; } = "Waiting for a worker";
+    public bool IsRetained { get; set; } = true;
+    public DateTime? ExpiresAtUtc { get; set; }
     public DateTime InitializationFromUtc { get; set; }
     public DateTime InitializationToUtc { get; set; }
     public int InitializationGames { get; set; }
@@ -56,6 +58,7 @@ public static class ModelLabRunStatuses
     public const string Running = "running";
     public const string Completed = "completed";
     public const string Failed = "failed";
+    public const string Canceled = "canceled";
 
     public static readonly IReadOnlyCollection<string> Active = [Queued, Running];
 }

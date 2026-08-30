@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
+using BasketElo.Infrastructure.Jobs;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +9,8 @@ namespace BasketElo.Infrastructure.Elo;
 
 public sealed class ModelLabRunService(
     BasketEloDbContext dbContext,
-    IModelLabBacktestService backtestService) : IModelLabRunService
+    IModelLabBacktestService backtestService,
+    IModelLabJobDispatcher jobDispatcher) : IModelLabRunService
 {
     private const int MaxRunsReturned = 100;
     private const int MaxRatingsReturned = 100;
@@ -64,6 +66,7 @@ public sealed class ModelLabRunService(
             RequestCompetitionIdsJson = JsonSerializer.Serialize(request.CompetitionIds ?? []),
             ProgressPercent = 0,
             ProgressStage = "Waiting for a worker",
+            IsRetained = true,
             InitializationFromUtc = request.InitializationFromUtc,
             InitializationToUtc = request.InitializationToUtc,
             ScoredFromUtc = request.ScoredFromUtc,
@@ -129,6 +132,11 @@ public sealed class ModelLabRunService(
             run.EloPoolKey);
 
         var execution = await backtestService.RunDetailedAsync(backtestRequest, cancellationToken);
+        await dbContext.Entry(run).ReloadAsync(cancellationToken);
+        if (run.Status == ModelLabRunStatuses.Canceled)
+        {
+            return;
+        }
         var result = execution.Response;
         run.ProgressPercent = 85;
         run.ProgressStage = "Saving results";
@@ -494,9 +502,126 @@ public sealed class ModelLabRunService(
             return false;
         }
 
+        if (run.Status is ModelLabRunStatuses.Queued or ModelLabRunStatuses.Running)
+        {
+            throw new ArgumentException("Cancel the active run before deleting it.");
+        }
+
         dbContext.ModelLabRuns.Remove(run);
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
+    }
+
+    public async Task<ModelLabRunSummaryResponse?> CancelAsync(
+        Guid ownerUserId,
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        var run = await dbContext.ModelLabRuns
+            .FirstOrDefaultAsync(x => x.Id == runId && x.OwnerUserId == ownerUserId, cancellationToken);
+        if (run is null)
+        {
+            return null;
+        }
+        if (run.Status is not (ModelLabRunStatuses.Queued or ModelLabRunStatuses.Running))
+        {
+            throw new ArgumentException("Only a queued or running Model Lab run can be cancelled.");
+        }
+
+        run.Status = ModelLabRunStatuses.Canceled;
+        run.ProgressStage = "Canceled";
+        run.CompletedAtUtc = DateTime.UtcNow;
+        run.ErrorMessage = "Canceled by the user.";
+        await dbContext.SaveChangesAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(run.HangfireJobId))
+        {
+            jobDispatcher.Delete(run.HangfireJobId);
+        }
+
+        return ToSummaryResponse(run, null);
+    }
+
+    public async Task<ModelLabRunSummaryResponse?> RetryAsync(
+        Guid ownerUserId,
+        Guid runId,
+        ModelLabEntitlement entitlement,
+        CancellationToken cancellationToken)
+    {
+        var run = await dbContext.ModelLabRuns
+            .FirstOrDefaultAsync(x => x.Id == runId && x.OwnerUserId == ownerUserId, cancellationToken);
+        if (run is null)
+        {
+            return null;
+        }
+        if (run.Status is not (ModelLabRunStatuses.Failed or ModelLabRunStatuses.Canceled))
+        {
+            throw new ArgumentException("Only a failed or cancelled Model Lab run can be retried.");
+        }
+
+        await EnforceSingleActiveRunAsync(ownerUserId, entitlement, cancellationToken);
+        dbContext.ModelLabRunScopes.RemoveRange(dbContext.ModelLabRunScopes.Where(x => x.RunId == runId));
+        dbContext.ModelLabRunPredictions.RemoveRange(dbContext.ModelLabRunPredictions.Where(x => x.RunId == runId));
+        dbContext.ModelLabRunRatings.RemoveRange(dbContext.ModelLabRunRatings.Where(x => x.RunId == runId));
+        dbContext.ModelLabRunEvolutionPoints.RemoveRange(dbContext.ModelLabRunEvolutionPoints.Where(x => x.RunId == runId));
+        dbContext.ModelLabRunPeriodMetrics.RemoveRange(dbContext.ModelLabRunPeriodMetrics.Where(x => x.RunId == runId));
+        dbContext.ModelLabRunMetricBreakdowns.RemoveRange(dbContext.ModelLabRunMetricBreakdowns.Where(x => x.RunId == runId));
+        run.Status = ModelLabRunStatuses.Queued;
+        run.HangfireJobId = null;
+        run.ProgressPercent = 0;
+        run.ProgressStage = "Waiting for a worker";
+        run.StartedAtUtc = null;
+        run.CompletedAtUtc = null;
+        run.ErrorMessage = null;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToSummaryResponse(run, await GetQueuePositionAsync(run, cancellationToken));
+    }
+
+    public async Task<ModelLabRunSummaryResponse?> RetainAsync(
+        Guid ownerUserId,
+        Guid runId,
+        ModelLabEntitlement entitlement,
+        CancellationToken cancellationToken)
+    {
+        var run = await dbContext.ModelLabRuns
+            .FirstOrDefaultAsync(x => x.Id == runId && x.OwnerUserId == ownerUserId, cancellationToken);
+        if (run is null)
+        {
+            return null;
+        }
+        if (run.Status != ModelLabRunStatuses.Completed)
+        {
+            throw new ArgumentException("Only a completed result can be retained.");
+        }
+        if (!run.IsRetained)
+        {
+            await EnforceStoredRunLimitAsync(ownerUserId, entitlement, cancellationToken);
+            run.IsRetained = true;
+            run.ExpiresAtUtc = null;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        return ToSummaryResponse(run, null);
+    }
+
+    public async Task<int> CleanupExpiredTemporaryRunsAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        if (dbContext.Database.IsRelational())
+        {
+            return await dbContext.ModelLabRuns
+                .Where(x => !x.IsRetained && x.ExpiresAtUtc < now &&
+                    x.Status != ModelLabRunStatuses.Queued &&
+                    x.Status != ModelLabRunStatuses.Running)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+
+        var expired = await dbContext.ModelLabRuns
+            .Where(x => !x.IsRetained && x.ExpiresAtUtc < now &&
+                x.Status != ModelLabRunStatuses.Queued &&
+                x.Status != ModelLabRunStatuses.Running)
+            .ToListAsync(cancellationToken);
+        dbContext.ModelLabRuns.RemoveRange(expired);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return expired.Count;
     }
 
     private async Task<string> ResolvePoolKeyAsync(
@@ -648,7 +773,11 @@ public sealed class ModelLabRunService(
     private Task<int> CountRunsAsync(Guid ownerUserId, CancellationToken cancellationToken)
         => dbContext.ModelLabRuns
             .AsNoTracking()
-            .CountAsync(x => x.OwnerUserId == ownerUserId, cancellationToken);
+            .CountAsync(x =>
+                x.OwnerUserId == ownerUserId &&
+                x.IsRetained &&
+                x.Status == ModelLabRunStatuses.Completed,
+                cancellationToken);
 
     private static IReadOnlyCollection<ModelLabRunMetricBreakdown> BuildMetricBreakdowns(
         Guid ownerUserId,
@@ -831,6 +960,8 @@ public sealed class ModelLabRunService(
             queuePosition,
             run.ProgressPercent,
             run.ProgressStage,
+            run.IsRetained,
+            run.ExpiresAtUtc,
             run.CreatedAtUtc,
             run.StartedAtUtc,
             run.CompletedAtUtc,

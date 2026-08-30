@@ -46,4 +46,23 @@ public interface IModelLabRunService
         Guid ownerUserId,
         Guid runId,
         CancellationToken cancellationToken);
+
+    Task<ModelLabRunSummaryResponse?> CancelAsync(
+        Guid ownerUserId,
+        Guid runId,
+        CancellationToken cancellationToken);
+
+    Task<ModelLabRunSummaryResponse?> RetryAsync(
+        Guid ownerUserId,
+        Guid runId,
+        ModelLabEntitlement entitlement,
+        CancellationToken cancellationToken);
+
+    Task<ModelLabRunSummaryResponse?> RetainAsync(
+        Guid ownerUserId,
+        Guid runId,
+        ModelLabEntitlement entitlement,
+        CancellationToken cancellationToken);
+
+    Task<int> CleanupExpiredTemporaryRunsAsync(CancellationToken cancellationToken);
 }

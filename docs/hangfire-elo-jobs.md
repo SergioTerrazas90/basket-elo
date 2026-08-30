@@ -53,3 +53,15 @@ EloJobs__WorkerCount=3
 
 If the worker is stopped, enqueued jobs remain in PostgreSQL and resume when the
 worker is available again.
+
+## Model Lab lifecycle
+
+- One queued or running Model Lab run is allowed per user.
+- Automatic retry is disabled for ELO jobs. Failed Model Lab runs use the
+  explicit retry action, which resets the same run and queues one fresh job.
+- Cancelling changes the domain run state first and then deletes its Hangfire
+  job. Atomic run claiming and terminal-state checks prevent a late or duplicate
+  delivery from writing a second result.
+- Stored-run quota counts completed retained results only. Queued, running,
+  failed, cancelled, and temporary results do not consume that quota.
+- The worker removes expired, non-retained terminal results once per hour.

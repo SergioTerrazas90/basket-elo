@@ -233,6 +233,7 @@
         ModelLabRunStatuses.Queued => $"Queue position #{run.QueuePosition ?? 1}",
         ModelLabRunStatuses.Running => $"{run.ProgressStage} · {run.ProgressPercent}%",
         ModelLabRunStatuses.Failed => "Run failed",
+        ModelLabRunStatuses.Canceled => "Run canceled",
         _ => $"{run.Summary.WinnerAccuracy:0.0}% winner accuracy · {run.Summary.ScoredGames} games"
     };
 
@@ -252,6 +253,7 @@
         ModelLabRunStatuses.Failed => "status-pill status-failed",
         ModelLabRunStatuses.Running => "status-pill status-progress",
         ModelLabRunStatuses.Queued => "status-pill status-warning",
+        ModelLabRunStatuses.Canceled => "status-pill status-empty",
         _ => "status-pill status-empty"
     };
 

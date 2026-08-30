@@ -169,6 +169,8 @@ public sealed record ModelLabRunSummaryResponse(
     int? QueuePosition,
     int ProgressPercent,
     string ProgressStage,
+    bool IsRetained,
+    DateTime? ExpiresAtUtc,
     DateTime CreatedAtUtc,
     DateTime? StartedAtUtc,
     DateTime? CompletedAtUtc,

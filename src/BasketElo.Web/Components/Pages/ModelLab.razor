@@ -156,6 +156,10 @@
                                                 {
                                                     <text>Failed</text>
                                                 }
+                                                else if (run.Status == ModelLabRunStatuses.Canceled)
+                                                {
+                                                    <text>Canceled</text>
+                                                }
                                                 else
                                                 {
                                                     <text>@run.Summary.WinnerAccuracy.ToString("0.0")%</text>

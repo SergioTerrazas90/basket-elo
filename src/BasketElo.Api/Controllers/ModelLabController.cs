@@ -246,8 +246,77 @@ public sealed class ModelLabController(
             return loginResult;
         }
 
-        var deleted = await runService.DeleteAsync(GetCurrentUserId(), runId, cancellationToken);
-        return deleted ? NoContent() : NotFound();
+        try
+        {
+            var deleted = await runService.DeleteAsync(GetCurrentUserId(), runId, cancellationToken);
+            return deleted ? NoContent() : NotFound();
+        }
+        catch (ArgumentException ex)
+        {
+            return Conflict(ex.Message);
+        }
+    }
+
+    [HttpPost("runs/{runId:guid}/cancel")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunSummaryResponse>> CancelRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult)) return loginResult;
+        try
+        {
+            var run = await runService.CancelAsync(GetCurrentUserId(), runId, cancellationToken);
+            return run is null ? NotFound() : Ok(run);
+        }
+        catch (ArgumentException ex)
+        {
+            return Conflict(ex.Message);
+        }
+    }
+
+    [HttpPost("runs/{runId:guid}/retry")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunSummaryResponse>> RetryRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult)) return loginResult;
+        try
+        {
+            var ownerUserId = GetCurrentUserId();
+            var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+            var run = await runService.RetryAsync(ownerUserId, runId, entitlement, cancellationToken);
+            return run is null ? NotFound() : AcceptedAtAction(nameof(GetRun), new { runId }, run);
+        }
+        catch (ArgumentException ex)
+        {
+            return Conflict(ex.Message);
+        }
+    }
+
+    [HttpPost("runs/{runId:guid}/retain")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunSummaryResponse>> RetainRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult)) return loginResult;
+        try
+        {
+            var ownerUserId = GetCurrentUserId();
+            var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+            var run = await runService.RetainAsync(ownerUserId, runId, entitlement, cancellationToken);
+            return run is null ? NotFound() : Ok(run);
+        }
+        catch (ModelLabLimitException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
+        }
+        catch (ArgumentException ex)
+        {
+            return Conflict(ex.Message);
+        }
     }
 
     [HttpPost("runs")]

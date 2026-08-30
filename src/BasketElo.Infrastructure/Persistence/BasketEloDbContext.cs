@@ -159,6 +159,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.RequestCompetitionIdsJson).HasColumnType("jsonb");
             entity.Property(x => x.ProgressPercent).IsRequired();
             entity.Property(x => x.ProgressStage).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.IsRetained).IsRequired();
             entity.Property(x => x.InitializationFromUtc).IsRequired();
             entity.Property(x => x.InitializationToUtc).IsRequired();
             entity.Property(x => x.InitializationGames).IsRequired();
@@ -195,6 +196,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasIndex(x => new { x.OwnerUserId, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.OwnerUserId, x.Status, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.Status, x.HangfireJobId, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.IsRetained, x.ExpiresAtUtc });
             entity.HasIndex(x => x.OwnerUserId)
                 .IsUnique()
                 .HasFilter("\"Status\" IN ('queued', 'running')");

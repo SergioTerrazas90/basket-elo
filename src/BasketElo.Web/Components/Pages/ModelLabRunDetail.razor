@@ -29,6 +29,18 @@
         <div class="run-hero-actions">
             @if (detail is not null)
             {
+                @if (IsActiveRun)
+                {
+                    <button type="button" class="btn btn-outline-danger" @onclick="CancelRunAsync" disabled="@isCancelling">
+                        @(isCancelling ? "Cancelling..." : "Cancel run")
+                    </button>
+                }
+                else if (detail.Run.Status is ModelLabRunStatuses.Failed or ModelLabRunStatuses.Canceled)
+                {
+                    <button type="button" class="btn btn-outline-primary" @onclick="RetryRunAsync" disabled="@isRetrying">
+                        @(isRetrying ? "Queueing..." : "Retry run")
+                    </button>
+                }
                 <button type="button" class="btn btn-outline-danger" @onclick="DeleteRunAsync" disabled="@(isDeleting || IsActiveRun)">
                     @(confirmDelete ? "Confirm delete" : isDeleting ? "Deleting..." : "Delete run")
                 </button>
@@ -389,6 +401,8 @@
     private bool isLoadingEvolution;
     private bool confirmDelete;
     private bool isDeleting;
+    private bool isCancelling;
+    private bool isRetrying;
     private string? errorMessage;
     private int predictionSkip;
     private IReadOnlyList<EloChartSeries> evolutionChartSeries = [];
@@ -417,9 +431,19 @@
         await LoadRunAsync();
         if (IsActiveRun)
         {
-            pollingCancellation = new CancellationTokenSource();
-            pollingTask = PollRunAsync(pollingCancellation.Token);
+            StartPolling();
         }
+    }
+
+    private void StartPolling()
+    {
+        if (pollingCancellation is not null)
+        {
+            return;
+        }
+
+        pollingCancellation = new CancellationTokenSource();
+        pollingTask = PollRunAsync(pollingCancellation.Token);
     }
 
     private async Task LoadRunAsync(bool showLoading = true)
@@ -639,6 +663,61 @@
         }
     }
 
+    private async Task CancelRunAsync()
+    {
+        isCancelling = true;
+        errorMessage = null;
+        try
+        {
+            using var response = await Http.PostAsync($"api/model-lab/runs/{RunId}/cancel", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            await LoadRunAsync(showLoading: false);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not cancel run: {ex.Message}";
+        }
+        finally
+        {
+            isCancelling = false;
+        }
+    }
+
+    private async Task RetryRunAsync()
+    {
+        isRetrying = true;
+        errorMessage = null;
+        try
+        {
+            using var response = await Http.PostAsync($"api/model-lab/runs/{RunId}/retry", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            predictionPage = null;
+            evolutionChartSeries = [];
+            await StopPollingAsync();
+            await LoadRunAsync(showLoading: false);
+            if (IsActiveRun)
+            {
+                StartPolling();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not retry run: {ex.Message}";
+        }
+        finally
+        {
+            isRetrying = false;
+        }
+    }
+
     private static string FormatStatus(string status)
         => string.IsNullOrWhiteSpace(status)
             ? "Unknown"
@@ -651,6 +730,7 @@
             "failed" => "status-pill status-failed",
             "running" => "status-pill status-progress",
             "queued" => "status-pill status-warning",
+            "canceled" => "status-pill status-empty",
             _ => "status-pill status-empty"
         };
 

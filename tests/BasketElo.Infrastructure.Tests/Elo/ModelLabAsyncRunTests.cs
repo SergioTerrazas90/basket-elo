@@ -17,7 +17,7 @@ public class ModelLabAsyncRunTests
         await using var dbContext = CreateContext();
         var (ownerId, model, version) = await SeedModelAsync(dbContext);
         var backtest = new FakeBacktestService();
-        var service = new ModelLabRunService(dbContext, backtest);
+        var service = new ModelLabRunService(dbContext, backtest, new RecordingDispatcher());
         var entitlement = PaidEntitlement();
         var request = CreateRequest(model.Id, version.Id);
 
@@ -39,7 +39,7 @@ public class ModelLabAsyncRunTests
         await using var dbContext = CreateContext();
         var (ownerId, model, version) = await SeedModelAsync(dbContext);
         var backtest = new FakeBacktestService();
-        var service = new ModelLabRunService(dbContext, backtest);
+        var service = new ModelLabRunService(dbContext, backtest, new RecordingDispatcher());
         var created = await service.CreateAsync(
             ownerId,
             PaidEntitlement(),
@@ -77,7 +77,7 @@ public class ModelLabAsyncRunTests
     {
         await using var dbContext = CreateContext();
         var (ownerId, model, version) = await SeedModelAsync(dbContext);
-        var service = new ModelLabRunService(dbContext, new FakeBacktestService());
+        var service = new ModelLabRunService(dbContext, new FakeBacktestService(), new RecordingDispatcher());
         var created = await service.CreateAsync(
             ownerId,
             PaidEntitlement(),
@@ -109,13 +109,70 @@ public class ModelLabAsyncRunTests
             CompletedRun(ownerId, otherModelId, version.Id, "Different model"),
             CompletedRun(Guid.NewGuid(), model.Id, version.Id, "Different owner"));
         await dbContext.SaveChangesAsync();
-        var service = new ModelLabRunService(dbContext, new FakeBacktestService());
+        var service = new ModelLabRunService(dbContext, new FakeBacktestService(), new RecordingDispatcher());
 
         var runs = await service.ListAsync(ownerId, 100, model.Id, CancellationToken.None);
 
         var run = Assert.Single(runs);
         Assert.Equal("Owned target", run.ModelName);
         Assert.Equal(ownerId, (await dbContext.ModelLabRuns.SingleAsync(x => x.Id == run.Id)).OwnerUserId);
+    }
+
+    [Fact]
+    public async Task CancelQueuedRunFreesActiveSlotAndPreventsActiveDelete()
+    {
+        await using var dbContext = CreateContext();
+        var (ownerId, model, version) = await SeedModelAsync(dbContext);
+        var dispatcher = new RecordingDispatcher();
+        var service = new ModelLabRunService(dbContext, new FakeBacktestService(), dispatcher);
+        var request = CreateRequest(model.Id, version.Id);
+        var first = await service.CreateAsync(ownerId, PaidEntitlement(), request, CancellationToken.None);
+        Assert.NotNull(first);
+        var stored = await dbContext.ModelLabRuns.SingleAsync(x => x.Id == first.RunId);
+        stored.HangfireJobId = "queued-job";
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.DeleteAsync(ownerId, first.RunId, CancellationToken.None));
+        var canceled = await service.CancelAsync(ownerId, first.RunId, CancellationToken.None);
+        var second = await service.CreateAsync(ownerId, PaidEntitlement(), request, CancellationToken.None);
+
+        Assert.Equal(ModelLabRunStatuses.Canceled, canceled?.Status);
+        Assert.Contains("queued-job", dispatcher.DeletedJobIds);
+        Assert.Equal(ModelLabRunStatuses.Queued, second?.Status);
+    }
+
+    [Fact]
+    public async Task QuotaRetentionRetryAndExpiryDoNotRecalculate()
+    {
+        await using var dbContext = CreateContext();
+        var (ownerId, model, version) = await SeedModelAsync(dbContext);
+        var backtest = new FakeBacktestService();
+        var service = new ModelLabRunService(dbContext, backtest, new RecordingDispatcher());
+        var retained = CompletedRun(ownerId, model.Id, version.Id, "Retained");
+        var failed = CompletedRun(ownerId, model.Id, version.Id, "Failed");
+        failed.Status = ModelLabRunStatuses.Failed;
+        var temporary = CompletedRun(ownerId, model.Id, version.Id, "Temporary");
+        temporary.IsRetained = false;
+        temporary.ExpiresAtUtc = DateTime.UtcNow.AddHours(1);
+        var expired = CompletedRun(Guid.NewGuid(), model.Id, version.Id, "Expired");
+        expired.IsRetained = false;
+        expired.ExpiresAtUtc = DateTime.UtcNow.AddMinutes(-1);
+        dbContext.ModelLabRuns.AddRange(retained, failed, temporary, expired);
+        await dbContext.SaveChangesAsync();
+
+        var quotaBefore = await service.GetQuotaAsync(ownerId, PaidEntitlement(), CancellationToken.None);
+        var retainedTemporary = await service.RetainAsync(ownerId, temporary.Id, PaidEntitlement(), CancellationToken.None);
+        var retried = await service.RetryAsync(ownerId, failed.Id, PaidEntitlement(), CancellationToken.None);
+        var deleted = await service.CleanupExpiredTemporaryRunsAsync(CancellationToken.None);
+        var quotaAfter = await service.GetQuotaAsync(ownerId, PaidEntitlement(), CancellationToken.None);
+
+        Assert.Equal(1, quotaBefore.StoredRuns);
+        Assert.True(retainedTemporary?.IsRetained);
+        Assert.Equal(ModelLabRunStatuses.Queued, retried?.Status);
+        Assert.Equal(1, deleted);
+        Assert.Equal(2, quotaAfter.StoredRuns);
+        Assert.Equal(0, backtest.ExecutionCount);
     }
 
     private static BasketEloDbContext CreateContext(string? databaseName = null)
@@ -191,11 +248,18 @@ public class ModelLabAsyncRunTests
     private sealed class RecordingDispatcher : IModelLabJobDispatcher
     {
         public List<Guid> RunIds { get; } = [];
+        public List<string> DeletedJobIds { get; } = [];
 
         public string EnqueueRun(Guid runId)
         {
             RunIds.Add(runId);
             return $"model-lab-job-{RunIds.Count}";
+        }
+
+        public bool Delete(string jobId)
+        {
+            DeletedJobIds.Add(jobId);
+            return true;
         }
     }
 

@@ -15,14 +15,23 @@
     <section class="run-hero">
         <div>
             <p class="eyebrow">Model Lab</p>
-            <h1>Saved run</h1>
+            <h1>Backtest results</h1>
             @if (detail is not null)
             {
-                <p class="intro">@detail.Run.ModelName &middot; @detail.Run.LeagueName &middot; @FormatDateTime(detail.Run.CreatedAtUtc)</p>
+                <p class="intro">
+                    @if (IsCompletedRun)
+                    {
+                        <text>@detail.Run.ModelName &middot; rankings and rating evolution for this completed ELO run</text>
+                    }
+                    else
+                    {
+                        <text>@detail.Run.ModelName &middot; monitor this ELO run until its rankings and rating evolution are ready</text>
+                    }
+                </p>
             }
             else
             {
-                <p class="intro">Persisted backtest output for a saved model.</p>
+                <p class="intro">Monitor the ELO run, then review its rankings and rating evolution.</p>
             }
         </div>
 

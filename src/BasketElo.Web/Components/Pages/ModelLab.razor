@@ -24,7 +24,7 @@
         <div>
             <p class="eyebrow">Model Lab</p>
             <h1>Build a basketball rating model</h1>
-            <p class="intro">Tune the ELO rules, scope a historical test to one league, and see how the model performs against real results.</p>
+            <p class="intro">Configure a model, run an asynchronous backtest, then review its rankings and rating graph when the run completes.</p>
         </div>
 
         @if (result is not null)
@@ -53,7 +53,7 @@
                 <div class="section-head">
                     <div>
                         <h2>Model</h2>
-                        <p>These parameters define how the system predicts and updates ratings.</p>
+                        <p>These parameters define how the model predicts and updates ratings. Save the model separately when you want to reuse it.</p>
                     </div>
                     @if (CanSaveModels)
                     {
@@ -630,20 +630,33 @@
                     </div>
 
                     <div class="run-actions">
-                        <button type="button" class="btn btn-primary" @onclick="RunBacktestAsync" disabled="@isRunning">
-                            @(isRunning ? "Running..." : "Run backtest")
-                        </button>
                         @if (CanSaveModels)
                         {
-                            <button type="button" class="btn btn-outline-primary" @onclick="CreateStoredRunAsync" disabled="@(!CanCreateStoredRun)">
-                                @(isSavingRun ? "Queueing..." : "Save and queue run")
+                            <button type="button" class="btn btn-primary" @onclick="CreateStoredRunAsync" disabled="@(!CanCreateStoredRun)">
+                                @(isSavingRun ? "Queueing..." : "Run backtest")
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-primary" @onclick="RunBacktestAsync" disabled="@isRunning">
+                                @(isRunning ? "Running..." : "Run preview")
                             </button>
                         }
                         <button type="button" class="btn btn-outline-secondary" @onclick="ResetDefaults" disabled="@isRunning">Reset</button>
                     </div>
-                    @if (CanSaveModels && !string.IsNullOrWhiteSpace(SaveRunUnavailableReason))
+                    @if (CanSaveModels)
                     {
-                        <p class="field-note save-run-note">@SaveRunUnavailableReason</p>
+                        <p class="field-note save-run-note">
+                            Running the backtest saves the current model version, queues one ELO run, and opens its rankings and graph automatically when complete.
+                            @if (!string.IsNullOrWhiteSpace(SaveRunUnavailableReason))
+                            {
+                                <br /><span>@SaveRunUnavailableReason</span>
+                            }
+                        </p>
+                    }
+                    else
+                    {
+                        <p class="field-note save-run-note">Sign in to save models and run asynchronous backtests with a results page. Preview runs are not persisted.</p>
                     }
                 </div>
             </div>

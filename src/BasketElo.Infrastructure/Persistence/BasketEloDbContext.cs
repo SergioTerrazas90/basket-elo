@@ -151,6 +151,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasKey(x => x.Id);
             entity.Property(x => x.ModelName).HasMaxLength(120).IsRequired();
             entity.Property(x => x.LeagueName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.EloPoolKey).HasMaxLength(30).IsRequired();
             entity.Property(x => x.ScopeType).HasMaxLength(40).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(30).IsRequired();
             entity.Property(x => x.InitializationFromUtc).IsRequired();
@@ -188,6 +189,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.OwnerUserId, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.OwnerUserId, x.Status, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.OwnerUserId, x.EloPoolKey, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.ModelId, x.CreatedAtUtc });
             entity.HasIndex(x => x.ModelVersionId);
         });

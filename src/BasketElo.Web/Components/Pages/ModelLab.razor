@@ -159,6 +159,36 @@
                 <div class="control-grid">
                     <div class="filter-field wide">
                         <div class="label-with-info">
+                            <label for="eloPool">ELO pool</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("eloPool")'
+                                    aria-controls="eloPoolInfo"
+                                    title="ELO pool context"
+                                    @onclick='() => ToggleInfoPanel("eloPool")'>
+                                i
+                            </button>
+                        </div>
+                        <select id="eloPool"
+                                class="form-select"
+                                value="@selectedPoolKey"
+                                @onchange="OnPoolChanged"
+                                disabled="@(AvailablePools.Count <= 1)">
+                            @foreach (var pool in AvailablePools)
+                            {
+                                <option value="@pool.Key">@pool.DisplayName</option>
+                            }
+                        </select>
+                        @if (IsInfoPanelVisible("eloPool"))
+                        {
+                            <div id="eloPoolInfo" class="info-panel">
+                                <p>Each run has one isolated rating pool. All-competition runs include every eligible competition inside this pool only.</p>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="filter-field wide">
+                        <div class="label-with-info">
                             <label for="modelName">Name</label>
                             <button type="button"
                                     class="info-button"
@@ -454,7 +484,7 @@
                         }
                         else if (scopeType == ModelLabScopeTypes.AllCompetitions)
                         {
-                            <div class="scope-summary">@AvailableCompetitions.Count competitions selected</div>
+                            <div class="scope-summary">@AvailableCompetitions.Count competitions selected in @SelectedPoolDisplayName</div>
                         }
                         else
                         {
@@ -742,6 +772,7 @@
     private string? loadedModelVersionSignature;
     private string? lastSavedRunSignature;
     private string scopeType = ModelLabScopeTypes.SingleCompetition;
+    private string selectedPoolKey = EloPoolKeys.Default;
     private string? leagueName;
     private HashSet<Guid> selectedCompetitionIds = [];
     private decimal baseRating;
@@ -947,6 +978,33 @@
     private bool CanUseMultiCompetitionScopes
         => entitlement?.IsPaid == true && string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName);
 
+    private IReadOnlyCollection<ModelLabPoolOption> AvailablePools
+    {
+        get
+        {
+            if (options is null)
+            {
+                return [];
+            }
+
+            if (string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName))
+            {
+                return options.Pools;
+            }
+
+            var requiredCompetition = options.Competitions.FirstOrDefault(x =>
+                string.Equals(x.DisplayName, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(x.Name, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase));
+            return requiredCompetition is null
+                ? options.Pools.Take(1).ToList()
+                : options.Pools.Where(x => x.Key == requiredCompetition.EloPoolKey).ToList();
+        }
+    }
+
+    private string SelectedPoolDisplayName
+        => options?.Pools.FirstOrDefault(x => x.Key == selectedPoolKey)?.DisplayName
+            ?? EloPoolKeys.DisplayName(selectedPoolKey);
+
     private IReadOnlyCollection<ModelLabCompetitionOption> AvailableCompetitions
     {
         get
@@ -958,7 +1016,9 @@
 
             if (string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName))
             {
-                return options.Competitions;
+                return options.Competitions
+                    .Where(x => string.Equals(x.EloPoolKey, selectedPoolKey, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
             }
 
             var requiredLeague = entitlement.RequiredLeagueName;
@@ -966,7 +1026,12 @@
                 .Where(x =>
                     string.Equals(x.DisplayName, requiredLeague, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(x.Name, requiredLeague, StringComparison.OrdinalIgnoreCase))
-                .DefaultIfEmpty(new ModelLabCompetitionOption(Guid.Empty, requiredLeague, requiredLeague, null))
+                .DefaultIfEmpty(new ModelLabCompetitionOption(
+                    Guid.Empty,
+                    requiredLeague,
+                    requiredLeague,
+                    null,
+                    selectedPoolKey))
                 .ToList();
         }
     }
@@ -1079,6 +1144,31 @@
                 selectedCompetitionIds.Add(selected.Id);
             }
         }
+    }
+
+    private void OnPoolChanged(ChangeEventArgs args)
+    {
+        var requestedPool = args.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(requestedPool) ||
+            !AvailablePools.Any(x => string.Equals(x.Key, requestedPool, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        selectedPoolKey = requestedPool;
+        selectedCompetitionIds = [];
+        leagueName = AvailableLeagues.FirstOrDefault();
+        if (scopeType == ModelLabScopeTypes.SelectedCompetitions)
+        {
+            selectedCompetitionIds = AvailableCompetitions
+                .Take(2)
+                .Select(x => x.Id)
+                .Where(x => x != Guid.Empty)
+                .ToHashSet();
+        }
+
+        lastSavedRunSignature = null;
+        result = null;
     }
 
     private void OnSelectedCompetitionsChanged(ChangeEventArgs args)
@@ -1448,7 +1538,8 @@
                 DateTime.SpecifyKind(scoredFrom.Date, DateTimeKind.Utc),
                 DateTime.SpecifyKind(scoredTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1),
                 scopeType,
-                BuildRequestCompetitionIds());
+                BuildRequestCompetitionIds(),
+                selectedPoolKey);
 
             using var response = await Http.PostAsJsonAsync("api/model-lab/backtests", request);
             if (!response.IsSuccessStatusCode)
@@ -1494,7 +1585,8 @@
                 DateTime.SpecifyKind(scoredFrom.Date, DateTimeKind.Utc),
                 DateTime.SpecifyKind(scoredTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1),
                 scopeType,
-                BuildRequestCompetitionIds());
+                BuildRequestCompetitionIds(),
+                selectedPoolKey);
 
             using var response = await Http.PostAsJsonAsync("api/model-lab/runs", request);
             if (!response.IsSuccessStatusCode)
@@ -1637,6 +1729,7 @@
             (modelName ?? string.Empty).Trim(),
             (modelDescription ?? string.Empty).Trim(),
             (leagueName ?? string.Empty).Trim(),
+            selectedPoolKey,
             scopeType,
             competitionIds,
             initializationFromSeason ?? string.Empty,
@@ -1698,6 +1791,7 @@
         modelName = model.Name;
         modelDescription = model.Description;
         scopeType = ModelLabScopeTypes.SingleCompetition;
+        SetPoolForCompetition(model.LeagueName);
         leagueName = NormalizeLeagueForEntitlement(model.LeagueName);
         ApplyParameters(model.CurrentVersion.Parameters);
         loadedModel = model;
@@ -1710,7 +1804,8 @@
         modelName = "Adjusted ELO experiment";
         modelDescription = null;
         scopeType = ModelLabScopeTypes.SingleCompetition;
-        leagueName = NormalizeLeagueForEntitlement(response.Leagues.FirstOrDefault());
+        selectedPoolKey = ResolveDefaultPoolKey(response);
+        leagueName = NormalizeLeagueForEntitlement(AvailableLeagues.FirstOrDefault());
         selectedCompetitionIds = AvailableCompetitions
             .Take(2)
             .Where(x => x.Id != Guid.Empty)
@@ -1830,9 +1925,10 @@
             return entitlement.RequiredLeagueName;
         }
 
-        return string.IsNullOrWhiteSpace(requestedLeague)
-            ? AvailableLeagues.FirstOrDefault()
-            : requestedLeague;
+        return !string.IsNullOrWhiteSpace(requestedLeague) &&
+            AvailableLeagues.Contains(requestedLeague, StringComparer.OrdinalIgnoreCase)
+                ? requestedLeague
+                : AvailableLeagues.FirstOrDefault();
     }
 
     private void NormalizeScopeForEntitlement()
@@ -1841,6 +1937,33 @@
         {
             scopeType = ModelLabScopeTypes.SingleCompetition;
             selectedCompetitionIds = [];
+        }
+    }
+
+    private string ResolveDefaultPoolKey(ModelLabOptionsResponse response)
+    {
+        if (!string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName))
+        {
+            var requiredCompetition = response.Competitions.FirstOrDefault(x =>
+                string.Equals(x.DisplayName, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(x.Name, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase));
+            if (requiredCompetition is not null)
+            {
+                return requiredCompetition.EloPoolKey;
+            }
+        }
+
+        return response.Pools.FirstOrDefault()?.Key ?? EloPoolKeys.Default;
+    }
+
+    private void SetPoolForCompetition(string? competitionName)
+    {
+        var competition = options?.Competitions.FirstOrDefault(x =>
+            string.Equals(x.DisplayName, competitionName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(x.Name, competitionName, StringComparison.OrdinalIgnoreCase));
+        if (competition is not null)
+        {
+            selectedPoolKey = competition.EloPoolKey;
         }
     }
 

@@ -56,7 +56,8 @@ public sealed class ModelLabRunService(
             request.ScoredFromUtc,
             request.ScoredToUtc,
             scopeType,
-            request.CompetitionIds);
+            request.CompetitionIds,
+            request.EloPoolKey);
 
         var execution = await backtestService.RunDetailedAsync(backtestRequest, cancellationToken);
         var now = DateTime.UtcNow;
@@ -68,6 +69,7 @@ public sealed class ModelLabRunService(
             ModelVersionId = version.Id,
             ModelName = model.Name,
             LeagueName = result.LeagueName,
+            EloPoolKey = result.EloPoolKey ?? throw new InvalidOperationException("The Model Lab run did not resolve an ELO pool."),
             ScopeType = scopeType,
             Status = ModelLabRunStatuses.Completed,
             InitializationFromUtc = result.InitializationWindow.FromUtc,
@@ -236,7 +238,8 @@ public sealed class ModelLabRunService(
                 x.CompetitionId,
                 x.CompetitionName,
                 x.CompetitionName,
-                x.CountryCode))
+                x.CountryCode,
+                run.EloPoolKey))
             .ToListAsync(cancellationToken);
 
         var ratings = await dbContext.ModelLabRunRatings
@@ -567,6 +570,7 @@ public sealed class ModelLabRunService(
             run.ModelVersionId,
             run.ModelName,
             run.LeagueName,
+            run.EloPoolKey,
             run.ScopeType,
             run.Status,
             run.CreatedAtUtc,

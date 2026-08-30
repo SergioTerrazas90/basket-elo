@@ -62,6 +62,11 @@
                 <small>@detail.Scopes.Count scoped competition@(detail.Scopes.Count == 1 ? string.Empty : "s")</small>
             </div>
             <div>
+                <span>ELO pool</span>
+                <strong>@EloPoolKeys.DisplayName(detail.Run.EloPoolKey)</strong>
+                <small>Isolated Model Lab simulation</small>
+            </div>
+            <div>
                 <span>Competitions</span>
                 <strong>@FormatScopeNames(detail.Scopes)</strong>
                 <small>Model version @detail.Run.ModelVersionId.ToString()[..8]</small>

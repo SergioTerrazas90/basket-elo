@@ -8,6 +8,7 @@ public class ModelLabRun
     public Guid ModelVersionId { get; set; }
     public string ModelName { get; set; } = string.Empty;
     public string LeagueName { get; set; } = string.Empty;
+    public string EloPoolKey { get; set; } = string.Empty;
     public string ScopeType { get; set; } = string.Empty;
     public string Status { get; set; } = ModelLabRunStatuses.Completed;
     public DateTime InitializationFromUtc { get; set; }

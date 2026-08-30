@@ -2,6 +2,7 @@ namespace BasketElo.Domain.Elo;
 
 public sealed record ModelLabOptionsResponse(
     ModelLabParameterSet Defaults,
+    IReadOnlyCollection<ModelLabPoolOption> Pools,
     IReadOnlyCollection<string> Leagues,
     IReadOnlyCollection<ModelLabCompetitionOption> Competitions,
     IReadOnlyCollection<ModelLabSeasonOption> Seasons,
@@ -27,7 +28,12 @@ public sealed record ModelLabCompetitionOption(
     Guid Id,
     string Name,
     string DisplayName,
-    string? CountryCode);
+    string? CountryCode,
+    string EloPoolKey);
+
+public sealed record ModelLabPoolOption(
+    string Key,
+    string DisplayName);
 
 public sealed record ModelLabSeasonOption(
     string Label,
@@ -43,7 +49,8 @@ public sealed record ModelLabBacktestRequest(
     DateTime ScoredFromUtc,
     DateTime ScoredToUtc,
     string ScopeType = ModelLabScopeTypes.SingleCompetition,
-    IReadOnlyCollection<Guid>? CompetitionIds = null);
+    IReadOnlyCollection<Guid>? CompetitionIds = null,
+    string? EloPoolKey = null);
 
 public sealed record ModelLabParameterSet(
     decimal BaseRating,
@@ -124,7 +131,8 @@ public sealed record ModelLabBacktestResponse(
     IReadOnlyCollection<ModelLabRatingRow> Ratings,
     IReadOnlyCollection<ModelLabPredictionRow> BiggestMisses,
     IReadOnlyCollection<ModelLabPeriodMetric> Periods,
-    Guid? RunId = null);
+    Guid? RunId = null,
+    string? EloPoolKey = null);
 
 public sealed record CreateModelLabRunRequest(
     Guid ModelId,
@@ -134,7 +142,8 @@ public sealed record CreateModelLabRunRequest(
     DateTime ScoredFromUtc,
     DateTime ScoredToUtc,
     string ScopeType = ModelLabScopeTypes.SingleCompetition,
-    IReadOnlyCollection<Guid>? CompetitionIds = null);
+    IReadOnlyCollection<Guid>? CompetitionIds = null,
+    string? EloPoolKey = null);
 
 public sealed record ModelLabRunCreateResponse(
     Guid RunId,
@@ -151,6 +160,7 @@ public sealed record ModelLabRunSummaryResponse(
     Guid ModelVersionId,
     string ModelName,
     string LeagueName,
+    string EloPoolKey,
     string ScopeType,
     string Status,
     DateTime CreatedAtUtc,

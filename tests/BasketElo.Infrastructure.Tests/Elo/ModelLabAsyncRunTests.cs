@@ -98,6 +98,26 @@ public class ModelLabAsyncRunTests
         Assert.Equal("model-lab-job-1", (await dbContext.ModelLabRuns.SingleAsync()).HangfireJobId);
     }
 
+    [Fact]
+    public async Task RunHistoryFiltersByOwnerAndModel()
+    {
+        await using var dbContext = CreateContext();
+        var (ownerId, model, version) = await SeedModelAsync(dbContext);
+        var otherModelId = Guid.NewGuid();
+        dbContext.ModelLabRuns.AddRange(
+            CompletedRun(ownerId, model.Id, version.Id, "Owned target"),
+            CompletedRun(ownerId, otherModelId, version.Id, "Different model"),
+            CompletedRun(Guid.NewGuid(), model.Id, version.Id, "Different owner"));
+        await dbContext.SaveChangesAsync();
+        var service = new ModelLabRunService(dbContext, new FakeBacktestService());
+
+        var runs = await service.ListAsync(ownerId, 100, model.Id, CancellationToken.None);
+
+        var run = Assert.Single(runs);
+        Assert.Equal("Owned target", run.ModelName);
+        Assert.Equal(ownerId, (await dbContext.ModelLabRuns.SingleAsync(x => x.Id == run.Id)).OwnerUserId);
+    }
+
     private static BasketEloDbContext CreateContext(string? databaseName = null)
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()
@@ -145,6 +165,25 @@ public class ModelLabAsyncRunTests
             ModelLabScopeTypes.AllCompetitions,
             [],
             EloPoolKeys.Nba);
+
+    private static ModelLabRun CompletedRun(Guid ownerId, Guid modelId, Guid versionId, string name) => new()
+    {
+        OwnerUserId = ownerId,
+        ModelId = modelId,
+        ModelVersionId = versionId,
+        ModelName = name,
+        LeagueName = "NBA",
+        EloPoolKey = EloPoolKeys.Nba,
+        ScopeType = ModelLabScopeTypes.AllCompetitions,
+        Status = ModelLabRunStatuses.Completed,
+        ProgressPercent = 100,
+        ProgressStage = "Completed",
+        InitializationFromUtc = DateTime.UtcNow.AddMonths(-2),
+        InitializationToUtc = DateTime.UtcNow.AddMonths(-1),
+        ScoredFromUtc = DateTime.UtcNow.AddMonths(-1),
+        ScoredToUtc = DateTime.UtcNow,
+        CompletedAtUtc = DateTime.UtcNow
+    };
 
     private static ModelLabEntitlement PaidEntitlement()
         => new("paid", true, true, 20, 100, null);

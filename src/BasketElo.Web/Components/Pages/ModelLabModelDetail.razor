@@ -1,0 +1,273 @@
+@page "/model-lab/models/{ModelId:guid}"
+@rendermode InteractiveServer
+@using System.Net
+@using System.Net.Http.Json
+@using System.Text.Json
+@using BasketElo.Domain.Elo
+@using BasketElo.Domain.Entities
+@inject HttpClient Http
+
+<PageTitle>Saved Model - Basket ELO</PageTitle>
+
+<div class="model-detail-page">
+    <section class="model-detail-hero">
+        <div>
+            <p class="eyebrow">Model Lab library</p>
+            <h1>@(model?.Name ?? "Saved model")</h1>
+            <p>@(model?.Description ?? "Parameters, versions, and run-specific results.")</p>
+        </div>
+        <div class="hero-actions">
+            @if (model is not null)
+            {
+                <button class="btn btn-outline-secondary" @onclick="ToggleArchivedAsync" disabled="@isArchiving">
+                    @(isArchiving ? "Saving..." : model.IsArchived ? "Restore model" : "Archive model")
+                </button>
+            }
+            <a class="btn btn-outline-secondary" href="model-lab/models">All models</a>
+            <a class="btn btn-primary" href="model-lab">Open editor</a>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    @if (isLoading)
+    {
+        <section class="loading-panel">Loading model...</section>
+    }
+    else if (model is null)
+    {
+        <section class="empty-state">This model was not found for the current user.</section>
+    }
+    else
+    {
+        <section class="model-identity-grid">
+            <div><span>Status</span><strong>@(model.IsArchived ? "Archived" : "Active")</strong></div>
+            <div><span>Competition</span><strong>@model.LeagueName</strong></div>
+            <div><span>Current version</span><strong>v@model.CurrentVersion.VersionNumber</strong></div>
+            <div><span>Updated</span><strong>@FormatDateTime(model.UpdatedAtUtc)</strong></div>
+        </section>
+
+        @if (ActiveRun is not null)
+        {
+            <a class="featured-run active-run" href="@($"model-lab/runs/{ActiveRun.Id}")">
+                <div>
+                    <span>Active run</span>
+                    <strong>@FormatStatus(ActiveRun.Status) · @ActiveRun.ProgressStage</strong>
+                    <small>@(ActiveRun.Status == ModelLabRunStatuses.Queued ? $"Queue position #{ActiveRun.QueuePosition ?? 1}" : $"{ActiveRun.ProgressPercent}% complete")</small>
+                </div>
+                <span class="open-run">Open status →</span>
+            </a>
+        }
+        else if (LatestCompletedRun is not null)
+        {
+            <a class="featured-run" href="@($"model-lab/runs/{LatestCompletedRun.Id}")">
+                <div>
+                    <span>Latest completed run</span>
+                    <strong>@LatestCompletedRun.Summary.WinnerAccuracy.ToString("0.0")% winner accuracy</strong>
+                    <small>@EloPoolKeys.DisplayName(LatestCompletedRun.EloPoolKey) · @FormatScope(LatestCompletedRun.ScopeType)</small>
+                </div>
+                <span class="open-run">Open graph and rankings →</span>
+            </a>
+        }
+
+        <section class="detail-panel">
+            <div class="section-head compact">
+                <div>
+                    <h2>Current parameters</h2>
+                    <p>These define the model. Rankings remain attached to individual runs below.</p>
+                </div>
+            </div>
+            <div class="parameter-grid">
+                <div><span>Base rating</span><strong>@model.CurrentVersion.Parameters.BaseRating.ToString("0")</strong></div>
+                <div><span>K-factor</span><strong>@model.CurrentVersion.Parameters.KFactor</strong></div>
+                <div><span>Home advantage</span><strong>@model.CurrentVersion.Parameters.HomeAdvantageElo.ToString("0")</strong></div>
+                <div><span>Probability scale</span><strong>@model.CurrentVersion.Parameters.ProbabilityScale.ToString("0")</strong></div>
+                <div><span>Margin adjustment</span><strong>@(model.CurrentVersion.Parameters.UsesMarginAdjustment ? "On" : "Off")</strong></div>
+                <div><span>Competition weight</span><strong>@model.CurrentVersion.Parameters.CompetitionWeight.ToString("0.00")</strong></div>
+            </div>
+        </section>
+
+        <section class="detail-panel">
+            <div class="section-head compact">
+                <div>
+                    <h2>Run history</h2>
+                    <p>Every ranking and graph is scoped to the pool and competitions used by that run.</p>
+                </div>
+            </div>
+            @if (runs.Count == 0)
+            {
+                <div class="empty-state compact-empty">This model has not been run yet.</div>
+            }
+            else
+            {
+                <div class="run-history-list">
+                    @foreach (var run in runs)
+                    {
+                        <a href="@($"model-lab/runs/{run.Id}")">
+                            <span class="@StatusClass(run.Status)">@FormatStatus(run.Status)</span>
+                            <div>
+                                <strong>@RunHeadline(run)</strong>
+                                <small>@EloPoolKeys.DisplayName(run.EloPoolKey) · @FormatScope(run.ScopeType) · @FormatDateTime(run.CreatedAtUtc)</small>
+                            </div>
+                            <span class="open-run">Open →</span>
+                        </a>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="detail-panel">
+            <div class="section-head compact">
+                <div>
+                    <h2>Version history</h2>
+                    <p>Parameter changes create immutable versions so old run results stay explainable.</p>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle compact-table">
+                    <thead><tr><th>Version</th><th>Created</th><th>K</th><th>Home</th><th>Margin</th><th>Weight</th></tr></thead>
+                    <tbody>
+                        @foreach (var version in model.Versions.OrderByDescending(version => version.VersionNumber))
+                        {
+                            <tr>
+                                <td><strong>v@version.VersionNumber</strong></td>
+                                <td>@FormatDateTime(version.CreatedAtUtc)</td>
+                                <td>@version.Parameters.KFactor</td>
+                                <td>@version.Parameters.HomeAdvantageElo.ToString("0")</td>
+                                <td>@(version.Parameters.UsesMarginAdjustment ? "On" : "Off")</td>
+                                <td>@version.Parameters.CompetitionWeight.ToString("0.00")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid ModelId { get; set; }
+
+    private ModelLabModelDetailResponse? model;
+    private List<ModelLabRunSummaryResponse> runs = [];
+    private bool isLoading = true;
+    private bool isArchiving;
+    private string? errorMessage;
+
+    private ModelLabRunSummaryResponse? ActiveRun => runs.FirstOrDefault(run =>
+        run.Status is ModelLabRunStatuses.Queued or ModelLabRunStatuses.Running);
+
+    private ModelLabRunSummaryResponse? LatestCompletedRun => runs.FirstOrDefault(run =>
+        run.Status == ModelLabRunStatuses.Completed);
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            using var modelResponse = await Http.GetAsync($"api/model-lab/models/{ModelId}");
+            if (modelResponse.StatusCode == HttpStatusCode.NotFound)
+            {
+                model = null;
+                runs = [];
+                return;
+            }
+            if (!modelResponse.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(modelResponse));
+            }
+            model = await modelResponse.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>();
+
+            using var runResponse = await Http.GetAsync($"api/model-lab/runs?take=100&modelId={ModelId}");
+            if (!runResponse.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(runResponse));
+            }
+            runs = await runResponse.Content.ReadFromJsonAsync<List<ModelLabRunSummaryResponse>>() ?? [];
+        }
+        catch (Exception exception)
+        {
+            errorMessage = $"Could not load the model: {exception.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ToggleArchivedAsync()
+    {
+        if (model is null) return;
+        isArchiving = true;
+        errorMessage = null;
+        try
+        {
+            using var response = await Http.PostAsJsonAsync(
+                $"api/model-lab/models/{ModelId}/archive",
+                new ArchiveModelLabModelRequest(!model.IsArchived));
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+            model = await response.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>()
+                ?? throw new InvalidOperationException("The model response was empty.");
+        }
+        catch (Exception exception)
+        {
+            errorMessage = $"Could not update the model: {exception.Message}";
+        }
+        finally
+        {
+            isArchiving = false;
+        }
+    }
+
+    private static string RunHeadline(ModelLabRunSummaryResponse run) => run.Status switch
+    {
+        ModelLabRunStatuses.Queued => $"Queue position #{run.QueuePosition ?? 1}",
+        ModelLabRunStatuses.Running => $"{run.ProgressStage} · {run.ProgressPercent}%",
+        ModelLabRunStatuses.Failed => "Run failed",
+        _ => $"{run.Summary.WinnerAccuracy:0.0}% winner accuracy · {run.Summary.ScoredGames} games"
+    };
+
+    private static string FormatScope(string scopeType) => scopeType switch
+    {
+        ModelLabScopeTypes.AllCompetitions => "All competitions",
+        ModelLabScopeTypes.SelectedCompetitions => "Selected competitions",
+        _ => "Single competition"
+    };
+
+    private static string FormatStatus(string status)
+        => string.IsNullOrWhiteSpace(status) ? "Unknown" : char.ToUpperInvariant(status[0]) + status[1..];
+
+    private static string StatusClass(string status) => status switch
+    {
+        ModelLabRunStatuses.Completed => "status-pill status-completed",
+        ModelLabRunStatuses.Failed => "status-pill status-failed",
+        ModelLabRunStatuses.Running => "status-pill status-progress",
+        ModelLabRunStatuses.Queued => "status-pill status-warning",
+        _ => "status-pill status-empty"
+    };
+
+    private static string FormatDateTime(DateTime value) => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized) return "Sign in to view saved models.";
+        var body = await response.Content.ReadAsStringAsync();
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.TryGetProperty("message", out var message)) return message.GetString() ?? body;
+            if (json.RootElement.ValueKind == JsonValueKind.String) return json.RootElement.GetString() ?? body;
+        }
+        catch (JsonException) { }
+        return string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase ?? "Request failed" : body;
+    }
+}

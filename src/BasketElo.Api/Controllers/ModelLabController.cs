@@ -146,6 +146,7 @@ public sealed class ModelLabController(
     [RequireInternalUser]
     public async Task<ActionResult<IReadOnlyCollection<ModelLabRunSummaryResponse>>> ListRuns(
         [FromQuery] int take,
+        [FromQuery] Guid? modelId,
         CancellationToken cancellationToken)
     {
         if (!TryRequireRealUser(out var loginResult))
@@ -153,7 +154,11 @@ public sealed class ModelLabController(
             return loginResult;
         }
 
-        return Ok(await runService.ListAsync(GetCurrentUserId(), take <= 0 ? 50 : take, cancellationToken));
+        return Ok(await runService.ListAsync(
+            GetCurrentUserId(),
+            take <= 0 ? 50 : take,
+            modelId,
+            cancellationToken));
     }
 
     [HttpGet("runs/quota")]

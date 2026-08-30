@@ -15,6 +15,7 @@ public interface IModelLabRunService
     Task<IReadOnlyCollection<ModelLabRunSummaryResponse>> ListAsync(
         Guid ownerUserId,
         int take,
+        Guid? modelId,
         CancellationToken cancellationToken);
 
     Task<ModelLabRunQuotaResponse> GetQuotaAsync(

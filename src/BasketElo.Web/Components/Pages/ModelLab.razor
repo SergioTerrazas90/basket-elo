@@ -55,6 +55,10 @@
                         <h2>Model</h2>
                         <p>These parameters define how the system predicts and updates ratings.</p>
                     </div>
+                    @if (CanSaveModels)
+                    {
+                        <a class="btn btn-sm btn-outline-secondary" href="model-lab/models">Open model library</a>
+                    }
                 </div>
 
                 <div class="saved-model-panel">

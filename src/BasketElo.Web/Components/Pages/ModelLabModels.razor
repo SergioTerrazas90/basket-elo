@@ -1,0 +1,173 @@
+@page "/model-lab/models"
+@rendermode InteractiveServer
+@using System.Net
+@using System.Net.Http.Json
+@using System.Text.Json
+@using BasketElo.Domain.Elo
+@using BasketElo.Domain.Entities
+@inject HttpClient Http
+
+<PageTitle>Saved Models - Basket ELO</PageTitle>
+
+<div class="model-library-page">
+    <section class="library-hero">
+        <div>
+            <p class="eyebrow">Model Lab</p>
+            <h1>Saved model library</h1>
+            <p>Browse model definitions and open the runs that produced each set of rankings.</p>
+        </div>
+        <a class="btn btn-primary" href="model-lab">Build or edit a model</a>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    @if (isLoading)
+    {
+        <section class="loading-panel">Loading saved models...</section>
+    }
+    else if (models.Count == 0)
+    {
+        <section class="empty-state">
+            <h2>No saved models yet</h2>
+            <p>Save a model in the lab and it will appear here with its run history.</p>
+            <a class="btn btn-primary" href="model-lab">Open Model Lab</a>
+        </section>
+    }
+    else
+    {
+        <section class="model-library-grid">
+            @foreach (var model in models)
+            {
+                var lastRun = LastRunFor(model.Id);
+                <article class="model-library-card @(model.IsArchived ? "is-archived" : string.Empty)">
+                    <div class="model-card-heading">
+                        <div>
+                            <span class="model-state">@(model.IsArchived ? "Archived" : "Active")</span>
+                            <h2>@model.Name</h2>
+                            <p>@(model.Description ?? "No description")</p>
+                        </div>
+                        <span class="version-badge">v@model.CurrentVersion.VersionNumber</span>
+                    </div>
+
+                    <dl class="model-card-facts">
+                        <div><dt>Competition</dt><dd>@model.LeagueName</dd></div>
+                        <div><dt>Updated</dt><dd>@FormatDate(model.UpdatedAtUtc)</dd></div>
+                        @if (lastRun is not null)
+                        {
+                            <div><dt>ELO pool</dt><dd>@EloPoolKeys.DisplayName(lastRun.EloPoolKey)</dd></div>
+                            <div><dt>Scope</dt><dd>@FormatScope(lastRun.ScopeType)</dd></div>
+                        }
+                    </dl>
+
+                    @if (lastRun is null)
+                    {
+                        <div class="model-run-summary is-empty">No runs yet.</div>
+                    }
+                    else
+                    {
+                        <a class="model-run-summary" href="@($"model-lab/runs/{lastRun.Id}")">
+                            <span class="@StatusClass(lastRun.Status)">@FormatStatus(lastRun.Status)</span>
+                            <strong>@RunHeadline(lastRun)</strong>
+                            <small>@FormatDateTime(lastRun.CreatedAtUtc)</small>
+                        </a>
+                    }
+
+                    <a class="btn btn-outline-primary" href="@($"model-lab/models/{model.Id}")">View model and runs</a>
+                </article>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private List<ModelLabModelSummaryResponse> models = [];
+    private List<ModelLabRunSummaryResponse> runs = [];
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var modelResponse = await Http.GetAsync("api/model-lab/models?includeArchived=true");
+            if (!modelResponse.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(modelResponse));
+            }
+
+            models = await modelResponse.Content.ReadFromJsonAsync<List<ModelLabModelSummaryResponse>>() ?? [];
+            using var runResponse = await Http.GetAsync("api/model-lab/runs?take=100");
+            if (runResponse.IsSuccessStatusCode)
+            {
+                runs = await runResponse.Content.ReadFromJsonAsync<List<ModelLabRunSummaryResponse>>() ?? [];
+            }
+        }
+        catch (Exception exception)
+        {
+            errorMessage = $"Could not load the model library: {exception.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private ModelLabRunSummaryResponse? LastRunFor(Guid modelId)
+        => runs.Where(run => run.ModelId == modelId).OrderByDescending(run => run.CreatedAtUtc).FirstOrDefault();
+
+    private static string RunHeadline(ModelLabRunSummaryResponse run)
+        => run.Status switch
+        {
+            ModelLabRunStatuses.Queued => $"Queue position #{run.QueuePosition ?? 1}",
+            ModelLabRunStatuses.Running => $"{run.ProgressStage} · {run.ProgressPercent}%",
+            ModelLabRunStatuses.Failed => "Run failed",
+            _ => $"{run.Summary.WinnerAccuracy:0.0}% winner accuracy"
+        };
+
+    private static string FormatScope(string scopeType) => scopeType switch
+    {
+        ModelLabScopeTypes.AllCompetitions => "All competitions",
+        ModelLabScopeTypes.SelectedCompetitions => "Selected competitions",
+        _ => "Single competition"
+    };
+
+    private static string FormatStatus(string status)
+        => string.IsNullOrWhiteSpace(status) ? "Unknown" : char.ToUpperInvariant(status[0]) + status[1..];
+
+    private static string StatusClass(string status) => status switch
+    {
+        ModelLabRunStatuses.Completed => "status-pill status-completed",
+        ModelLabRunStatuses.Failed => "status-pill status-failed",
+        ModelLabRunStatuses.Running => "status-pill status-progress",
+        ModelLabRunStatuses.Queued => "status-pill status-warning",
+        _ => "status-pill status-empty"
+    };
+
+    private static string FormatDate(DateTime value) => value.ToLocalTime().ToString("yyyy-MM-dd");
+    private static string FormatDateTime(DateTime value) => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            return "Sign in to view saved models.";
+        }
+
+        var body = await response.Content.ReadAsStringAsync();
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.TryGetProperty("message", out var message))
+            {
+                return message.GetString() ?? body;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+        return string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase ?? "Request failed" : body;
+    }
+}

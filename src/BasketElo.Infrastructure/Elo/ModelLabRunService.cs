@@ -272,13 +272,20 @@ public sealed class ModelLabRunService(
     public async Task<IReadOnlyCollection<ModelLabRunSummaryResponse>> ListAsync(
         Guid ownerUserId,
         int take,
+        Guid? modelId,
         CancellationToken cancellationToken)
     {
         var pageSize = Math.Clamp(take, 1, MaxRunsReturned);
 
-        var runs = await dbContext.ModelLabRuns
+        var query = dbContext.ModelLabRuns
             .AsNoTracking()
-            .Where(x => x.OwnerUserId == ownerUserId)
+            .Where(x => x.OwnerUserId == ownerUserId);
+        if (modelId.HasValue)
+        {
+            query = query.Where(x => x.ModelId == modelId.Value);
+        }
+
+        var runs = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Take(pageSize)
             .ToListAsync(cancellationToken);

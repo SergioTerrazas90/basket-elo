@@ -18,7 +18,10 @@
             <h1>Pipeline operations</h1>
             <p class="intro">Monitor ingestion, data health, system status, and ELO rebuilds from one internal surface.</p>
         </div>
-        <button class="btn btn-outline-primary" @onclick="() => RefreshAsync()" disabled="@isBusy">Refresh</button>
+        <div class="admin-header-actions">
+            <a class="btn btn-outline-primary" href="/admin/jobs" target="_blank" rel="noopener">ELO run jobs <span aria-hidden="true">↗</span></a>
+            <button class="btn btn-outline-primary" @onclick="() => RefreshAsync()" disabled="@isBusy">Refresh</button>
+        </div>
     </section>
 
     @if (!string.IsNullOrWhiteSpace(message))

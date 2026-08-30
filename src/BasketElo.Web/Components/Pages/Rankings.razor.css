@@ -170,33 +170,47 @@
 .rankings-view-tabs {
     display: inline-flex;
     flex: 0 0 auto;
-    gap: 1rem;
+    gap: 0.15rem;
 }
 
+.pool-tab,
 .view-tab {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 2rem;
-    padding: 0.3rem 0 0.5rem;
+    min-height: 2.25rem;
+    padding: 0.35rem 0.8rem;
     border: 0;
-    border-bottom: 2px solid transparent;
     background: transparent;
     color: var(--color-muted);
     font-size: 0.76rem;
-    font-weight: 800;
+    font-weight: 750;
     text-decoration: none;
-    transition: color var(--motion-fast), border-color var(--motion-fast);
+    transition: color var(--motion-fast);
 }
 
+.pool-tab:hover,
+.pool-tab:focus-visible,
 .view-tab:hover,
 .view-tab:focus-visible {
-    color: var(--color-brand-dark);
+    color: var(--color-text);
 }
 
+.pool-tab.active,
 .view-tab.active {
-    border-color: var(--color-accent);
+    background-image: radial-gradient(circle, var(--color-accent) 0 45%, transparent 50%);
+    background-position: left 0.15rem center;
+    background-repeat: no-repeat;
+    background-size: 0.35rem 0.35rem;
     color: var(--color-text);
+    font-weight: 820;
+}
+
+.pool-tab:focus-visible,
+.view-tab:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
 }
 
 .rankings-heading {
@@ -601,28 +615,7 @@
 .rating-pool-tabs {
     display: flex;
     width: auto;
-    gap: 1rem;
-}
-
-.pool-tab {
-    min-height: 2.2rem;
-    padding: 0.35rem 0 0.5rem;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    background: transparent;
-    color: var(--color-muted);
-    font-weight: 800;
-    transition: color var(--motion-fast), border-color var(--motion-fast);
-}
-
-.pool-tab:hover,
-.pool-tab:focus-visible {
-    color: var(--color-brand-dark);
-}
-
-.pool-tab.active {
-    border-color: var(--color-accent);
-    color: var(--color-text);
+    gap: 0.15rem;
 }
 
 .clearable-field {

@@ -46,9 +46,12 @@
                 <nav class="rating-pool-tabs" aria-label="Rating pools">
                     @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
                     {
-                        <button type="button" class="@PoolTabClass(option.Key)" @onclick="() => SelectPoolAsync(option.Key)" disabled="@isBusy">
+                        <a class="@PoolTabClass(option.Key)"
+                           href="@BuildPoolHref(option.Key)"
+                           data-enhance-nav="true"
+                           aria-current="@PoolTabAriaCurrent(option.Key)">
                             @(option.Key == EloPoolKeys.EuropeClubs ? "Europe" : option.Key == EloPoolKeys.NationalTeams ? "National teams" : option.DisplayName)
-                        </button>
+                        </a>
                     }
                 </nav>
             </div>
@@ -1507,45 +1510,6 @@
         Navigation.NavigateTo(targetUri);
     }
 
-    private async Task SelectPoolAsync(string poolKey)
-    {
-        CancelTeamSearchDebounce();
-        var normalizedPool = EloPoolKeys.Normalize(poolKey);
-        if (string.Equals(selectedPool, normalizedPool, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        selectedPool = normalizedPool;
-        selectedTeamScope = EloTeamScopes.Current;
-        selectedCountry = null;
-        selectedCompetition = null;
-        countrySearch = null;
-        competitionSearch = null;
-        showCountrySuggestions = false;
-        showCompetitionSuggestions = false;
-        selectedFromSeason = null;
-        selectedToSeason = null;
-        minimumGames = 0;
-        teamSearch = null;
-        page = 1;
-        lastRankingsApiUri = null;
-        lastMoversApiUri = null;
-        lastFixturesApiUri = null;
-        lastUpcomingFixturesApiUri = null;
-        lastEvolutionRankingsApiUri = null;
-        lastEvolutionApiUri = null;
-
-        // Enhanced navigation can update the URL and active tab while the
-        // current interactive circuit remains mounted. Refresh this stateful
-        // surface explicitly so rankings, graph series, and legend always
-        // switch pools together.
-        var targetUri = BuildRankingsHref(1);
-        await RefreshSelectionAsync(1);
-        lastLoadedUri = targetUri;
-        Navigation.NavigateTo(targetUri);
-    }
-
     private async Task ClearTeamSearch()
     {
         CancelTeamSearchDebounce();
@@ -2656,6 +2620,23 @@
         return Navigation.GetUriWithQueryParameters(route, query);
     }
 
+    private string BuildPoolHref(string poolKey)
+    {
+        var targetPool = EloPoolKeys.Normalize(poolKey);
+        var targetView = selectedView;
+        var route = targetView == "movers" ? "/movers" : "/rankings";
+        var query = new Dictionary<string, object?>
+        {
+            ["pool"] = targetPool == EloPoolKeys.Default ? null : targetPool,
+            ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
+            ["movement"] = targetView == "movers" ? selectedMoverDirection : null,
+            ["windowDays"] = targetView == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
+            ["view"] = targetView is "rankings" or "movers" ? null : targetView
+        };
+
+        return Navigation.GetUriWithQueryParameters(route, query);
+    }
+
     private static int ClampRequestedPage(int value, int totalPages)
         => Math.Clamp(value, 1, Math.Max(1, totalPages));
 
@@ -2997,6 +2978,9 @@
 
     private string PoolTabClass(string poolKey)
         => selectedPool == poolKey ? "pool-tab active" : "pool-tab";
+
+    private string? PoolTabAriaCurrent(string poolKey)
+        => selectedPool == poolKey ? "page" : null;
 
     private string ViewTabClass(string view)
         => selectedView == view ? "view-tab active" : "view-tab";

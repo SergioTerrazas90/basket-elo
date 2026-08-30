@@ -130,6 +130,8 @@ $verifyCommand = @(
     "curl --fail --silent --show-error http://127.0.0.1:5100/sitemap.xml >/dev/null",
     "curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=results&pool=nba' | grep 'Recent results' >/dev/null",
     "! curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=results&pool=nba' | grep 'Loading completed results' >/dev/null",
+    "curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=results&pool=europe-clubs' | grep 'Recent results' >/dev/null",
+    "! curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=results&pool=europe-clubs' | grep 'Loading completed results' >/dev/null",
     "curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=fixtures&pool=nba' | grep 'Upcoming fixtures' >/dev/null",
     "! curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=fixtures&pool=nba' | grep 'Loading fixtures' >/dev/null"
 ) -join " && "

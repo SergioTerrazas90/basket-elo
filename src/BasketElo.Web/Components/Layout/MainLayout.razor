@@ -6,11 +6,11 @@
 {
     <div class="app-navigation-loading" role="status" aria-live="polite">
         <span class="app-navigation-spinner" aria-hidden="true"></span>
-        <span>Loading page…</span>
+        <span>@T["LoadingPage"]</span>
     </div>
 }
 
-<a class="skip-link" href="#main-content">Skip to main content</a>
+<a class="skip-link" href="#main-content">@T["SkipToMainContent"]</a>
 
 <div class="page">
     <header class="site-header">
@@ -23,11 +23,11 @@
         </article>
 
         <footer class="site-footer">
-            <a class="footer-support" href="sponsor">
+            <a class="footer-support" href="https://buymeacoffee.com/sergitm" target="_blank" rel="noopener noreferrer">
                 <span class="footer-support-icon" aria-hidden="true">☕</span>
                 <span>
-                    <strong>Buy me a coffee</strong>
-                    <small>Support the project</small>
+                    <strong>@T["BuyMeACoffee"]</strong>
+                    <small>@T["SupportTheProject"]</small>
                 </span>
             </a>
         </footer>
@@ -35,8 +35,8 @@
 </div>
 
 <div id="blazor-error-ui">
-    An unhandled error has occurred.
-    <a href="" class="reload">Reload</a>
+    @T["UnhandledError"]
+    <a href="" class="reload">@T["Reload"]</a>
     <a class="dismiss">x</a>
 </div>
 
@@ -52,9 +52,17 @@
 
     private ValueTask HandleLocationChanging(LocationChangingContext context)
     {
-        isNavigating = true;
+        if (!IsCultureSwitch(context.TargetLocation))
+        {
+            isNavigating = true;
+        }
+
         return ValueTask.CompletedTask;
     }
+
+    private static bool IsCultureSwitch(string targetLocation)
+        => Uri.TryCreate(targetLocation, UriKind.Absolute, out var targetUri) &&
+           string.Equals(targetUri.AbsolutePath, "/culture/set", StringComparison.OrdinalIgnoreCase);
 
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
     {

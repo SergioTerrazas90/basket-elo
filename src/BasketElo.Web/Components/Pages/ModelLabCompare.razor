@@ -1,0 +1,484 @@
+@page "/model-lab/compare"
+@rendermode InteractiveServer
+@using System.Net
+@using System.Net.Http.Json
+@using System.Text.Json
+@using BasketElo.Domain.Elo
+@using BasketElo.Domain.Entities
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Compare Models - Basket ELO</PageTitle>
+
+<div class="model-compare-page">
+    <section class="compare-hero">
+        <div class="compare-hero-copy">
+            <p class="eyebrow">Model Lab / comparison</p>
+            <h1>Put your models<br /><em>head to head.</em></h1>
+            <p>One competition. One scoring window. The only difference is the model—so you can see what its choices actually change.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="model-lab">Back to models</a>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    @if (isLoading)
+    {
+        <section class="loading-panel">Loading comparison setup...</section>
+    }
+    else if (selectedModels.Count < 2)
+    {
+        <section class="empty-state compare-empty-state">
+            <h2>Select at least two models</h2>
+            <p>Return to My Models, select two or three saved models, and choose Compare selected.</p>
+            <a class="btn btn-primary" href="model-lab">Choose models</a>
+        </section>
+    }
+    else
+    {
+        <section class="compare-model-strip">
+            @for (var index = 0; index < selectedModels.Count; index++)
+            {
+                var model = selectedModels[index];
+                <article class="compare-model-card series-@index">
+                    <div class="compare-model-heading">
+                        <span class="model-series-dot"></span>
+                        <div>
+                            <span class="compare-model-label">Model @(index + 1)</span>
+                            <h2>@model.Name</h2>
+                        </div>
+                        <span class="compare-model-version">v@model.CurrentVersion.VersionNumber</span>
+                    </div>
+                    <dl class="compare-model-parameters">
+                        <div><dt>Base</dt><dd>@model.CurrentVersion.Parameters.BaseRating.ToString("0")</dd></div>
+                        <div><dt>K factor</dt><dd>@model.CurrentVersion.Parameters.KFactor</dd></div>
+                        <div><dt>Home edge</dt><dd>@model.CurrentVersion.Parameters.HomeAdvantageElo.ToString("0")</dd></div>
+                    </dl>
+                </article>
+            }
+        </section>
+
+        @if (comparisonRuns.Count == 0)
+        {
+            <section class="comparison-panel compare-config-panel">
+                <div class="section-head compact">
+                    <div>
+                        <p class="eyebrow">Shared run setup</p>
+                        <h2>Keep the playing field level</h2>
+                        <p>Every model uses this exact setup. Only its ELO parameters change.</p>
+                    </div>
+                    <span class="fair-test-badge">Fair test</span>
+                </div>
+                <div class="compare-config-grid">
+                    <div class="filter-field">
+                        <label for="compare-pool">ELO pool</label>
+                        <select id="compare-pool" class="form-select" value="@selectedPoolKey" @onchange="OnPoolChanged" disabled="@(AvailablePools.Count <= 1)">
+                            @foreach (var pool in AvailablePools) { <option value="@pool.Key">@pool.DisplayName</option> }
+                        </select>
+                    </div>
+                    <div class="filter-field">
+                        <label for="compare-scope">Scope</label>
+                        <select id="compare-scope" class="form-select" value="@scopeType" @onchange="OnScopeChanged">
+                            <option value="@ModelLabScopeTypes.SingleCompetition">Single competition</option>
+                            @if (CanUseMultiCompetitionScopes)
+                            {
+                                <option value="@ModelLabScopeTypes.SelectedCompetitions">Selected competitions</option>
+                                <option value="@ModelLabScopeTypes.AllCompetitions">All competitions</option>
+                            }
+                        </select>
+                    </div>
+                    @if (scopeType == ModelLabScopeTypes.SingleCompetition)
+                    {
+                        <div class="filter-field wide">
+                            <label for="compare-competition">Competition</label>
+                            <select id="compare-competition" class="form-select" value="@selectedCompetitionId" @onchange="OnCompetitionChanged">
+                                @foreach (var competition in AvailableCompetitions) { <option value="@competition.Id">@competition.DisplayName</option> }
+                            </select>
+                        </div>
+                    }
+                    else if (scopeType == ModelLabScopeTypes.SelectedCompetitions)
+                    {
+                        <div class="filter-field wide">
+                            <label for="compare-competitions">Competitions</label>
+                            <select id="compare-competitions" class="form-select" multiple size="5" @onchange="OnCompetitionsChanged">
+                                @foreach (var competition in AvailableCompetitions) { <option value="@competition.Id" selected="@selectedCompetitionIds.Contains(competition.Id)">@competition.DisplayName</option> }
+                            </select>
+                            <small class="field-note">@selectedCompetitionIds.Count selected</small>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="scope-summary">@AvailableCompetitions.Count competitions in @SelectedPoolDisplayName</div>
+                    }
+                    <div class="date-window-group">
+                        <div class="date-window-heading"><span>1</span><div><strong>Initialize ratings</strong><small>Build up the starting ELO</small></div></div>
+                        <div class="date-window-fields">
+                            <div class="filter-field"><label for="compare-init-from">From</label><select id="compare-init-from" class="form-select" @bind="initializationFromSeason" @bind:after="ApplySeasons">@foreach (var season in AvailableSeasons) { <option value="@season.Label">@season.Label</option> }</select></div>
+                            <div class="filter-field"><label for="compare-init-to">Through</label><select id="compare-init-to" class="form-select" @bind="initializationToSeason" @bind:after="ApplySeasons">@foreach (var season in AvailableSeasons) { <option value="@season.Label">@season.Label</option> }</select></div>
+                        </div>
+                    </div>
+                    <div class="date-window-group is-scored">
+                        <div class="date-window-heading"><span>2</span><div><strong>Score predictions</strong><small>Measure every model here</small></div></div>
+                        <div class="date-window-fields">
+                            <div class="filter-field"><label for="compare-score-from">From</label><select id="compare-score-from" class="form-select" @bind="scoredFromSeason" @bind:after="ApplySeasons">@foreach (var season in AvailableSeasons) { <option value="@season.Label">@season.Label</option> }</select></div>
+                            <div class="filter-field"><label for="compare-score-to">Through</label><select id="compare-score-to" class="form-select" @bind="scoredToSeason" @bind:after="ApplySeasons">@foreach (var season in AvailableSeasons) { <option value="@season.Label">@season.Label</option> }</select></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="compare-config-footer">
+                    <p class="compare-config-summary"><strong>@FormatSeasonRange(scoredFromSeason, scoredToSeason)</strong> scored after @FormatSeasonRange(initializationFromSeason, initializationToSeason) initialization</p>
+                    <button type="button" class="btn btn-primary compare-start-button" @onclick="StartComparisonAsync" disabled="@isStarting">@(isStarting ? "Starting…" : $"Run {selectedModels.Count} models")</button>
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="comparison-panel compare-progress-panel @(ComparisonComplete ? "is-complete" : string.Empty)">
+                <div class="section-head compact">
+                    <div>
+                        <p class="eyebrow">@(isSavedComparison ? "Saved comparison" : ComparisonComplete ? "Comparison ready" : "Running comparison")</p>
+                        <h2>@(isSavedComparison ? "Your latest compatible result" : ComparisonComplete ? "The results are in" : "One setup, separate model runs")</h2>
+                        <p>@(ComparisonComplete ? ComparisonContext : "The models run safely in sequence. Results appear when every run finishes.")</p>
+                    </div>
+                    @if (ComparisonComplete)
+                    {
+                        <div class="comparison-ready-actions">
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="PrepareNewComparison">Try another setup</button>
+                            <span class="complete-mark" aria-hidden="true">✓</span>
+                        </div>
+                    }
+                </div>
+                <div class="compare-run-list">
+                    @for (var index = 0; index < comparisonRuns.Count; index++)
+                    {
+                        var item = comparisonRuns[index];
+                        <article class="compare-run-card series-@index">
+                            <span class="model-series-dot"></span>
+                            <div class="compare-run-body">
+                                <div class="compare-run-heading"><strong>@item.ModelName</strong><span class="run-status">@item.StatusLabel</span></div>
+                                <div class="run-progress"><span style="width:@item.ProgressPercent%"></span></div>
+                                <small>@item.ProgressStage</small>
+                            </div>
+                        </article>
+                    }
+                </div>
+            </section>
+
+            @if (comparisonDetails.Count == selectedModels.Count)
+            {
+                <section class="comparison-verdict">
+                    <div class="verdict-star" aria-hidden="true">★</div>
+                    <div>
+                        <p class="eyebrow">Head-to-head verdict</p>
+                        <h2>@VerdictTitle</h2>
+                        <p class="verdict-summary"><span>Metric wins</span>@string.Join(" · ", selectedModels.Select(model => $"{model.Name} {MetricWins(model.Id)}/4"))</p>
+                    </div>
+                </section>
+
+                <div class="comparison-insight-grid">
+                    <section class="comparison-panel comparison-visual-panel">
+                        <div class="section-head compact">
+                            <div><p class="eyebrow">Performance profile</p><h2>Where each model gains</h2><p>The dark dashed diamond is the standard reference. Each axis shows its nominal value, and the chart zooms to the observed comparison.</p></div>
+                        </div>
+                        <ModelComparisonProfile Details="@OrderedDetails" />
+                        <p class="visual-method-note">The chart uses a zoomed relative scale so meaningful differences stay visible. Nominal values appear beside each axis; the scorecard has exact model values and deltas.</p>
+                    </section>
+
+                    <section class="comparison-panel comparison-score-panel">
+                        <div class="section-head compact">
+                            <div><p class="eyebrow">Scorecard</p><h2>The exact result</h2><p>Green marks the best result in each row.</p></div>
+                        </div>
+                        <div class="comparison-table-wrap">
+                            <table class="table align-middle comparison-table">
+                                <thead><tr><th>Measure</th>@foreach (var model in selectedModels) { <th class="numeric">@model.Name</th> }</tr></thead>
+                                <tbody>
+                                    @foreach (var metric in AllMetrics)
+                                    {
+                                        <tr>
+                                            <th>@MetricLabel(metric)<small>@MetricDirection(metric)</small></th>
+                                            @foreach (var model in selectedModels)
+                                            {
+                                                var detail = DetailFor(model.Id)!;
+                                                <td class="numeric @MetricClass(detail, metric)">
+                                                    <strong>@FormatMetric(detail, metric)</strong>
+                                                    <small class="baseline-delta @BaselineDeltaClass(detail, metric)">@FormatBaselineDelta(detail, metric)</small>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+
+                <section class="comparison-panel ranking-comparison-panel">
+                    <div class="section-head compact ranking-section-head">
+                        <div><p class="eyebrow">Ranking impact</p><h2>See which teams move</h2><p>Follow a team from left to right. A line moving upward means that model ranks it higher.</p></div>
+                        <span class="ranking-direction">↑ Better rank</span>
+                    </div>
+                    <ModelRankingComparisonChart Details="@OrderedDetails" />
+                </section>
+            }
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "models")] public string? ModelIdsQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "fresh")] public bool FreshComparison { get; set; }
+    private List<ModelLabModelSummaryResponse> models = [];
+    private List<ModelLabModelSummaryResponse> selectedModels = [];
+    private List<ComparisonRunState> comparisonRuns = [];
+    private Dictionary<Guid, ModelLabRunDetailResponse> comparisonDetails = [];
+    private ModelLabEntitlementResponse? entitlement;
+    private ModelLabOptionsResponse? options;
+    private string selectedPoolKey = EloPoolKeys.Default;
+    private string scopeType = ModelLabScopeTypes.SingleCompetition;
+    private Guid selectedCompetitionId;
+    private HashSet<Guid> selectedCompetitionIds = [];
+    private string? initializationFromSeason;
+    private string? initializationToSeason;
+    private string? scoredFromSeason;
+    private string? scoredToSeason;
+    private DateTime initializationFrom;
+    private DateTime initializationTo;
+    private DateTime scoredFrom;
+    private DateTime scoredTo;
+    private bool isLoading = true;
+    private bool isStarting;
+    private bool isSavedComparison;
+    private DateTime? savedComparisonCompletedAtUtc;
+    private string? errorMessage;
+    private CancellationTokenSource? pollingCancellation;
+
+    private IReadOnlyList<ModelLabPoolOption> AvailablePools => options?.Pools.ToList() ?? [];
+    private IReadOnlyList<ModelLabSeasonOption> AvailableSeasons => options?.Seasons.OrderBy(x => x.FirstGameUtc).ThenBy(x => x.Label).ToList() ?? [];
+    private IReadOnlyList<ModelLabCompetitionOption> AvailableCompetitions => options?.Competitions.Where(x => string.Equals(x.EloPoolKey, selectedPoolKey, StringComparison.OrdinalIgnoreCase)).ToList() ?? [];
+    private bool CanUseMultiCompetitionScopes => string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName);
+    private string SelectedPoolDisplayName => options?.Pools.FirstOrDefault(x => x.Key == selectedPoolKey)?.DisplayName ?? selectedPoolKey;
+    private bool ComparisonComplete => comparisonDetails.Count == selectedModels.Count;
+    private IReadOnlyList<ModelLabRunDetailResponse> OrderedDetails => selectedModels.Select(model => DetailFor(model.Id)).Where(detail => detail is not null).Cast<ModelLabRunDetailResponse>().ToList();
+    private string ComparisonContext
+    {
+        get
+        {
+            var detail = OrderedDetails.FirstOrDefault();
+            if (detail is null) return "Each model finished against the same games.";
+            var scope = detail.Scopes.Count == 0 ? detail.Run.LeagueName : string.Join(", ", detail.Scopes.Select(item => item.DisplayName));
+            var scoredWindow = $"{detail.Run.ScoredWindow.FromUtc:d MMM yyyy}–{detail.Run.ScoredWindow.ToUtc:d MMM yyyy}";
+            return isSavedComparison && savedComparisonCompletedAtUtc.HasValue
+                ? $"Saved {savedComparisonCompletedAtUtc.Value:d MMM yyyy} · {scope} · scored {scoredWindow}"
+                : $"{scope} · scored {scoredWindow}";
+        }
+    }
+    private static readonly IReadOnlyList<MetricType> AllMetrics = [MetricType.Accuracy, MetricType.Brier, MetricType.LogLoss, MetricType.MarginError];
+    private string VerdictTitle
+    {
+        get
+        {
+            var leaders = selectedModels.GroupBy(model => MetricWins(model.Id)).OrderByDescending(group => group.Key).FirstOrDefault()?.ToList() ?? [];
+            return leaders.Count == 1 ? $"{leaders[0].Name} has the edge" : "This one is a split decision";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            entitlement = await Http.GetFromJsonAsync<ModelLabEntitlementResponse>("api/model-lab/entitlement");
+            options = await Http.GetFromJsonAsync<ModelLabOptionsResponse>("api/model-lab/options");
+            using var response = await Http.GetAsync("api/model-lab/models?includeArchived=false");
+            if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            models = await response.Content.ReadFromJsonAsync<List<ModelLabModelSummaryResponse>>() ?? [];
+            var requested = (ModelIdsQuery ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty).Where(x => x != Guid.Empty).Distinct().Take(3).ToList();
+            selectedModels = requested.Select(id => models.FirstOrDefault(x => x.Id == id)).Where(x => x is not null).Cast<ModelLabModelSummaryResponse>().ToList();
+            ApplyDefaults();
+            if (!FreshComparison)
+            {
+                await TryLoadLatestCompatibleComparisonAsync();
+            }
+        }
+        catch (Exception ex) { errorMessage = $"Could not load comparison setup: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private void ApplyDefaults()
+    {
+        if (options is null) return;
+        selectedPoolKey = options.Pools.FirstOrDefault()?.Key ?? EloPoolKeys.Default;
+        if (!string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName)) { var restricted = options.Competitions.FirstOrDefault(x => string.Equals(x.DisplayName, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase) || string.Equals(x.Name, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase)); if (restricted is not null) selectedPoolKey = restricted.EloPoolKey; }
+        selectedCompetitionId = AvailableCompetitions.FirstOrDefault()?.Id ?? Guid.Empty;
+        selectedCompetitionIds = AvailableCompetitions.Take(2).Select(x => x.Id).ToHashSet();
+        var seasons = AvailableSeasons; if (seasons.Count == 0) return;
+        var scored = seasons.Count - 1; var initStart = Math.Max(0, scored - 2); var initEnd = Math.Max(initStart, scored - 1);
+        initializationFromSeason = seasons[initStart].Label; initializationToSeason = seasons[initEnd].Label; scoredFromSeason = seasons[scored].Label; scoredToSeason = seasons[scored].Label; ApplySeasons();
+    }
+
+    private void OnPoolChanged(ChangeEventArgs args) { selectedPoolKey = args.Value?.ToString() ?? selectedPoolKey; selectedCompetitionId = AvailableCompetitions.FirstOrDefault()?.Id ?? Guid.Empty; selectedCompetitionIds = AvailableCompetitions.Take(2).Select(x => x.Id).ToHashSet(); }
+    private void OnScopeChanged(ChangeEventArgs args) { scopeType = args.Value?.ToString() ?? ModelLabScopeTypes.SingleCompetition; if (!CanUseMultiCompetitionScopes) scopeType = ModelLabScopeTypes.SingleCompetition; }
+    private void OnCompetitionChanged(ChangeEventArgs args) => Guid.TryParse(args.Value?.ToString(), out selectedCompetitionId);
+    private void OnCompetitionsChanged(ChangeEventArgs args) => selectedCompetitionIds = args.Value is string[] values ? values.Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty).Where(x => x != Guid.Empty).ToHashSet() : [];
+
+    private async Task TryLoadLatestCompatibleComparisonAsync()
+    {
+        if (selectedModels.Count < 2) return;
+        var query = string.Join("&", selectedModels.Select(model => $"modelIds={Uri.EscapeDataString(model.Id.ToString())}"));
+        using var response = await Http.GetAsync($"api/model-lab/comparisons/latest?{query}");
+        if (response.StatusCode == HttpStatusCode.NotFound) return;
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+
+        var saved = await response.Content.ReadFromJsonAsync<ModelLabSavedComparisonResponse>();
+        if (saved is null) return;
+
+        comparisonRuns = selectedModels
+            .Select(model => (Model: model, Run: saved.Runs.FirstOrDefault(run => run.ModelId == model.Id)))
+            .Where(item => item.Run is not null)
+            .Select(item => new ComparisonRunState(item.Model, item.Run!.Id, item.Run.Status, item.Run.ProgressPercent, item.Run.ProgressStage))
+            .ToList();
+        if (comparisonRuns.Count != selectedModels.Count)
+        {
+            comparisonRuns = [];
+            return;
+        }
+
+        foreach (var run in comparisonRuns)
+        {
+            using var detailResponse = await Http.GetAsync($"api/model-lab/runs/{run.RunId}");
+            if (!detailResponse.IsSuccessStatusCode) continue;
+            var detail = await detailResponse.Content.ReadFromJsonAsync<ModelLabRunDetailResponse>();
+            if (detail is not null) comparisonDetails[run.Model.Id] = detail;
+        }
+        if (comparisonDetails.Count != selectedModels.Count)
+        {
+            comparisonRuns = [];
+            comparisonDetails.Clear();
+            return;
+        }
+
+        isSavedComparison = true;
+        savedComparisonCompletedAtUtc = saved.CompletedAtUtc;
+        ApplyConfigurationFromComparison(OrderedDetails[0]);
+    }
+
+    private void ApplyConfigurationFromComparison(ModelLabRunDetailResponse detail)
+    {
+        selectedPoolKey = detail.Run.EloPoolKey;
+        scopeType = detail.Run.ScopeType;
+        selectedCompetitionIds = detail.Scopes.Select(scope => scope.Id).ToHashSet();
+        selectedCompetitionId = selectedCompetitionIds.FirstOrDefault();
+        initializationFromSeason = SeasonForDate(detail.Run.InitializationWindow.FromUtc, useStart: true) ?? initializationFromSeason;
+        initializationToSeason = SeasonForDate(detail.Run.InitializationWindow.ToUtc, useStart: false) ?? initializationToSeason;
+        scoredFromSeason = SeasonForDate(detail.Run.ScoredWindow.FromUtc, useStart: true) ?? scoredFromSeason;
+        scoredToSeason = SeasonForDate(detail.Run.ScoredWindow.ToUtc, useStart: false) ?? scoredToSeason;
+        ApplySeasons();
+    }
+
+    private string? SeasonForDate(DateTime date, bool useStart)
+        => AvailableSeasons
+            .OrderBy(season => Math.Abs(((useStart ? season.FirstGameUtc : season.LastGameUtc).Date - date.Date).TotalDays))
+            .FirstOrDefault()?.Label;
+
+    private void PrepareNewComparison()
+    {
+        pollingCancellation?.Cancel();
+        comparisonRuns = [];
+        comparisonDetails.Clear();
+        isSavedComparison = false;
+        savedComparisonCompletedAtUtc = null;
+        errorMessage = null;
+    }
+
+    private async Task StartComparisonAsync()
+    {
+        if (isStarting || selectedModels.Count < 2 || options is null) return;
+        if (scopeType == ModelLabScopeTypes.SingleCompetition && selectedCompetitionId == Guid.Empty) { errorMessage = "Choose a competition first."; return; }
+        if (scopeType == ModelLabScopeTypes.SelectedCompetitions && selectedCompetitionIds.Count == 0) { errorMessage = "Choose at least one competition first."; return; }
+        ApplySeasons(); isStarting = true; isSavedComparison = false; savedComparisonCompletedAtUtc = null; errorMessage = null;
+        try
+        {
+            var request = new CreateModelLabComparisonRequest(selectedModels.Select(x => x.Id).ToList(), DateTime.SpecifyKind(initializationFrom.Date, DateTimeKind.Utc), DateTime.SpecifyKind(initializationTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1), DateTime.SpecifyKind(scoredFrom.Date, DateTimeKind.Utc), DateTime.SpecifyKind(scoredTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1), scopeType, scopeType == ModelLabScopeTypes.SingleCompetition ? [selectedCompetitionId] : scopeType == ModelLabScopeTypes.SelectedCompetitions ? selectedCompetitionIds.ToList() : null, selectedPoolKey, BuildComparisonLeagueName());
+            using var response = await Http.PostAsJsonAsync("api/model-lab/comparisons", request);
+            if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            var created = await response.Content.ReadFromJsonAsync<ModelLabComparisonCreateResponse>() ?? throw new InvalidOperationException("The comparison response was empty.");
+            comparisonRuns = created.Runs.Select(run => new ComparisonRunState(selectedModels.First(x => x.Id == run.ModelId), run.RunId, run.Status, run.ProgressPercent, run.ProgressStage)).ToList();
+            await PollComparisonAsync();
+        }
+        catch (Exception ex) { errorMessage = $"Could not start comparison: {ex.Message}"; }
+        finally { isStarting = false; }
+    }
+
+    private async Task PollComparisonAsync()
+    {
+        pollingCancellation?.Cancel(); pollingCancellation = new CancellationTokenSource(); var token = pollingCancellation.Token;
+        while (!token.IsCancellationRequested && comparisonRuns.Any(x => x.Status is ModelLabRunStatuses.Queued or ModelLabRunStatuses.Running))
+        {
+            foreach (var item in comparisonRuns.ToList())
+            {
+                using var response = await Http.GetAsync($"api/model-lab/runs/{item.RunId}", token); if (!response.IsSuccessStatusCode) continue;
+                var detail = await response.Content.ReadFromJsonAsync<ModelLabRunDetailResponse>(cancellationToken: token); if (detail is null) continue;
+                item.Update(detail.Run); if (detail.Run.Status == ModelLabRunStatuses.Completed) comparisonDetails[item.Model.Id] = detail;
+            }
+            await InvokeAsync(StateHasChanged); if (comparisonRuns.Any(x => x.Status is ModelLabRunStatuses.Queued or ModelLabRunStatuses.Running)) await Task.Delay(TimeSpan.FromSeconds(3), token);
+        }
+    }
+
+    private ModelLabRunDetailResponse? DetailFor(Guid modelId) => comparisonDetails.TryGetValue(modelId, out var detail) ? detail : null;
+    private string BuildComparisonLeagueName()
+        => scopeType switch
+        {
+            ModelLabScopeTypes.SingleCompetition => AvailableCompetitions.FirstOrDefault(x => x.Id == selectedCompetitionId)?.DisplayName ?? string.Empty,
+            ModelLabScopeTypes.SelectedCompetitions => AvailableCompetitions.FirstOrDefault(x => selectedCompetitionIds.Contains(x.Id))?.DisplayName ?? string.Empty,
+            _ => "All competitions"
+        };
+    private int MetricWins(Guid modelId)
+    {
+        var detail = DetailFor(modelId);
+        return detail is null ? 0 : AllMetrics.Count(metric => MetricClass(detail, metric) == "metric-best");
+    }
+    private string MetricClass(ModelLabRunDetailResponse? detail, MetricType metric) { if (detail is null || comparisonDetails.Count == 0) return string.Empty; var value = MetricValue(detail, metric); var values = comparisonDetails.Values.Select(x => MetricValue(x, metric)); var best = metric == MetricType.Accuracy ? values.Max() : values.Min(); return value == best ? "metric-best" : string.Empty; }
+    private static decimal MetricValue(ModelLabRunDetailResponse detail, MetricType metric) => metric switch { MetricType.Accuracy => detail.Run.Summary.WinnerAccuracy, MetricType.Brier => detail.Run.Summary.BrierScore, MetricType.LogLoss => detail.Run.Summary.LogLoss, _ => detail.Run.Summary.AverageMarginError };
+    private static decimal BaselineMetricValue(ModelLabRunDetailResponse detail, MetricType metric) => metric switch { MetricType.Accuracy => detail.Run.BaselineSummary.WinnerAccuracy, MetricType.Brier => detail.Run.BaselineSummary.BrierScore, MetricType.LogLoss => detail.Run.BaselineSummary.LogLoss, _ => detail.Run.BaselineSummary.AverageMarginError };
+    private static string MetricLabel(MetricType metric) => metric switch { MetricType.Accuracy => "Winner accuracy", MetricType.Brier => "Brier score", MetricType.LogLoss => "Log loss", _ => "Margin error" };
+    private static string MetricDirection(MetricType metric) => metric == MetricType.Accuracy ? "higher is better" : "lower is better";
+    private static string FormatMetric(ModelLabRunDetailResponse detail, MetricType metric) => metric switch { MetricType.Accuracy => $"{MetricValue(detail, metric):0.0}%", MetricType.MarginError => $"{MetricValue(detail, metric):0.0}", _ => $"{MetricValue(detail, metric):0.000}" };
+    private static decimal BaselineImprovement(ModelLabRunDetailResponse detail, MetricType metric)
+    {
+        var modelValue = MetricValue(detail, metric);
+        var baselineValue = BaselineMetricValue(detail, metric);
+        return metric == MetricType.Accuracy ? modelValue - baselineValue : baselineValue - modelValue;
+    }
+    private static string FormatBaselineDelta(ModelLabRunDetailResponse detail, MetricType metric)
+    {
+        var improvement = BaselineImprovement(detail, metric);
+        var formatted = metric switch
+        {
+            MetricType.Accuracy => $"{improvement:+0.0;-0.0;0.0} pp",
+            MetricType.MarginError => $"{improvement:+0.0;-0.0;0.0}",
+            _ => $"{improvement:+0.000;-0.000;0.000}"
+        };
+        return $"{formatted} vs standard";
+    }
+    private static string BaselineDeltaClass(ModelLabRunDetailResponse detail, MetricType metric)
+        => BaselineImprovement(detail, metric) switch { > 0.0005m => "is-positive", < -0.0005m => "is-negative", _ => string.Empty };
+    private void ApplySeasons() { if (TryResolve(initializationFromSeason, initializationToSeason, out var initFrom, out var initTo)) { initializationFrom = initFrom; initializationTo = initTo; } if (TryResolve(scoredFromSeason, scoredToSeason, out var scoreFrom, out var scoreTo)) { scoredFrom = scoreFrom; scoredTo = scoreTo; } }
+    private bool TryResolve(string? from, string? to, out DateTime fromUtc, out DateTime toUtc) { fromUtc = toUtc = default; var fromSeason = AvailableSeasons.FirstOrDefault(x => x.Label == from); var toSeason = AvailableSeasons.FirstOrDefault(x => x.Label == to); if (fromSeason is null || toSeason is null) return false; fromUtc = (fromSeason.FirstGameUtc < toSeason.FirstGameUtc ? fromSeason : toSeason).FirstGameUtc.Date; toUtc = (fromSeason.LastGameUtc > toSeason.LastGameUtc ? fromSeason : toSeason).LastGameUtc.Date; return true; }
+    private string FormatSeasonRange(string? from, string? to) => string.Equals(from, to, StringComparison.OrdinalIgnoreCase) ? from ?? "Choose seasons" : $"{from} to {to}";
+    private enum MetricType { Accuracy, Brier, LogLoss, MarginError }
+
+    private sealed class ComparisonRunState(ModelLabModelSummaryResponse model, Guid runId, string status, int progressPercent, string progressStage)
+    {
+        public ModelLabModelSummaryResponse Model { get; } = model; public Guid RunId { get; } = runId; public string Status { get; private set; } = status; public int ProgressPercent { get; private set; } = progressPercent; public string ProgressStage { get; private set; } = progressStage; public string ModelName => Model.Name; public string StatusLabel => Status switch { ModelLabRunStatuses.Queued => "Queued", ModelLabRunStatuses.Running => "Running", ModelLabRunStatuses.Completed => "Complete", ModelLabRunStatuses.Failed => "Failed", _ => Status };
+        public void Update(ModelLabRunSummaryResponse run) { Status = run.Status; ProgressPercent = run.ProgressPercent; ProgressStage = run.ProgressStage; }
+    }
+
+    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized) return "Sign in to compare saved models.";
+        var body = await response.Content.ReadAsStringAsync(); try { using var json = JsonDocument.Parse(body); if (json.RootElement.TryGetProperty("message", out var message)) return message.GetString() ?? body; } catch (JsonException) { }
+        return string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase ?? "Request failed" : body;
+    }
+}

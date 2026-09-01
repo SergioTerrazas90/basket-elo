@@ -11,6 +11,8 @@ public class ModelLabRunRating
     public decimal Elo { get; set; }
     public int GamesPlayed { get; set; }
     public decimal RecentMovement { get; set; }
+    public int? BaselineRank { get; set; }
+    public decimal? BaselineElo { get; set; }
 
     public ModelLabRun Run { get; set; } = null!;
     public ApplicationUser OwnerUser { get; set; } = null!;

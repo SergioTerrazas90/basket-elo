@@ -85,6 +85,10 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("character varying(320)");
 
+                    b.Property<string>("PreferredCulture")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedEmail")
@@ -605,6 +609,10 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<int>("GamesProcessed")
                         .HasColumnType("integer");
 
+                    b.Property<string>("HangfireJobId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
@@ -635,6 +643,8 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.HasIndex("EloPoolKey", "RulesetVersion")
                         .IsUnique()
                         .HasFilter("\"Status\" IN ('pending', 'running') AND \"EloPoolKey\" IS NOT NULL");
+
+                    b.HasIndex("Status", "HangfireJobId", "QueuedAtUtc");
 
                     b.ToTable("elo_rebuild_runs", (string)null);
                 });
@@ -1167,6 +1177,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasPrecision(8, 4)
                         .HasColumnType("numeric(8,4)");
 
+                    b.Property<Guid?>("ComparisonGroupId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1176,9 +1189,21 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("EloPoolKey")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTime?>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("HangfireJobId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime>("InitializationFromUtc")
                         .HasColumnType("timestamp with time zone");
@@ -1188,6 +1213,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("InitializationToUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsRetained")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("LeagueName")
                         .IsRequired()
@@ -1212,6 +1240,17 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("OwnerUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("ProgressPercent")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProgressStage")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("RequestCompetitionIdsJson")
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("ScopeType")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -1224,6 +1263,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer");
 
                     b.Property<DateTime>("ScoredToUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
@@ -1239,13 +1281,89 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ModelVersionId");
 
+                    b.HasIndex("OwnerUserId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" IN ('queued', 'running') AND \"ComparisonGroupId\" IS NULL");
+
+                    b.HasIndex("IsRetained", "ExpiresAtUtc");
+
                     b.HasIndex("ModelId", "CreatedAtUtc");
+
+                    b.HasIndex("OwnerUserId", "ComparisonGroupId")
+                        .HasFilter("\"Status\" IN ('queued', 'running') AND \"ComparisonGroupId\" IS NOT NULL");
 
                     b.HasIndex("OwnerUserId", "CreatedAtUtc");
 
+                    b.HasIndex("OwnerUserId", "EloPoolKey", "CreatedAtUtc");
+
                     b.HasIndex("OwnerUserId", "Status", "CreatedAtUtc");
 
+                    b.HasIndex("Status", "HangfireJobId", "CreatedAtUtc");
+
                     b.ToTable("model_lab_runs", (string)null);
+                });
+
+            modelBuilder.Entity("BasketElo.Domain.Entities.ModelLabRunEvolutionPoint", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CompetitionName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<decimal>("Elo")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<decimal>("EloDelta")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<DateTime>("GameDateTimeUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("GameId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Rank")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Season")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TeamName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GameId");
+
+                    b.HasIndex("TeamId");
+
+                    b.HasIndex("OwnerUserId", "RunId");
+
+                    b.HasIndex("RunId", "TeamId", "GameDateTimeUtc");
+
+                    b.HasIndex("RunId", "TeamId", "GameId")
+                        .IsUnique();
+
+                    b.ToTable("model_lab_run_evolution_points", (string)null);
                 });
 
             modelBuilder.Entity("BasketElo.Domain.Entities.ModelLabRunMetricBreakdown", b =>
@@ -1492,6 +1610,13 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<decimal?>("BaselineElo")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<int?>("BaselineRank")
+                        .HasColumnType("integer");
 
                     b.Property<decimal>("Elo")
                         .HasPrecision(10, 2)
@@ -2130,6 +2255,41 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Navigation("OwnerUser");
                 });
 
+            modelBuilder.Entity("BasketElo.Domain.Entities.ModelLabRunEvolutionPoint", b =>
+                {
+                    b.HasOne("BasketElo.Domain.Entities.Game", "Game")
+                        .WithMany()
+                        .HasForeignKey("GameId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BasketElo.Domain.Entities.ApplicationUser", "OwnerUser")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BasketElo.Domain.Entities.ModelLabRun", "Run")
+                        .WithMany("EvolutionPoints")
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BasketElo.Domain.Entities.Team", "Team")
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Game");
+
+                    b.Navigation("OwnerUser");
+
+                    b.Navigation("Run");
+
+                    b.Navigation("Team");
+                });
+
             modelBuilder.Entity("BasketElo.Domain.Entities.ModelLabRunMetricBreakdown", b =>
                 {
                     b.HasOne("BasketElo.Domain.Entities.Competition", "Competition")
@@ -2412,6 +2572,8 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("BasketElo.Domain.Entities.ModelLabRun", b =>
                 {
+                    b.Navigation("EvolutionPoints");
+
                     b.Navigation("MetricBreakdowns");
 
                     b.Navigation("PeriodMetrics");

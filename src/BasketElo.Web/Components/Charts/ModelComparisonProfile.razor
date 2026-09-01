@@ -1,0 +1,169 @@
+@using System.Globalization
+@using BasketElo.Domain.Elo
+
+<div class="profile-chart-shell">
+    <svg class="profile-chart" viewBox="0 0 520 390" role="img" aria-labelledby="@ChartTitleId @ChartDescriptionId">
+        <title id="@ChartTitleId">Model performance diamond against the standard model</title>
+        <desc id="@ChartDescriptionId">Four axes compare winner accuracy, Brier score, log loss, and average margin error. The dark dashed diamond is the standard model. The chart zooms to the observed results; farther out means better performance.</desc>
+
+        @foreach (var ring in Rings)
+        {
+            <polygon class="profile-ring" points="@PolygonPoints(ring)" />
+        }
+
+        @foreach (var axis in Axes)
+        {
+            <line class="profile-axis" x1="@CenterX" y1="@CenterY" x2="@Point(axis.Index, 100).X" y2="@Point(axis.Index, 100).Y" />
+            <foreignObject x="@(axis.LabelX - 70)" y="@(axis.LabelY - 21)" width="140" height="38">
+                <div class="profile-axis-label"><strong>@axis.Label</strong><small>standard @FormatValue(StandardDetail, axis.Metric)</small></div>
+            </foreignObject>
+        }
+
+        <foreignObject x="@(CenterX - 66)" y="@(CenterY - Radius - 27)" width="132" height="20"><div class="profile-scale-label">best observed</div></foreignObject>
+        <foreignObject x="@(CenterX - 55)" y="@(Point(0, BaselineScore).Y - 20)" width="110" height="20"><div class="profile-scale-label is-standard">standard</div></foreignObject>
+        <foreignObject x="@(CenterX - 68)" y="@(CenterY + Radius + 7)" width="136" height="20"><div class="profile-scale-label">worst observed</div></foreignObject>
+
+        <polygon class="profile-standard-shape" points="@PolygonPoints(BaselineScore)">
+            <title>Standard model: nominal values are shown beside each axis</title>
+        </polygon>
+
+        @for (var index = 0; index < Details.Count; index++)
+        {
+            var detail = Details[index];
+            <g class="profile-series" style="--series-color: @SeriesColor(index)">
+                <polygon class="profile-shape" points="@ProfilePoints(detail)" />
+                @for (var metricIndex = 0; metricIndex < Axes.Count; metricIndex++)
+                {
+                    var point = Point(metricIndex, Score(detail, (Metric)metricIndex));
+                    <circle class="profile-point" cx="@point.X" cy="@point.Y" r="4">
+                        <title>@Axes[metricIndex].Label: @FormatModelValue(detail, (Metric)metricIndex); @ComparisonLabel(detail, (Metric)metricIndex)</title>
+                    </circle>
+                }
+            </g>
+        }
+    </svg>
+
+    <div class="profile-legend" aria-label="Compared models">
+        @for (var index = 0; index < Details.Count; index++)
+        {
+            <span><i style="--series-color: @SeriesColor(index)"></i>@Details[index].Run.ModelName</span>
+        }
+        <span class="profile-baseline-key"><i></i>Standard model</span>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ModelLabRunDetailResponse> Details { get; set; } = [];
+
+    private const double CenterX = 260;
+    private const double CenterY = 194;
+    private const double Radius = 128;
+    private string ChartTitleId { get; } = $"profile-title-{Guid.NewGuid():N}";
+    private string ChartDescriptionId { get; } = $"profile-description-{Guid.NewGuid():N}";
+    private static readonly int[] Rings = [20, 40, 60, 80, 100];
+    private static readonly IReadOnlyList<AxisDefinition> Axes =
+    [
+        new(0, Metric.Accuracy, "Winner accuracy", CenterX, 34),
+        new(1, Metric.Brier, "Brier score", 428, CenterY + 5),
+        new(2, Metric.LogLoss, "Log loss", CenterX, 365),
+        new(3, Metric.MarginError, "Margin error", 92, CenterY + 5)
+    ];
+
+    private ModelLabRunDetailResponse? StandardDetail => Details.FirstOrDefault();
+    private double DataMinimum => Math.Min(0, Details.SelectMany(detail => Axes.Select(axis => (double)ImprovementPercent(detail, axis.Metric))).DefaultIfEmpty(0).Min());
+    private double DataMaximum => Math.Max(0, Details.SelectMany(detail => Axes.Select(axis => (double)ImprovementPercent(detail, axis.Metric))).DefaultIfEmpty(0).Max());
+    private double DataPadding => Math.Max(3, (DataMaximum - DataMinimum) * .12);
+    private double DomainMinimum => DataMinimum - DataPadding;
+    private double DomainMaximum => DataMaximum + DataPadding;
+    private double BaselineScore => ToScore(0);
+
+    private string PolygonPoints(double score)
+        => string.Join(" ", Enumerable.Range(0, 4).Select(index => FormatPoint(Point(index, score))));
+
+    private string ProfilePoints(ModelLabRunDetailResponse detail)
+        => string.Join(" ", Enumerable.Range(0, 4).Select(index => FormatPoint(Point(index, Score(detail, (Metric)index)))));
+
+    private static string FormatPoint(ChartPoint point)
+        => $"{point.X.ToString("0.##", CultureInfo.InvariantCulture)},{point.Y.ToString("0.##", CultureInfo.InvariantCulture)}";
+
+    private static ChartPoint Point(int axisIndex, double score)
+    {
+        var angle = (-90 + axisIndex * 90) * Math.PI / 180;
+        var distance = Radius * Math.Clamp(score, 0, 100) / 100;
+        return new ChartPoint(CenterX + Math.Cos(angle) * distance, CenterY + Math.Sin(angle) * distance);
+    }
+
+    private double Score(ModelLabRunDetailResponse detail, Metric metric)
+        => ToScore(ImprovementPercent(detail, metric));
+
+    private double ToScore(decimal improvement)
+    {
+        var span = Math.Max(1, DomainMaximum - DomainMinimum);
+        return Math.Clamp(20 + ((double)improvement - DomainMinimum) / span * 80, 20, 100);
+    }
+
+    private static decimal ImprovementPercent(ModelLabRunDetailResponse detail, Metric metric)
+    {
+        var model = MetricValue(detail.Run.Summary, metric);
+        var baseline = MetricValue(detail.Run.BaselineSummary, metric);
+        if (baseline == 0) return 0;
+        return metric == Metric.Accuracy ? (model - baseline) / baseline * 100 : (baseline - model) / baseline * 100;
+    }
+
+    private static string ComparisonLabel(ModelLabRunDetailResponse detail, Metric metric)
+    {
+        var model = MetricValue(detail.Run.Summary, metric);
+        var standard = MetricValue(detail.Run.BaselineSummary, metric);
+        var delta = metric == Metric.Accuracy ? model - standard : standard - model;
+        var formatted = metric switch
+        {
+            Metric.Accuracy => $"{delta:+0.0;-0.0;0.0} pp",
+            Metric.MarginError => $"{delta:+0.0;-0.0;0.0}",
+            _ => $"{delta:+0.000;-0.000;0.000}"
+        };
+        return delta switch
+        {
+            > 0.0005m => $"{formatted} better than standard",
+            < -0.0005m => $"{formatted} worse than standard",
+            _ => "same as standard"
+        };
+    }
+
+    private static string FormatValue(ModelLabRunDetailResponse? detail, Metric metric)
+    {
+        if (detail is null) return "—";
+        return FormatSummaryValue(detail.Run.BaselineSummary, metric);
+    }
+
+    private static string FormatModelValue(ModelLabRunDetailResponse detail, Metric metric)
+        => FormatSummaryValue(detail.Run.Summary, metric);
+
+    private static string FormatSummaryValue(ModelLabBacktestSummary summary, Metric metric)
+    {
+        return metric switch
+        {
+            Metric.Accuracy => $"{MetricValue(summary, metric):0.0}%",
+            Metric.MarginError => $"{MetricValue(summary, metric):0.0}",
+            _ => $"{MetricValue(summary, metric):0.000}"
+        };
+    }
+
+    private static decimal MetricValue(ModelLabBacktestSummary summary, Metric metric) => metric switch
+    {
+        Metric.Accuracy => summary.WinnerAccuracy,
+        Metric.Brier => summary.BrierScore,
+        Metric.LogLoss => summary.LogLoss,
+        _ => summary.AverageMarginError
+    };
+
+    private static string SeriesColor(int index) => index switch
+    {
+        0 => "var(--color-teal)",
+        1 => "var(--color-accent)",
+        _ => "var(--color-purple)"
+    };
+
+    private enum Metric { Accuracy, Brier, LogLoss, MarginError }
+    private sealed record AxisDefinition(int Index, Metric Metric, string Label, double LabelX, double LabelY);
+    private sealed record ChartPoint(double X, double Y);
+}

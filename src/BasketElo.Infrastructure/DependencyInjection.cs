@@ -4,6 +4,7 @@ using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.CurrentResults;
 using BasketElo.Infrastructure.Elo;
 using BasketElo.Infrastructure.Identity;
+using BasketElo.Infrastructure.Jobs;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -20,6 +21,8 @@ public static class DependencyInjection
 
         services.AddDbContext<BasketEloDbContext>(options =>
             options.UseNpgsql(connectionString));
+
+        services.AddEloJobStorage(configuration);
 
         services.Configure<ApiSportsOptions>(configuration.GetSection(ApiSportsOptions.SectionName));
         services.Configure<AcbArchiveOptions>(configuration.GetSection(AcbArchiveOptions.SectionName));
@@ -300,9 +303,14 @@ public static class DependencyInjection
         services.AddSingleton<IBackfillCatalog, BackfillCatalog>();
         services.AddScoped<IEloRebuildService, EloRebuildService>();
         services.AddScoped<IEloRebuildJobProcessor, EloRebuildJobProcessor>();
+        services.AddScoped<ISystemEloJobDispatcher, SystemEloJobDispatcher>();
+        services.AddScoped<SystemEloRebuildJob>();
         services.AddScoped<IModelLabBacktestService, ModelLabBacktestService>();
         services.AddScoped<IModelLabModelService, ModelLabModelService>();
         services.AddScoped<IModelLabRunService, ModelLabRunService>();
+        services.AddScoped<IModelLabRunJobProcessor, ModelLabRunJobProcessor>();
+        services.AddScoped<IModelLabJobDispatcher, ModelLabJobDispatcher>();
+        services.AddScoped<ModelLabRunJob>();
         services.AddScoped<IModelLabEntitlementService, ModelLabEntitlementService>();
         services.AddSingleton<IEloRebuildNotificationPublisher, PostgresEloRebuildNotificationPublisher>();
         services.AddScoped<IIdentityHealthCheckService, IdentityHealthCheckService>();

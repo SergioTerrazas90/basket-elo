@@ -1,0 +1,322 @@
+@page "/model-lab"
+@page "/model-lab/models"
+@rendermode InteractiveServer
+@using System.Net
+@using System.Net.Http.Json
+@using System.Text.Json
+@using BasketElo.Domain.Elo
+@using BasketElo.Domain.Entities
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>My Models - Basket ELO</PageTitle>
+
+<div class="model-library-page">
+    <section class="library-hero">
+        <div>
+            <p class="eyebrow">Model Lab</p>
+            <h1>My models</h1>
+            <p>Your saved model families, versions, and historical runs—all in one place.</p>
+        </div>
+        <div class="library-hero-actions">
+            @if (models.Count > 1)
+            {
+                <div class="compare-selection-summary">
+                    <span class="@(SelectedCompatibleComparison is not null ? "has-saved-match" : string.Empty)">@SelectionSummaryText</span>
+                    <button type="button" class="btn btn-outline-primary" @onclick="CompareSelectedModels" disabled="@(selectedModelIds.Count < 2)">@SelectionActionLabel</button>
+                    @if (SelectedCompatibleComparison is not null)
+                    {
+                        <a class="btn btn-link btn-sm compare-new-setup" href="@NewComparisonHref">Run a new setup</a>
+                    }
+                </div>
+            }
+            <a class="btn btn-primary" href="model-lab/new">Create a model</a>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    @if (isLoading)
+    {
+        <section class="loading-panel">Loading saved models...</section>
+    }
+    else if (models.Count == 0)
+    {
+        <section class="empty-state">
+            <h2>No saved models yet</h2>
+            <p>Create your first model, adjust its rating rules, and test it against historical results.</p>
+            <a class="btn btn-primary" href="model-lab/new">Create a model</a>
+        </section>
+    }
+    else
+    {
+        @if (availableComparisons.Count > 0)
+        {
+            <section class="available-comparisons" aria-labelledby="available-comparisons-title">
+                <div class="available-comparisons-heading">
+                    <div>
+                        <p class="eyebrow">Saved results</p>
+                        <h2 id="available-comparisons-title">Available comparisons</h2>
+                        <p>Open a compatible result instantly—no new runs required.</p>
+                    </div>
+                    <span class="available-count">@RecentComparisons.Count ready</span>
+                </div>
+                <div class="available-comparisons-grid">
+                    @foreach (var comparison in RecentComparisons)
+                    {
+                        var firstRun = comparison.Runs.First();
+                        <a class="available-comparison-card" href="@ComparisonHref(comparison)">
+                            <div class="available-card-topline">
+                                <span class="ready-pill"><i></i>Ready</span>
+                                <time datetime="@comparison.CompletedAtUtc.ToString("O")">@FormatComparisonDate(comparison.CompletedAtUtc)</time>
+                            </div>
+                            <div class="available-models" aria-label="Compared models">
+                                @foreach (var run in comparison.Runs)
+                                {
+                                    <span><i></i>@run.ModelName <small>@ModelVersionLabel(run.ModelId)</small></span>
+                                }
+                            </div>
+                            <strong class="available-verdict">@ComparisonHeadline(comparison)</strong>
+                            <div class="available-context">
+                                <span>@firstRun.LeagueName</span>
+                                <span>@FormatScoredWindow(firstRun)</span>
+                            </div>
+                            <span class="available-open">Open comparison <span aria-hidden="true">→</span></span>
+                        </a>
+                    }
+                </div>
+            </section>
+        }
+
+        <section class="model-library-grid">
+            @foreach (var model in models)
+            {
+                var lastRun = LastRunFor(model.Id);
+                <article class="model-library-card @(model.IsArchived ? "is-archived" : string.Empty)">
+                    <div class="model-card-heading">
+                        <div>
+                            <span class="model-state">@(model.IsArchived ? "Archived" : "Active")</span>
+                            <h2>@model.Name</h2>
+                            <p>@(model.Description ?? "No description")</p>
+                        </div>
+                        <div class="model-card-badges">
+                            <span class="version-badge">v@(model.CurrentVersion.VersionNumber)</span>
+                            <label class="model-select">
+                                <input type="checkbox"
+                                       checked="@selectedModelIds.Contains(model.Id)"
+                                       disabled="@(model.IsArchived || (!selectedModelIds.Contains(model.Id) && selectedModelIds.Count >= 3))"
+                                       @onchange="() => ToggleModelSelection(model.Id)" />
+                                <span>@(model.IsArchived ? "Archived" : selectedModelIds.Contains(model.Id) ? "Selected" : "Compare")</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <dl class="model-card-facts">
+                        <div><dt>Rating rules</dt><dd>K @model.CurrentVersion.Parameters.KFactor · Home @model.CurrentVersion.Parameters.HomeAdvantageElo.ToString("0")</dd></div>
+                        <div><dt>Runs</dt><dd>@RunCount(model.Id)</dd></div>
+                        <div><dt>Updated</dt><dd>@FormatDate(model.UpdatedAtUtc)</dd></div>
+                        @if (lastRun is not null)
+                        {
+                            <div><dt>Latest scope</dt><dd>@FormatScope(lastRun.ScopeType)</dd></div>
+                        }
+                    </dl>
+
+                    @if (lastRun is null)
+                    {
+                        <div class="model-run-summary is-empty">No runs yet.</div>
+                    }
+                    else
+                    {
+                        <a class="model-run-summary" href="@($"model-lab/runs/{lastRun.Id}")">
+                            <span class="@StatusClass(lastRun.Status)">@FormatStatus(lastRun.Status)</span>
+                            <strong>@RunHeadline(lastRun)</strong>
+                            <small>@EloPoolKeys.DisplayName(lastRun.EloPoolKey) · @FormatDateTime(lastRun.CreatedAtUtc)</small>
+                            <span class="open-result">@RunActionLabel(lastRun)</span>
+                        </a>
+                    }
+
+                    <div class="model-card-actions">
+                        <a class="btn btn-outline-primary" href="@($"model-lab/models/{model.Id}")">Open model</a>
+                        @if (!model.IsArchived)
+                        {
+                            <a class="btn btn-primary" href="@($"model-lab/models/{model.Id}/run")">Run model</a>
+                        }
+                    </div>
+                </article>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private List<ModelLabModelSummaryResponse> models = [];
+    private List<ModelLabRunSummaryResponse> runs = [];
+    private List<ModelLabSavedComparisonResponse> availableComparisons = [];
+    private HashSet<Guid> selectedModelIds = [];
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var modelResponse = await Http.GetAsync("api/model-lab/models?includeArchived=true");
+            if (!modelResponse.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(modelResponse));
+            }
+
+            models = await modelResponse.Content.ReadFromJsonAsync<List<ModelLabModelSummaryResponse>>() ?? [];
+            using var runResponse = await Http.GetAsync("api/model-lab/runs?take=100");
+            if (runResponse.IsSuccessStatusCode)
+            {
+                runs = await runResponse.Content.ReadFromJsonAsync<List<ModelLabRunSummaryResponse>>() ?? [];
+            }
+            using var comparisonResponse = await Http.GetAsync("api/model-lab/comparisons?take=50");
+            if (comparisonResponse.IsSuccessStatusCode)
+            {
+                availableComparisons = await comparisonResponse.Content.ReadFromJsonAsync<List<ModelLabSavedComparisonResponse>>() ?? [];
+            }
+        }
+        catch (Exception exception)
+        {
+            errorMessage = $"Could not load the model library: {exception.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private ModelLabRunSummaryResponse? LastRunFor(Guid modelId)
+        => runs.Where(run => run.ModelId == modelId).OrderByDescending(run => run.CreatedAtUtc).FirstOrDefault();
+
+    private ModelLabSavedComparisonResponse? SelectedCompatibleComparison
+        => selectedModelIds.Count < 2
+            ? null
+            : availableComparisons.FirstOrDefault(comparison => comparison.Runs.Select(run => run.ModelId).ToHashSet().SetEquals(selectedModelIds));
+    private IReadOnlyList<ModelLabSavedComparisonResponse> RecentComparisons => availableComparisons.Take(6).ToList();
+    private string SelectionSummaryText => SelectedCompatibleComparison is not null ? "Saved comparison available" : $"{selectedModelIds.Count} of 3 selected";
+    private string SelectionActionLabel => SelectedCompatibleComparison is not null ? "View existing comparison" : "Set up comparison";
+    private string NewComparisonHref
+        => $"model-lab/compare?models={Uri.EscapeDataString(string.Join(',', selectedModelIds.Take(3)))}&fresh=true";
+
+    private void ToggleModelSelection(Guid modelId)
+    {
+        if (!selectedModelIds.Add(modelId))
+        {
+            selectedModelIds.Remove(modelId);
+        }
+    }
+
+    private void CompareSelectedModels()
+    {
+        if (selectedModelIds.Count < 2)
+        {
+            return;
+        }
+
+        var modelQuery = string.Join(',', selectedModelIds.Take(3));
+        Navigation.NavigateTo($"model-lab/compare?models={Uri.EscapeDataString(modelQuery)}");
+    }
+
+    private int RunCount(Guid modelId) => runs.Count(run => run.ModelId == modelId);
+
+    private static string ComparisonHref(ModelLabSavedComparisonResponse comparison)
+    {
+        var modelQuery = string.Join(',', comparison.Runs.Select(run => run.ModelId));
+        return $"model-lab/compare?models={Uri.EscapeDataString(modelQuery)}";
+    }
+
+    private string ModelVersionLabel(Guid modelId)
+        => models.FirstOrDefault(model => model.Id == modelId) is { } model ? $"v{model.CurrentVersion.VersionNumber}" : string.Empty;
+
+    private static string ComparisonHeadline(ModelLabSavedComparisonResponse comparison)
+    {
+        var runs = comparison.Runs.ToList();
+        if (runs.Count == 0) return "Comparison ready";
+        var wins = runs.ToDictionary(run => run.ModelId, _ => 0);
+        AwardBest(runs, wins, run => run.Summary.WinnerAccuracy, higherIsBetter: true);
+        AwardBest(runs, wins, run => run.Summary.BrierScore, higherIsBetter: false);
+        AwardBest(runs, wins, run => run.Summary.LogLoss, higherIsBetter: false);
+        AwardBest(runs, wins, run => run.Summary.AverageMarginError, higherIsBetter: false);
+        var bestScore = wins.Values.Max();
+        var leaders = runs.Where(run => wins[run.ModelId] == bestScore).ToList();
+        return leaders.Count == 1 ? $"{leaders[0].ModelName} leads {bestScore}/4" : $"Split decision · {bestScore}/4 each";
+    }
+
+    private static void AwardBest(
+        IReadOnlyCollection<ModelLabRunSummaryResponse> runs,
+        IDictionary<Guid, int> wins,
+        Func<ModelLabRunSummaryResponse, decimal> value,
+        bool higherIsBetter)
+    {
+        var best = higherIsBetter ? runs.Max(value) : runs.Min(value);
+        foreach (var run in runs.Where(run => value(run) == best)) wins[run.ModelId]++;
+    }
+
+    private static string FormatComparisonDate(DateTime value) => value.ToLocalTime().ToString("d MMM yyyy");
+    private static string FormatScoredWindow(ModelLabRunSummaryResponse run)
+        => $"{run.ScoredWindow.FromUtc:MMM yyyy}–{run.ScoredWindow.ToUtc:MMM yyyy}";
+
+    private static string RunHeadline(ModelLabRunSummaryResponse run)
+        => run.Status switch
+        {
+            ModelLabRunStatuses.Queued => $"Queue position #{run.QueuePosition ?? 1}",
+            ModelLabRunStatuses.Running => $"{run.ProgressStage} · {run.ProgressPercent}%",
+            ModelLabRunStatuses.Failed => "Run failed",
+            ModelLabRunStatuses.Canceled => "Run canceled",
+            _ => $"{run.Summary.WinnerAccuracy:0.0}% winner accuracy"
+        };
+
+    private static string RunActionLabel(ModelLabRunSummaryResponse run)
+        => run.Status == ModelLabRunStatuses.Completed ? "View results →" : "Open run →";
+
+    private static string FormatScope(string scopeType) => scopeType switch
+    {
+        ModelLabScopeTypes.AllCompetitions => "All competitions",
+        ModelLabScopeTypes.SelectedCompetitions => "Selected competitions",
+        _ => "Single competition"
+    };
+
+    private static string FormatStatus(string status)
+        => string.IsNullOrWhiteSpace(status) ? "Unknown" : char.ToUpperInvariant(status[0]) + status[1..];
+
+    private static string StatusClass(string status) => status switch
+    {
+        ModelLabRunStatuses.Completed => "status-pill status-completed",
+        ModelLabRunStatuses.Failed => "status-pill status-failed",
+        ModelLabRunStatuses.Running => "status-pill status-progress",
+        ModelLabRunStatuses.Queued => "status-pill status-warning",
+        ModelLabRunStatuses.Canceled => "status-pill status-empty",
+        _ => "status-pill status-empty"
+    };
+
+    private static string FormatDate(DateTime value) => value.ToLocalTime().ToString("yyyy-MM-dd");
+    private static string FormatDateTime(DateTime value) => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            return "Sign in to view saved models.";
+        }
+
+        var body = await response.Content.ReadAsStringAsync();
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.TryGetProperty("message", out var message))
+            {
+                return message.GetString() ?? body;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+        return string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase ?? "Request failed" : body;
+    }
+}

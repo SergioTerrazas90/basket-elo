@@ -1,37 +1,68 @@
 @page "/model-lab/runs/{RunId:guid}"
 @rendermode InteractiveServer
+@implements IAsyncDisposable
 @using System.Net
 @using System.Net.Http.Json
 @using System.Text.Json
 @using BasketElo.Domain.Elo
+@using BasketElo.Domain.Entities
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
-<PageTitle>Model Run - Basket ELO</PageTitle>
+<PageTitle>Run Results - Basket ELO</PageTitle>
 
 <div class="model-run-page">
     <section class="run-hero">
         <div>
             <p class="eyebrow">Model Lab</p>
-            <h1>Saved run</h1>
+            <h1>Run results</h1>
             @if (detail is not null)
             {
-                <p class="intro">@detail.Run.ModelName &middot; @detail.Run.LeagueName &middot; @FormatDateTime(detail.Run.CreatedAtUtc)</p>
+                <p class="intro">
+                    @if (IsCompletedRun)
+                    {
+                        <text>@detail.Run.ModelName @ModelVersionLabel &middot; rankings, rating evolution, and prediction metrics</text>
+                    }
+                    else
+                    {
+                        <text>@detail.Run.ModelName &middot; monitor this ELO run until its rankings and rating evolution are ready</text>
+                    }
+                </p>
             }
             else
             {
-                <p class="intro">Persisted backtest output for a saved model.</p>
+                <p class="intro">Monitor the ELO run, then review its rankings and rating evolution.</p>
             }
         </div>
 
         <div class="run-hero-actions">
             @if (detail is not null)
             {
-                <button type="button" class="btn btn-outline-danger" @onclick="DeleteRunAsync" disabled="@isDeleting">
+                @if (IsActiveRun)
+                {
+                    <button type="button" class="btn btn-outline-danger" @onclick="CancelRunAsync" disabled="@isCancelling">
+                        @(isCancelling ? "Cancelling..." : "Cancel run")
+                    </button>
+                }
+                else if (detail.Run.Status is ModelLabRunStatuses.Failed or ModelLabRunStatuses.Canceled)
+                {
+                    <button type="button" class="btn btn-outline-primary" @onclick="RetryRunAsync" disabled="@isRetrying">
+                        @(isRetrying ? "Queueing..." : "Retry run")
+                    </button>
+                }
+                <button type="button" class="btn btn-outline-danger" @onclick="DeleteRunAsync" disabled="@(isDeleting || IsActiveRun)">
                     @(confirmDelete ? "Confirm delete" : isDeleting ? "Deleting..." : "Delete run")
                 </button>
+                <a class="btn btn-outline-secondary" href="@($"model-lab/models/{detail.Run.ModelId}")">Back to model</a>
+                @if (!IsActiveRun && runModel?.IsArchived != true)
+                {
+                    <a class="btn btn-primary" href="@($"model-lab/models/{detail.Run.ModelId}/run")">Run model again</a>
+                }
             }
-            <a class="btn btn-outline-secondary" href="model-lab">Back to Model Lab</a>
+            else
+            {
+                <a class="btn btn-outline-secondary" href="model-lab">Back to Model Lab</a>
+            }
         </div>
     </section>
 
@@ -52,22 +83,77 @@
     {
         <section class="run-status-panel">
             <div>
-                <span class="@StatusClass(detail.Run.Status)">@FormatStatus(detail.Run.Status)</span>
-                <strong>@detail.Run.ModelName</strong>
-                <small>@FormatScope(detail.Run.ScopeType) &middot; @FormatWindow(detail.Run.ScoredWindow)</small>
+                <span>Model</span>
+                <strong>@detail.Run.ModelName @ModelVersionLabel</strong>
+                <small><span class="@StatusClass(detail.Run.Status)">@FormatStatus(detail.Run.Status)</span></small>
             </div>
             <div>
-                <span>Run ID</span>
-                <strong>@detail.Run.Id.ToString()[..8]</strong>
-                <small>@detail.Scopes.Count scoped competition@(detail.Scopes.Count == 1 ? string.Empty : "s")</small>
+                <span>Evaluation period</span>
+                <strong>@FormatWindow(detail.Run.ScoredWindow)</strong>
+                <small>@detail.Run.Summary.ScoredGames scored games</small>
+            </div>
+            <div>
+                <span>ELO pool</span>
+                <strong>@EloPoolKeys.DisplayName(detail.Run.EloPoolKey)</strong>
+                <small>Isolated Model Lab simulation</small>
             </div>
             <div>
                 <span>Competitions</span>
                 <strong>@FormatScopeNames(detail.Scopes)</strong>
-                <small>Model version @detail.Run.ModelVersionId.ToString()[..8]</small>
+                <small>@FormatScope(detail.Run.ScopeType)</small>
             </div>
         </section>
 
+        @if (RunVersion is not null)
+        {
+            <details class="run-definition-panel">
+                <summary>
+                    <span>Model settings used for this run</span>
+                    <strong>@detail.Run.ModelName @ModelVersionLabel</strong>
+                </summary>
+                <div class="run-parameter-grid">
+                    <div><span>Base rating</span><strong>@RunVersion.Parameters.BaseRating.ToString("0")</strong></div>
+                    <div><span>K-factor</span><strong>@RunVersion.Parameters.KFactor</strong></div>
+                    <div><span>Home advantage</span><strong>@RunVersion.Parameters.HomeAdvantageElo.ToString("0")</strong></div>
+                    <div><span>Probability scale</span><strong>@RunVersion.Parameters.ProbabilityScale.ToString("0")</strong></div>
+                    <div><span>Margin adjustment</span><strong>@(RunVersion.Parameters.UsesMarginAdjustment ? "On" : "Off")</strong></div>
+                    <div><span>Competition weight</span><strong>@RunVersion.Parameters.CompetitionWeight.ToString("0.00")</strong></div>
+                </div>
+            </details>
+        }
+
+        @if (IsActiveRun)
+        {
+            <section class="run-progress-panel" aria-live="polite">
+                <div class="run-progress-heading">
+                    <div>
+                        <span>@detail.Run.ProgressStage</span>
+                        <strong>@detail.Run.ProgressPercent%</strong>
+                    </div>
+                    @if (detail.Run.Status == ModelLabRunStatuses.Queued)
+                    {
+                        <small>Queue position #@(detail.Run.QueuePosition ?? 1). System ELO jobs have priority.</small>
+                    }
+                    else
+                    {
+                        <small>The result page will update automatically when the run finishes.</small>
+                    }
+                </div>
+                <div class="progress" role="progressbar" aria-valuenow="@detail.Run.ProgressPercent" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar" style="width: @(detail.Run.ProgressPercent)%"></div>
+                </div>
+            </section>
+        }
+        else if (detail.Run.Status == ModelLabRunStatuses.Failed)
+        {
+            <section class="alert alert-danger" role="alert">
+                <strong>The run failed.</strong>
+                <span>@(detail.Run.ErrorMessage ?? "No failure details were recorded.")</span>
+            </section>
+        }
+
+        @if (IsCompletedRun)
+        {
         <section class="result-summary">
             <div>
                 <span>Scored games</span>
@@ -89,6 +175,33 @@
                 <strong>@detail.Run.Summary.AverageMarginError.ToString("0.0")</strong>
                 <small>Baseline @detail.Run.BaselineSummary.AverageMarginError.ToString("0.0")</small>
             </div>
+        </section>
+
+        <section class="result-panel run-evolution-panel">
+            <div class="section-head compact">
+                <div>
+                    <h2>Rating evolution</h2>
+                    <p>Game-by-game ELO paths for the final top 10 teams, calculated only from this run's pool and scope.</p>
+                </div>
+            </div>
+            @if (isLoadingEvolution)
+            {
+                <div class="loading-panel compact-loading">Loading rating evolution...</div>
+            }
+            else if (evolutionChartSeries.Count == 0)
+            {
+                <div class="empty-state compact-empty">No rating evolution was stored for this run.</div>
+            }
+            else
+            {
+                <EloEvolutionChart Series="@evolutionChartSeries"
+                                   HeightPixels="400"
+                                   ShowLegend="true"
+                                   ShowSeriesControls="true"
+                                   EnableRangeNavigation="true"
+                                   AllowExpand="true"
+                                   DataRevision="@evolutionDataRevision" />
+            }
         </section>
 
         <section class="result-panel">
@@ -150,6 +263,13 @@
                         <h2>Final ratings</h2>
                         <p>Top teams at the end of the scoped run.</p>
                     </div>
+                    @if (HasBaselineRatings)
+                    {
+                        <label class="comparison-toggle">
+                            <input type="checkbox" @bind="showBaselineRatings" />
+                            <span>Compare with standard</span>
+                        </label>
+                    }
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle compact-table">
@@ -158,6 +278,10 @@
                                 <th>Rank</th>
                                 <th>Team</th>
                                 <th class="numeric">ELO</th>
+                                @if (showBaselineRatings)
+                                {
+                                    <th class="numeric">Standard</th>
+                                }
                                 <th class="numeric">Games</th>
                                 <th class="numeric">Recent</th>
                             </tr>
@@ -169,6 +293,13 @@
                                     <td class="rank-cell">#@row.Rank</td>
                                     <td>@row.TeamName</td>
                                     <td class="numeric rating">@row.Elo.ToString("0")</td>
+                                    @if (showBaselineRatings)
+                                    {
+                                        <td class="numeric baseline-comparison">
+                                            <strong>#@(row.BaselineRank?.ToString() ?? "—") · @(row.BaselineElo?.ToString("0") ?? "—")</strong>
+                                            <small class="@BaselineComparisonClass(row)">@FormatEloDelta(row) · @FormatRankDelta(row)</small>
+                                        </td>
+                                    }
                                     <td class="numeric">@row.GamesPlayed</td>
                                     <td class="numeric"><span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span></td>
                                 </tr>
@@ -306,6 +437,7 @@
                 </div>
             }
         </section>
+        }
     }
 </div>
 
@@ -316,13 +448,66 @@
     private const int PredictionPageSize = 50;
 
     private ModelLabRunDetailResponse? detail;
+    private ModelLabModelDetailResponse? runModel;
     private ModelLabRunPredictionPageResponse? predictionPage;
     private bool isLoading = true;
     private bool isLoadingPredictions;
+    private bool isLoadingEvolution;
     private bool confirmDelete;
     private bool isDeleting;
+    private bool isCancelling;
+    private bool isRetrying;
+    private bool showBaselineRatings;
     private string? errorMessage;
     private int predictionSkip;
+    private IReadOnlyList<EloChartSeries> evolutionChartSeries = [];
+    private long evolutionDataRevision;
+    private CancellationTokenSource? pollingCancellation;
+    private Task? pollingTask;
+
+    private bool IsActiveRun => detail?.Run.Status is ModelLabRunStatuses.Queued or ModelLabRunStatuses.Running;
+
+    private bool IsCompletedRun => detail?.Run.Status == ModelLabRunStatuses.Completed;
+
+    private ModelLabModelVersionResponse? RunVersion
+        => detail is null
+            ? null
+            : runModel?.Versions.FirstOrDefault(version => version.Id == detail.Run.ModelVersionId);
+
+    private string ModelVersionLabel
+        => RunVersion is null ? string.Empty : $"v{RunVersion.VersionNumber}";
+
+    private bool HasBaselineRatings
+        => detail?.Ratings.Any(x => x.BaselineRank.HasValue && x.BaselineElo.HasValue) == true;
+
+    private static string FormatEloDelta(ModelLabRatingRow row)
+        => row.BaselineElo is not decimal baseline
+            ? "standard unavailable"
+            : (row.Elo - baseline) switch
+            {
+                > 0 => $"+{row.Elo - baseline:0} ELO",
+                < 0 => $"{row.Elo - baseline:0} ELO",
+                _ => "even ELO"
+            };
+
+    private static string FormatRankDelta(ModelLabRatingRow row)
+        => row.BaselineRank is not int baseline
+            ? "rank unavailable"
+            : (baseline - row.Rank) switch
+            {
+                > 0 => $"↑{baseline - row.Rank} rank{(baseline - row.Rank == 1 ? string.Empty : "s")}",
+                < 0 => $"↓{row.Rank - baseline} rank{(row.Rank - baseline == 1 ? string.Empty : "s")}",
+                _ => "same rank"
+            };
+
+    private static string BaselineComparisonClass(ModelLabRatingRow row)
+        => row.BaselineElo is not decimal baseline
+            ? "comparison-unavailable"
+            : row.Elo == baseline
+                ? "comparison-even"
+                : row.Elo > baseline
+                    ? "comparison-positive"
+                    : "comparison-negative";
 
     private bool CanGoPrevious => predictionPage is not null && predictionPage.Skip > 0 && !isLoadingPredictions;
 
@@ -337,14 +522,37 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        await StopPollingAsync();
         await LoadRunAsync();
+        if (IsActiveRun)
+        {
+            StartPolling();
+        }
     }
 
-    private async Task LoadRunAsync()
+    private void StartPolling()
     {
-        isLoading = true;
+        if (pollingCancellation is not null)
+        {
+            return;
+        }
+
+        pollingCancellation = new CancellationTokenSource();
+        pollingTask = PollRunAsync(pollingCancellation.Token);
+    }
+
+    private async Task LoadRunAsync(bool showLoading = true)
+    {
+        if (showLoading)
+        {
+            isLoading = true;
+        }
         errorMessage = null;
-        predictionSkip = 0;
+        var wasCompleted = IsCompletedRun;
+        if (showLoading)
+        {
+            predictionSkip = 0;
+        }
 
         try
         {
@@ -363,7 +571,14 @@
 
             detail = await response.Content.ReadFromJsonAsync<ModelLabRunDetailResponse>()
                 ?? throw new InvalidOperationException("The saved run response was empty.");
-            await LoadPredictionsAsync();
+            if (runModel?.Id != detail.Run.ModelId)
+            {
+                await LoadRunModelAsync(detail.Run.ModelId);
+            }
+            if (IsCompletedRun && (!wasCompleted || predictionPage is null))
+            {
+                await Task.WhenAll(LoadPredictionsAsync(), LoadEvolutionAsync());
+            }
         }
         catch (Exception ex)
         {
@@ -371,8 +586,73 @@
         }
         finally
         {
-            isLoading = false;
+            if (showLoading)
+            {
+                isLoading = false;
+            }
         }
+    }
+
+    private async Task LoadRunModelAsync(Guid modelId)
+    {
+        try
+        {
+            using var response = await Http.GetAsync($"api/model-lab/models/{modelId}");
+            if (response.IsSuccessStatusCode)
+            {
+                runModel = await response.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>();
+            }
+        }
+        catch
+        {
+            // The run remains useful even if its model metadata cannot be loaded.
+        }
+    }
+
+    private async Task PollRunAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadRunAsync(showLoading: false);
+                    StateHasChanged();
+                });
+
+                if (!IsActiveRun)
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task StopPollingAsync()
+    {
+        if (pollingCancellation is null)
+        {
+            return;
+        }
+
+        await pollingCancellation.CancelAsync();
+        if (pollingTask is not null)
+        {
+            await pollingTask;
+        }
+        pollingCancellation.Dispose();
+        pollingCancellation = null;
+        pollingTask = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopPollingAsync();
     }
 
     private async Task LoadPredictionsAsync()
@@ -398,6 +678,54 @@
         finally
         {
             isLoadingPredictions = false;
+        }
+    }
+
+    private async Task LoadEvolutionAsync()
+    {
+        isLoadingEvolution = true;
+        try
+        {
+            using var response = await Http.GetAsync(
+                $"api/model-lab/runs/{RunId}/evolution?teams=10&pointsPerTeam={EloEvolutionLimits.DefaultPointsPerTeam}");
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            var evolution = await response.Content.ReadFromJsonAsync<ModelLabRunEvolutionResponse>()
+                ?? throw new InvalidOperationException("The rating evolution response was empty.");
+            evolutionChartSeries = evolution.Series
+                .Select((series, index) =>
+                {
+                    var color = ChartColor(index);
+                    return new EloChartSeries(
+                        series.TeamId,
+                        series.TeamName,
+                        color,
+                        series.Points
+                            .OrderBy(point => point.GameDateTimeUtc)
+                            .Select(point => new EloChartPoint(
+                                point.GameDateTimeUtc,
+                                point.Elo,
+                                series.TeamName,
+                                color,
+                                point.EloDelta,
+                                point.Rank,
+                                point.GameId))
+                            .ToList(),
+                        series.RatedPointCount);
+                })
+                .ToList();
+            evolutionDataRevision++;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load rating evolution: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingEvolution = false;
         }
     }
 
@@ -437,7 +765,7 @@
                 throw new InvalidOperationException(await ReadErrorMessageAsync(response));
             }
 
-            Navigation.NavigateTo("model-lab");
+            Navigation.NavigateTo(detail is null ? "model-lab/models" : $"model-lab/models/{detail.Run.ModelId}");
         }
         catch (Exception ex)
         {
@@ -447,6 +775,61 @@
         finally
         {
             isDeleting = false;
+        }
+    }
+
+    private async Task CancelRunAsync()
+    {
+        isCancelling = true;
+        errorMessage = null;
+        try
+        {
+            using var response = await Http.PostAsync($"api/model-lab/runs/{RunId}/cancel", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            await LoadRunAsync(showLoading: false);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not cancel run: {ex.Message}";
+        }
+        finally
+        {
+            isCancelling = false;
+        }
+    }
+
+    private async Task RetryRunAsync()
+    {
+        isRetrying = true;
+        errorMessage = null;
+        try
+        {
+            using var response = await Http.PostAsync($"api/model-lab/runs/{RunId}/retry", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
+            }
+
+            predictionPage = null;
+            evolutionChartSeries = [];
+            await StopPollingAsync();
+            await LoadRunAsync(showLoading: false);
+            if (IsActiveRun)
+            {
+                StartPolling();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not retry run: {ex.Message}";
+        }
+        finally
+        {
+            isRetrying = false;
         }
     }
 
@@ -461,7 +844,8 @@
             "completed" => "status-pill status-completed",
             "failed" => "status-pill status-failed",
             "running" => "status-pill status-progress",
-            "pending" => "status-pill status-warning",
+            "queued" => "status-pill status-warning",
+            "canceled" => "status-pill status-empty",
             _ => "status-pill status-empty"
         };
 
@@ -541,6 +925,16 @@
         }
 
         return value < 0 ? value.ToString("0") : "0";
+    }
+
+    private static string ChartColor(int index)
+    {
+        string[] colors =
+        [
+            "#245c7a", "#d88722", "#1f7a68", "#b55431", "#7456a6",
+            "#2f6f9f", "#8d6a22", "#9b3f62", "#4f6f52", "#c46f2f"
+        ];
+        return colors[index % colors.Length];
     }
 
     private static string MovementClass(decimal value)

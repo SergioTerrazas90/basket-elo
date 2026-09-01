@@ -1,5 +1,4 @@
 using BasketElo.Api.Elo;
-using BasketElo.Api.Auth;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Games;
 using BasketElo.Infrastructure.Backfill;
@@ -15,7 +14,6 @@ namespace BasketElo.Api.Controllers;
 
 [ApiController]
 [Route("api/games")]
-[RequireInternalAdmin]
 public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache = null) : ControllerBase
 {
     [HttpGet("upcoming")]

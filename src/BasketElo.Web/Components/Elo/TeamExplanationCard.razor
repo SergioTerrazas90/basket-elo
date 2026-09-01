@@ -9,35 +9,35 @@
 
     <dl>
         <div>
-            <dt>Pre-game ELO</dt>
+            <dt>@T["PreGameElo"]</dt>
             <dd>@Team.PreElo.ToString("0")</dd>
         </div>
         <div>
-            <dt>Post-game ELO</dt>
+            <dt>@T["PostGameElo"]</dt>
             <dd>@Team.PostElo.ToString("0")</dd>
         </div>
         <div>
-            <dt>Change</dt>
+            <dt>@T["Change"]</dt>
             <dd class="@MovementClass(Team.EloDelta)">@FormatDelta(Team.EloDelta)</dd>
         </div>
         <div>
-            <dt>Expected result</dt>
+            <dt>@T["ExpectedResult"]</dt>
             <dd>@FormatPercent(Team.ExpectedScore)</dd>
         </div>
         <div>
-            <dt>Actual result</dt>
+            <dt>@T["ActualResult"]</dt>
             <dd>@FormatActual(Team.ActualScore)</dd>
         </div>
         <div>
-            <dt>Margin multiplier</dt>
+            <dt>@T["MarginMultiplier"]</dt>
             <dd>@Team.MarginMultiplier.ToString("0.###")x</dd>
         </div>
         <div>
-            <dt>Games before</dt>
+            <dt>@T["GamesBefore"]</dt>
             <dd>@Team.GamesPlayedBefore</dd>
         </div>
         <div>
-            <dt>Rank after</dt>
+            <dt>@T["RankAfter"]</dt>
             <dd>@(Team.RatingPositionAfter.HasValue ? $"#{Team.RatingPositionAfter}" : "-")</dd>
         </div>
     </dl>
@@ -61,11 +61,11 @@
     private static string FormatPercent(decimal value)
         => value.ToString("P1", CultureInfo.CurrentCulture);
 
-    private static string FormatActual(decimal value)
+    private string FormatActual(decimal value)
         => value switch
         {
-            1m => "Win",
-            0m => "Loss",
+            1m => T["Win"],
+            0m => T["Loss"],
             _ => value.ToString("0.##", CultureInfo.CurrentCulture)
         };
 

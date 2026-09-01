@@ -2,6 +2,7 @@ namespace BasketElo.Domain.Elo;
 
 public sealed record ModelLabOptionsResponse(
     ModelLabParameterSet Defaults,
+    IReadOnlyCollection<ModelLabPoolOption> Pools,
     IReadOnlyCollection<string> Leagues,
     IReadOnlyCollection<ModelLabCompetitionOption> Competitions,
     IReadOnlyCollection<ModelLabSeasonOption> Seasons,
@@ -27,7 +28,12 @@ public sealed record ModelLabCompetitionOption(
     Guid Id,
     string Name,
     string DisplayName,
-    string? CountryCode);
+    string? CountryCode,
+    string EloPoolKey);
+
+public sealed record ModelLabPoolOption(
+    string Key,
+    string DisplayName);
 
 public sealed record ModelLabSeasonOption(
     string Label,
@@ -43,7 +49,8 @@ public sealed record ModelLabBacktestRequest(
     DateTime ScoredFromUtc,
     DateTime ScoredToUtc,
     string ScopeType = ModelLabScopeTypes.SingleCompetition,
-    IReadOnlyCollection<Guid>? CompetitionIds = null);
+    IReadOnlyCollection<Guid>? CompetitionIds = null,
+    string? EloPoolKey = null);
 
 public sealed record ModelLabParameterSet(
     decimal BaseRating,
@@ -124,7 +131,8 @@ public sealed record ModelLabBacktestResponse(
     IReadOnlyCollection<ModelLabRatingRow> Ratings,
     IReadOnlyCollection<ModelLabPredictionRow> BiggestMisses,
     IReadOnlyCollection<ModelLabPeriodMetric> Periods,
-    Guid? RunId = null);
+    Guid? RunId = null,
+    string? EloPoolKey = null);
 
 public sealed record CreateModelLabRunRequest(
     Guid ModelId,
@@ -134,7 +142,28 @@ public sealed record CreateModelLabRunRequest(
     DateTime ScoredFromUtc,
     DateTime ScoredToUtc,
     string ScopeType = ModelLabScopeTypes.SingleCompetition,
-    IReadOnlyCollection<Guid>? CompetitionIds = null);
+    IReadOnlyCollection<Guid>? CompetitionIds = null,
+    string? EloPoolKey = null,
+    string? LeagueName = null);
+
+public sealed record CreateModelLabComparisonRequest(
+    IReadOnlyCollection<Guid> ModelIds,
+    DateTime InitializationFromUtc,
+    DateTime InitializationToUtc,
+    DateTime ScoredFromUtc,
+    DateTime ScoredToUtc,
+    string ScopeType = ModelLabScopeTypes.SingleCompetition,
+    IReadOnlyCollection<Guid>? CompetitionIds = null,
+    string? EloPoolKey = null,
+    string? LeagueName = null);
+
+public sealed record ModelLabComparisonCreateResponse(
+    IReadOnlyCollection<ModelLabRunCreateResponse> Runs);
+
+public sealed record ModelLabSavedComparisonResponse(
+    Guid ComparisonGroupId,
+    DateTime CompletedAtUtc,
+    IReadOnlyCollection<ModelLabRunSummaryResponse> Runs);
 
 public sealed record ModelLabRunCreateResponse(
     Guid RunId,
@@ -143,7 +172,10 @@ public sealed record ModelLabRunCreateResponse(
     string Status,
     DateTime CreatedAtUtc,
     DateTime? CompletedAtUtc,
-    ModelLabBacktestResponse Result);
+    ModelLabBacktestResponse? Result,
+    int? QueuePosition,
+    int ProgressPercent,
+    string ProgressStage);
 
 public sealed record ModelLabRunSummaryResponse(
     Guid Id,
@@ -151,10 +183,18 @@ public sealed record ModelLabRunSummaryResponse(
     Guid ModelVersionId,
     string ModelName,
     string LeagueName,
+    string EloPoolKey,
     string ScopeType,
     string Status,
+    int? QueuePosition,
+    int ProgressPercent,
+    string ProgressStage,
+    bool IsRetained,
+    DateTime? ExpiresAtUtc,
     DateTime CreatedAtUtc,
+    DateTime? StartedAtUtc,
     DateTime? CompletedAtUtc,
+    string? ErrorMessage,
     ModelLabBacktestWindow InitializationWindow,
     ModelLabBacktestWindow ScoredWindow,
     ModelLabBacktestSummary Summary,
@@ -179,6 +219,10 @@ public sealed record ModelLabRunPredictionPageResponse(
     int Skip,
     int Take,
     IReadOnlyCollection<ModelLabPredictionRow> Items);
+
+public sealed record ModelLabRunEvolutionResponse(
+    Guid RunId,
+    IReadOnlyCollection<EloTeamEvolutionSeries> Series);
 
 public sealed record ModelLabRunMetricBreakdownResponse(
     string SegmentType,
@@ -209,7 +253,9 @@ public sealed record ModelLabRatingRow(
     string TeamName,
     decimal Elo,
     int GamesPlayed,
-    decimal RecentMovement);
+    decimal RecentMovement,
+    int? BaselineRank = null,
+    decimal? BaselineElo = null);
 
 public sealed record ModelLabPredictionRow(
     Guid GameId,

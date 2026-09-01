@@ -253,6 +253,7 @@
 .nav-account {
     display: flex;
     align-items: center;
+    gap: 0.3rem;
     margin-left: 0.25rem;
     padding-left: 0.55rem;
 }
@@ -391,6 +392,9 @@
     }
 
     .nav-account {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 0.4rem;
         margin: var(--space-2) 0 0;
         padding: var(--space-2) 0 0;
     }

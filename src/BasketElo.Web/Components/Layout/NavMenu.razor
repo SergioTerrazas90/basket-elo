@@ -1,56 +1,58 @@
 <div class="site-navigation">
-    <a class="brand-lockup" href="" aria-label="BasketElo home">
+    <a class="brand-lockup" href="" aria-label='@T["BasketEloHome"]'>
         <span class="brand-mark" aria-hidden="true"><img src="brand-mark.svg" alt="" /></span>
         <span class="brand-copy">
             <strong>BasketElo</strong>
-            <small>Basketball intelligence</small>
+            <small>@T["BasketballIntelligence"]</small>
         </span>
     </a>
 
     <input id="navigation-toggle"
            type="checkbox"
-           title="Toggle navigation menu"
-           aria-label="Toggle navigation menu"
+           title='@T["ToggleNavigationMenu"]'
+           aria-label='@T["ToggleNavigationMenu"]'
            class="navbar-toggler"
            aria-controls="primary-navigation" />
 
     <div id="primary-navigation"
          class="nav-drawer"
-        onclick="if (event.target.closest('a')) document.querySelector('#navigation-toggle').click()">
-        <nav class="nav-primary" aria-label="Primary navigation">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Rankings</NavLink>
-            <NavLink class="nav-link" href="movers">Movers</NavLink>
-            <NavLink class="nav-link" href="model-lab">Model Lab</NavLink>
+        onclick="if (event.target.closest('a:not([data-enhance-nav=false])')) document.querySelector('#navigation-toggle').click()">
+        <nav class="nav-primary" aria-label='@T["PrimaryNavigation"]'>
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">@T["Rankings"]</NavLink>
+            <NavLink class="nav-link" href="movers">@T["Movers"]</NavLink>
+            <NavLink class="nav-link" href="model-lab">@T["ModelLab"]</NavLink>
         </nav>
 
         <div class="nav-utilities">
-            <nav class="nav-information" aria-label="Project information">
-                <NavLink class="nav-information-link" href="how-it-works">Method</NavLink>
-                <NavLink class="nav-information-link" href="data-sources">Sources</NavLink>
-                <NavLink class="nav-information-link" href="about">About</NavLink>
-                <NavLink class="nav-information-link" href="sponsor">Sponsor</NavLink>
+            <nav class="nav-information" aria-label='@T["ProjectInformation"]'>
+                <NavLink class="nav-information-link" href="how-it-works">@T["Method"]</NavLink>
+                <NavLink class="nav-information-link" href="data-sources">@T["Sources"]</NavLink>
+                <NavLink class="nav-information-link" href="about">@T["About"]</NavLink>
+                <NavLink class="nav-information-link" href="sponsor">@T["Sponsor"]</NavLink>
             </nav>
 
             <AuthorizeView Roles="admin">
                 <Authorized>
                     <details class="nav-disclosure nav-disclosure-admin">
-                        <summary>Admin <span class="nav-chevron" aria-hidden="true"></span></summary>
-                        <nav class="nav-popover nav-admin-popover" aria-label="Administration">
-                            <NavLink class="nav-link" href="games">Games</NavLink>
-                            <NavLink class="nav-link" href="upcoming">Upcoming</NavLink>
-                            <NavLink class="nav-link" href="backfill">Backfill</NavLink>
-                            <NavLink class="nav-link" href="admin">Admin overview</NavLink>
-                            <NavLink class="nav-link" href="admin/identity">Identity</NavLink>
-                            <NavLink class="nav-link" href="admin/identity-review">Identity review</NavLink>
-                            <NavLink class="nav-link" href="admin/current-results-review">Results review</NavLink>
-                            <NavLink class="nav-link" href="admin/competitions">Competitions</NavLink>
-                            <NavLink class="nav-link" href="admin/teams">Teams</NavLink>
+                        <summary>@T["Admin"] <span class="nav-chevron" aria-hidden="true"></span></summary>
+                        <nav class="nav-popover nav-admin-popover" aria-label='@T["Administration"]'>
+                            <NavLink class="nav-link" href="games">@T["Games"]</NavLink>
+                            <NavLink class="nav-link" href="upcoming">@T["Upcoming"]</NavLink>
+                            <NavLink class="nav-link" href="backfill">@T["Backfill"]</NavLink>
+                            <NavLink class="nav-link" href="admin">@T["AdminOverview"]</NavLink>
+                            <NavLink class="nav-link" href="admin/jobs" target="_blank" rel="noopener">@T["EloRunJobs"] ↗</NavLink>
+                            <NavLink class="nav-link" href="admin/identity">@T["Identity"]</NavLink>
+                            <NavLink class="nav-link" href="admin/identity-review">@T["IdentityReview"]</NavLink>
+                            <NavLink class="nav-link" href="admin/current-results-review">@T["ResultsReview"]</NavLink>
+                            <NavLink class="nav-link" href="admin/competitions">@T["Competitions"]</NavLink>
+                            <NavLink class="nav-link" href="admin/teams">@T["Teams"]</NavLink>
                         </nav>
                     </details>
                 </Authorized>
             </AuthorizeView>
 
             <div class="nav-account">
+                <LanguageSelector />
                 <AuthStatus />
             </div>
         </div>

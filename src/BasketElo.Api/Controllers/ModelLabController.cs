@@ -146,6 +146,7 @@ public sealed class ModelLabController(
     [RequireInternalUser]
     public async Task<ActionResult<IReadOnlyCollection<ModelLabRunSummaryResponse>>> ListRuns(
         [FromQuery] int take,
+        [FromQuery] Guid? modelId,
         CancellationToken cancellationToken)
     {
         if (!TryRequireRealUser(out var loginResult))
@@ -153,7 +154,11 @@ public sealed class ModelLabController(
             return loginResult;
         }
 
-        return Ok(await runService.ListAsync(GetCurrentUserId(), take <= 0 ? 50 : take, cancellationToken));
+        return Ok(await runService.ListAsync(
+            GetCurrentUserId(),
+            take <= 0 ? 50 : take,
+            modelId,
+            cancellationToken));
     }
 
     [HttpGet("runs/quota")]
@@ -208,6 +213,28 @@ public sealed class ModelLabController(
         return page is null ? NotFound() : Ok(page);
     }
 
+    [HttpGet("runs/{runId:guid}/evolution")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunEvolutionResponse>> GetRunEvolution(
+        Guid runId,
+        [FromQuery] int teams,
+        [FromQuery] int pointsPerTeam,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        var evolution = await runService.GetEvolutionAsync(
+            GetCurrentUserId(),
+            runId,
+            teams,
+            pointsPerTeam,
+            cancellationToken);
+        return evolution is null ? NotFound() : Ok(evolution);
+    }
+
     [HttpDelete("runs/{runId:guid}")]
     [RequireInternalUser]
     public async Task<ActionResult> DeleteRun(
@@ -219,8 +246,77 @@ public sealed class ModelLabController(
             return loginResult;
         }
 
-        var deleted = await runService.DeleteAsync(GetCurrentUserId(), runId, cancellationToken);
-        return deleted ? NoContent() : NotFound();
+        try
+        {
+            var deleted = await runService.DeleteAsync(GetCurrentUserId(), runId, cancellationToken);
+            return deleted ? NoContent() : NotFound();
+        }
+        catch (ArgumentException ex)
+        {
+            return Conflict(ex.Message);
+        }
+    }
+
+    [HttpPost("runs/{runId:guid}/cancel")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunSummaryResponse>> CancelRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult)) return loginResult;
+        try
+        {
+            var run = await runService.CancelAsync(GetCurrentUserId(), runId, cancellationToken);
+            return run is null ? NotFound() : Ok(run);
+        }
+        catch (ArgumentException ex)
+        {
+            return Conflict(ex.Message);
+        }
+    }
+
+    [HttpPost("runs/{runId:guid}/retry")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunSummaryResponse>> RetryRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult)) return loginResult;
+        try
+        {
+            var ownerUserId = GetCurrentUserId();
+            var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+            var run = await runService.RetryAsync(ownerUserId, runId, entitlement, cancellationToken);
+            return run is null ? NotFound() : AcceptedAtAction(nameof(GetRun), new { runId }, run);
+        }
+        catch (ArgumentException ex)
+        {
+            return Conflict(ex.Message);
+        }
+    }
+
+    [HttpPost("runs/{runId:guid}/retain")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabRunSummaryResponse>> RetainRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult)) return loginResult;
+        try
+        {
+            var ownerUserId = GetCurrentUserId();
+            var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+            var run = await runService.RetainAsync(ownerUserId, runId, entitlement, cancellationToken);
+            return run is null ? NotFound() : Ok(run);
+        }
+        catch (ModelLabLimitException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
+        }
+        catch (ArgumentException ex)
+        {
+            return Conflict(ex.Message);
+        }
     }
 
     [HttpPost("runs")]
@@ -239,7 +335,7 @@ public sealed class ModelLabController(
             var ownerUserId = GetCurrentUserId();
             var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
             var run = await runService.CreateAsync(ownerUserId, entitlement, request, cancellationToken);
-            return run is null ? NotFound() : CreatedAtAction(nameof(GetRun), new { runId = run.RunId }, run);
+            return run is null ? NotFound() : AcceptedAtAction(nameof(GetRun), new { runId = run.RunId }, run);
         }
         catch (ModelLabLimitException ex)
         {
@@ -249,6 +345,68 @@ public sealed class ModelLabController(
         {
             return BadRequest(ex.Message);
         }
+    }
+
+    [HttpPost("comparisons")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabComparisonCreateResponse>> CreateComparison(
+        [FromBody] CreateModelLabComparisonRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        try
+        {
+            var ownerUserId = GetCurrentUserId();
+            var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+            return Accepted(await runService.CreateComparisonAsync(ownerUserId, entitlement, request, cancellationToken));
+        }
+        catch (ModelLabLimitException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("comparisons/latest")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabSavedComparisonResponse>> GetLatestCompatibleComparison(
+        [FromQuery] Guid[] modelIds,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        var comparison = await runService.GetLatestCompatibleComparisonAsync(
+            GetCurrentUserId(),
+            modelIds,
+            cancellationToken);
+        return comparison is null ? NotFound() : Ok(comparison);
+    }
+
+    [HttpGet("comparisons")]
+    [RequireInternalUser]
+    public async Task<ActionResult<IReadOnlyCollection<ModelLabSavedComparisonResponse>>> ListCompatibleComparisons(
+        [FromQuery] int take,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        return Ok(await runService.ListCompatibleComparisonsAsync(
+            GetCurrentUserId(),
+            take <= 0 ? 6 : take,
+            cancellationToken));
     }
 
     [HttpPost("backtests")]

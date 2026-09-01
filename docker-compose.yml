@@ -29,13 +29,19 @@ services:
       ApiSports__ApiKey: ${BASKET_ELO_API_SPORTS_API_KEY:-}
       ApiSports__MinSecondsBetweenRequests: 7
       ModelLab__FreeSavedModelLimit: ${BASKET_ELO_FREE_SAVED_MODEL_LIMIT:-1}
-      ModelLab__FreeStoredRunLimit: ${BASKET_ELO_FREE_STORED_RUN_LIMIT:-1}
+      ModelLab__FreeStoredRunLimit: ${BASKET_ELO_FREE_STORED_RUN_LIMIT:-3}
       ModelLab__PaidStoredRunLimit: ${BASKET_ELO_PAID_STORED_RUN_LIMIT:-100}
       ModelLab__FreeLeagueName: ${BASKET_ELO_FREE_LEAGUE_NAME:-ACB}
       ModelLab__PaidEmails: ${BASKET_ELO_PAID_EMAILS:-dev-paid@basket-elo.local}
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8080/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     ports:
       - "5001:8080"
 
@@ -50,9 +56,16 @@ services:
       ApiSports__BaseUrl: https://v1.basketball.api-sports.io
       ApiSports__ApiKey: ${BASKET_ELO_API_SPORTS_API_KEY:-}
       ApiSports__MinSecondsBetweenRequests: 7
+      EloJobs__WorkerCount: ${BASKET_ELO_ELO_JOB_WORKER_COUNT:-3}
     depends_on:
-      postgres:
+      api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8080/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     ports:
       - "5002:8080"
 

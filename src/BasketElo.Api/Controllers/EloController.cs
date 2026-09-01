@@ -1583,7 +1583,6 @@ public class EloController(
     }
 
     [HttpGet("games/{gameId:guid}/explanation")]
-    [RequireInternalUser]
     public async Task<ActionResult<EloGameExplanationResponse>> GetGameExplanation(
         Guid gameId,
         [FromQuery] string? rulesetVersion,
@@ -1670,7 +1669,6 @@ public class EloController(
     }
 
     [HttpGet("teams/{teamId:guid}")]
-    [RequireInternalUser]
     public async Task<ActionResult<EloTeamDetailResponse>> GetTeam(
         Guid teamId,
         [FromQuery] string? rulesetVersion,
@@ -1840,7 +1838,6 @@ public class EloController(
     }
 
     [HttpGet("teams/{teamId:guid}/history-games")]
-    [RequireInternalUser]
     public async Task<ActionResult<EloTeamHistoryGamesResponse>> GetTeamHistoryGames(
         Guid teamId,
         [FromQuery] string? rulesetVersion,

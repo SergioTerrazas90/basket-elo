@@ -30,12 +30,25 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         return new ModelLabOptionsResponse(
             ToParameterSet(defaults),
             leagueOptions
+                .Select(x => x.EloPoolKey)
+                .Where(EloPoolKeys.IsSupported)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(EloPoolKeys.Normalize)
+                .OrderBy(x => EloPoolCatalog.All.Single(pool => pool.Key == x).DisplayOrder)
+                .Select(x => new ModelLabPoolOption(x, EloPoolKeys.DisplayName(x)))
+                .ToList(),
+            leagueOptions
                 .Select(x => x.DisplayName)
                 .OrderBy(x => x)
                 .ToList(),
             leagueOptions
                 .OrderBy(x => x.DisplayName)
-                .Select(x => new ModelLabCompetitionOption(x.Id, x.Name, x.DisplayName, x.CountryCode))
+                .Select(x => new ModelLabCompetitionOption(
+                    x.Id,
+                    x.Name,
+                    x.DisplayName,
+                    x.CountryCode,
+                    ResolvePoolKey(x.EloPoolKey)))
                 .ToList(),
             seasons
                 .Select(x => new ModelLabSeasonOption(x.Label, x.FirstGameUtc, x.LastGameUtc))
@@ -98,8 +111,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 x.AwayScore!.Value))
             .ToListAsync(cancellationToken);
 
-        var custom = RunSimulation(games, request, parameters);
-        var baseline = RunSimulation(games, request, baselineParameters);
+        var custom = RunSimulation(games, request, parameters, cancellationToken);
+        var baseline = RunSimulation(games, request, baselineParameters, cancellationToken);
 
         var response = new ModelLabBacktestResponse(
             string.IsNullOrWhiteSpace(request.ModelName) ? "Untitled model" : request.ModelName.Trim(),
@@ -115,19 +128,22 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 custom.ScoredPredictions.Count),
             custom.Summary,
             baseline.Summary,
-            custom.Ratings.Take(MaxRatingsReturned).ToList(),
+            MergeRatings(custom.Ratings, baseline.Ratings).Take(MaxRatingsReturned).ToList(),
             custom.ScoredPredictions
                 .OrderByDescending(x => x.MarginError)
                 .Take(MaxMissesReturned)
                 .ToList(),
             custom.Periods);
+        response = response with { EloPoolKey = scope.EloPoolKey };
 
         return new ModelLabBacktestExecutionResult(
             response,
             scope.Competitions,
             custom.ScoredPredictions,
             baseline.ScoredPredictions,
-            custom.Ratings);
+            custom.Ratings,
+            baseline.Ratings,
+            custom.Evolution);
     }
 
     private async Task<IReadOnlyCollection<LeagueOption>> GetLeagueOptionsAsync(CancellationToken cancellationToken)
@@ -162,14 +178,17 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
     {
         var leagueOptions = await GetLeagueOptionsAsync(cancellationToken);
         var scopeType = NormalizeScopeType(request.ScopeType);
+        var requestedPoolKey = ResolveRequestedPoolKey(request, scopeType, leagueOptions);
+        var poolOptions = leagueOptions
+            .Where(x => string.Equals(ResolvePoolKey(x.EloPoolKey), requestedPoolKey, StringComparison.Ordinal))
+            .ToList();
+
         if (scopeType == ModelLabScopeTypes.AllCompetitions)
         {
-            EnsureSinglePool(leagueOptions);
             return new ResolvedScope(
-                "All competitions",
-                leagueOptions
-                    .Select(x => new ModelLabCompetitionOption(x.Id, x.Name, x.DisplayName, x.CountryCode))
-                    .ToList());
+                $"All {EloPoolKeys.DisplayName(requestedPoolKey)} competitions",
+                requestedPoolKey,
+                poolOptions.Select(ToCompetitionOption).ToList());
         }
 
         if (scopeType == ModelLabScopeTypes.SelectedCompetitions)
@@ -193,25 +212,35 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
 
             var selectedOptions = leagueOptions.Where(x => requestedIds.Contains(x.Id)).ToList();
             EnsureSinglePool(selectedOptions);
+            if (selectedOptions.Any(x => !string.Equals(
+                ResolvePoolKey(x.EloPoolKey),
+                requestedPoolKey,
+                StringComparison.Ordinal)))
+            {
+                throw new ArgumentException("Every selected competition must belong to the selected ELO pool.");
+            }
 
             return new ResolvedScope(
                 requestedIds.Count == 1
                     ? leagueOptions.First(x => x.Id == requestedIds[0]).DisplayName
                     : $"{requestedIds.Count} competitions",
-                selectedOptions
-                    .Select(x => new ModelLabCompetitionOption(x.Id, x.Name, x.DisplayName, x.CountryCode))
-                    .ToList());
+                requestedPoolKey,
+                selectedOptions.Select(ToCompetitionOption).ToList());
         }
 
-        var competitionId = ResolveCompetitionId(request.LeagueName, leagueOptions);
+        var competitionId = ResolveCompetitionId(request.LeagueName, poolOptions);
+        if (!competitionId.HasValue)
+        {
+            throw new ArgumentException("Choose a competition from the selected ELO pool before running a backtest.");
+        }
+
         return new ResolvedScope(
             request.LeagueName,
-            competitionId.HasValue
-                ? leagueOptions
-                    .Where(x => x.Id == competitionId.Value)
-                    .Select(x => new ModelLabCompetitionOption(x.Id, x.Name, x.DisplayName, x.CountryCode))
-                    .ToList()
-                : []);
+            requestedPoolKey,
+            poolOptions
+                .Where(x => x.Id == competitionId.Value)
+                .Select(ToCompetitionOption)
+                .ToList());
     }
 
     private async Task<Guid?> ResolveCompetitionIdAsync(string leagueName, CancellationToken cancellationToken)
@@ -260,17 +289,70 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         }
     }
 
+    private static string ResolveRequestedPoolKey(
+        ModelLabBacktestRequest request,
+        string scopeType,
+        IReadOnlyCollection<LeagueOption> leagueOptions)
+    {
+        if (!string.IsNullOrWhiteSpace(request.EloPoolKey))
+        {
+            return EloPoolKeys.Normalize(request.EloPoolKey);
+        }
+
+        if (scopeType == ModelLabScopeTypes.SelectedCompetitions)
+        {
+            var requestedIds = request.CompetitionIds?.Where(x => x != Guid.Empty).ToHashSet() ?? [];
+            var pools = leagueOptions
+                .Where(x => requestedIds.Contains(x.Id))
+                .Select(x => ResolvePoolKey(x.EloPoolKey))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (pools.Count == 1)
+            {
+                return pools[0];
+            }
+        }
+
+        if (scopeType == ModelLabScopeTypes.SingleCompetition)
+        {
+            var competitionId = ResolveCompetitionId(request.LeagueName, leagueOptions);
+            var option = competitionId.HasValue
+                ? leagueOptions.FirstOrDefault(x => x.Id == competitionId.Value)
+                : null;
+            if (option is not null)
+            {
+                return ResolvePoolKey(option.EloPoolKey);
+            }
+        }
+
+        throw new ArgumentException("Choose an ELO pool before running this backtest.");
+    }
+
+    private static ModelLabCompetitionOption ToCompetitionOption(LeagueOption option)
+        => new(
+            option.Id,
+            option.Name,
+            option.DisplayName,
+            option.CountryCode,
+            ResolvePoolKey(option.EloPoolKey));
+
+    private static string ResolvePoolKey(string? poolKey)
+        => EloPoolKeys.IsSupported(poolKey) ? EloPoolKeys.Normalize(poolKey) : EloPoolKeys.Default;
+
     private static SimulationResult RunSimulation(
         IReadOnlyCollection<BacktestGame> games,
         ModelLabBacktestRequest request,
-        EloRulesetParameters parameters)
+        EloRulesetParameters parameters,
+        CancellationToken cancellationToken)
     {
         var ratings = new Dictionary<Guid, RatingState>();
         var predictions = new List<ModelLabPredictionRow>();
+        var evolution = new List<ModelLabEvolutionSnapshot>();
         var initializationGames = 0;
 
         foreach (var game in games)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var home = GetRatingState(ratings, game.HomeTeamId, game.HomeTeamName, parameters.BaseRating);
             var away = GetRatingState(ratings, game.AwayTeamId, game.AwayTeamName, parameters.BaseRating);
             var isInitialization = game.GameDateTimeUtc >= request.InitializationFromUtc &&
@@ -341,6 +423,27 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             away.Elo -= calculation.HomeDelta;
             home.GamesPlayed += 1;
             away.GamesPlayed += 1;
+
+            evolution.Add(new ModelLabEvolutionSnapshot(
+                game.HomeTeamId,
+                game.HomeTeamName,
+                game.Id,
+                game.GameDateTimeUtc,
+                game.CompetitionName,
+                game.Season,
+                RoundRating(home.Elo),
+                RoundRating(calculation.HomeDelta),
+                GetRank(ratings, game.HomeTeamId)));
+            evolution.Add(new ModelLabEvolutionSnapshot(
+                game.AwayTeamId,
+                game.AwayTeamName,
+                game.Id,
+                game.GameDateTimeUtc,
+                game.CompetitionName,
+                game.Season,
+                RoundRating(away.Elo),
+                RoundRating(-calculation.HomeDelta),
+                GetRank(ratings, game.AwayTeamId)));
         }
 
         return new SimulationResult(
@@ -348,7 +451,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             predictions,
             BuildSummary(predictions),
             BuildRatings(ratings),
-            BuildPeriods(predictions));
+            BuildPeriods(predictions),
+            evolution);
     }
 
     private static ModelLabBacktestSummary BuildSummary(IReadOnlyCollection<ModelLabPredictionRow> predictions)
@@ -395,6 +499,27 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 x.Value.GamesPlayed,
                 RoundRating(x.Value.RecentDeltas.Sum())))
             .ToList();
+
+    private static IReadOnlyCollection<ModelLabRatingRow> MergeRatings(
+        IReadOnlyCollection<ModelLabRatingRow> modelRatings,
+        IReadOnlyCollection<ModelLabRatingRow> baselineRatings)
+    {
+        var baselineByTeam = baselineRatings.ToDictionary(x => x.TeamId);
+        return modelRatings
+            .Select(model => baselineByTeam.TryGetValue(model.TeamId, out var baseline)
+                ? model with { BaselineRank = baseline.Rank, BaselineElo = baseline.Elo }
+                : model)
+            .ToList();
+    }
+
+    private static int GetRank(IReadOnlyDictionary<Guid, RatingState> ratings, Guid teamId)
+    {
+        var target = ratings[teamId];
+        return 1 + ratings.Count(entry =>
+            entry.Value.Elo > target.Elo ||
+            (entry.Value.Elo == target.Elo &&
+                string.Compare(entry.Value.TeamName, target.TeamName, StringComparison.OrdinalIgnoreCase) < 0));
+    }
 
     private static IReadOnlyCollection<ModelLabPeriodMetric> BuildPeriods(IReadOnlyCollection<ModelLabPredictionRow> predictions)
         => predictions
@@ -515,7 +640,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         IReadOnlyCollection<ModelLabPredictionRow> ScoredPredictions,
         ModelLabBacktestSummary Summary,
         IReadOnlyCollection<ModelLabRatingRow> Ratings,
-        IReadOnlyCollection<ModelLabPeriodMetric> Periods);
+        IReadOnlyCollection<ModelLabPeriodMetric> Periods,
+        IReadOnlyCollection<ModelLabEvolutionSnapshot> Evolution);
 
     private sealed class RatingState(string teamName, decimal elo)
     {
@@ -532,5 +658,8 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
 
     private sealed record LeagueOption(Guid Id, string Name, string DisplayName, string? CountryCode, string? EloPoolKey);
 
-    private sealed record ResolvedScope(string DisplayName, IReadOnlyCollection<ModelLabCompetitionOption> Competitions);
+    private sealed record ResolvedScope(
+        string DisplayName,
+        string EloPoolKey,
+        IReadOnlyCollection<ModelLabCompetitionOption> Competitions);
 }

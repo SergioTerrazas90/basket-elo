@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">BasketElo — transparent basketball ELO rankings</title>
+  <desc id="description">BasketElo turns basketball results into transparent, explorable power rankings.</desc>
+  <rect width="1200" height="630" fill="#f5f4ef"/>
+  <circle cx="1040" cy="-20" r="330" fill="#e9782d" opacity=".16"/>
+  <circle cx="1180" cy="500" r="260" fill="#0f4b52" opacity=".1"/>
+  <path d="M0 540 C210 470 330 610 520 535 S850 465 1200 550 V630 H0Z" fill="#0f4b52"/>
+  <path d="M0 575 C220 500 340 640 540 565 S880 500 1200 580 V630 H0Z" fill="#0b343a" opacity=".7"/>
+  <g transform="translate(74 76)">
+    <rect width="68" height="68" rx="17" fill="#e9782d"/>
+    <path d="M22 34h24M34 22v24" stroke="#fff9ee" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <text x="74" y="250" fill="#0f4b52" font-family="Georgia, serif" font-size="92" font-weight="600" letter-spacing="-3">BasketElo</text>
+  <text x="80" y="326" fill="#17262a" font-family="Arial, sans-serif" font-size="35" font-weight="700">Transparent basketball ELO rankings</text>
+  <text x="80" y="382" fill="#5e6c70" font-family="Arial, sans-serif" font-size="27">NBA · European clubs · National teams</text>
+  <g transform="translate(820 165)">
+    <circle cx="112" cy="112" r="104" fill="#e9782d"/>
+    <path d="M20 112h184M112 8c-39 34-58 68-58 104s19 70 58 104M112 8c39 34 58 68 58 104s-19 70-58 104M31 58c44 24 118 24 162 0M31 166c44-24 118-24 162 0" fill="none" stroke="#fff9ee" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <text x="80" y="570" fill="#fff9ee" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="3">RATINGS · HISTORY · EXPLANATIONS</text>
+</svg>

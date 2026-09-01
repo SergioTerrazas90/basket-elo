@@ -11,6 +11,7 @@ public class EloRebuildRun
     public string? EloPoolKey { get; set; }
     public string CompetitionName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public string? HangfireJobId { get; set; }
     public int GamesProcessed { get; set; }
     public int TeamsRated { get; set; }
     public string? Notes { get; set; }

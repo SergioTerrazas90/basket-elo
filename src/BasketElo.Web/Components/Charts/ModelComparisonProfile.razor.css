@@ -1,0 +1,126 @@
+.profile-chart-shell {
+    display: grid;
+    gap: var(--space-3);
+}
+
+.profile-chart {
+    display: block;
+    width: 100%;
+    max-height: 25rem;
+    overflow: visible;
+}
+
+.profile-ring {
+    fill: none;
+    stroke: var(--color-border);
+    stroke-width: 1;
+}
+
+.profile-ring.is-baseline-ring {
+    fill: rgba(15, 75, 82, .045);
+    stroke: var(--color-brand);
+    stroke-dasharray: 4 4;
+    stroke-width: 1.8;
+}
+
+.profile-axis {
+    stroke: var(--color-border);
+    stroke-width: 1;
+}
+
+.profile-axis-label {
+    display: grid;
+    gap: 2px;
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 760;
+    text-align: center;
+}
+
+.profile-axis-label strong { display: block; }
+
+.profile-axis-label small {
+    display: block;
+    color: var(--color-subtle);
+    font-size: 9px;
+    font-weight: 650;
+    letter-spacing: .01em;
+}
+
+.profile-scale-label {
+    color: var(--color-subtle);
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-align: center;
+}
+
+.profile-scale-label.is-center {
+    color: var(--color-brand-dark);
+    font-weight: 850;
+}
+
+.profile-scale-label.is-standard {
+    color: var(--color-brand-dark);
+    font-weight: 850;
+}
+
+.profile-standard-shape {
+    fill: rgba(15, 75, 82, .04);
+    stroke: var(--color-brand-dark);
+    stroke-dasharray: 7 5;
+    stroke-linejoin: round;
+    stroke-width: 3;
+}
+
+.profile-shape {
+    fill: color-mix(in srgb, var(--series-color) 14%, transparent);
+    stroke: var(--series-color);
+    stroke-linejoin: round;
+    stroke-width: 2.8;
+}
+
+.profile-point {
+    fill: var(--color-surface);
+    stroke: var(--series-color);
+    stroke-width: 2.5;
+}
+
+.profile-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-2) var(--space-4);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-border);
+    color: var(--color-muted);
+    font-size: .78rem;
+    font-weight: 720;
+}
+
+.profile-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+}
+
+.profile-legend i {
+    width: .7rem;
+    height: .7rem;
+    border: 2px solid var(--series-color);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--series-color) 15%, transparent);
+}
+
+.profile-legend .profile-baseline-key i {
+    border-color: var(--color-brand-dark);
+    border-style: dashed;
+    background: transparent;
+}
+
+@media (max-width: 560px) {
+    .profile-axis-label { font-size: 11px; }
+    .profile-scale-label { font-size: 9px; }
+}

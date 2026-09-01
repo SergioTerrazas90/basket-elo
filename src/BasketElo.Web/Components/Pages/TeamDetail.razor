@@ -1,6 +1,6 @@
 @page "/teams/{TeamId:guid}"
-@attribute [Authorize]
-@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@page "/team/{TeamId:guid}/{TeamSlug}"
+@rendermode @(new InteractiveServerRenderMode(prerender: true))
 @implements IAsyncDisposable
 @using System.Globalization
 @using System.Text.Json
@@ -9,7 +9,11 @@
 @using BasketElo.Domain.Entities
 @inject HttpClient Http
 
-<PageTitle>@(team?.TeamName ?? "Team") - Basket ELO</PageTitle>
+<SeoHead Title="@TeamSeoTitle"
+         Description="@TeamSeoDescription"
+         CanonicalPath="@TeamCanonicalPath"
+         SchemaType="ProfilePage"
+         SocialImageAlt="@TeamSocialImageAlt" />
 
 <div class="team-page">
     @if (!string.IsNullOrWhiteSpace(errorMessage))
@@ -21,13 +25,13 @@
 
     @if (isBusy && team is null)
     {
-        <section class="loading-panel">Loading team profile...</section>
+        <section class="loading-panel">@T["LoadingTeamProfile"]</section>
     }
     else if (team is not null)
     {
         <section class="team-hero">
             <div>
-                <a class="back-link" href="@BackHref">Back to rankings</a>
+                <a class="back-link" href="@BackHref">@T["BackToRankings"]</a>
                 <p class="eyebrow">@team.EloPoolName</p>
                 <div class="team-title-line">
                     <h1>@team.TeamName</h1>
@@ -39,7 +43,7 @@
                 <p class="intro">@RulesetDisplayName(team.RulesetVersion) profile, latest rated games, and the team's continuous rating path.</p>
             </div>
             <div class="team-rank-card">
-                <span>Pool rank</span>
+                <span>@T["PoolRank"]</span>
                 <strong>#@team.GlobalRank</strong>
                 <small>@team.RulesetVersion</small>
             </div>
@@ -47,26 +51,26 @@
 
         <section class="team-summary">
             <div>
-                <span>Current ELO</span>
+                <span>@T["CurrentElo"]</span>
                 <strong>@team.Elo.ToString("0")</strong>
-                <small>Best rank @FormatRank(team.BestRank) · last reached @FormatDate(team.BestRankUtc)</small>
+                <small>@T["BestRank"] @FormatRank(team.BestRank) · @T["LastReached"] @FormatDate(team.BestRankUtc)</small>
             </div>
             <div>
-                <span>Best ELO</span>
+                <span>@T["BestElo"]</span>
                 <strong>@FormatRating(team.BestElo)</strong>
                 <small>@FormatDate(team.BestEloUtc)</small>
             </div>
             <div>
-                <span>Games rated</span>
+                <span>@T["GamesRated"]</span>
                 <strong>@team.GamesPlayed</strong>
             </div>
             <div>
-                <span>Recent movement</span>
+                <span>@T["RecentMovement"]</span>
                 <strong class="@MovementClass(team.RecentMovement)">@FormatMovement(team.RecentMovement)</strong>
                 <small>@RecentMovementOpponentLabel(team)</small>
             </div>
             <div>
-                <span>Last game</span>
+                <span>@T["LastGame"]</span>
                 <strong>@FormatDate(team.LastGameUtc)</strong>
             </div>
         </section>
@@ -75,13 +79,13 @@
         {
             <section class="franchise-lineage" aria-labelledby="franchise-lineage-title">
                 <div>
-                    <p class="eyebrow">Franchise identity</p>
-                    <h2 id="franchise-lineage-title">@(team.IdentityEvents.Count > 0 ? "Franchise history" : "Historical franchise")</h2>
-                    <p>@(team.IdentityEvents.Count > 0 ? "Renames and relocations retain the same team identity and ELO history." : "This franchise no longer competes in the NBA.")</p>
+                    <p class="eyebrow">@T["FranchiseIdentity"]</p>
+                    <h2 id="franchise-lineage-title">@(team.IdentityEvents.Count > 0 ? T["FranchiseHistory"] : T["HistoricalFranchise"])</h2>
+                    <p>@(team.IdentityEvents.Count > 0 ? T["FranchiseHistoryDescription"] : T["DefunctFranchiseDescription"])</p>
                 </div>
                 @if (!team.IsActive)
                 {
-                    <span class="franchise-state">Defunct franchise</span>
+                    <span class="franchise-state">@T["DefunctFranchise"]</span>
                 }
                 @if (team.IdentityEvents.Count > 0)
                 {
@@ -104,8 +108,8 @@
             <section class="form-section">
                 <div class="section-head">
                     <div>
-                        <h2>Recent form</h2>
-                        <p>Latest rated games summarized by record, rating movement, and opponent strength.</p>
+                        <h2>@T["RecentForm"]</h2>
+                        <p>@T["RecentFormDescription"]</p>
                     </div>
                 </div>
 
@@ -114,21 +118,21 @@
                     {
                         <article class="form-card">
                             <div class="form-card-head">
-                                <span>Last @form.WindowGames</span>
+                                <span>@T["Last"] @form.WindowGames</span>
                                 <strong>@FormatRecord(form)</strong>
                             </div>
 
                             <dl class="form-stats">
                                 <div>
-                                    <dt>Rated games</dt>
+                                    <dt>@T["RatedGames"]</dt>
                                     <dd>@form.GamesAvailable</dd>
                                 </div>
                                 <div>
-                                    <dt>ELO change</dt>
+                                    <dt>@T["EloChange"]</dt>
                                     <dd class="@MovementClass(form.TotalEloChange)">@FormatMovement(form.TotalEloChange)</dd>
                                 </div>
                                 <div>
-                                    <dt>Avg opponent</dt>
+                                    <dt>@T["AverageOpponent"]</dt>
                                     <dd>@FormatRating(form.AverageOpponentPreElo)</dd>
                                 </div>
                             </dl>
@@ -141,15 +145,15 @@
                 {
                     <div class="historical-highlights">
                         <div>
-                            <h3>History highlights</h3>
-                            <p>Top three wins and toughest losses across @team.HistoricalHighlights.GamesAvailable rated games.</p>
+                            <h3>@T["HistoryHighlights"]</h3>
+                            <p>@T["HistoryHighlightsDescription", team.HistoricalHighlights.GamesAvailable]</p>
                         </div>
                         <div class="historical-highlights-grid">
                             <div>
-                                <span>Best wins</span>
+                                <span>@T["BestWins"]</span>
                                 @if (team.HistoricalHighlights.BestWins.Count == 0)
                                 {
-                                    <strong class="muted-cell">No wins</strong>
+                                    <strong class="muted-cell">@T["NoWins"]</strong>
                                 }
                                 else
                                 {
@@ -161,7 +165,7 @@
                                                     class="history-highlight-elo @MovementClass(win.EloDelta)"
                                                     @onclick="() => LoadExplanationAsync(win.GameId)"
                                                     disabled="@IsExplanationLoading(win.GameId)"
-                                                    title="Explain this game">
+                                                    title='@T["ExplainThisGame"]'>
                                                 @(IsExplanationLoading(win.GameId) ? "Loading" : FormatMovement(win.EloDelta))
                                             </button>
                                         </div>
@@ -169,10 +173,10 @@
                                 }
                             </div>
                             <div>
-                                <span>Worst losses</span>
+                                <span>@T["WorstLosses"]</span>
                                 @if (team.HistoricalHighlights.WorstLosses.Count == 0)
                                 {
-                                    <strong class="muted-cell">No losses</strong>
+                                    <strong class="muted-cell">@T["NoLosses"]</strong>
                                 }
                                 else
                                 {
@@ -184,7 +188,7 @@
                                                     class="history-highlight-elo @MovementClass(loss.EloDelta)"
                                                     @onclick="() => LoadExplanationAsync(loss.GameId)"
                                                     disabled="@IsExplanationLoading(loss.GameId)"
-                                                    title="Explain this game">
+                                                    title='@T["ExplainThisGame"]'>
                                                 @(IsExplanationLoading(loss.GameId) ? "Loading" : FormatMovement(loss.EloDelta))
                                             </button>
                                         </div>
@@ -201,11 +205,11 @@
         {
             <section class="team-context">
                 <div>
-                    <h2>Competitions</h2>
+                    <h2>@T["Competitions"]</h2>
                     <div class="competition-list">
                         @if (team.Competitions.Count == 0)
                         {
-                            <span class="empty-chip">No competitions yet</span>
+                            <span class="empty-chip">@T["NoCompetitionsYet"]</span>
                         }
                         else
                         {
@@ -223,14 +227,14 @@
             <section class="history-section">
                 <div class="section-head">
                     <div>
-                        <h2>Rating history</h2>
+                        <h2>@T["RatingHistory"]</h2>
                         <p>@HistoryContextLabel()</p>
                     </div>
                 </div>
                 <div class="chart-shell">
                     @if (team.History.Count < 2)
                     {
-                        <div class="empty-state">Not enough rated games for a chart yet.</div>
+                        <div class="empty-state">@T["NotEnoughChartGames"]</div>
                     }
                     else
                     {
@@ -257,7 +261,7 @@
             <section class="recent-games-section">
                 <div class="section-head">
                     <div>
-                        <h2>Plotted games</h2>
+                        <h2>@T["PlottedGames"]</h2>
                         <p>@GamesContextLabel(team)</p>
                     </div>
                 </div>
@@ -266,21 +270,21 @@
                     <table class="table table-hover align-middle team-games-table is-condensed">
                     <thead>
                         <tr>
-                            <th>Date</th>
-                            <th>Competition</th>
-                            <th>Opponent</th>
-                            <th>Score</th>
-                            <th class="numeric">ELO change</th>
-                            <th class="numeric">After</th>
-                            <th class="numeric">New rank</th>
-                            <th>Actions</th>
+                            <th>@T["Date"]</th>
+                            <th>@T["Competition"]</th>
+                            <th>@T["Opponent"]</th>
+                            <th>@T["Score"]</th>
+                            <th class="numeric">@T["EloChange"]</th>
+                            <th class="numeric">@T["After"]</th>
+                            <th class="numeric">@T["NewRank"]</th>
+                            <th>@T["Actions"]</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (team.RecentGames.Count == 0)
                         {
                             <tr>
-                                <td colspan="8" class="empty-state">No imported games are available for this team yet.</td>
+                                <td colspan="8" class="empty-state">@T["NoImportedGames"]</td>
                             </tr>
                         }
                         else
@@ -306,7 +310,7 @@
                                         }
                                         else
                                         {
-                                            <span class="muted-cell">Not rated</span>
+                                            <span class="muted-cell">@T["NotRated"]</span>
                                         }
                                     </td>
                                     <td class="numeric rating">@(game.PostElo?.ToString("0") ?? "-")</td>
@@ -353,6 +357,9 @@
     [Parameter]
     public Guid TeamId { get; set; }
 
+    [Parameter]
+    public string? TeamSlug { get; set; }
+
     [SupplyParameterFromQuery(Name = "returnUrl")]
     public string? ReturnUrl { get; set; }
 
@@ -383,6 +390,26 @@
     private bool isTeamHistoryRefining;
     private CancellationTokenSource? teamHistoryRefinementCancellation;
     private readonly Dictionary<string, EloTeamHistoryGamesResponse> teamHistoryGamesRangeCache = new(StringComparer.Ordinal);
+
+    private string TeamSeoTitle
+        => team is null
+            ? "Basketball Team ELO Profile | BasketElo"
+            : $"{team.TeamName} ELO History & Ranking | BasketElo";
+
+    private string TeamSeoDescription
+        => team is null
+            ? "Explore basketball team ELO rankings, rating history, recent form, and game-level explanations on BasketElo."
+            : $"Explore {team.TeamName}'s {team.EloPoolName} ELO rating, ranking, form, rating history, and game explanations on BasketElo.";
+
+    private string TeamSocialImageAlt
+        => team is null
+            ? "BasketElo basketball team ELO profile"
+            : $"{team.TeamName} basketball ELO profile on BasketElo";
+
+    private string TeamCanonicalPath
+        => team is null
+            ? $"/team/{TeamId:D}/{TeamSlug ?? "team"}"
+            : $"/team/{team.TeamId:D}/{ToSlug(team.TeamName)}?pool={Uri.EscapeDataString(team.EloPoolKey)}&ruleset={Uri.EscapeDataString(team.RulesetVersion)}";
 
     private void HandleChartExpandedChanged(bool expanded)
         => isChartExpanded = expanded;
@@ -697,6 +724,19 @@
            $"&pointsPerTeam={EloEvolutionLimits.DefaultPointsPerTeam}" +
            $"&fromUtc={Uri.EscapeDataString(fromUtc.ToString("O"))}" +
            $"&toUtc={Uri.EscapeDataString(toUtc.ToString("O"))}";
+
+    private static string ToSlug(string value)
+    {
+        var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
+        var slug = new string(normalized
+            .Where(character => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(character) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            .ToArray());
+
+        return string.Join('-', slug
+            .ToLowerInvariant()
+            .Split([' ', '/', '\\', '.', ',', ':', ';', '&', '+', '(', ')', '[', ']', '{', '}', '\'', '"'], StringSplitOptions.RemoveEmptyEntries)
+            .SelectMany(part => part.Split('-', StringSplitOptions.RemoveEmptyEntries)));
+    }
 
     private Task RestoreFullTeamHistoryAsync()
     {

@@ -1,41 +1,51 @@
 @page "/sponsor"
 
-<SeoHead Title="Support BasketElo | Basketball Data Sponsorship"
-         Description="Support BasketElo, an independent basketball analytics project, through thoughtful sponsorships relevant to basketball fans, data, training, and sports media."
+<SeoHead Title='@T["SponsorSeoTitle"]'
+         Description='@T["SponsorSeoDescription"]'
          CanonicalPath="/sponsor" />
 
 <div class="info-page sponsor-page">
     <header class="info-hero sponsor-hero be-reveal" style="--reveal-order: 0">
         <div class="info-hero-copy">
-            <p class="info-kicker">Support</p>
-            <h1>Open to the right sponsorship.</h1>
-            <p class="info-lede">BasketElo is an independent, spare-time project. I am open to meaningful sponsorships that fit the site and are genuinely relevant to people who follow basketball and data.</p>
+            <p class="info-kicker">@T["Support"]</p>
+            <h1>@T["SponsorHeroTitle"]</h1>
+            <p class="info-lede">@T["SponsorHeroText"]</p>
         </div>
         <a class="sponsor-contact-link" href="https://x.com/sergitm12" target="_blank" rel="noopener noreferrer">
-            <span>Get in touch</span>
+            <span>@T["GetInTouch"]</span>
             <strong>Message @@sergitm12</strong>
-            <small>on X <span aria-hidden="true">↗</span></small>
+            <small>@T["OnX"] <span aria-hidden="true">↗</span></small>
         </a>
     </header>
 
-    <aside class="support-placeholder be-reveal" style="--reveal-order: 1" aria-label="Buy me a coffee placeholder">
+    <aside class="support-placeholder be-reveal" style="--reveal-order: 1" aria-label='@T["BuyMeACoffeePlaceholder"]'>
         <div>
-            <p class="info-kicker">Coming soon</p>
-            <h2>Buy me a coffee</h2>
+            <p class="info-kicker">@T["ComingSoon"]</p>
+            <h2>@T["BuyMeACoffee"]</h2>
         </div>
-        <p>A simple one-off way to support the project will live here. For now, meaningful sponsorship conversations are welcome.</p>
+        <div class="support-coffee-action">
+            <p>@T["CoffeePlaceholderText"]</p>
+            <a class="support-coffee-link"
+               href="https://buymeacoffee.com/sergitm"
+               target="_blank"
+               rel="noopener noreferrer">
+                <span class="support-coffee-icon" aria-hidden="true">☕</span>
+                <span>@T["BuyMeACoffee"]</span>
+                <span class="support-coffee-arrow" aria-hidden="true">↗</span>
+            </a>
+        </div>
     </aside>
 
     <section class="info-section info-section-last be-reveal" style="--reveal-order: 2" aria-labelledby="meaningful-heading">
-        <div class="info-section-label"><span>01</span><span>A good fit</span></div>
+        <div class="info-section-label"><span>01</span><span>@T["GoodFit"]</span></div>
         <div class="info-section-body">
-            <h2 id="meaningful-heading">Relevant, useful, and easy on the reader.</h2>
+            <h2 id="meaningful-heading">@T["SponsorFitTitle"]</h2>
             <div class="sponsor-fit">
-                <article><h3>Meaningful</h3><p>A natural fit with basketball, analysis, data, training, media, or the tools people around the sport actually use.</p></article>
-                <article><h3>Unobtrusive</h3><p>Clearly labelled and thoughtfully placed. No pop-ups, autoplay, cluttered ad walls, or pretending sponsored content is editorial.</p></article>
+                <article><h3>@T["Meaningful"]</h3><p>@T["MeaningfulSponsorText"]</p></article>
+                <article><h3>@T["Unobtrusive"]</h3><p>@T["UnobtrusiveSponsorText"]</p></article>
             </div>
-            <p class="sponsor-note">I do not have fixed packages. If you have an idea that could support the project without making the site worse, I would be happy to hear it.</p>
-            <a class="info-text-link" href="https://x.com/sergitm12" target="_blank" rel="noopener noreferrer">Start a conversation <span aria-hidden="true">↗</span></a>
+            <p class="sponsor-note">@T["SponsorNote"]</p>
+            <a class="info-text-link" href="https://x.com/sergitm12" target="_blank" rel="noopener noreferrer">@T["StartConversation"] <span aria-hidden="true">↗</span></a>
         </div>
     </section>
 </div>

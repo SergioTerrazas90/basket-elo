@@ -9,11 +9,11 @@
         <Authorized>
             <div class="auth-status">
                 <span>@DisplayName(context.User)</span>
-                <a href="auth/logout">Sign out</a>
+                <a href="auth/logout">@T["SignOut"]</a>
             </div>
         </Authorized>
         <NotAuthorized>
-            <a class="auth-sign-in" href="auth/login">Sign in</a>
+            <a class="auth-sign-in" href="auth/login">@T["SignIn"]</a>
         </NotAuthorized>
     </AuthorizeView>
 }
@@ -22,7 +22,7 @@ else
     <AuthorizeView>
         <Authorized>
             <div class="dev-persona-switch">
-                <label for="devPersona">Testing as</label>
+                <label for="devPersona">@T["TestingAs"]</label>
                 <select id="devPersona" class="dev-persona-select" onchange="window.location.href='/dev/persona?persona=' + encodeURIComponent(this.value) + '&returnUrl=' + encodeURIComponent(window.location.pathname + window.location.search)">
                     @foreach (var persona in Personas)
                     {
@@ -33,7 +33,7 @@ else
         </Authorized>
         <NotAuthorized>
             <div class="dev-persona-switch">
-                <label for="devPersona">Testing as</label>
+                <label for="devPersona">@T["TestingAs"]</label>
                 <select id="devPersona" class="dev-persona-select" onchange="window.location.href='/dev/persona?persona=' + encodeURIComponent(this.value) + '&returnUrl=' + encodeURIComponent(window.location.pathname + window.location.search)">
                     @foreach (var persona in Personas)
                     {

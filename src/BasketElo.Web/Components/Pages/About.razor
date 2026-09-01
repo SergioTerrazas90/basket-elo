@@ -1,71 +1,71 @@
 @page "/about"
 
-<SeoHead Title="About BasketElo | Global Basketball ELO Rankings"
-         Description="Meet the engineer and lifelong basketball fan behind BasketElo, an independent project ranking NBA, European club, and national teams with transparent data and methods."
+<SeoHead Title='@T["AboutSeoTitle"]'
+         Description='@T["AboutSeoDescription"]'
          CanonicalPath="/about"
          SchemaType="AboutPage" />
 
 <div class="info-page about-page">
     <header class="info-hero be-reveal" style="--reveal-order: 0">
         <div class="info-hero-copy">
-            <p class="info-kicker">About</p>
-            <h1>I grew up with basketball. Then I tried to rank all of it.</h1>
-            <p class="info-lede">Hi, I’m Sergio. I’m an engineer and a lifelong basketball fan. My first trips to an arena came when I was only a few months old. Years later, I spent high school playing, or at least making a determined attempt.</p>
-            <p class="info-lede">Somewhere along the way, I became fascinated by ELO. I am not a chess player, or even much of a chess fan, but the system itself seemed wonderfully elegant to the engineer in me: give it a stream of results and it can place every player on the same scale.</p>
+            <p class="info-kicker">@T["About"]</p>
+            <h1>@T["AboutHeroTitle"]</h1>
+            <p class="info-lede">@T["AboutHeroIntro"]</p>
+            <p class="info-lede">@T["AboutHeroElo"]</p>
         </div>
-        <dl class="info-facts" aria-label="About the project">
-            <div><dt>What it is</dt><dd>A personal project</dd></div>
-            <div><dt>Built by</dt><dd>An engineer + fan</dd></div>
-            <div><dt>From</dt><dd>Spain</dd></div>
-            <div><dt>Status</dt><dd>Still evolving</dd></div>
+        <dl class="info-facts" aria-label='@T["AboutProject"]'>
+            <div><dt>@T["WhatItIs"]</dt><dd>@T["PersonalProject"]</dd></div>
+            <div><dt>@T["BuiltBy"]</dt><dd>@T["EngineerAndFan"]</dd></div>
+            <div><dt>@T["From"]</dt><dd>@T["Spain"]</dd></div>
+            <div><dt>@T["Status"]</dt><dd>@T["StillEvolving"]</dd></div>
         </dl>
     </header>
 
     <section class="info-section be-reveal" style="--reveal-order: 1" aria-labelledby="beginning-heading">
-        <div class="info-section-label"><span>01</span><span>The beginning</span></div>
+        <div class="info-section-label"><span>01</span><span>@T["TheBeginning"]</span></div>
         <div class="info-section-body about-prose">
-            <h2 id="beginning-heading">One rating. Many leagues. How hard could it be?</h2>
-            <p>Could the same idea work for basketball? I wanted to see if one transparent rating could put teams from different leagues on the same map, using little more than the games they played.</p>
-            <p>I began with European clubs. Once that worked, adding national teams and the NBA felt like a natural next step. At roughly that point, the small experiment politely stopped being small.</p>
+            <h2 id="beginning-heading">@T["AboutBeginningTitle"]</h2>
+            <p>@T["AboutBeginningText1"]</p>
+            <p>@T["AboutBeginningText2"]</p>
         </div>
     </section>
 
     <section class="info-section be-reveal" style="--reveal-order: 2" aria-labelledby="journey-heading">
-        <div class="info-section-label"><span>02</span><span>The journey</span></div>
+        <div class="info-section-label"><span>02</span><span>@T["TheJourney"]</span></div>
         <div class="info-section-body">
-            <h2 id="journey-heading">The formula was the easy part. Naturally.</h2>
-            <p class="info-section-intro">The interesting part was everything around it: the data, the identities, and the questions that appeared once the rankings existed. This is where a small experiment quietly becomes a data archaeology project.</p>
+            <h2 id="journey-heading">@T["AboutJourneyTitle"]</h2>
+            <p class="info-section-intro">@T["AboutJourneyIntro"]</p>
             <ol class="about-journey">
-                <li><span>First</span><div><h3>A simple model</h3><p>The first goal was simply to compare European clubs using a transparent ELO model.</p></div></li>
-                <li><span>Then</span><div><h3>The data fought back</h3><p>Archives disagreed, clubs changed names, competitions changed shape, and source IDs turned out to be suspicious aliases rather than real identities.</p></div></li>
-                <li><span>Next</span><div><h3>The map got bigger</h3><p>The NBA and national teams joined the project, along with team histories, game explanations, and tools for testing different models.</p></div></li>
-                <li><span>Now</span><div><h3>Still asking questions</h3><p>Coverage is improving, assumptions remain visible, and a better source or method can still change what the site thinks it knows.</p></div></li>
+                <li><span>@T["First"]</span><div><h3>@T["SimpleModel"]</h3><p>@T["SimpleModelDescription"]</p></div></li>
+                <li><span>@T["Then"]</span><div><h3>@T["DataFoughtBack"]</h3><p>@T["DataFoughtBackDescription"]</p></div></li>
+                <li><span>@T["NextStep"]</span><div><h3>@T["MapGotBigger"]</h3><p>@T["MapGotBiggerDescription"]</p></div></li>
+                <li><span>@T["Now"]</span><div><h3>@T["StillAskingQuestions"]</h3><p>@T["StillAskingQuestionsDescription"]</p></div></li>
             </ol>
         </div>
     </section>
 
     <section class="info-section be-reveal" style="--reveal-order: 3" aria-labelledby="ai-heading">
-        <div class="info-section-label"><span>03</span><span>Built in the margins</span></div>
+        <div class="info-section-label"><span>03</span><span>@T["BuiltInMargins"]</span></div>
         <div class="info-section-body about-prose">
-            <h2 id="ai-heading">Built in the margins, occasionally between everything else.</h2>
-            <p>As an engineer, I like building things. As a father of two small daughters, I rarely have more than 30 minutes at a time, and I also like to leave some room for exercise. AI has allowed me to work on BasketElo without needing to be in front of the computer all the time. Without it, this project probably would not have been possible.</p>
-            <p>That help does not remove the need for judgment. Provenance, tests, versioned models, and visible warnings still matter. The aim is to show what the ratings use, where the games came from, and where the data still has limits.</p>
+            <h2 id="ai-heading">@T["AboutMarginsTitle"]</h2>
+            <p>@T["AboutMarginsText1"]</p>
+            <p>@T["AboutMarginsText2"]</p>
         </div>
     </section>
 
     <section class="info-section info-section-last be-reveal" style="--reveal-order: 4" aria-labelledby="stack-heading">
-        <div class="info-section-label"><span>04</span><span>The stack</span></div>
+        <div class="info-section-label"><span>04</span><span>@T["TheStack"]</span></div>
         <div class="info-section-body about-prose">
-            <h2 id="stack-heading">Built by Codex. Watched over by a basketball fan.</h2>
-            <p>BasketElo is built with Codex on Blazor and .NET, then built and deployed directly to production on an OVH VPS. It is a surprisingly effective way to make a website when your free time arrives in tiny, unpredictable parcels.</p>
-            <div class="about-stack" aria-label="BasketElo technology stack">
+            <h2 id="stack-heading">@T["AboutStackTitle"]</h2>
+            <p>@T["AboutStackText"]</p>
+            <div class="about-stack" aria-label='@T["TechnologyStack"]'>
                 <span>Codex</span>
                 <span>Blazor</span>
                 <span>.NET</span>
                 <span>OVH VPS</span>
             </div>
-            <p class="about-stack-disclaimer">No single line of code has been human reviewed. Or reviewed at all, really. Codex writes, tests, and deploys it directly to production. This is either impressively efficient or a very elaborate way to create suspense.</p>
-            <p>Enjoy the data. If you have a suggestion, spot something that looks wrong, or have advice, <a class="info-text-link" href="https://x.com/sergitm12" target="_blank" rel="noopener noreferrer">ping me on X <span aria-hidden="true">↗</span></a>.</p>
+            <p class="about-stack-disclaimer">@T["AboutStackDisclaimer"]</p>
+            <p>@T["AboutContactIntro"] <a class="info-text-link" href="https://x.com/sergitm12" target="_blank" rel="noopener noreferrer">@T["PingMeOnX"] <span aria-hidden="true">↗</span></a>.</p>
         </div>
     </section>
 

@@ -1,0 +1,113 @@
+.ranking-chart-scroll {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+}
+
+.ranking-chart {
+    display: block;
+    width: 100%;
+    min-width: 47rem;
+}
+
+.ranking-axis {
+    stroke: var(--color-border-strong);
+    stroke-width: 1.5;
+}
+
+.ranking-tick {
+    stroke: var(--color-border-strong);
+    stroke-width: 1;
+}
+
+.ranking-model-label {
+    overflow: hidden;
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 800;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ranking-tick-label {
+    color: var(--color-subtle);
+    font-family: var(--font-sans);
+    font-size: 9px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.ranking-team {
+    outline: none;
+}
+
+.ranking-team-line {
+    fill: none;
+    stroke: var(--team-color);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-opacity: .55;
+    stroke-width: 2.25;
+    transition: stroke-opacity var(--motion-fast), stroke-width var(--motion-fast);
+}
+
+.ranking-team-point {
+    fill: var(--color-surface);
+    stroke: var(--team-color);
+    stroke-width: 2;
+    transition: r var(--motion-fast);
+}
+
+.ranking-point-rank {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.45rem;
+    min-height: 1.05rem;
+    padding: 0 .15rem;
+    border: 1px solid color-mix(in srgb, var(--team-color) 35%, var(--color-border));
+    border-radius: 999px;
+    background: var(--color-surface);
+    color: var(--team-color);
+    font-family: var(--font-sans);
+    font-size: 7px;
+    font-weight: 850;
+    pointer-events: none;
+    text-align: center;
+}
+
+.ranking-team-name {
+    overflow: hidden;
+    color: var(--team-color);
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 740;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ranking-team-name.is-start { text-align: right; }
+
+.ranking-team:hover .ranking-team-line,
+.ranking-team:focus .ranking-team-line {
+    stroke-opacity: 1;
+    stroke-width: 4;
+}
+
+.ranking-team:hover .ranking-team-point,
+.ranking-team:focus .ranking-team-point {
+    r: 7;
+}
+
+.ranking-chart-note,
+.ranking-chart-empty {
+    margin: var(--space-2) 0 0;
+    color: var(--color-subtle);
+    font-size: .76rem;
+}
+
+.ranking-chart-empty {
+    padding: var(--space-6);
+    text-align: center;
+}

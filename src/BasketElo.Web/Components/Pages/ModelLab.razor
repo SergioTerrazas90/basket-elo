@@ -1,4 +1,5 @@
-@page "/model-lab"
+@page "/model-lab/new"
+@page "/model-lab/models/{ModelId:guid}/run"
 @rendermode InteractiveServer
 @using System.Security.Claims
 @using System.Net
@@ -14,25 +15,45 @@
 @inject NavigationManager Navigation
 @inject IOptions<AuthOptions> AuthOptions
 
-<SeoHead Title="Basketball ELO Model Lab & Backtesting | BasketElo"
+<SeoHead Title='@(IsExistingModelRoute ? "Run model | BasketElo" : "Create model | BasketElo")'
          Description="Build and backtest a basketball ELO model against historical results. Tune home advantage, K-factor, score-margin adjustment, and competition weight."
-         CanonicalPath="/model-lab"
+         CanonicalPath='@(IsExistingModelRoute ? $"/model-lab/models/{ModelId}/run" : "/model-lab/new")'
          SchemaType="WebApplication" />
 
 <div class="model-lab-page">
     <section class="lab-hero">
         <div>
-            <p class="eyebrow">Model Lab</p>
-            <h1>Build a basketball rating model</h1>
-            <p class="intro">Configure a model, run an asynchronous backtest, then review its rankings and rating graph when the run completes.</p>
+            <p class="eyebrow">@T["ModelLab"]</p>
+            <h1>@(IsExistingModelRoute ? "Run model" : "Create a model")</h1>
+            <p class="intro">@(IsExistingModelRoute ? "Choose the competitions and evaluation period for this saved model." : "Define a rating model, save it for reuse, and run it against historical results.")</p>
         </div>
 
         @if (result is not null)
         {
-            <div class="score-card">
-                <span>Model score</span>
-                <strong>@result.Summary.WinnerAccuracy.ToString("0.0")%</strong>
-                <small>@CompareToBaseline()</small>
+            <div class="score-card model-verdict-card @BaselineVerdictClass">
+                <div class="verdict-card-heading">
+                    <span>Model vs standard</span>
+                    <strong>@BaselineVerdictLabel</strong>
+                </div>
+                <p class="verdict-summary">@BaselineVerdictSummary</p>
+                <div class="verdict-metrics">
+                    <div class="verdict-metric @BaselineMetricClass(result.Summary.WinnerAccuracy, result.BaselineSummary.WinnerAccuracy, true)">
+                        <span>Winner accuracy</span>
+                        <strong>@result.Summary.WinnerAccuracy.ToString("0.0")%</strong>
+                        <small>Standard @result.BaselineSummary.WinnerAccuracy.ToString("0.0")% · @FormatAccuracyDelta()</small>
+                    </div>
+                    <div class="verdict-metric @BaselineMetricClass(result.Summary.BrierScore, result.BaselineSummary.BrierScore, false)">
+                        <span>Brier score</span>
+                        <strong>@result.Summary.BrierScore.ToString("0.000")</strong>
+                        <small>Standard @result.BaselineSummary.BrierScore.ToString("0.000") · @FormatLowerIsBetterDelta(result.Summary.BrierScore, result.BaselineSummary.BrierScore)</small>
+                    </div>
+                    <div class="verdict-metric @BaselineMetricClass(result.Summary.AverageMarginError, result.BaselineSummary.AverageMarginError, false)">
+                        <span>Margin error</span>
+                        <strong>@result.Summary.AverageMarginError.ToString("0.0")</strong>
+                        <small>Standard @result.BaselineSummary.AverageMarginError.ToString("0.0") · @FormatLowerIsBetterDelta(result.Summary.AverageMarginError, result.BaselineSummary.AverageMarginError)</small>
+                    </div>
+                </div>
+                <small class="verdict-footnote">Both models were tested on the same @result.Summary.ScoredGames games.</small>
             </div>
         }
     </section>
@@ -44,7 +65,7 @@
 
     @if (isLoadingOptions)
     {
-        <section class="loading-panel">Loading Model Lab...</section>
+        <section class="loading-panel">@T["LoadingModelLab"]</section>
     }
     else if (options is not null)
     {
@@ -52,171 +73,20 @@
             <div class="model-panel">
                 <div class="section-head">
                     <div>
-                        <h2>Model</h2>
-                        <p>These parameters define how the model predicts and updates ratings. Save the model separately when you want to reuse it.</p>
+                        <p class="eyebrow">@(IsExistingModelRoute ? "Run model" : "Create model")</p>
+                        <h2>@(IsExistingModelRoute ? $"{loadedModel?.Name ?? "Model"} · v{loadedModel?.CurrentVersion.VersionNumber}" : "New model")</h2>
+                        <p>@(IsExistingModelRoute ? "The model is fixed for this run. Choose the data and evaluation period below." : "Define the rating rules you want to test, then save the model or run it immediately.")</p>
                     </div>
                     @if (CanSaveModels)
                     {
-                        <a class="btn btn-sm btn-outline-secondary" href="model-lab/models">Open model library</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="model-lab">My models</a>
                     }
                 </div>
-
-                <div class="saved-model-panel">
-                    @if (CanSaveModels)
-                    {
-                        <div class="saved-model-row">
-                            <div class="filter-field saved-model-select">
-                                <label for="savedModel">Saved model</label>
-                                <select id="savedModel" class="form-select" value="@selectedModelIdText" @onchange="OnSelectedModelChangedAsync" disabled="@(isLoadingModels || savedModels.Count == 0)">
-                                    <option value="">@SavedModelPlaceholder</option>
-                                    @foreach (var savedModel in savedModels)
-                                    {
-                                        <option value="@savedModel.Id">@FormatSavedModelOption(savedModel)</option>
-                                    }
-                                </select>
-                            </div>
-
-                            <div class="saved-model-actions">
-                                <button type="button" class="btn btn-outline-secondary" @onclick="LoadSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Load</button>
-                                <button type="button" class="btn btn-outline-secondary" @onclick="StartNewDraft" disabled="@isSavingModel">New draft</button>
-                                <button type="button" class="btn btn-primary" @onclick="SaveNewModelAsync" disabled="@isSavingModel">Save as new</button>
-                                <button type="button" class="btn btn-outline-secondary" @onclick="UpdateSelectedModelAsync" disabled="@(!CanUpdateSelectedModel)">Update</button>
-                                <button type="button" class="btn btn-outline-danger" @onclick="ArchiveSelectedModelAsync" disabled="@(!CanUseSelectedModel)">Archive</button>
-                            </div>
-                        </div>
-
-                        <div class="editor-state-panel">
-                            <div>
-                                <span class="@EditorStateClass">@EditorStateLabel</span>
-                                <strong>@EditorStateTitle</strong>
-                                <small>@EditorStateDetail</small>
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(UpdateUnavailableReason))
-                            {
-                                <p>@UpdateUnavailableReason</p>
-                            }
-                        </div>
-                    }
-
-                    @if (!string.IsNullOrWhiteSpace(modelStatusMessage))
-                    {
-                        <p class="model-status">@modelStatusMessage</p>
-                    }
-                    else if (!CanSaveModels)
-                    {
-                        <p class="model-status">Sign in to save models. You can still run temporary backtests without saving.</p>
-                    }
-                </div>
-
-                @if (CanSaveModels)
-                {
-                    <div class="saved-run-panel">
-                        <div class="section-head compact">
-                            <div>
-                                <h2>Saved runs</h2>
-                                <p>Recent persisted backtests for this account.</p>
-                            </div>
-                            <div class="saved-run-toolbar">
-                                <span class="run-quota">@StoredRunQuotaText</span>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="LoadSavedRunsAsync" disabled="@isLoadingRuns">
-                                    @(isLoadingRuns ? "Loading..." : "Refresh")
-                                </button>
-                            </div>
-                        </div>
-
-                        @if (isLoadingRuns)
-                        {
-                            <p class="model-status">Loading saved runs...</p>
-                        }
-                        else if (savedRuns.Count == 0)
-                        {
-                            <p class="model-status">No saved runs yet.</p>
-                        }
-                        else
-                        {
-                            <div class="saved-run-list">
-                                @foreach (var run in savedRuns)
-                                {
-                                    <div class="saved-run-item">
-                                        <a class="saved-run-link" href="@($"model-lab/runs/{run.Id}")">
-                                            <span>
-                                                <strong>@run.ModelName</strong>
-                                                <small>@run.LeagueName &middot; @FormatRunDate(run.CreatedAtUtc)</small>
-                                            </span>
-                                            <span class="saved-run-metric">
-                                                @if (run.Status == ModelLabRunStatuses.Queued)
-                                                {
-                                                    <text>Queue #@(run.QueuePosition ?? 1)</text>
-                                                }
-                                                else if (run.Status == ModelLabRunStatuses.Running)
-                                                {
-                                                    <text>@run.ProgressPercent%</text>
-                                                }
-                                                else if (run.Status == ModelLabRunStatuses.Failed)
-                                                {
-                                                    <text>Failed</text>
-                                                }
-                                                else if (run.Status == ModelLabRunStatuses.Canceled)
-                                                {
-                                                    <text>Canceled</text>
-                                                }
-                                                else
-                                                {
-                                                    <text>@run.Summary.WinnerAccuracy.ToString("0.0")%</text>
-                                                }
-                                            </span>
-                                        </a>
-                                        <button type="button"
-                                                class="btn btn-sm btn-outline-danger"
-                                                @onclick="() => DeleteSavedRunAsync(run.Id)"
-                                                disabled="@(deletingRunId == run.Id)">
-                                            @(confirmingDeleteRunId == run.Id ? "Confirm" : deletingRunId == run.Id ? "Deleting..." : "Delete")
-                                        </button>
-                                    </div>
-                                }
-                            </div>
-                        }
-                        @if (IsKnownStoredRunLimitReached)
-                        {
-                            <p class="model-status">@StoredRunLimitMessage</p>
-                        }
-                    </div>
-                }
 
                 <div class="control-grid">
                     <div class="filter-field wide">
                         <div class="label-with-info">
-                            <label for="eloPool">ELO pool</label>
-                            <button type="button"
-                                    class="info-button"
-                                    aria-expanded='@IsInfoPanelVisible("eloPool")'
-                                    aria-controls="eloPoolInfo"
-                                    title="ELO pool context"
-                                    @onclick='() => ToggleInfoPanel("eloPool")'>
-                                i
-                            </button>
-                        </div>
-                        <select id="eloPool"
-                                class="form-select"
-                                value="@selectedPoolKey"
-                                @onchange="OnPoolChanged"
-                                disabled="@(AvailablePools.Count <= 1)">
-                            @foreach (var pool in AvailablePools)
-                            {
-                                <option value="@pool.Key">@pool.DisplayName</option>
-                            }
-                        </select>
-                        @if (IsInfoPanelVisible("eloPool"))
-                        {
-                            <div id="eloPoolInfo" class="info-panel">
-                                <p>Each run has one isolated rating pool. All-competition runs include every eligible competition inside this pool only.</p>
-                            </div>
-                        }
-                    </div>
-
-                    <div class="filter-field wide">
-                        <div class="label-with-info">
-                            <label for="modelName">Name</label>
+                            <label for="modelName">@T["Name"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("modelName")'
@@ -236,13 +106,13 @@
                     </div>
 
                     <div class="filter-field wide">
-                        <label for="modelDescription">Description</label>
+                        <label for="modelDescription">@T["Description"]</label>
                         <textarea id="modelDescription" class="form-control" rows="2" @bind="modelDescription" maxlength="1000"></textarea>
                     </div>
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="baseRating">Base rating</label>
+                            <label for="baseRating">@T["BaseRating"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("baseRating")'
@@ -263,7 +133,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="kFactor">K factor</label>
+                            <label for="kFactor">@T["KFactor"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("kFactor")'
@@ -284,7 +154,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="homeAdvantage">Home advantage</label>
+                            <label for="homeAdvantage">@T["HomeAdvantage"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("homeAdvantage")'
@@ -303,9 +173,15 @@
                         }
                     </div>
 
+                    <details class="advanced-settings wide">
+                        <summary>
+                            <span>@T["AdvancedSettings"]</span>
+                            <small>@T["AdvancedSettingsDescription"]</small>
+                        </summary>
+                        <div class="control-grid advanced-settings-grid">
                     <div class="filter-field wide">
                         <div class="label-with-info">
-                            <label for="probabilityScale">Probability scale</label>
+                            <label for="probabilityScale">@T["ProbabilityScale"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("probabilityScale")'
@@ -337,7 +213,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="competitionWeight">Competition weight</label>
+                            <label for="competitionWeight">@T["CompetitionWeight"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("competitionWeight")'
@@ -360,7 +236,7 @@
                         <div class="label-with-info">
                             <label class="toggle-field" for="usesMargin">
                                 <input id="usesMargin" type="checkbox" @bind="usesMarginAdjustment" />
-                                <span>Margin adjustment</span>
+                                <span>@T["MarginAdjustment"]</span>
                             </label>
                             <button type="button"
                                     class="info-button"
@@ -381,7 +257,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="pointScale">Point margin scale</label>
+                            <label for="pointScale">@T["PointMarginScale"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("pointScale")'
@@ -404,7 +280,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="marginDampenerFactor">Dampener factor</label>
+                            <label for="marginDampenerFactor">@T["DampenerFactor"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("marginDampenerFactor")'
@@ -427,7 +303,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="maxMarginMultiplier">Margin cap</label>
+                            <label for="maxMarginMultiplier">@T["MarginCap"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("maxMarginMultiplier")'
@@ -447,21 +323,100 @@
                             </div>
                         }
                     </div>
+                        </div>
+                    </details>
+                </div>
+
+                <div class="saved-model-panel">
+                    @if (CanSaveModels)
+                    {
+                        <div class="model-context-panel">
+                            <div>
+                                <span class="@EditorStateClass">@EditorStateLabel</span>
+                                <strong>@EditorStateTitle</strong>
+                                <small>@EditorStateDetail</small>
+                            </div>
+                            @if (IsExistingModelRoute && loadedModel is not null)
+                            {
+                                <a class="btn btn-sm btn-outline-secondary" href="@($"model-lab/models/{loadedModel.Id}")">View model</a>
+                            }
+                        </div>
+
+                        <div class="editor-actions">
+                            @if (!IsExistingModelRoute)
+                            {
+                                <button type="button" class="btn btn-primary" @onclick="SaveNewModelAsync" disabled="@isSavingModel">@T["SaveModel"]</button>
+                            }
+                            else if (IsLoadedSelectedModel)
+                            {
+                                <button type="button" class="btn btn-outline-secondary" @onclick="SaveNewModelAsync" disabled="@isSavingModel">@T["DuplicateModel"]</button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="UpdateSelectedModelAsync" disabled="@(!CanUpdateSelectedModel)">@SaveModelChangesLabel</button>
+                                @if (IsSelectedModelDirty)
+                                {
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="DiscardSelectedModelChanges" disabled="@isSavingModel">Discard changes</button>
+                                }
+                            }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(modelStatusMessage))
+                    {
+                        <p class="model-status">@modelStatusMessage</p>
+                    }
+                    else if (!CanSaveModels)
+                    {
+                        <p class="model-status">You can preview a model here, but sign in to save it and keep its run results.</p>
+                    }
                 </div>
             </div>
 
             <div class="model-panel">
                 <div class="section-head">
                     <div>
-                        <h2>Backtest</h2>
-                        <p>Initialization builds starting ratings. The scored window measures prediction quality.</p>
+                        <p class="step-label">@T["Step"] 2</p>
+                        <h2>@T["Backtest"]</h2>
+                        <p>@T["BacktestDescription"]</p>
                     </div>
+                    @if (CanSaveModels)
+                    {
+                        <span class="run-quota">@StoredRunQuotaText</span>
+                    }
                 </div>
 
                 <div class="control-grid">
                     <div class="filter-field wide">
                         <div class="label-with-info">
-                            <label for="scopeType">Scope</label>
+                            <label for="eloPool">@T["EloPool"]</label>
+                            <button type="button"
+                                    class="info-button"
+                                    aria-expanded='@IsInfoPanelVisible("eloPool")'
+                                    aria-controls="eloPoolInfo"
+                                    title="ELO pool context"
+                                    @onclick='() => ToggleInfoPanel("eloPool")'>
+                                i
+                            </button>
+                        </div>
+                        <select id="eloPool"
+                                class="form-select"
+                                value="@selectedPoolKey"
+                                @onchange="OnPoolChanged"
+                                disabled="@(AvailablePools.Count <= 1)">
+                            @foreach (var pool in AvailablePools)
+                            {
+                                <option value="@pool.Key">@pool.DisplayName</option>
+                            }
+                        </select>
+                        @if (IsInfoPanelVisible("eloPool"))
+                        {
+                            <div id="eloPoolInfo" class="info-panel">
+                                <p>Each run has one isolated rating pool. All-competition runs include every eligible competition inside this pool only.</p>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="filter-field wide">
+                        <div class="label-with-info">
+                            <label for="scopeType">@T["Scope"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("scopeType")'
@@ -472,11 +427,11 @@
                             </button>
                         </div>
                         <select id="scopeType" class="form-select" value="@scopeType" @onchange="OnScopeTypeChanged">
-                            <option value="@ModelLabScopeTypes.SingleCompetition">Single competition</option>
+                            <option value="@ModelLabScopeTypes.SingleCompetition">@T["SingleCompetition"]</option>
                             @if (CanUseMultiCompetitionScopes)
                             {
-                                <option value="@ModelLabScopeTypes.SelectedCompetitions">Selected competitions</option>
-                                <option value="@ModelLabScopeTypes.AllCompetitions">All competitions</option>
+                                <option value="@ModelLabScopeTypes.SelectedCompetitions">@T["SelectedCompetitions"]</option>
+                                <option value="@ModelLabScopeTypes.AllCompetitions">@T["AllCompetitions"]</option>
                             }
                         </select>
                         @if (IsInfoPanelVisible("scopeType"))
@@ -540,7 +495,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="initFromSeason">Init from season</label>
+                            <label for="initFromSeason">@T["InitFromSeason"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("initSeason")'
@@ -567,7 +522,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="initToSeason">Init to season</label>
+                            <label for="initToSeason">@T["InitToSeason"]</label>
                         </div>
                         <select id="initToSeason" class="form-select" @bind="initializationToSeason" @bind:after="ApplySelectedSeasonsToDates">
                             @foreach (var season in AvailableSeasons)
@@ -579,7 +534,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="scoredFromSeason">Score from season</label>
+                            <label for="scoredFromSeason">@T["ScoreFromSeason"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("scoredSeason")'
@@ -606,7 +561,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label for="scoredToSeason">Score to season</label>
+                            <label for="scoredToSeason">@T["ScoreToSeason"]</label>
                         </div>
                         <select id="scoredToSeason" class="form-select" @bind="scoredToSeason" @bind:after="ApplySelectedSeasonsToDates">
                             @foreach (var season in AvailableSeasons)
@@ -618,12 +573,12 @@
 
                     <div class="season-window-summary">
                         <div>
-                            <span>Initialization window</span>
+                            <span>@T["InitializationWindow"]</span>
                             <strong>@InitializationSeasonSummary</strong>
                             <small>@FormatWindow(initializationFrom, initializationTo)</small>
                         </div>
                         <div>
-                            <span>Scored window</span>
+                            <span>@T["ScoredWindow"]</span>
                             <strong>@ScoredSeasonSummary</strong>
                             <small>@FormatWindow(scoredFrom, scoredTo)</small>
                         </div>
@@ -633,21 +588,21 @@
                         @if (CanSaveModels)
                         {
                             <button type="button" class="btn btn-primary" @onclick="CreateStoredRunAsync" disabled="@(!CanCreateStoredRun)">
-                                @(isSavingRun ? "Queueing..." : "Run backtest")
+                                @(isSavingRun ? T["Queueing"] : T["RunBacktest"])
                             </button>
                         }
                         else
                         {
                             <button type="button" class="btn btn-primary" @onclick="RunBacktestAsync" disabled="@isRunning">
-                                @(isRunning ? "Running..." : "Run preview")
+                                @(isRunning ? T["Running"] : T["RunPreview"])
                             </button>
                         }
-                        <button type="button" class="btn btn-outline-secondary" @onclick="ResetDefaults" disabled="@isRunning">Reset</button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="ResetDefaults" disabled="@isRunning">@T["Reset"]</button>
                     </div>
                     @if (CanSaveModels)
                     {
                         <p class="field-note save-run-note">
-                            Running the backtest saves the current model version, queues one ELO run, and opens its rankings and graph automatically when complete.
+                            Run model saves any parameter changes as a new version, then opens a results page that updates automatically.
                             @if (!string.IsNullOrWhiteSpace(SaveRunUnavailableReason))
                             {
                                 <br /><span>@SaveRunUnavailableReason</span>
@@ -664,24 +619,30 @@
 
         @if (result is not null)
         {
+            <section class="inline-results-heading">
+                <p class="step-label">@T["Step"] 3</p>
+                <h2>@T["PreviewResults"]</h2>
+                <p>@T["PreviewResultsDescription"]</p>
+            </section>
+
             <section class="result-summary">
                 <div>
-                    <span>Scored games</span>
+                    <span>@T["ScoredGames"]</span>
                     <strong>@result.Summary.ScoredGames</strong>
                     <small>@(result.RunId.HasValue ? $"Saved run {result.RunId.Value.ToString()[..8]}" : $"{result.ScoredWindow.Games} games in window")</small>
                 </div>
                 <div>
-                    <span>Winner accuracy</span>
+                    <span>@T["WinnerAccuracy"]</span>
                     <strong>@result.Summary.WinnerAccuracy.ToString("0.0")%</strong>
                     <small>Baseline @result.BaselineSummary.WinnerAccuracy.ToString("0.0")%</small>
                 </div>
                 <div>
-                    <span>Brier score</span>
+                    <span>@T["BrierScore"]</span>
                     <strong>@result.Summary.BrierScore.ToString("0.000")</strong>
-                    <small>Lower is better</small>
+                    <small>@T["LowerIsBetter"]</small>
                 </div>
                 <div>
-                    <span>Avg margin error</span>
+                    <span>@T["AverageMarginError"]</span>
                     <strong>@result.Summary.AverageMarginError.ToString("0.0")</strong>
                     <small>Baseline @result.BaselineSummary.AverageMarginError.ToString("0.0")</small>
                 </div>
@@ -691,19 +652,30 @@
                 <div class="result-panel">
                     <div class="section-head compact">
                         <div>
-                            <h2>Final ratings</h2>
+                            <h2>@T["FinalRatings"]</h2>
                             <p>@result.LeagueName &middot; @result.ModelName</p>
                         </div>
+                        @if (HasBaselineRatings(result.Ratings))
+                        {
+                            <label class="comparison-toggle">
+                                <input type="checkbox" @bind="showBaselineRatings" />
+                                <span>Compare with standard</span>
+                            </label>
+                        }
                     </div>
                     <div class="table-responsive">
                         <table class="table table-hover align-middle compact-table">
                             <thead>
                                 <tr>
-                                    <th>Rank</th>
-                                    <th>Team</th>
+                                    <th>@T["Rank"]</th>
+                                    <th>@T["Team"]</th>
                                     <th class="numeric">ELO</th>
-                                    <th class="numeric">Games</th>
-                                    <th class="numeric">Recent</th>
+                                    @if (showBaselineRatings)
+                                    {
+                                        <th class="numeric">Standard</th>
+                                    }
+                                    <th class="numeric">@T["Games"]</th>
+                                    <th class="numeric">@T["Recent"]</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -713,6 +685,13 @@
                                         <td class="rank-cell">#@row.Rank</td>
                                         <td>@row.TeamName</td>
                                         <td class="numeric rating">@row.Elo.ToString("0")</td>
+                                        @if (showBaselineRatings)
+                                        {
+                                            <td class="numeric baseline-comparison">
+                                                <strong>#@(row.BaselineRank?.ToString() ?? "—") · @(row.BaselineElo?.ToString("0") ?? "—")</strong>
+                                                <small class="@BaselineComparisonClass(row)">@FormatEloDelta(row) · @FormatRankDelta(row)</small>
+                                            </td>
+                                        }
                                         <td class="numeric">@row.GamesPlayed</td>
                                         <td class="numeric"><span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span></td>
                                     </tr>
@@ -725,8 +704,8 @@
                 <div class="result-panel">
                     <div class="section-head compact">
                         <div>
-                            <h2>Performance over time</h2>
-                            <p>Monthly scoring inside the test window.</p>
+                            <h2>@T["PerformanceOverTime"]</h2>
+                            <p>@T["MonthlyScoringDescription"]</p>
                         </div>
                     </div>
                     <div class="period-list">
@@ -745,8 +724,8 @@
             <section class="result-panel">
                 <div class="section-head compact">
                     <div>
-                        <h2>Biggest misses</h2>
-                        <p>Games where the expected margin was furthest from reality.</p>
+                        <h2>@T["BiggestMisses"]</h2>
+                        <p>@T["BiggestMissesDescription"]</p>
                     </div>
                 </div>
                 <div class="table-responsive">
@@ -784,6 +763,12 @@
 </div>
 
 @code {
+    [Parameter]
+    public Guid ModelId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "modelId")]
+    public Guid? RequestedModelId { get; set; }
+
     [CascadingParameter]
     private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
 
@@ -793,15 +778,13 @@
     private List<ModelLabModelSummaryResponse> savedModels = [];
     private List<ModelLabRunSummaryResponse> savedRuns = [];
     private ModelLabRunQuotaResponse? runQuota;
+    private bool showBaselineRatings;
     private bool isLoadingOptions = true;
     private bool isLoadingModels;
-    private bool isLoadingRuns;
     private bool isRunning;
     private bool isSavingModel;
     private bool isSavingRun;
     private bool isRealSignedIn;
-    private Guid? confirmingDeleteRunId;
-    private Guid? deletingRunId;
     private string? errorMessage;
     private string? modelStatusMessage;
     private string modelName = "My model";
@@ -834,6 +817,8 @@
     private DateTime scoredFrom;
     private DateTime scoredTo;
 
+    private bool IsExistingModelRoute => ModelId != Guid.Empty;
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -859,6 +844,12 @@
             {
                 await LoadSavedModelsAsync();
                 await LoadSavedRunsAsync();
+                var requestedModelId = IsExistingModelRoute ? ModelId : RequestedModelId;
+                if (requestedModelId.HasValue && savedModels.Any(model => model.Id == requestedModelId.Value))
+                {
+                    selectedModelIdText = requestedModelId.Value.ToString();
+                    await LoadSelectedModelAsync();
+                }
             }
             else
             {
@@ -885,6 +876,14 @@
 
     private bool CanUpdateSelectedModel
         => CanUseSelectedModel && IsSelectedModelDirty;
+
+    private string SaveNewModelLabel
+        => IsLoadedSelectedModel ? T["DuplicateModel"] : T["SaveModel"];
+
+    private string SaveModelChangesLabel
+        => HasParameterChanges && loadedModel is not null
+            ? T["SaveAsVersion", loadedModel.CurrentVersion.VersionNumber + 1]
+            : T["SaveChanges"];
 
     private bool HasSelectedModel
         => Guid.TryParse(selectedModelIdText, out _);
@@ -931,40 +930,12 @@
         => IsLoadedSelectedModel
             ? IsSelectedModelDirty
                 ? HasParameterChanges
-                    ? $"Updating will create version {loadedModel!.CurrentVersion.VersionNumber + 1}."
-                    : "Only name, description, or competition changed. Updating will keep the same version."
+                    ? $"Save as immutable version {loadedModel!.CurrentVersion.VersionNumber + 1} or discard changes before running. Existing run results stay attached to their original version."
+                    : "Save or discard these model details before running. Its parameter version will stay the same."
                 : "Editor matches the saved model."
             : HasSelectedModel
-                ? "Load the selected model before editing or updating it."
-                : "Save as new to keep this model for future runs.";
-
-    private string? UpdateUnavailableReason
-    {
-        get
-        {
-            if (!CanSaveModels || isSavingModel)
-            {
-                return null;
-            }
-
-            if (!HasSelectedModel)
-            {
-                return "Choose a saved model before updating.";
-            }
-
-            if (!IsLoadedSelectedModel)
-            {
-                return "Load the selected model before updating.";
-            }
-
-            if (!IsSelectedModelDirty)
-            {
-                return "No model changes to update.";
-            }
-
-            return null;
-        }
-    }
+                ? "Choose the model again to load it."
+                : "Save this draft to reuse it, or run it immediately.";
 
     private bool CanCreateStoredRun
         => CanSaveModels &&
@@ -973,6 +944,7 @@
             !isSavingModel &&
             !HasActiveRun &&
             !IsKnownStoredRunLimitReached &&
+            !IsSelectedModelDirty &&
             !string.Equals(lastSavedRunSignature, BuildCurrentRunSignature(), StringComparison.Ordinal);
 
     private bool HasActiveRun => savedRuns.Any(run =>
@@ -994,7 +966,7 @@
     private string StoredRunLimitMessage
         => entitlement?.IsPaid == true
             ? $"Stored run limit reached. Paid users can store up to {entitlement.StoredRunLimit ?? 100} runs."
-            : "Stored run limit reached. Free users can store one run. Delete it or upgrade for up to 100 saved runs.";
+            : $"Stored run limit reached. Free users can store up to {entitlement?.StoredRunLimit ?? 3} runs. Delete an old run or upgrade for up to 100 saved runs.";
 
     private string? SaveRunUnavailableReason
     {
@@ -1008,6 +980,11 @@
             if (IsKnownStoredRunLimitReached)
             {
                 return StoredRunLimitMessage;
+            }
+
+            if (IsSelectedModelDirty)
+            {
+                return "Save or discard your model changes before running it.";
             }
 
             if (HasActiveRun)
@@ -1112,7 +1089,7 @@
         => entitlement?.PlanKey switch
         {
             "anonymous" => $"Anonymous users can run Model Lab backtests for {entitlement.RequiredLeagueName ?? "ACB"} only. Sign in to save models.",
-            "free" => $"Free users can run and save Model Lab work for {entitlement.RequiredLeagueName ?? "ACB"} only, with 1 stored run.",
+            "free" => $"Free users can run and save Model Lab work for {entitlement.RequiredLeagueName ?? "ACB"} only, with up to {entitlement.StoredRunLimit ?? 3} stored runs.",
             "paid" => $"Paid users can run single, selected, or all-competition backtests and store up to {entitlement.StoredRunLimit ?? 100} runs.",
             _ => string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName)
                 ? "Paid users can run single, selected, or all-competition backtests across all available competitions."
@@ -1146,9 +1123,6 @@
 
     private static string FormatSavedModelOption(ModelLabModelSummaryResponse model)
         => $"{model.Name} - v{model.CurrentVersion.VersionNumber}";
-
-    private static string FormatRunDate(DateTime value)
-        => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 
     private static string FormatWindow(DateTime fromUtc, DateTime toUtc)
         => fromUtc == default || toUtc == default
@@ -1305,8 +1279,6 @@
             return;
         }
 
-        isLoadingRuns = true;
-
         try
         {
             using var quotaResponse = await Http.GetAsync("api/model-lab/runs/quota");
@@ -1328,50 +1300,6 @@
         catch (Exception ex)
         {
             modelStatusMessage = $"Could not load saved runs: {ex.Message}";
-        }
-        finally
-        {
-            isLoadingRuns = false;
-        }
-    }
-
-    private async Task DeleteSavedRunAsync(Guid runId)
-    {
-        if (confirmingDeleteRunId != runId)
-        {
-            confirmingDeleteRunId = runId;
-            return;
-        }
-
-        deletingRunId = runId;
-        errorMessage = null;
-        modelStatusMessage = null;
-
-        try
-        {
-            using var response = await Http.DeleteAsync($"api/model-lab/runs/{runId}");
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
-            }
-
-            if (result?.RunId == runId)
-            {
-                result = null;
-                lastSavedRunSignature = null;
-            }
-
-            await LoadSavedRunsAsync();
-            confirmingDeleteRunId = null;
-            modelStatusMessage = $"Deleted run {runId.ToString()[..8]}.";
-        }
-        catch (Exception ex)
-        {
-            errorMessage = $"Could not delete run: {ex.Message}";
-        }
-        finally
-        {
-            deletingRunId = null;
         }
     }
 
@@ -1513,49 +1441,6 @@
         }
     }
 
-    private async Task ArchiveSelectedModelAsync()
-    {
-        if (!CanSaveModels)
-        {
-            modelStatusMessage = "Sign in to save models.";
-            return;
-        }
-
-        if (!Guid.TryParse(selectedModelIdText, out var modelId))
-        {
-            return;
-        }
-
-        isSavingModel = true;
-        modelStatusMessage = null;
-
-        try
-        {
-            using var response = await Http.PostAsJsonAsync(
-                $"api/model-lab/models/{modelId}/archive",
-                new ArchiveModelLabModelRequest(true));
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new InvalidOperationException(await ReadErrorMessageAsync(response));
-            }
-
-            selectedModelIdText = string.Empty;
-            loadedModel = null;
-            loadedModelSignature = null;
-            loadedModelVersionSignature = null;
-            await LoadSavedModelsAsync();
-            modelStatusMessage = "Archived saved model.";
-        }
-        catch (Exception ex)
-        {
-            modelStatusMessage = $"Could not archive model: {ex.Message}";
-        }
-        finally
-        {
-            isSavingModel = false;
-        }
-    }
-
     private async Task RunBacktestAsync()
     {
         NormalizeScopeForEntitlement();
@@ -1563,13 +1448,13 @@
 
         if (scopeType == ModelLabScopeTypes.SelectedCompetitions && selectedCompetitionIds.Count == 0)
         {
-            errorMessage = "Choose at least one competition before running a backtest.";
+            errorMessage = "Choose at least one competition before running the model.";
             return;
         }
 
         if (scopeType == ModelLabScopeTypes.SingleCompetition && string.IsNullOrWhiteSpace(leagueName))
         {
-            errorMessage = "Choose a competition before running a backtest.";
+            errorMessage = "Choose a competition before running the model.";
             return;
         }
 
@@ -1600,7 +1485,7 @@
         }
         catch (Exception ex)
         {
-            errorMessage = $"Could not run backtest: {ex.Message}";
+            errorMessage = $"Could not run the model: {ex.Message}";
         }
         finally
         {
@@ -1610,12 +1495,18 @@
 
     private async Task CreateStoredRunAsync()
     {
+        if (IsSelectedModelDirty)
+        {
+            modelStatusMessage = "Save or discard your model changes before running it.";
+            return;
+        }
+
         NormalizeScopeForEntitlement();
         ApplySelectedSeasonsToDates();
 
         if (scopeType == ModelLabScopeTypes.SelectedCompetitions && selectedCompetitionIds.Count == 0)
         {
-            errorMessage = "Choose at least one competition before saving a run.";
+            errorMessage = "Choose at least one competition before running the model.";
             return;
         }
 
@@ -1635,7 +1526,8 @@
                 DateTime.SpecifyKind(scoredTo.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1),
                 scopeType,
                 BuildRequestCompetitionIds(),
-                selectedPoolKey);
+                selectedPoolKey,
+                BuildRequestLeagueName());
 
             using var response = await Http.PostAsJsonAsync("api/model-lab/runs", request);
             if (!response.IsSuccessStatusCode)
@@ -1658,7 +1550,7 @@
         }
         catch (Exception ex)
         {
-            errorMessage = $"Could not save run: {ex.Message}";
+            errorMessage = $"Could not start the run: {ex.Message}";
         }
         finally
         {
@@ -1669,8 +1561,13 @@
     private async Task<ModelLabModelDetailResponse> SaveCurrentModelForRunAsync()
     {
         HttpResponseMessage response;
-        if (IsLoadedSelectedModel && !IsSelectedModelDirty)
+        if (IsLoadedSelectedModel)
         {
+            if (IsSelectedModelDirty)
+            {
+                throw new InvalidOperationException("Save or discard your model changes before running it.");
+            }
+
             return loadedModel!;
         }
 
@@ -1707,6 +1604,20 @@
         modelStatusMessage = "Editing a new unsaved model draft.";
     }
 
+    private void DiscardSelectedModelChanges()
+    {
+        if (!IsLoadedSelectedModel || loadedModel is null || !IsSelectedModelDirty)
+        {
+            return;
+        }
+
+        var model = loadedModel;
+        ApplySavedModel(model);
+        result = null;
+        errorMessage = null;
+        modelStatusMessage = $"Discarded changes. {model.Name} v{model.CurrentVersion.VersionNumber} is ready to run.";
+    }
+
     private void ResetDefaults()
     {
         if (options is not null)
@@ -1726,7 +1637,7 @@
         => new(
             modelName,
             modelDescription,
-            leagueName ?? string.Empty,
+            string.Empty,
             BuildParameterSet(),
             null);
 
@@ -2033,21 +1944,119 @@
     private void ToggleInfoPanel(string key)
         => activeInfoPanel = IsInfoPanelVisible(key) ? null : key;
 
-    private string CompareToBaseline()
+    private int BaselineMetricWins
+        => result is null
+            ? 0
+            : new[]
+            {
+                CompareMetric(result.Summary.WinnerAccuracy, result.BaselineSummary.WinnerAccuracy, higherIsBetter: true),
+                CompareMetric(result.Summary.BrierScore, result.BaselineSummary.BrierScore, higherIsBetter: false),
+                CompareMetric(result.Summary.AverageMarginError, result.BaselineSummary.AverageMarginError, higherIsBetter: false)
+            }.Count(x => x > 0);
+
+    private int BaselineMetricLosses
+        => result is null
+            ? 0
+            : new[]
+            {
+                CompareMetric(result.Summary.WinnerAccuracy, result.BaselineSummary.WinnerAccuracy, higherIsBetter: true),
+                CompareMetric(result.Summary.BrierScore, result.BaselineSummary.BrierScore, higherIsBetter: false),
+                CompareMetric(result.Summary.AverageMarginError, result.BaselineSummary.AverageMarginError, higherIsBetter: false)
+            }.Count(x => x < 0);
+
+    private string BaselineVerdictClass
+        => BaselineMetricWins > BaselineMetricLosses
+            ? "verdict-ahead"
+            : BaselineMetricLosses > BaselineMetricWins
+                ? "verdict-behind"
+                : "verdict-even";
+
+    private string BaselineVerdictLabel
+        => BaselineMetricWins > BaselineMetricLosses
+            ? "Ahead of standard"
+            : BaselineMetricLosses > BaselineMetricWins
+                ? "Standard is ahead"
+                : "Too close to call";
+
+    private string BaselineVerdictSummary
+        => result is null
+            ? string.Empty
+            : BaselineMetricWins == BaselineMetricLosses
+                ? "The model and standard split the tracked metrics."
+                : $"Your model wins {BaselineMetricWins} of 3 tracked metrics against the standard.";
+
+    private string FormatAccuracyDelta()
     {
         if (result is null)
         {
             return string.Empty;
         }
 
-        var diff = result.Summary.WinnerAccuracy - result.BaselineSummary.WinnerAccuracy;
-        return diff switch
+        var delta = result.Summary.WinnerAccuracy - result.BaselineSummary.WinnerAccuracy;
+        return delta switch
         {
-            > 0 => $"+{diff:0.0} vs baseline",
-            < 0 => $"{diff:0.0} vs baseline",
-            _ => "even with baseline"
+            > 0 => $"+{delta:0.0} pp",
+            < 0 => $"{delta:0.0} pp",
+            _ => "even"
         };
     }
+
+    private static string FormatLowerIsBetterDelta(decimal modelValue, decimal baselineValue)
+    {
+        var improvement = baselineValue - modelValue;
+        return improvement switch
+        {
+            > 0 => $"{improvement:+0.000;-0.000;0.000} better",
+            < 0 => $"{improvement:0.000} worse",
+            _ => "even"
+        };
+    }
+
+    private static int CompareMetric(decimal modelValue, decimal baselineValue, bool higherIsBetter)
+    {
+        var comparison = decimal.Compare(modelValue, baselineValue);
+        return higherIsBetter ? comparison : -comparison;
+    }
+
+    private static string BaselineMetricClass(decimal modelValue, decimal baselineValue, bool higherIsBetter)
+        => CompareMetric(modelValue, baselineValue, higherIsBetter) switch
+        {
+            > 0 => "metric-better",
+            < 0 => "metric-worse",
+            _ => "metric-even"
+        };
+
+    private static bool HasBaselineRatings(IEnumerable<ModelLabRatingRow> ratings)
+        => ratings.Any(x => x.BaselineRank.HasValue && x.BaselineElo.HasValue);
+
+    private static string FormatEloDelta(ModelLabRatingRow row)
+        => row.BaselineElo is not decimal baseline
+            ? "standard unavailable"
+            : (row.Elo - baseline) switch
+            {
+                > 0 => $"+{row.Elo - baseline:0} ELO",
+                < 0 => $"{row.Elo - baseline:0} ELO",
+                _ => "even ELO"
+            };
+
+    private static string FormatRankDelta(ModelLabRatingRow row)
+        => row.BaselineRank is not int baseline
+            ? "rank unavailable"
+            : (baseline - row.Rank) switch
+            {
+                > 0 => $"↑{baseline - row.Rank} rank{(baseline - row.Rank == 1 ? string.Empty : "s")}",
+                < 0 => $"↓{row.Rank - baseline} rank{(row.Rank - baseline == 1 ? string.Empty : "s")}",
+                _ => "same rank"
+            };
+
+    private static string BaselineComparisonClass(ModelLabRatingRow row)
+        => row.BaselineElo is not decimal baseline
+            ? "comparison-unavailable"
+            : row.Elo == baseline
+                ? "comparison-even"
+                : row.Elo > baseline
+                    ? "comparison-positive"
+                    : "comparison-negative";
 
     private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
     {

@@ -12,6 +12,7 @@ public class ModelLabRun
     public string ScopeType { get; set; } = string.Empty;
     public string Status { get; set; } = ModelLabRunStatuses.Queued;
     public string? HangfireJobId { get; set; }
+    public Guid? ComparisonGroupId { get; set; }
     public string? RequestCompetitionIdsJson { get; set; }
     public int ProgressPercent { get; set; }
     public string ProgressStage { get; set; } = "Waiting for a worker";

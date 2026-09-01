@@ -1,0 +1,67 @@
+@using System.Globalization
+@using BasketElo.Web.Localization
+@inject NavigationManager Navigation
+
+<details class="language-selector">
+    <summary aria-label='@T["LanguageAndRegion"]' title='@T["LanguageAndRegion"]'>
+        <svg class="language-globe" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M3 12h18M12 3a14.7 14.7 0 0 1 4 9 14.7 14.7 0 0 1-4 9 14.7 14.7 0 0 1-4-9 14.7 14.7 0 0 1 4-9Z"></path>
+        </svg>
+        <span class="language-current">@CurrentShortLabel</span>
+        <svg class="language-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+            <path d="m3 4.5 3 3 3-3"></path>
+        </svg>
+    </summary>
+    <div class="language-menu">
+        <div class="language-menu-heading">
+            <span>@T["LanguageAndRegion"]</span>
+            <small>@T["LanguageSelectionHint"]</small>
+        </div>
+        @foreach (var culture in SupportedCultures.All)
+        {
+            <a class="language-option @(culture.Name == CurrentCultureName ? "is-active" : string.Empty)"
+               href="@BuildCultureHref(culture.Name)"
+               data-culture-switch
+               data-enhance-nav="false"
+               aria-current="@(culture.Name == CurrentCultureName ? "true" : null)">
+                <span class="language-option-code">@culture.ShortLabel</span>
+                <span class="language-option-copy">
+                    <strong>@culture.Label</strong>
+                    <small>@GetCultureDetail(culture.Name)</small>
+                </span>
+                @if (culture.Name == CurrentCultureName)
+                {
+                    <span class="language-check" aria-hidden="true">
+                        <svg viewBox="0 0 16 16" focusable="false">
+                            <path d="m3.5 8.2 2.8 2.8 6.2-6.2"></path>
+                        </svg>
+                    </span>
+                }
+            </a>
+        }
+    </div>
+</details>
+
+@code {
+    private string CurrentCultureName
+        => SupportedCultures.TryNormalize(CultureInfo.CurrentUICulture.Name, out var cultureName)
+            ? cultureName
+            : SupportedCultures.English;
+
+    private string CurrentShortLabel
+        => SupportedCultures.All.FirstOrDefault(x => x.Name == CurrentCultureName)?.ShortLabel
+            ?? "EN";
+
+    private string GetCultureDetail(string cultureName)
+        => cultureName == SupportedCultures.Spanish
+            ? $"{T["Spain"]} · DD/MM/AAAA"
+            : $"{T["UnitedStates"]} · MM/DD/YYYY";
+
+    private string BuildCultureHref(string cultureName)
+    {
+        var currentUri = new Uri(Navigation.Uri);
+        var returnUrl = currentUri.PathAndQuery;
+        return $"/culture/set?culture={Uri.EscapeDataString(cultureName)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
+    }
+}

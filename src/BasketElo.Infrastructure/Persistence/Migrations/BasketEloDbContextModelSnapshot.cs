@@ -85,6 +85,10 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("character varying(320)");
 
+                    b.Property<string>("PreferredCulture")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedEmail")
@@ -1173,6 +1177,9 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                         .HasPrecision(8, 4)
                         .HasColumnType("numeric(8,4)");
 
+                    b.Property<Guid?>("ComparisonGroupId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1276,11 +1283,14 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("OwnerUserId")
                         .IsUnique()
-                        .HasFilter("\"Status\" IN ('queued', 'running')");
+                        .HasFilter("\"Status\" IN ('queued', 'running') AND \"ComparisonGroupId\" IS NULL");
 
                     b.HasIndex("IsRetained", "ExpiresAtUtc");
 
                     b.HasIndex("ModelId", "CreatedAtUtc");
+
+                    b.HasIndex("OwnerUserId", "ComparisonGroupId")
+                        .HasFilter("\"Status\" IN ('queued', 'running') AND \"ComparisonGroupId\" IS NOT NULL");
 
                     b.HasIndex("OwnerUserId", "CreatedAtUtc");
 
@@ -1600,6 +1610,13 @@ namespace BasketElo.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<decimal?>("BaselineElo")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)");
+
+                    b.Property<int?>("BaselineRank")
+                        .HasColumnType("integer");
 
                     b.Property<decimal>("Elo")
                         .HasPrecision(10, 2)

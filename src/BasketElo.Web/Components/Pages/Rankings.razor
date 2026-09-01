@@ -27,30 +27,30 @@
     <header class="rankings-header">
         <div class="rankings-page-heading">
             <div>
-                <p class="eyebrow">Basketball intelligence / Live board</p>
-                <h1>@(selectedView == "movers" ? "Biggest basketball ELO movers" : "Basketball ELO power rankings")</h1>
-                <p class="rankings-intro">Compare NBA, European club, and national-team ratings, follow recent form, and inspect the ELO signal behind every position.</p>
+                <p class="eyebrow">@T["LiveBoard"]</p>
+                <h1>@(selectedView == "movers" ? T["MoversTitle"] : T["RankingsTitle"])</h1>
+                <p class="rankings-intro">@T["RankingsIntro"]</p>
             </div>
-            <a class="rankings-method-note" href="how-it-works" aria-label="Read how the rankings work">
+            <a class="rankings-method-note" href="how-it-works" aria-label='@T["ReadRankingsMethod"]'>
                 <span class="method-note-mark" aria-hidden="true">↗</span>
                 <div>
-                    <strong>A transparent signal</strong>
-                    <span>See the rules and assumptions behind every movement.</span>
+                    <strong>@T["TransparentSignal"]</strong>
+                    <span>@T["TransparentSignalDescription"]</span>
                 </div>
             </a>
         </div>
 
         <div class="rankings-workspace-bar">
             <div class="workspace-control workspace-pool-control">
-                <span class="workspace-label" title="The group of teams included in these rankings">Pool</span>
-                <nav class="rating-pool-tabs" aria-label="Rating pools">
+                <span class="workspace-label" title='@T["Pool"]'>@T["Pool"]</span>
+                <nav class="rating-pool-tabs" aria-label='@T["RatingPools"]'>
                     @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
                     {
                         <a class="@PoolTabClass(option.Key)"
                            href="@BuildPoolHref(option.Key)"
                            data-enhance-nav="true"
                            aria-current="@PoolTabAriaCurrent(option.Key)">
-                            @(option.Key == EloPoolKeys.EuropeClubs ? "Europe" : option.Key == EloPoolKeys.NationalTeams ? "National teams" : option.DisplayName)
+                            @(option.Key == EloPoolKeys.EuropeClubs ? T["Europe"] : option.Key == EloPoolKeys.NationalTeams ? T["NationalTeams"] : option.DisplayName)
                         </a>
                     }
                 </nav>
@@ -59,12 +59,12 @@
             @if (!IsMoversView)
             {
                 <div class="workspace-control workspace-view-control">
-                    <span class="workspace-label">View</span>
-                    <nav class="rankings-view-tabs" aria-label="Ranking views">
-                        <a class='@ViewTabClass("rankings")' href='@BuildRankingsHref(1, "rankings")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("rankings")'>Rankings</a>
-                        <a class='@ViewTabClass("graph")' href='@BuildRankingsHref(1, "graph")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("graph")'>Graph</a>
-                        <a class='@ViewTabClass("fixtures")' href='@BuildRankingsHref(1, "fixtures")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("fixtures")'>Fixtures</a>
-                        <a class='@ViewTabClass("results")' href='@BuildRankingsHref(1, "results")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("results")'>Results</a>
+                    <span class="workspace-label">@T["View"]</span>
+                    <nav class="rankings-view-tabs" aria-label='@T["RankingViews"]'>
+                        <a class='@ViewTabClass("rankings")' href='@BuildRankingsHref(1, "rankings")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("rankings")'>@T["Rankings"]</a>
+                        <a class='@ViewTabClass("graph")' href='@BuildRankingsHref(1, "graph")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("graph")'>@T["Graph"]</a>
+                        <a class='@ViewTabClass("fixtures")' href='@BuildRankingsHref(1, "fixtures")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("fixtures")'>@T["Fixtures"]</a>
+                        <a class='@ViewTabClass("results")' href='@BuildRankingsHref(1, "results")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("results")'>@T["Results"]</a>
                     </nav>
                 </div>
             }
@@ -78,27 +78,27 @@
         </div>
     }
 
-    <section class="ranking-toolbar" aria-label="Ranking controls">
+    <section class="ranking-toolbar" aria-label='@T["RankingControls"]'>
         @if (ShowsTeamScopeFilter)
         {
             <div class="scope-control-block">
-                <span class="filter-label">@(selectedPool == EloPoolKeys.Nba ? "Franchises" : "Teams")</span>
+                <span class="filter-label">@(selectedPool == EloPoolKeys.Nba ? T["Franchises"] : T["Teams"])</span>
                 <div class="franchise-scope-control" role="group" aria-label="@TeamScopeAriaLabel()">
                     <button type="button" class="@TeamScopeClass(EloTeamScopes.Current)" @onclick="() => SelectTeamScopeAsync(EloTeamScopes.Current)" disabled="@isBusy">
-                        Current
+                        @T["Current"]
                     </button>
                     <button type="button" class="@TeamScopeClass(EloTeamScopes.Historical)" @onclick="() => SelectTeamScopeAsync(EloTeamScopes.Historical)" disabled="@isBusy">
-                        Historical
+                        @T["Historical"]
                     </button>
                 </div>
             </div>
         }
 
         <div class="filter-field team-search-field">
-            <label for="teamSearch">Team</label>
+            <label for="teamSearch">@T["Team"]</label>
             <div class="clearable-field">
-                <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" @bind:after="TeamSearchChangedAsync" placeholder="Search teams" />
-                <button type="button" class="clear-filter" aria-label="Clear team search" title="Clear team search" @onclick="ClearTeamSearch" disabled="@(!HasTeamSearch)">
+                <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" @bind:after="TeamSearchChangedAsync" placeholder='@T["SearchTeams"]' />
+                <button type="button" class="clear-filter" aria-label='@T["ClearTeamSearch"]' title='@T["ClearTeamSearch"]' @onclick="ClearTeamSearch" disabled="@(!HasTeamSearch)">
                     &times;
                 </button>
             </div>
@@ -109,7 +109,7 @@
                 aria-expanded="@showAdvancedFilters"
                 aria-controls="advanced-ranking-filters"
                 @onclick="ToggleAdvancedFilters">
-            <span>Filters</span>
+            <span>@T["Filters"]</span>
             @if (ActiveFilterCount > 0)
             {
                 <span class="filter-count" aria-label="@($"{ActiveFilterCount} active filters")">@ActiveFilterCount</span>
@@ -120,14 +120,14 @@
         @if (HasActiveFilters)
         {
             <button type="button" class="clear-all-filters" @onclick="ResetFiltersAsync" disabled="@isBusy">
-                Clear all
+                @T["ClearAll"]
             </button>
         }
     </section>
 
     @if (HasActiveFilters)
     {
-        <div class="active-filters" aria-label="Active ranking filters">
+        <div class="active-filters" aria-label='@T["ActiveRankingFilters"]'>
             @if (!string.IsNullOrWhiteSpace(teamSearch))
             {
                 <button type="button" class="filter-chip" @onclick="ClearTeamSearch">
@@ -163,13 +163,13 @@
 
     @if (showAdvancedFilters)
     {
-        <section id="advanced-ranking-filters" class="advanced-filters" aria-label="Additional ranking filters">
+        <section id="advanced-ranking-filters" class="advanced-filters" aria-label='@T["AdditionalRankingFilters"]'>
             @if (HasCountryFilter)
             {
                 <div class="filter-field searchable-filter-field">
                     <span class="filter-label-row">
-                        <label for="countryFilter">Country</label>
-                        <button type="button" class="filter-info" title="Search accepts English and common local country names; the selected filter is shown in English." aria-label="About country search">i</button>
+                        <label for="countryFilter">@T["Country"]</label>
+                        <button type="button" class="filter-info" title='@T["CountrySearchHelp"]' aria-label='@T["AboutCountrySearch"]'>i</button>
                     </span>
                     <div class="filter-combobox">
                         <input id="countryFilter"
@@ -179,7 +179,7 @@
                                aria-expanded="@showCountrySuggestions"
                                aria-controls="countryFilterOptions"
                                autocomplete="off"
-                               placeholder="Search countries"
+                               placeholder='@T["SearchCountries"]'
                                @onfocus="ShowCountrySuggestions"
                                @onblur="HideCountrySuggestions"
                                @bind="countrySearch"
@@ -187,7 +187,7 @@
                                @bind:after="CountrySearchChanged" />
                         @if (showCountrySuggestions && CountrySuggestions.Count > 0)
                         {
-                            <div id="countryFilterOptions" class="filter-suggestions" role="listbox" aria-label="Country suggestions">
+                            <div id="countryFilterOptions" class="filter-suggestions" role="listbox" aria-label='@T["CountrySuggestions"]'>
                                 @foreach (var option in CountrySuggestions)
                                 {
                                     <button type="button" role="option" @onmousedown:preventDefault @onclick="() => SelectCountrySuggestion(option)">@option</button>
@@ -202,8 +202,8 @@
             {
                 <div class="filter-field searchable-filter-field">
                     <span class="filter-label-row">
-                        <label for="competitionFilter">Competition</label>
-                        <button type="button" class="filter-info" title="Search also matches translated country names, while suggestions stay in the site's current language and show geographic context." aria-label="About competition search">i</button>
+                        <label for="competitionFilter">@T["Competition"]</label>
+                        <button type="button" class="filter-info" title='@T["CompetitionSearchHelp"]' aria-label='@T["AboutCompetitionSearch"]'>i</button>
                     </span>
                     <div class="filter-combobox">
                         <input id="competitionFilter"
@@ -213,7 +213,7 @@
                                aria-expanded="@showCompetitionSuggestions"
                                aria-controls="competitionFilterOptions"
                                autocomplete="off"
-                               placeholder="Search competitions"
+                               placeholder='@T["SearchCompetitions"]'
                                @onfocus="ShowCompetitionSuggestions"
                                @onblur="HideCompetitionSuggestions"
                                @bind="competitionSearch"
@@ -221,7 +221,7 @@
                                @bind:after="CompetitionSearchChanged" />
                         @if (showCompetitionSuggestions && CompetitionSuggestions.Count > 0)
                         {
-                            <div id="competitionFilterOptions" class="filter-suggestions" role="listbox" aria-label="Competition suggestions">
+                            <div id="competitionFilterOptions" class="filter-suggestions" role="listbox" aria-label='@T["CompetitionSuggestions"]'>
                                 @foreach (var option in CompetitionSuggestions)
                                 {
                                     <button type="button" role="option" @onmousedown:preventDefault @onclick="() => SelectCompetitionSuggestion(option)">
@@ -241,18 +241,18 @@
             @if (ShowsSeasonFilter)
             {
                 <div class="season-range-field">
-                    <span class="filter-label">Seasons</span>
+                    <span class="filter-label">@T["Seasons"]</span>
                     <div class="season-range-control">
-                        <select id="fromSeasonFilter" class="form-select" aria-label="From season" @bind="selectedFromSeason" @bind:after="FromSeasonChanged">
-                            <option value="">All history</option>
+                        <select id="fromSeasonFilter" class="form-select" aria-label='@T["FromSeason"]' @bind="selectedFromSeason" @bind:after="FromSeasonChanged">
+                            <option value="">@T["AllHistory"]</option>
                             @foreach (var option in response?.Filters.Seasons ?? [])
                             {
                                 <option value="@option">@option</option>
                             }
                         </select>
-                        <span aria-hidden="true">to</span>
-                        <select id="toSeasonFilter" class="form-select" aria-label="To season" @bind="selectedToSeason">
-                            <option value="">Current</option>
+                        <span aria-hidden="true">@T["ToLower"]</span>
+                        <select id="toSeasonFilter" class="form-select" aria-label='@T["ToSeason"]' @bind="selectedToSeason">
+                            <option value="">@T["Current"]</option>
                             @foreach (var option in FilteredToSeasonOptions)
                             {
                                 <option value="@option">@option</option>
@@ -265,28 +265,28 @@
             @if (ShowsMinimumGamesFilter)
             {
                 <div class="filter-field compact">
-                    <label for="minGames">Min games</label>
+                    <label for="minGames">@T["MinGames"]</label>
                     <input id="minGames" class="form-control" type="number" min="0" max="999" @bind="minimumGames" />
                 </div>
             }
 
             <div class="filter-actions">
-                <button class="btn btn-primary" @onclick="ApplyFiltersAsync" disabled="@isBusy">Apply</button>
-                <button class="btn btn-outline-secondary" @onclick="ResetFiltersAsync" disabled="@isBusy">Reset</button>
+                <button class="btn btn-primary" @onclick="ApplyFiltersAsync" disabled="@isBusy">@T["Apply"]</button>
+                <button class="btn btn-outline-secondary" @onclick="ResetFiltersAsync" disabled="@isBusy">@T["Reset"]</button>
             </div>
         </section>
     }
 
     @if (isBusy && response is null)
     {
-        <section class="loading-panel" role="status" aria-live="polite">Loading rankings...</section>
+        <section class="loading-panel" role="status" aria-live="polite">@T["LoadingRankings"]</section>
     }
     else if (response is not null)
     {
-        <section class="results-header" aria-label="Ranking snapshot">
+        <section class="results-header" aria-label='@T["RankingSnapshot"]'>
             <div class="results-context">
-                <span class="results-kicker">@((selectedView == "movers") ? "Movement view" : "Current rankings")</span>
-                <strong>@response.Summary.FilteredTeams <span>of @response.Summary.RatedTeams teams</span></strong>
+                <span class="results-kicker">@((selectedView == "movers") ? T["MovementView"] : T["CurrentRankings"])</span>
+                <strong>@response.Summary.FilteredTeams <span>@T["OfTeams", response.Summary.RatedTeams]</span></strong>
                 @if (!string.IsNullOrWhiteSpace(ScopeDetail()))
                 {
                     <small class="results-scope-detail">@ScopeDetail()</small>
@@ -303,11 +303,11 @@
                 </div>
                 <div class="snapshot-model">
                     <dt>
-                        <span>Rating model</span>
+                        <span>@T["RatingModel"]</span>
                         <span class="snapshot-model-help">
                             <button type="button"
                                     class="snapshot-model-info"
-                                    title="About the rating models"
+                                    title='@T["AboutRatingModels"]'
                                     aria-label="@(showRulesetHelp ? "Close rating model explanation" : "Explain the rating models")"
                                     aria-expanded="@(showRulesetHelp ? "true" : "false")"
                                     aria-controls="rating-model-help"
@@ -315,15 +315,15 @@
                             @if (showRulesetHelp)
                             {
                                 <span id="rating-model-help" class="snapshot-model-popover" role="note">
-                                    <strong>Two ways to read the same games.</strong>
-                                    <span>Basic ELO is a vanilla win/loss baseline. Adjusted ELO pulls in the basketball levers: home advantage and score margin.</span>
-                                    <a href="/how-it-works#rulesets-heading">Read the full method <span aria-hidden="true">→</span></a>
+                                    <strong>@T["TwoWaysSameGames"]</strong>
+                                    <span>@T["RatingModelsDescription"]</span>
+                                    <a href="/how-it-works#rulesets-heading">@T["ReadFullMethod"] <span aria-hidden="true">→</span></a>
                                 </span>
                             }
                         </span>
                     </dt>
                     <dd>
-                        <div class="rating-model-switch" role="group" aria-label="Rating model">
+                        <div class="rating-model-switch" role="group" aria-label='@T["RatingModel"]'>
                             @foreach (var ruleset in EloRulesetVersions.All)
                             {
                                 <button type="button"
@@ -340,6 +340,12 @@
                 </div>
             </dl>
         </section>
+
+        <div class="ranking-freshness-note" aria-label='@T["DataFreshnessCoverage"]'>
+            <span><strong>@T["DataSnapshot"]</strong> @T["LatestRatedResult"]: @FormatDate(response.Summary.LatestGameUtc)</span>
+            <span>@T["CoverageVaries"]</span>
+            <a href="/data-sources">@T["ExploreCoverage"] <span aria-hidden="true">→</span></a>
+        </div>
 
         @if (IsArchiveMode)
         {
@@ -360,33 +366,33 @@
                         <span class="table-page-summary">@MoversContextLabel()</span>
                         @if (CurrentTotalPages > 1)
                         {
-                            <div class="pager" aria-label="Movement table pagination">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
+                            <div class="pager" aria-label='@T["MovementPagination"]'>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">@T["Previous"]</button>
                                 <label class="page-jump" for="moversPageInput">
-                                    <span>Page</span>
+                                    <span>@T["Page"]</span>
                                     <input id="moversPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
                                 </label>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">@T["Go"]</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">@T["Next"]</button>
                             </div>
                         }
                     </div>
                 </div>
 
-                <div class="movers-toolbar" aria-label="Movement controls">
+                <div class="movers-toolbar" aria-label='@T["MovementControls"]'>
                     <label for="moverDirection">
-                        <span>Movement</span>
+                        <span>@T["Movement"]</span>
                         <select id="moverDirection" class="form-select form-select-sm" value="@selectedMoverDirection" @onchange="ChangeMoverDirectionAsync">
-                            <option value="risers">Risers</option>
-                            <option value="fallers">Fallers</option>
+                            <option value="risers">@T["Risers"]</option>
+                            <option value="fallers">@T["Fallers"]</option>
                         </select>
                     </label>
                     <label for="windowDays">
-                        <span>Window</span>
+                        <span>@T["Window"]</span>
                         <select id="windowDays" class="form-select form-select-sm" value="@selectedWindowDays" @onchange="ChangeMoverWindowAsync">
-                            <option value="7">7 days</option>
-                            <option value="30">30 days</option>
-                            <option value="90">90 days</option>
+                            <option value="7">@T["Days", 7]</option>
+                            <option value="30">@T["Days", 30]</option>
+                            <option value="90">@T["Days", 90]</option>
                         </select>
                     </label>
                 </div>
@@ -395,25 +401,25 @@
                     <table class="table table-hover align-middle ranking-table">
                         <thead>
                             <tr>
-                                <th>Rank</th>
-                                <th>Team</th>
+                                <th>@T["Rank"]</th>
+                                <th>@T["Team"]</th>
                                 @if (ShowsCountryColumn)
                                 {
-                                    <th>Country</th>
+                                    <th>@T["Country"]</th>
                                 }
-                                <th class="numeric">Change</th>
-                                <th class="numeric">Start</th>
-                                <th class="numeric">End</th>
-                                <th class="numeric">Current</th>
-                                <th class="numeric">Games</th>
-                                <th>Latest</th>
+                                <th class="numeric">@T["Change"]</th>
+                                <th class="numeric">@T["Start"]</th>
+                                <th class="numeric">@T["End"]</th>
+                                <th class="numeric">@T["Current"]</th>
+                                <th class="numeric">@T["Games"]</th>
+                                <th>@T["Latest"]</th>
                             </tr>
                         </thead>
                         <tbody>
                             @if (movers is null || movers.Movers.Count == 0)
                             {
                                 <tr>
-                                    <td colspan="9" class="empty-state">No rating movement is available for the selected scope.</td>
+                                    <td colspan="9" class="empty-state">@T["NoRatingMovement"]</td>
                                 </tr>
                             }
                             else
@@ -425,7 +431,7 @@
                                         <td>
                                             <div class="team-identity-cell">
                                                 <div>
-                                                    <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
+                                                    <a class="team-link" href="@BuildTeamHref(row.TeamId, row.TeamName)" @onclick:stopPropagation="true">@row.TeamName</a>
                                                     @if (!row.IsActive)
                                                     {
                                                         <span class="franchise-status">@HistoricalTeamLabel()</span>
@@ -456,7 +462,7 @@
             <section class="results-section">
                 <div class="section-head">
                     <div>
-                        <h2>Recent results</h2>
+                        <h2>@T["RecentResults"]</h2>
                         <p>@ResultsContextLabel() ELO is shown as pre-rating → post-rating (change).</p>
                     </div>
                 </div>
@@ -465,22 +471,22 @@
                     <table class="table table-hover align-middle results-table">
                                 <thead>
                             <tr>
-                                <th>Date</th>
-                                <th>Competition</th>
-                                <th>Match</th>
-                                <th class="numeric">Score</th>
-                                <th>ELO <span class="result-header-note">pre → post</span></th>
-                                <th class="results-action-column"><span class="visually-hidden">Explanation</span></th>
+                                <th>@T["Date"]</th>
+                                <th>@T["Competition"]</th>
+                                <th>@T["Match"]</th>
+                                <th class="numeric">@T["Score"]</th>
+                                <th>ELO <span class="result-header-note">@T["PreToPost"]</span></th>
+                                <th class="results-action-column"><span class="visually-hidden">@T["Explanation"]</span></th>
                             </tr>
                         </thead>
                         <tbody>
                             @if (CurrentResultsResponse is null)
                             {
-                                <tr><td colspan="6" class="empty-state" role="status">Loading completed results...</td></tr>
+                                <tr><td colspan="6" class="empty-state" role="status">@T["LoadingCompletedResults"]</td></tr>
                             }
                             else if (VisibleResultRows.Count == 0)
                             {
-                                <tr><td colspan="6" class="empty-state">No completed results match the current filters.</td></tr>
+                                <tr><td colspan="6" class="empty-state">@T["NoCompletedResults"]</td></tr>
                             }
                             else
                             {
@@ -489,7 +495,7 @@
                                     <tr>
                                         <td>@FormatDate(row.GameDateTimeUtc)</td>
                                         <td><strong>@row.Competition</strong><span class="result-meta">@row.Country · @row.Season</span></td>
-                                        <td>@row.HomeTeam <span class="result-separator">vs</span> @row.AwayTeam</td>
+                                        <td>@row.HomeTeam <span class="result-separator">@T["Versus"]</span> @row.AwayTeam</td>
                                         <td class="numeric result-score">@row.HomeScore–@row.AwayScore</td>
                                         <td class="result-elo-cell">
                                             @if (row.HomeRating is { } homeRating && row.AwayRating is { } awayRating)
@@ -507,7 +513,7 @@
                                             }
                                             else
                                             {
-                                                <span class="muted-cell" title="No rating history is available for this game">Not rated</span>
+                                                <span class="muted-cell" title='@T["NoRatingHistory"]'>@T["NotRated"]</span>
                                             }
                                         </td>
                                         <td class="results-action-cell">
@@ -532,23 +538,23 @@
             <section class="fixtures-section">
                 <div class="section-head">
                     <div>
-                        <h2>Upcoming fixtures</h2>
+                        <h2>@T["UpcomingFixtures"]</h2>
                         <p>@FixturesContextLabel()</p>
-                        <small class="fixture-timezone-hint">Start times are shown in UTC.</small>
+                        <small class="fixture-timezone-hint">@T["TimesShownUtc"]</small>
                     </div>
                 </div>
 
                 @if (isBusy && (upcomingFixtures is null || fixtures is null))
                 {
-                    <div class="loading-panel" role="status">Loading fixtures...</div>
+                    <div class="loading-panel" role="status">@T["LoadingFixtures"]</div>
                 }
                 else if (upcomingFixtures is null || upcomingFixtures.TotalCount == 0)
                 {
-                    <div class="empty-state">No upcoming fixtures are available in the next nine days.</div>
+                    <div class="empty-state">@T["NoUpcomingFixtures"]</div>
                 }
                 else
                 {
-                    <div class="fixture-highlights" aria-label="Fixture highlights">
+                    <div class="fixture-highlights" aria-label='@T["FixtureHighlights"]'>
                         @foreach (var highlight in FixtureHighlights)
                         {
                             <article class="fixture-highlight-card">
@@ -569,7 +575,7 @@
                                                     <strong>@game.HomeTeam</strong>
                                                     <span class="fixture-team-rating"><b>@FormatFixtureRating(game.HomeElo)</b> ELO · <b>@FormatFixtureRank(game.HomeRank)</b></span>
                                                 </div>
-                                                <span class="fixture-versus">vs</span>
+                                                <span class="fixture-versus">@T["Versus"]</span>
                                                 <div class="fixture-team-row">
                                                     <strong>@game.AwayTeam</strong>
                                                     <span class="fixture-team-rating"><b>@FormatFixtureRating(game.AwayElo)</b> ELO · <b>@FormatFixtureRank(game.AwayRank)</b></span>
@@ -579,9 +585,9 @@
                                                 <span>@game.Competition</span>
                                                 <span>@game.Country</span>
                                             </div>
-                                            <div class="fixture-game-probability" aria-label="Expected win probability">
-                                                <span>Home <strong>@FormatFixtureProbability(game.HomeWinProbability)</strong></span>
-                                                <span>Away <strong>@FormatFixtureProbability(AwayWinProbability(game))</strong></span>
+                                            <div class="fixture-game-probability" aria-label='@T["ExpectedWinProbability"]'>
+                                                <span>@T["Home"] <strong>@FormatFixtureProbability(game.HomeWinProbability)</strong></span>
+                                                <span>@T["Away"] <strong>@FormatFixtureProbability(AwayWinProbability(game))</strong></span>
                                             </div>
                                         </div>
                                     }
@@ -593,19 +599,19 @@
                     <section class="fixtures-list-section">
                         <div class="section-head">
                             <div>
-                                <h2>All fixtures</h2>
-                                <p>Every scheduled game in the next nine days matching the active filters, ordered by start time.</p>
+                                <h2>@T["AllFixtures"]</h2>
+                                <p>@T["AllFixturesDescription"]</p>
                             </div>
                             <span class="fixture-list-count">@(fixtures?.TotalCount ?? 0) games</span>
                         </div>
 
                         @if (fixtures is null)
                         {
-                            <div class="loading-panel" role="status">Loading filtered fixtures...</div>
+                            <div class="loading-panel" role="status">@T["LoadingFilteredFixtures"]</div>
                         }
                         else if (fixtures.TotalCount == 0)
                         {
-                            <div class="empty-state">No fixtures match the current filters.</div>
+                            <div class="empty-state">@T["NoFilteredFixtures"]</div>
                         }
                         else
                         {
@@ -613,14 +619,14 @@
                                 <table class="table table-hover align-middle fixtures-table">
                                 <thead>
                                     <tr>
-                                        <th>Date</th>
-                                        <th>Competition</th>
-                                        <th>Matchup</th>
+                                        <th>@T["Date"]</th>
+                                        <th>@T["Competition"]</th>
+                                        <th>@T["Matchup"]</th>
                                         <th class="numeric">ELO</th>
-                                        <th class="numeric">Rank</th>
-                                        <th class="numeric">Gap</th>
-                                        <th class="numeric">Expected</th>
-                                        <th>Status</th>
+                                        <th class="numeric">@T["Rank"]</th>
+                                        <th class="numeric">@T["Gap"]</th>
+                                        <th class="numeric">@T["Expected"]</th>
+                                        <th>@T["Status"]</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -629,7 +635,7 @@
                                         <tr>
                                             <td>@FormatFixtureDate(game.GameDateTimeUtc)</td>
                                             <td><strong>@game.Competition</strong><span class="result-meta">@game.Country</span></td>
-                                            <td>@game.HomeTeam <span class="result-separator">vs</span> @game.AwayTeam</td>
+                                            <td>@game.HomeTeam <span class="result-separator">@T["Versus"]</span> @game.AwayTeam</td>
                                             <td class="numeric">@FormatFixtureRating(game.HomeElo) – @FormatFixtureRating(game.AwayElo)</td>
                                             <td class="numeric">@FormatFixtureRank(game.HomeRank) – @FormatFixtureRank(game.AwayRank)</td>
                                             <td class="numeric">@FormatFixtureRating(game.EloDifference)</td>
@@ -651,20 +657,20 @@
             <section class="rankings-table-section">
                 <div class="section-head">
                     <div>
-                        <h2>Ranking table</h2>
+                        <h2>@T["RankingTable"]</h2>
                     </div>
                     <div class="table-section-controls">
                         <span class="table-page-summary">@TableContextLabel()</span>
                         @if (CurrentTotalPages > 1)
                         {
-                            <div class="pager" aria-label="Ranking table pagination">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">Previous</button>
+                            <div class="pager" aria-label='@T["RankingPagination"]'>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="PreviousPageAsync" disabled="@(isBusy || CurrentPage <= 1)">@T["Previous"]</button>
                                 <label class="page-jump" for="rankingsPageInput">
-                                    <span>Page</span>
+                                    <span>@T["Page"]</span>
                                     <input id="rankingsPageInput" class="form-control form-control-sm" type="number" min="1" max="@CurrentTotalPages" @bind="requestedPage" @onkeydown="HandlePageInputKeyDown" />
                                 </label>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">Go</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">Next</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="GoToRequestedPageAsync" disabled="@isBusy">@T["Go"]</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="NextPageAsync" disabled="@(isBusy || CurrentPage >= CurrentTotalPages)">@T["Next"]</button>
                             </div>
                         }
                     </div>
@@ -676,19 +682,19 @@
                             <tr>
                                 @if (ShowRankingColumn("rank"))
                                 {
-                                    <th class="sticky-column rank-column" scope="col">Rank</th>
+                                    <th class="sticky-column rank-column" scope="col">@T["Rank"]</th>
                                 }
                                 @if (ShowRankingColumn("globalRank"))
                                 {
-                                    <th class="sticky-column global-rank-column" scope="col">Global rank</th>
+                                    <th class="sticky-column global-rank-column" scope="col">@T["GlobalRank"]</th>
                                 }
                                 @if (ShowRankingColumn("team"))
                                 {
-                                    <th class="sticky-column team-column" scope="col">Team</th>
+                                    <th class="sticky-column team-column" scope="col">@T["Team"]</th>
                                 }
                                 @if (ShowRankingColumn("country"))
                                 {
-                                    <th scope="col">Country</th>
+                                    <th scope="col">@T["Country"]</th>
                                 }
                                 @if (ShowRankingColumn("elo"))
                                 {
@@ -696,15 +702,15 @@
                                 }
                                 @if (ShowRankingColumn("games"))
                                 {
-                                    <th class="numeric" scope="col">Games</th>
+                                    <th class="numeric" scope="col">@T["Games"]</th>
                                 }
                                 @if (ShowRankingColumn("lastGame"))
                                 {
-                                    <th scope="col">Last game</th>
+                                    <th scope="col">@T["LastGame"]</th>
                                 }
                                 @if (ShowRankingColumn("form"))
                                 {
-                                    <th class="numeric" scope="col">Last games</th>
+                                    <th class="numeric" scope="col">@T["LastGames"]</th>
                                 }
                             </tr>
                         </thead>
@@ -733,7 +739,7 @@
                                             <td class="sticky-column team-column">
                                             <div class="team-identity-cell">
                                                 <div>
-                                                    <a class="team-link" href="@BuildTeamHref(row.TeamId)" @onclick:stopPropagation="true">@row.TeamName</a>
+                                                    <a class="team-link" href="@BuildTeamHref(row.TeamId, row.TeamName)" @onclick:stopPropagation="true">@row.TeamName</a>
                                                     @if (!row.IsActive)
                                                     {
                                                         <span class="franchise-status">@HistoricalTeamLabel()</span>
@@ -761,7 +767,7 @@
                                         @if (ShowRankingColumn("form"))
                                         {
                                             <td class="numeric">
-                                                <div class="ranking-form-strip" aria-label="Recent five rated games">
+                                                <div class="ranking-form-strip" aria-label='@T["RecentFiveRatedGames"]'>
                                                     @if (row.RecentForm is { Count: > 0 } form)
                                                     {
                                                         @foreach (var game in form)
@@ -769,7 +775,7 @@
                                                             <button type="button"
                                                                     class="ranking-form-box @(game.IsWin ? "is-win" : "is-loss") @(IsResultExplanationLoading(game.GameId) ? "is-loading" : string.Empty)"
                                                                     title="@(game.IsWin ? "Win" : "Loss") vs @game.Opponent · @FormatMovement(game.EloDelta) ELO · Open explanation"
-                                                                    aria-label="Open ELO explanation for the game against @game.Opponent on @FormatDate(game.GameDateTimeUtc)"
+                                                                    aria-label="@GameExplanationAriaLabel(game)"
                                                                     @onclick="() => LoadResultExplanationAsync(game.GameId)"
                                                                     @onclick:stopPropagation="true"
                                                                     disabled="@isResultExplanationLoading">
@@ -833,12 +839,12 @@
 
                 @if (isChartVisible || IsGraphView)
                 {
-                    <div id="ranking-evolution-panel" class="evolution-panel" role="region" aria-label="ELO evolution chart">
+                    <div id="ranking-evolution-panel" class="evolution-panel" role="region" aria-label='@T["EloEvolutionChart"]'>
                         @if (isChartLoading)
                         {
                             <div class="chart-loading-panel" role="status" aria-live="polite">
                                 <span class="spinner-border chart-loading-spinner" aria-hidden="true"></span>
-                                <span>Loading chart...</span>
+                                <span>@T["LoadingChart"]</span>
                             </div>
                         }
                         else
@@ -846,52 +852,52 @@
                             <div class="evolution-workspace @(isGraphTeamManagerOpen ? "manager-open" : string.Empty)">
                                 @if (isGraphTeamManagerOpen)
                                 {
-                                    <aside id="chart-team-manager" class="graph-team-manager" aria-label="Chart team manager">
+                                    <aside id="chart-team-manager" class="graph-team-manager" aria-label='@T["ChartTeamManager"]'>
                                         <div class="graph-team-manager-heading">
                                             <div>
-                                                <strong>Chart teams</strong>
+                                                <strong>@T["ChartTeams"]</strong>
                                                 <span>@graphTeamIds.Count selected · @VisibleGraphTeamCount visible</span>
                                             </div>
-                                            <button type="button" class="btn btn-sm btn-quiet" @onclick="ToggleGraphTeamManager">Collapse</button>
+                                            <button type="button" class="btn btn-sm btn-quiet" @onclick="ToggleGraphTeamManager">@T["Collapse"]</button>
                                         </div>
 
-                                        <p class="graph-team-manager-help">Use the eye to show or hide a line. Remove teams from the chart using the team menu.</p>
+                                        <p class="graph-team-manager-help">@T["ChartManagerHelp"]</p>
 
                                         <div class="graph-team-search">
-                                            <label for="graphTeamSearch">Add or manage teams</label>
+                                            <label for="graphTeamSearch">@T["AddManageTeams"]</label>
                                             <div class="graph-team-search-row">
                                                 <input id="graphTeamSearch"
                                                        class="form-control"
                                                        value="@graphTeamSearch"
                                                        @oninput="HandleGraphTeamSearchInputAsync"
-                                                       placeholder="Search teams"
+                                                       placeholder='@T["SearchTeams"]'
                                                        autocomplete="off"
                                                        role="combobox"
                                                        aria-autocomplete="list"
                                                        aria-controls="graph-team-search-results"
                                                        aria-expanded="@(graphTeamSearchResults.Count > 0)" />
-                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="SearchGraphTeamsAsync" disabled="@(isGraphSelectionBusy || isGraphSearchBusy || string.IsNullOrWhiteSpace(graphTeamSearch))">Search</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="SearchGraphTeamsAsync" disabled="@(isGraphSelectionBusy || isGraphSearchBusy || string.IsNullOrWhiteSpace(graphTeamSearch))">@T["Search"]</button>
                                             </div>
                                             @if (isGraphSearchBusy)
                                             {
-                                                <span class="graph-team-search-status" aria-live="polite">Searching...</span>
+                                                <span class="graph-team-search-status" aria-live="polite">@T["Searching"]</span>
                                             }
                                         </div>
 
                                         <div class="graph-bulk-actions">
                                             @if (!string.IsNullOrWhiteSpace(selectedCountry))
                                             {
-                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AddCountryTeamsToGraphAsync" disabled="@isGraphSelectionBusy">Add all @selectedCountry</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AddCountryTeamsToGraphAsync" disabled="@isGraphSelectionBusy">@T["AddAll"] @selectedCountry</button>
                                             }
                                             @if (!string.IsNullOrWhiteSpace(selectedCompetition))
                                             {
-                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AddCompetitionTeamsToGraphAsync" disabled="@isGraphSelectionBusy">Add all @selectedCompetition</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AddCompetitionTeamsToGraphAsync" disabled="@isGraphSelectionBusy">@T["AddAll"] @selectedCompetition</button>
                                             }
                                         </div>
 
                                         @if (graphTeamSearchResults.Count > 0)
                                         {
-                                            <div id="graph-team-search-results" class="graph-team-search-results" role="listbox" aria-label="Team search suggestions">
+                                            <div id="graph-team-search-results" class="graph-team-search-results" role="listbox" aria-label='@T["TeamSearchSuggestions"]'>
                                                 @foreach (var row in graphTeamSearchResults)
                                                 {
                                                     var isAdded = graphTeamIds.Contains(row.TeamId);
@@ -922,15 +928,15 @@
 
                                         @if (SelectedGraphTeams.Count == 0)
                                         {
-                                            <p class="graph-selection-empty">No teams selected. Search for a team or add teams from the active country or competition.</p>
+                                            <p class="graph-selection-empty">@T["NoTeamsSelected"]</p>
                                         }
                                         else
                                         {
                                             <div class="graph-team-manager-list-heading">
-                                                <span>Legend</span>
+                                                <span>@T["Legend"]</span>
                                                 <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ToggleAllGraphTeamsAsync" disabled="@(SelectedGraphTeams.Count == 0)">@GraphVisibilityToggleLabel</button>
                                             </div>
-                                            <div class="graph-team-manager-list" aria-label="Chart legend and selected teams">
+                                            <div class="graph-team-manager-list" aria-label='@T["ChartLegendSelectedTeams"]'>
                                                 @foreach (var team in SelectedGraphTeams)
                                                 {
                                                     var isVisible = IsGraphTeamVisible(team.TeamId);
@@ -940,7 +946,7 @@
                                                         <button type="button" class="graph-team-visibility-toggle" aria-pressed="@isVisible" aria-label="@(isVisible ? $"Hide {team.TeamName}" : $"Show {team.TeamName}")" title="@(isVisible ? "Hide line" : "Show line")" @onclick="() => ToggleGraphTeamVisibilityAsync(team.TeamId)">
                                                             <span class="graph-eye-icon" aria-hidden="true"></span>
                                                         </button>
-                                                        <button type="button" class="graph-team-remove-button" aria-label="Remove @team.TeamName from chart" title="Remove from chart" @onclick="() => RemoveGraphTeamAsync(team.TeamId)">&times;</button>
+                                                        <button type="button" class="graph-team-remove-button" aria-label="@RemoveFromChartAriaLabel(team.TeamName)" title='@T["RemoveFromChart"]' @onclick="() => RemoveGraphTeamAsync(team.TeamId)">&times;</button>
                                                     </div>
                                                 }
                                             </div>
@@ -948,10 +954,10 @@
                                     </aside>
                                 }
 
-                                <div class="@EvolutionChartClass" role="img" aria-label="ELO evolution for teams in the current ranking table">
+                                <div class="@EvolutionChartClass" role="img" aria-label='@T["EloEvolutionCurrentTeams"]'>
                                     @if (EvolutionSeries.Count < 1 || EvolutionSeries.All(x => x.Points.Count < 2))
                                     {
-                                        <div class="empty-state">Not enough rated games for an evolution chart yet.</div>
+                                        <div class="empty-state">@T["NotEnoughChartGames"]</div>
                                     }
                                     else
                                     {
@@ -1000,16 +1006,6 @@
 
     }
 
-    <section class="rankings-seo-summary" aria-labelledby="rankings-about-heading">
-        <div>
-            <p class="eyebrow">About the ratings</p>
-            <h2 id="rankings-about-heading">One transparent rating system for basketball teams worldwide</h2>
-        </div>
-        <div>
-            <p>BasketElo updates team ratings after every recorded result. The rankings cover the NBA, European domestic and continental competitions, and men’s national-team basketball in separate rating pools.</p>
-            <p>Use Adjusted ELO to account for opponent strength, home court, score margin, and competition weight, or switch to Basic ELO for a pure win-loss baseline. Read the <a href="how-it-works">full rating methodology</a> and inspect the <a href="data-sources">game sources and historical coverage</a>.</p>
-        </div>
-    </section>
 </div>
 
 @code {
@@ -2955,11 +2951,11 @@
             _ => ruleset
         };
 
-    private static string RulesetShortName(string ruleset)
+    private string RulesetShortName(string ruleset)
         => ruleset switch
         {
-            EloRulesetVersions.BasicEloV1 => "Basic",
-            EloRulesetVersions.AdjustedV1 => "Adjusted",
+            EloRulesetVersions.BasicEloV1 => T["Basic"],
+            EloRulesetVersions.AdjustedV1 => T["Adjusted"],
             _ => RulesetDisplayName(ruleset)
         };
 
@@ -3443,10 +3439,24 @@
         return $"api/elo/rankings?{string.Join("&", query)}";
     }
 
-    private string BuildTeamHref(Guid teamId)
+    private string BuildTeamHref(Guid teamId, string? teamName = null)
     {
         var returnUrl = Navigation.ToBaseRelativePath(Navigation.Uri);
-        return $"/teams/{teamId}?pool={Uri.EscapeDataString(selectedPool)}&ruleset={Uri.EscapeDataString(selectedRuleset)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
+        var slug = string.IsNullOrWhiteSpace(teamName) ? "team" : ToSlug(teamName);
+        return $"/team/{teamId:D}/{slug}?pool={Uri.EscapeDataString(selectedPool)}&ruleset={Uri.EscapeDataString(selectedRuleset)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
+    }
+
+    private static string ToSlug(string value)
+    {
+        var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
+        var slug = new string(normalized
+            .Where(character => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(character) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            .ToArray());
+
+        return string.Join('-', slug
+            .ToLowerInvariant()
+            .Split([' ', '/', '\\', '.', ',', ':', ';', '&', '+', '(', ')', '[', ']', '{', '}', '\'', '"'], StringSplitOptions.RemoveEmptyEntries)
+            .SelectMany(part => part.Split('-', StringSplitOptions.RemoveEmptyEntries)));
     }
 
     private string RankingsContextHref(string? country = null, string? competition = null)
@@ -3483,15 +3493,15 @@
         var rangeStart = response.TotalCount == 0 ? 0 : ((response.Page - 1) * response.PageSize) + 1;
         var rangeEnd = Math.Min(response.TotalCount, response.Page * response.PageSize);
         var scope = response.Summary.IsFiltered
-            ? "filtered teams"
+            ? T["FilteredTeamsLower"]
             : IsHistoricalTeamScope
-                ? $"current and historical {TeamScopeNoun().ToLowerInvariant()}"
-                : "rated teams";
+                ? $"{T["CurrentAndHistorical"]} {TeamScopeNoun().ToLowerInvariant()}"
+                : T["RatedTeamsLower"];
 
         var pageDetail = response.TotalPages > 1
-            ? $" Page {response.Page} of {response.TotalPages}."
+            ? T["PageOf", response.Page, response.TotalPages].Value
             : ".";
-        return $"Showing {rangeStart}-{rangeEnd} of {response.TotalCount} {scope}{pageDetail}";
+        return T["ShowingRankingRange", rangeStart, rangeEnd, response.TotalCount, scope, pageDetail];
     }
 
     private string ScopeDetail()
@@ -3544,53 +3554,58 @@
         => SupportsTeamScope && selectedTeamScope == EloTeamScopes.Historical;
 
     private string TeamScopeNoun()
-        => selectedPool == EloPoolKeys.Nba ? "franchises" : "teams";
+        => selectedPool == EloPoolKeys.Nba ? T["FranchisesLower"] : T["TeamsLower"];
 
     private string TeamScopeAriaLabel()
         => selectedPool switch
         {
-            EloPoolKeys.Nba => "NBA franchise scope",
-            EloPoolKeys.NationalTeams => "National team scope",
-            _ => "European club team scope"
+            EloPoolKeys.Nba => T["NbaFranchiseScope"],
+            EloPoolKeys.NationalTeams => T["NationalTeamScope"],
+            _ => T["EuropeanClubScope"]
         };
 
     private string TeamScopeDescription()
         => selectedPool switch
         {
-            EloPoolKeys.Nba => "Current shows active NBA franchises. Historical also includes franchises that no longer compete.",
-            EloPoolKeys.NationalTeams => "Current shows teams from the latest imported international cycle. Historical also includes former national-team identities.",
-            _ => "Current shows clubs that participated in the latest imported European season. Historical includes clubs from earlier seasons."
+            EloPoolKeys.Nba => T["NbaScopeDescription"],
+            EloPoolKeys.NationalTeams => T["NationalScopeDescription"],
+            _ => T["EuropeScopeDescription"]
         };
 
     private string HistoricalTeamLabel()
-        => selectedPool == EloPoolKeys.Nba ? "Defunct" : "Historical";
+        => selectedPool == EloPoolKeys.Nba ? T["Defunct"] : T["Historical"];
 
     private string PoolHeading() => selectedPool switch
     {
-        EloPoolKeys.EuropeClubs => "Europe club power rankings",
-        EloPoolKeys.NationalTeams => "National team power rankings",
-        _ => "NBA power rankings"
+        EloPoolKeys.EuropeClubs => T["EuropeClubPowerRankings"],
+        EloPoolKeys.NationalTeams => T["NationalTeamPowerRankings"],
+        _ => T["NbaPowerRankings"]
     };
 
     private string PageHeading()
-        => selectedView == "movers"
-            ? PoolHeading().Replace("power rankings", "biggest movers", StringComparison.Ordinal)
-            : PoolHeading();
+        => selectedView == "movers" ? MoversPageHeading() : PoolHeading();
+
+    private string MoversPageHeading() => selectedPool switch
+    {
+        EloPoolKeys.EuropeClubs => T["EuropeClubBiggestMovers"],
+        EloPoolKeys.NationalTeams => T["NationalTeamBiggestMovers"],
+        _ => T["NbaBiggestMovers"]
+    };
 
     private string LeaderLabel()
         => IsArchiveMode
-            ? "Strongest as of"
+            ? T["StrongestAsOf"]
             : IsHistoricalTeamScope
-                ? "Highest retained rating"
-                : "Strongest right now";
+                ? T["HighestRetainedRating"]
+                : T["StrongestRightNow"];
 
     private string LatestGameLabel()
-        => IsArchiveMode ? "Rated through" : "Latest rated game";
+        => IsArchiveMode ? T["RatedThrough"] : T["LatestRatedGame"];
 
     private string ArchiveStateTitle()
         => response?.Archive.RequestedAsOfUtc is null
-            ? "Archived rankings"
-            : $"Rankings as of {FormatDate(response.Archive.RequestedAsOfUtc)}";
+            ? T["ArchivedRankings"]
+            : T["RankingsAsOf", FormatDate(response.Archive.RequestedAsOfUtc)];
 
     private string ArchiveStateDetail()
     {
@@ -3601,32 +3616,32 @@
 
         if (response?.Archive.EffectiveAsOfUtc is null)
         {
-            return "No rated games are available for this archive date.";
+            return T["NoRatedGamesArchiveDate"];
         }
 
         if (response.Archive.RequestedAsOfUtc.HasValue &&
             response.Archive.EffectiveAsOfUtc.Value.Date < response.Archive.RequestedAsOfUtc.Value.Date)
         {
-            return $"Using the latest rated game available before that date: {FormatDate(response.Archive.EffectiveAsOfUtc)}.";
+            return T["UsingLatestBeforeDate", FormatDate(response.Archive.EffectiveAsOfUtc)];
         }
 
-        return $"Using ratings through {FormatDate(response.Archive.EffectiveAsOfUtc)}.";
+        return T["UsingRatingsThrough", FormatDate(response.Archive.EffectiveAsOfUtc)];
     }
 
     private string MoversTitle()
-        => selectedMoverDirection == "fallers" ? "Biggest fallers" : "Biggest risers";
+        => selectedMoverDirection == "fallers" ? T["BiggestFallers"] : T["BiggestRisers"];
 
     private string MoversContextLabel()
     {
         if (movers is null)
         {
-            return "Loading rating movement.";
+            return T["LoadingRatingMovement"];
         }
 
         var rangeStart = movers.TotalCount == 0 ? 0 : ((movers.Page - 1) * movers.PageSize) + 1;
         var rangeEnd = Math.Min(movers.TotalCount, movers.Page * movers.PageSize);
 
-        return $"Showing {rangeStart}-{rangeEnd} of {movers.TotalCount} teams from {FormatDate(movers.WindowStartUtc)} to {FormatDate(movers.WindowEndUtc)}.";
+        return T["ShowingMoversRange", rangeStart, rangeEnd, movers.TotalCount, FormatDate(movers.WindowStartUtc), FormatDate(movers.WindowEndUtc)];
     }
 
     private void RebuildEvolutionChartSeries(bool resetViewport = true)
@@ -3810,6 +3825,12 @@
 
     private static string FormatRating(decimal? value)
         => value.HasValue ? value.Value.ToString("0") : "-";
+
+    private string GameExplanationAriaLabel(EloRecentFormGame game)
+        => T["OpenGameExplanation", game.Opponent, FormatDate(game.GameDateTimeUtc)];
+
+    private string RemoveFromChartAriaLabel(string teamName)
+        => T["RemoveTeamFromChart", teamName];
 
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";

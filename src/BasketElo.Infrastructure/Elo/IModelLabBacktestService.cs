@@ -19,6 +19,7 @@ public sealed record ModelLabBacktestExecutionResult(
     IReadOnlyCollection<ModelLabPredictionRow> Predictions,
     IReadOnlyCollection<ModelLabPredictionRow> BaselinePredictions,
     IReadOnlyCollection<ModelLabRatingRow> Ratings,
+    IReadOnlyCollection<ModelLabRatingRow> BaselineRatings,
     IReadOnlyCollection<ModelLabEvolutionSnapshot> Evolution);
 
 public sealed record ModelLabEvolutionSnapshot(

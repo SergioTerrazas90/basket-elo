@@ -1,3 +1,4 @@
+@page "/model-lab"
 @page "/model-lab/models"
 @rendermode InteractiveServer
 @using System.Net
@@ -6,17 +7,31 @@
 @using BasketElo.Domain.Elo
 @using BasketElo.Domain.Entities
 @inject HttpClient Http
+@inject NavigationManager Navigation
 
-<PageTitle>Saved Models - Basket ELO</PageTitle>
+<PageTitle>My Models - Basket ELO</PageTitle>
 
 <div class="model-library-page">
     <section class="library-hero">
         <div>
             <p class="eyebrow">Model Lab</p>
-            <h1>Saved model library</h1>
-            <p>Browse model definitions and open the runs that produced each set of rankings.</p>
+            <h1>My models</h1>
+            <p>Your saved model families, versions, and historical runs—all in one place.</p>
         </div>
-        <a class="btn btn-primary" href="model-lab">Build or edit a model</a>
+        <div class="library-hero-actions">
+            @if (models.Count > 1)
+            {
+                <div class="compare-selection-summary">
+                    <span class="@(SelectedCompatibleComparison is not null ? "has-saved-match" : string.Empty)">@SelectionSummaryText</span>
+                    <button type="button" class="btn btn-outline-primary" @onclick="CompareSelectedModels" disabled="@(selectedModelIds.Count < 2)">@SelectionActionLabel</button>
+                    @if (SelectedCompatibleComparison is not null)
+                    {
+                        <a class="btn btn-link btn-sm compare-new-setup" href="@NewComparisonHref">Run a new setup</a>
+                    }
+                </div>
+            }
+            <a class="btn btn-primary" href="model-lab/new">Create a model</a>
+        </div>
     </section>
 
     @if (!string.IsNullOrWhiteSpace(errorMessage))
@@ -32,12 +47,50 @@
     {
         <section class="empty-state">
             <h2>No saved models yet</h2>
-            <p>Save a model in the lab and it will appear here with its run history.</p>
-            <a class="btn btn-primary" href="model-lab">Open Model Lab</a>
+            <p>Create your first model, adjust its rating rules, and test it against historical results.</p>
+            <a class="btn btn-primary" href="model-lab/new">Create a model</a>
         </section>
     }
     else
     {
+        @if (availableComparisons.Count > 0)
+        {
+            <section class="available-comparisons" aria-labelledby="available-comparisons-title">
+                <div class="available-comparisons-heading">
+                    <div>
+                        <p class="eyebrow">Saved results</p>
+                        <h2 id="available-comparisons-title">Available comparisons</h2>
+                        <p>Open a compatible result instantly—no new runs required.</p>
+                    </div>
+                    <span class="available-count">@RecentComparisons.Count ready</span>
+                </div>
+                <div class="available-comparisons-grid">
+                    @foreach (var comparison in RecentComparisons)
+                    {
+                        var firstRun = comparison.Runs.First();
+                        <a class="available-comparison-card" href="@ComparisonHref(comparison)">
+                            <div class="available-card-topline">
+                                <span class="ready-pill"><i></i>Ready</span>
+                                <time datetime="@comparison.CompletedAtUtc.ToString("O")">@FormatComparisonDate(comparison.CompletedAtUtc)</time>
+                            </div>
+                            <div class="available-models" aria-label="Compared models">
+                                @foreach (var run in comparison.Runs)
+                                {
+                                    <span><i></i>@run.ModelName <small>@ModelVersionLabel(run.ModelId)</small></span>
+                                }
+                            </div>
+                            <strong class="available-verdict">@ComparisonHeadline(comparison)</strong>
+                            <div class="available-context">
+                                <span>@firstRun.LeagueName</span>
+                                <span>@FormatScoredWindow(firstRun)</span>
+                            </div>
+                            <span class="available-open">Open comparison <span aria-hidden="true">→</span></span>
+                        </a>
+                    }
+                </div>
+            </section>
+        }
+
         <section class="model-library-grid">
             @foreach (var model in models)
             {
@@ -49,16 +102,25 @@
                             <h2>@model.Name</h2>
                             <p>@(model.Description ?? "No description")</p>
                         </div>
-                        <span class="version-badge">v@model.CurrentVersion.VersionNumber</span>
+                        <div class="model-card-badges">
+                            <span class="version-badge">v@(model.CurrentVersion.VersionNumber)</span>
+                            <label class="model-select">
+                                <input type="checkbox"
+                                       checked="@selectedModelIds.Contains(model.Id)"
+                                       disabled="@(model.IsArchived || (!selectedModelIds.Contains(model.Id) && selectedModelIds.Count >= 3))"
+                                       @onchange="() => ToggleModelSelection(model.Id)" />
+                                <span>@(model.IsArchived ? "Archived" : selectedModelIds.Contains(model.Id) ? "Selected" : "Compare")</span>
+                            </label>
+                        </div>
                     </div>
 
                     <dl class="model-card-facts">
-                        <div><dt>Competition</dt><dd>@model.LeagueName</dd></div>
+                        <div><dt>Rating rules</dt><dd>K @model.CurrentVersion.Parameters.KFactor · Home @model.CurrentVersion.Parameters.HomeAdvantageElo.ToString("0")</dd></div>
+                        <div><dt>Runs</dt><dd>@RunCount(model.Id)</dd></div>
                         <div><dt>Updated</dt><dd>@FormatDate(model.UpdatedAtUtc)</dd></div>
                         @if (lastRun is not null)
                         {
-                            <div><dt>ELO pool</dt><dd>@EloPoolKeys.DisplayName(lastRun.EloPoolKey)</dd></div>
-                            <div><dt>Scope</dt><dd>@FormatScope(lastRun.ScopeType)</dd></div>
+                            <div><dt>Latest scope</dt><dd>@FormatScope(lastRun.ScopeType)</dd></div>
                         }
                     </dl>
 
@@ -71,11 +133,18 @@
                         <a class="model-run-summary" href="@($"model-lab/runs/{lastRun.Id}")">
                             <span class="@StatusClass(lastRun.Status)">@FormatStatus(lastRun.Status)</span>
                             <strong>@RunHeadline(lastRun)</strong>
-                            <small>@FormatDateTime(lastRun.CreatedAtUtc)</small>
+                            <small>@EloPoolKeys.DisplayName(lastRun.EloPoolKey) · @FormatDateTime(lastRun.CreatedAtUtc)</small>
+                            <span class="open-result">@RunActionLabel(lastRun)</span>
                         </a>
                     }
 
-                    <a class="btn btn-outline-primary" href="@($"model-lab/models/{model.Id}")">View model and runs</a>
+                    <div class="model-card-actions">
+                        <a class="btn btn-outline-primary" href="@($"model-lab/models/{model.Id}")">Open model</a>
+                        @if (!model.IsArchived)
+                        {
+                            <a class="btn btn-primary" href="@($"model-lab/models/{model.Id}/run")">Run model</a>
+                        }
+                    </div>
                 </article>
             }
         </section>
@@ -85,6 +154,8 @@
 @code {
     private List<ModelLabModelSummaryResponse> models = [];
     private List<ModelLabRunSummaryResponse> runs = [];
+    private List<ModelLabSavedComparisonResponse> availableComparisons = [];
+    private HashSet<Guid> selectedModelIds = [];
     private bool isLoading = true;
     private string? errorMessage;
 
@@ -104,6 +175,11 @@
             {
                 runs = await runResponse.Content.ReadFromJsonAsync<List<ModelLabRunSummaryResponse>>() ?? [];
             }
+            using var comparisonResponse = await Http.GetAsync("api/model-lab/comparisons?take=50");
+            if (comparisonResponse.IsSuccessStatusCode)
+            {
+                availableComparisons = await comparisonResponse.Content.ReadFromJsonAsync<List<ModelLabSavedComparisonResponse>>() ?? [];
+            }
         }
         catch (Exception exception)
         {
@@ -118,6 +194,74 @@
     private ModelLabRunSummaryResponse? LastRunFor(Guid modelId)
         => runs.Where(run => run.ModelId == modelId).OrderByDescending(run => run.CreatedAtUtc).FirstOrDefault();
 
+    private ModelLabSavedComparisonResponse? SelectedCompatibleComparison
+        => selectedModelIds.Count < 2
+            ? null
+            : availableComparisons.FirstOrDefault(comparison => comparison.Runs.Select(run => run.ModelId).ToHashSet().SetEquals(selectedModelIds));
+    private IReadOnlyList<ModelLabSavedComparisonResponse> RecentComparisons => availableComparisons.Take(6).ToList();
+    private string SelectionSummaryText => SelectedCompatibleComparison is not null ? "Saved comparison available" : $"{selectedModelIds.Count} of 3 selected";
+    private string SelectionActionLabel => SelectedCompatibleComparison is not null ? "View existing comparison" : "Set up comparison";
+    private string NewComparisonHref
+        => $"model-lab/compare?models={Uri.EscapeDataString(string.Join(',', selectedModelIds.Take(3)))}&fresh=true";
+
+    private void ToggleModelSelection(Guid modelId)
+    {
+        if (!selectedModelIds.Add(modelId))
+        {
+            selectedModelIds.Remove(modelId);
+        }
+    }
+
+    private void CompareSelectedModels()
+    {
+        if (selectedModelIds.Count < 2)
+        {
+            return;
+        }
+
+        var modelQuery = string.Join(',', selectedModelIds.Take(3));
+        Navigation.NavigateTo($"model-lab/compare?models={Uri.EscapeDataString(modelQuery)}");
+    }
+
+    private int RunCount(Guid modelId) => runs.Count(run => run.ModelId == modelId);
+
+    private static string ComparisonHref(ModelLabSavedComparisonResponse comparison)
+    {
+        var modelQuery = string.Join(',', comparison.Runs.Select(run => run.ModelId));
+        return $"model-lab/compare?models={Uri.EscapeDataString(modelQuery)}";
+    }
+
+    private string ModelVersionLabel(Guid modelId)
+        => models.FirstOrDefault(model => model.Id == modelId) is { } model ? $"v{model.CurrentVersion.VersionNumber}" : string.Empty;
+
+    private static string ComparisonHeadline(ModelLabSavedComparisonResponse comparison)
+    {
+        var runs = comparison.Runs.ToList();
+        if (runs.Count == 0) return "Comparison ready";
+        var wins = runs.ToDictionary(run => run.ModelId, _ => 0);
+        AwardBest(runs, wins, run => run.Summary.WinnerAccuracy, higherIsBetter: true);
+        AwardBest(runs, wins, run => run.Summary.BrierScore, higherIsBetter: false);
+        AwardBest(runs, wins, run => run.Summary.LogLoss, higherIsBetter: false);
+        AwardBest(runs, wins, run => run.Summary.AverageMarginError, higherIsBetter: false);
+        var bestScore = wins.Values.Max();
+        var leaders = runs.Where(run => wins[run.ModelId] == bestScore).ToList();
+        return leaders.Count == 1 ? $"{leaders[0].ModelName} leads {bestScore}/4" : $"Split decision · {bestScore}/4 each";
+    }
+
+    private static void AwardBest(
+        IReadOnlyCollection<ModelLabRunSummaryResponse> runs,
+        IDictionary<Guid, int> wins,
+        Func<ModelLabRunSummaryResponse, decimal> value,
+        bool higherIsBetter)
+    {
+        var best = higherIsBetter ? runs.Max(value) : runs.Min(value);
+        foreach (var run in runs.Where(run => value(run) == best)) wins[run.ModelId]++;
+    }
+
+    private static string FormatComparisonDate(DateTime value) => value.ToLocalTime().ToString("d MMM yyyy");
+    private static string FormatScoredWindow(ModelLabRunSummaryResponse run)
+        => $"{run.ScoredWindow.FromUtc:MMM yyyy}–{run.ScoredWindow.ToUtc:MMM yyyy}";
+
     private static string RunHeadline(ModelLabRunSummaryResponse run)
         => run.Status switch
         {
@@ -127,6 +271,9 @@
             ModelLabRunStatuses.Canceled => "Run canceled",
             _ => $"{run.Summary.WinnerAccuracy:0.0}% winner accuracy"
         };
+
+    private static string RunActionLabel(ModelLabRunSummaryResponse run)
+        => run.Status == ModelLabRunStatuses.Completed ? "View results →" : "Open run →";
 
     private static string FormatScope(string scopeType) => scopeType switch
     {

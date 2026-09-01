@@ -5,7 +5,7 @@ This deploy shape mirrors a simple VPS setup:
 - publish three self-contained Linux services plus the one-shot tools build from Windows
 - copy them to the VPS over SSH
 - run each app with systemd
-- expose only the web app through Caddy on the VPS IP, using a dedicated port so existing Caddy sites are not overwritten
+- expose only the web app through Caddy on `basketelo.com`, alongside any existing hostname-based Caddy sites
 
 ## Services
 
@@ -65,7 +65,7 @@ If your main Caddyfile does not import snippets yet, add this line once, outside
 import /etc/caddy/sites/*.caddy
 ```
 
-Do not replace the existing Caddyfile. The Basket ELO snippet listens on `:8081`, so it can coexist with the existing public website on `:80` or `:443`.
+Do not replace the existing Caddyfile. The Basket ELO snippet owns `basketelo.com` and `www.basketelo.com` on ports 80 and 443. It can coexist with existing hostname-based Caddy sites; make sure the domain's DNS records point to this VPS and that ports 80 and 443 are open.
 
 ## Deploy from Windows
 
@@ -157,5 +157,5 @@ runbook, see [`docs/hangfire-elo-jobs.md`](../docs/hangfire-elo-jobs.md).
 From your browser:
 
 ```text
-http://152.228.139.241:8081/
+https://basketelo.com/
 ```

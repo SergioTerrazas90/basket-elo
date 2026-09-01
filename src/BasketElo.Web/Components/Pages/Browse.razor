@@ -123,7 +123,7 @@
                         <div class="browse-team-list">
                             @foreach (var team in response.Context.TopTeams)
                             {
-                                <a class="browse-team-row" href="@TeamHref(team.TeamId)">
+                                <a class="browse-team-row" href="@TeamHref(team.TeamId, team.Name)">
                                     <span class="team-rank">#@team.Rank</span>
                                     <span><strong>@team.Name</strong><small>@team.Country Â· @team.GamesPlayed games</small></span>
                                     <strong class="team-rating">@(team.Elo?.ToString("0") ?? "-")</strong>
@@ -304,8 +304,24 @@
             ["season"] = Season
         });
 
-    private string TeamHref(Guid teamId)
-        => $"/teams/{teamId}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri))}";
+    private string TeamHref(Guid teamId, string? teamName = null)
+    {
+        var slug = string.IsNullOrWhiteSpace(teamName) ? "team" : ToSlug(teamName);
+        return $"/team/{teamId:D}/{slug}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri))}";
+    }
+
+    private static string ToSlug(string value)
+    {
+        var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
+        var slug = new string(normalized
+            .Where(character => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(character) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            .ToArray());
+
+        return string.Join('-', slug
+            .ToLowerInvariant()
+            .Split([' ', '/', '\\', '.', ',', ':', ';', '&', '+', '(', ')', '[', ']', '{', '}', '\'', '"'], StringSplitOptions.RemoveEmptyEntries)
+            .SelectMany(part => part.Split('-', StringSplitOptions.RemoveEmptyEntries)));
+    }
 
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";

@@ -7,6 +7,7 @@ public class ApplicationUser
     public string Email { get; set; } = string.Empty;
     public string NormalizedEmail { get; set; } = string.Empty;
     public string? AvatarUrl { get; set; }
+    public string? PreferredCulture { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime LastLoginAtUtc { get; set; } = DateTime.UtcNow;
 

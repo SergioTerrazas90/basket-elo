@@ -15,6 +15,8 @@ using Radzen;
 using System.Security.Claims;
 using System.Text;
 using System.Xml.Linq;
+using System.Globalization;
+using BasketElo.Web.Localization;
 
 var builder = WebApplication.CreateBuilder(args);
 const string devPersonaCookieName = "BasketElo.DevPersona";
@@ -22,6 +24,7 @@ const string devPersonaCookieName = "BasketElo.DevPersona";
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddLocalization(options => options.ResourcesPath = "Resources");
 builder.Services.AddMemoryCache();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
@@ -155,6 +158,23 @@ if (!app.Environment.IsDevelopment())
 app.UseStaticFiles();
 app.Use(async (httpContext, next) =>
 {
+    var source = CleanCampaignValue(httpContext.Request.Query["utm_source"]);
+    var medium = CleanCampaignValue(httpContext.Request.Query["utm_medium"]);
+    var campaign = CleanCampaignValue(httpContext.Request.Query["utm_campaign"]);
+    if (source is not null || medium is not null || campaign is not null)
+    {
+        app.Logger.LogInformation(
+            "Campaign visit source={CampaignSource} medium={CampaignMedium} campaign={CampaignName} path={Path}",
+            source ?? "(none)",
+            medium ?? "(none)",
+            campaign ?? "(none)",
+            httpContext.Request.Path);
+    }
+
+    await next(httpContext);
+});
+app.Use(async (httpContext, next) =>
+{
     if (IsPrivateOrUtilityPath(httpContext.Request.Path))
     {
         httpContext.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
@@ -181,6 +201,20 @@ if (!authOptions.Enabled)
         await next(httpContext);
     });
 }
+
+app.Use(async (httpContext, next) =>
+{
+    var resolution = await ResolveRequestCultureAsync(httpContext);
+    if (resolution.PersistCookie)
+    {
+        SetCultureCookie(httpContext, resolution.CultureName);
+    }
+
+    var culture = SupportedCultures.GetCulture(resolution.CultureName);
+    CultureInfo.CurrentCulture = culture;
+    CultureInfo.CurrentUICulture = culture;
+    await next(httpContext);
+});
 
 app.UseAuthorization();
 app.MapHangfireDashboard("/admin/jobs", new DashboardOptions
@@ -225,6 +259,37 @@ app.MapGet("/auth/logout", async (HttpContext httpContext) =>
     return Results.Redirect("/");
 });
 
+app.MapGet("/culture/set", async (
+    HttpContext httpContext,
+    BasketEloDbContext dbContext,
+    string? culture,
+    string? returnUrl,
+    bool? updateOnly) =>
+{
+    if (!SupportedCultures.TryNormalize(culture, out var normalizedCulture))
+    {
+        return Results.BadRequest("Unsupported culture.");
+    }
+
+    var userId = GetAuthenticatedUserId(httpContext.User);
+    if (userId.HasValue)
+    {
+        var user = await dbContext.ApplicationUsers
+            .SingleOrDefaultAsync(x => x.Id == userId.Value, httpContext.RequestAborted);
+        if (user is not null && !string.Equals(user.PreferredCulture, normalizedCulture, StringComparison.Ordinal))
+        {
+            user.PreferredCulture = normalizedCulture;
+            await dbContext.SaveChangesAsync(httpContext.RequestAborted);
+        }
+    }
+
+    SetCultureCookie(httpContext, normalizedCulture);
+
+    return updateOnly is true
+        ? Results.NoContent()
+        : Results.Redirect(NormalizeReturnUrl(httpContext, returnUrl));
+});
+
 app.MapGet("/dev/persona", (HttpContext httpContext, string? persona, string? returnUrl) =>
 {
     if (authOptions.Enabled)
@@ -256,20 +321,84 @@ app.MapGet("/robots.txt", (HttpContext httpContext, IConfiguration configuration
     var robots = $"User-agent: *\nAllow: /\n\nSitemap: {siteRoot}sitemap.xml\n";
     return Results.Text(robots, "text/plain", Encoding.UTF8);
 });
-app.MapGet("/sitemap.xml", (HttpContext httpContext, IConfiguration configuration) =>
+app.MapGet("/sitemap.xml", async (HttpContext httpContext, IConfiguration configuration, BasketEloDbContext dbContext, CancellationToken cancellationToken) =>
 {
     var siteRoot = ResolveSiteRoot(httpContext, configuration);
     string[] publicPaths = ["", "movers", "browse", "model-lab", "how-it-works", "data-sources", "about", "sponsor"];
+    var publicTeamPaths = await dbContext.TeamRatings
+        .AsNoTracking()
+        .Include(x => x.Team)
+        .Where(x => x.RulesetVersion == BasketElo.Domain.Elo.EloRulesetVersions.Default)
+        .Select(x => new { x.TeamId, x.EloPoolKey, x.RulesetVersion, TeamName = x.Team.CanonicalName })
+        .ToListAsync(cancellationToken);
     XNamespace ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
+    var locations = publicPaths
+        .Select(path => new Uri(new Uri(siteRoot), path).AbsoluteUri)
+        .Concat(publicTeamPaths.Select(team =>
+            new Uri(
+                new Uri(siteRoot),
+                $"team/{team.TeamId:D}/{ToSlug(team.TeamName)}?pool={Uri.EscapeDataString(team.EloPoolKey)}&ruleset={Uri.EscapeDataString(team.RulesetVersion)}")
+                .AbsoluteUri));
     var sitemap = new XDocument(
         new XElement(ns + "urlset",
-            publicPaths.Select(path =>
+            locations.Select(location =>
                 new XElement(ns + "url",
-                    new XElement(ns + "loc", new Uri(new Uri(siteRoot), path).AbsoluteUri)))));
+                    new XElement(ns + "loc", location)))));
     return Results.Text(sitemap.ToString(SaveOptions.DisableFormatting), "application/xml", Encoding.UTF8);
 });
 
 app.Run();
+
+static async Task<(string CultureName, bool PersistCookie)> ResolveRequestCultureAsync(HttpContext httpContext)
+{
+    // A language explicitly selected on this device must win immediately, even if
+    // an older account preference is still being synchronized or another tab is open.
+    if (SupportedCultures.TryNormalize(
+        httpContext.Request.Cookies[SupportedCultures.CultureCookieName],
+        out var cookieCulture))
+    {
+        return (cookieCulture, false);
+    }
+
+    var userId = GetAuthenticatedUserId(httpContext.User);
+    if (userId.HasValue)
+    {
+        var dbContext = httpContext.RequestServices.GetRequiredService<BasketEloDbContext>();
+        var preferredCulture = await dbContext.ApplicationUsers
+            .AsNoTracking()
+            .Where(x => x.Id == userId.Value)
+            .Select(x => x.PreferredCulture)
+            .SingleOrDefaultAsync(httpContext.RequestAborted);
+
+        if (SupportedCultures.TryNormalize(preferredCulture, out var normalizedPreference))
+        {
+            return (normalizedPreference, false);
+        }
+    }
+
+    return (CultureInference.Infer(httpContext.Request) ?? SupportedCultures.English, true);
+}
+
+static void SetCultureCookie(HttpContext httpContext, string cultureName)
+{
+    httpContext.Response.Cookies.Append(
+        SupportedCultures.CultureCookieName,
+        cultureName,
+        new CookieOptions
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            SameSite = SameSiteMode.Lax,
+            Path = "/",
+            MaxAge = TimeSpan.FromDays(365)
+        });
+}
+
+static Guid? GetAuthenticatedUserId(ClaimsPrincipal user)
+{
+    var value = user.FindFirstValue(ClaimTypes.NameIdentifier);
+    return Guid.TryParse(value, out var userId) ? userId : null;
+}
 
 static string ResolveSiteRoot(HttpContext httpContext, IConfiguration configuration)
 {
@@ -282,13 +411,34 @@ static string ResolveSiteRoot(HttpContext httpContext, IConfiguration configurat
     return $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/";
 }
 
+static string? CleanCampaignValue(string? value)
+{
+    var cleaned = value?.Trim();
+    return string.IsNullOrWhiteSpace(cleaned)
+        ? null
+        : cleaned.Length <= 80 ? cleaned : cleaned[..80];
+}
+
+static string ToSlug(string value)
+{
+    var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
+    var slug = new string(normalized
+        .Where(character => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(character) != System.Globalization.UnicodeCategory.NonSpacingMark)
+        .ToArray());
+
+    return string.Join('-', slug
+        .ToLowerInvariant()
+        .Split([' ', '/', '\\', '.', ',', ':', ';', '&', '+', '(', ')', '[', ']', '{', '}', '\'', '"'], StringSplitOptions.RemoveEmptyEntries)
+        .SelectMany(part => part.Split('-', StringSplitOptions.RemoveEmptyEntries)));
+}
+
 static bool IsPrivateOrUtilityPath(PathString path)
 {
     var value = path.Value ?? string.Empty;
     string[] prefixes =
     [
         "/admin", "/backfill", "/games", "/upcoming", "/home", "/counter",
-        "/weather", "/error", "/auth", "/dev", "/signin-google", "/model-lab/runs", "/teams"
+        "/weather", "/error", "/auth", "/dev", "/signin-google", "/model-lab/runs"
     ];
 
     return prefixes.Any(prefix => value.Equals(prefix, StringComparison.OrdinalIgnoreCase) ||

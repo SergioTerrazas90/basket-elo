@@ -144,5 +144,5 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Deployment completed and verified."
-Write-Host "Public site: http://${Server}:8081/"
-Write-Host "Sitemap: http://${Server}:8081/sitemap.xml"
+Write-Host "Public site: https://basketelo.com/"
+Write-Host "Sitemap: https://basketelo.com/sitemap.xml"

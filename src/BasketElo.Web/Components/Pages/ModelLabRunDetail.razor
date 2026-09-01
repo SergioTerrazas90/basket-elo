@@ -9,19 +9,19 @@
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
-<PageTitle>Model Run - Basket ELO</PageTitle>
+<PageTitle>Run Results - Basket ELO</PageTitle>
 
 <div class="model-run-page">
     <section class="run-hero">
         <div>
             <p class="eyebrow">Model Lab</p>
-            <h1>Backtest results</h1>
+            <h1>Run results</h1>
             @if (detail is not null)
             {
                 <p class="intro">
                     @if (IsCompletedRun)
                     {
-                        <text>@detail.Run.ModelName &middot; rankings and rating evolution for this completed ELO run</text>
+                        <text>@detail.Run.ModelName @ModelVersionLabel &middot; rankings, rating evolution, and prediction metrics</text>
                     }
                     else
                     {
@@ -53,8 +53,16 @@
                 <button type="button" class="btn btn-outline-danger" @onclick="DeleteRunAsync" disabled="@(isDeleting || IsActiveRun)">
                     @(confirmDelete ? "Confirm delete" : isDeleting ? "Deleting..." : "Delete run")
                 </button>
+                <a class="btn btn-outline-secondary" href="@($"model-lab/models/{detail.Run.ModelId}")">Back to model</a>
+                @if (!IsActiveRun && runModel?.IsArchived != true)
+                {
+                    <a class="btn btn-primary" href="@($"model-lab/models/{detail.Run.ModelId}/run")">Run model again</a>
+                }
             }
-            <a class="btn btn-outline-secondary" href="model-lab">Back to Model Lab</a>
+            else
+            {
+                <a class="btn btn-outline-secondary" href="model-lab">Back to Model Lab</a>
+            }
         </div>
     </section>
 
@@ -75,14 +83,14 @@
     {
         <section class="run-status-panel">
             <div>
-                <span class="@StatusClass(detail.Run.Status)">@FormatStatus(detail.Run.Status)</span>
-                <strong>@detail.Run.ModelName</strong>
-                <small>@FormatScope(detail.Run.ScopeType) &middot; @FormatWindow(detail.Run.ScoredWindow)</small>
+                <span>Model</span>
+                <strong>@detail.Run.ModelName @ModelVersionLabel</strong>
+                <small><span class="@StatusClass(detail.Run.Status)">@FormatStatus(detail.Run.Status)</span></small>
             </div>
             <div>
-                <span>Run ID</span>
-                <strong>@detail.Run.Id.ToString()[..8]</strong>
-                <small>@detail.Scopes.Count scoped competition@(detail.Scopes.Count == 1 ? string.Empty : "s")</small>
+                <span>Evaluation period</span>
+                <strong>@FormatWindow(detail.Run.ScoredWindow)</strong>
+                <small>@detail.Run.Summary.ScoredGames scored games</small>
             </div>
             <div>
                 <span>ELO pool</span>
@@ -92,9 +100,27 @@
             <div>
                 <span>Competitions</span>
                 <strong>@FormatScopeNames(detail.Scopes)</strong>
-                <small>Model version @detail.Run.ModelVersionId.ToString()[..8]</small>
+                <small>@FormatScope(detail.Run.ScopeType)</small>
             </div>
         </section>
+
+        @if (RunVersion is not null)
+        {
+            <details class="run-definition-panel">
+                <summary>
+                    <span>Model settings used for this run</span>
+                    <strong>@detail.Run.ModelName @ModelVersionLabel</strong>
+                </summary>
+                <div class="run-parameter-grid">
+                    <div><span>Base rating</span><strong>@RunVersion.Parameters.BaseRating.ToString("0")</strong></div>
+                    <div><span>K-factor</span><strong>@RunVersion.Parameters.KFactor</strong></div>
+                    <div><span>Home advantage</span><strong>@RunVersion.Parameters.HomeAdvantageElo.ToString("0")</strong></div>
+                    <div><span>Probability scale</span><strong>@RunVersion.Parameters.ProbabilityScale.ToString("0")</strong></div>
+                    <div><span>Margin adjustment</span><strong>@(RunVersion.Parameters.UsesMarginAdjustment ? "On" : "Off")</strong></div>
+                    <div><span>Competition weight</span><strong>@RunVersion.Parameters.CompetitionWeight.ToString("0.00")</strong></div>
+                </div>
+            </details>
+        }
 
         @if (IsActiveRun)
         {
@@ -237,6 +263,13 @@
                         <h2>Final ratings</h2>
                         <p>Top teams at the end of the scoped run.</p>
                     </div>
+                    @if (HasBaselineRatings)
+                    {
+                        <label class="comparison-toggle">
+                            <input type="checkbox" @bind="showBaselineRatings" />
+                            <span>Compare with standard</span>
+                        </label>
+                    }
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle compact-table">
@@ -245,6 +278,10 @@
                                 <th>Rank</th>
                                 <th>Team</th>
                                 <th class="numeric">ELO</th>
+                                @if (showBaselineRatings)
+                                {
+                                    <th class="numeric">Standard</th>
+                                }
                                 <th class="numeric">Games</th>
                                 <th class="numeric">Recent</th>
                             </tr>
@@ -256,6 +293,13 @@
                                     <td class="rank-cell">#@row.Rank</td>
                                     <td>@row.TeamName</td>
                                     <td class="numeric rating">@row.Elo.ToString("0")</td>
+                                    @if (showBaselineRatings)
+                                    {
+                                        <td class="numeric baseline-comparison">
+                                            <strong>#@(row.BaselineRank?.ToString() ?? "—") · @(row.BaselineElo?.ToString("0") ?? "—")</strong>
+                                            <small class="@BaselineComparisonClass(row)">@FormatEloDelta(row) · @FormatRankDelta(row)</small>
+                                        </td>
+                                    }
                                     <td class="numeric">@row.GamesPlayed</td>
                                     <td class="numeric"><span class="@MovementClass(row.RecentMovement)">@FormatMovement(row.RecentMovement)</span></td>
                                 </tr>
@@ -404,6 +448,7 @@
     private const int PredictionPageSize = 50;
 
     private ModelLabRunDetailResponse? detail;
+    private ModelLabModelDetailResponse? runModel;
     private ModelLabRunPredictionPageResponse? predictionPage;
     private bool isLoading = true;
     private bool isLoadingPredictions;
@@ -412,6 +457,7 @@
     private bool isDeleting;
     private bool isCancelling;
     private bool isRetrying;
+    private bool showBaselineRatings;
     private string? errorMessage;
     private int predictionSkip;
     private IReadOnlyList<EloChartSeries> evolutionChartSeries = [];
@@ -422,6 +468,46 @@
     private bool IsActiveRun => detail?.Run.Status is ModelLabRunStatuses.Queued or ModelLabRunStatuses.Running;
 
     private bool IsCompletedRun => detail?.Run.Status == ModelLabRunStatuses.Completed;
+
+    private ModelLabModelVersionResponse? RunVersion
+        => detail is null
+            ? null
+            : runModel?.Versions.FirstOrDefault(version => version.Id == detail.Run.ModelVersionId);
+
+    private string ModelVersionLabel
+        => RunVersion is null ? string.Empty : $"v{RunVersion.VersionNumber}";
+
+    private bool HasBaselineRatings
+        => detail?.Ratings.Any(x => x.BaselineRank.HasValue && x.BaselineElo.HasValue) == true;
+
+    private static string FormatEloDelta(ModelLabRatingRow row)
+        => row.BaselineElo is not decimal baseline
+            ? "standard unavailable"
+            : (row.Elo - baseline) switch
+            {
+                > 0 => $"+{row.Elo - baseline:0} ELO",
+                < 0 => $"{row.Elo - baseline:0} ELO",
+                _ => "even ELO"
+            };
+
+    private static string FormatRankDelta(ModelLabRatingRow row)
+        => row.BaselineRank is not int baseline
+            ? "rank unavailable"
+            : (baseline - row.Rank) switch
+            {
+                > 0 => $"↑{baseline - row.Rank} rank{(baseline - row.Rank == 1 ? string.Empty : "s")}",
+                < 0 => $"↓{row.Rank - baseline} rank{(row.Rank - baseline == 1 ? string.Empty : "s")}",
+                _ => "same rank"
+            };
+
+    private static string BaselineComparisonClass(ModelLabRatingRow row)
+        => row.BaselineElo is not decimal baseline
+            ? "comparison-unavailable"
+            : row.Elo == baseline
+                ? "comparison-even"
+                : row.Elo > baseline
+                    ? "comparison-positive"
+                    : "comparison-negative";
 
     private bool CanGoPrevious => predictionPage is not null && predictionPage.Skip > 0 && !isLoadingPredictions;
 
@@ -485,6 +571,10 @@
 
             detail = await response.Content.ReadFromJsonAsync<ModelLabRunDetailResponse>()
                 ?? throw new InvalidOperationException("The saved run response was empty.");
+            if (runModel?.Id != detail.Run.ModelId)
+            {
+                await LoadRunModelAsync(detail.Run.ModelId);
+            }
             if (IsCompletedRun && (!wasCompleted || predictionPage is null))
             {
                 await Task.WhenAll(LoadPredictionsAsync(), LoadEvolutionAsync());
@@ -500,6 +590,22 @@
             {
                 isLoading = false;
             }
+        }
+    }
+
+    private async Task LoadRunModelAsync(Guid modelId)
+    {
+        try
+        {
+            using var response = await Http.GetAsync($"api/model-lab/models/{modelId}");
+            if (response.IsSuccessStatusCode)
+            {
+                runModel = await response.Content.ReadFromJsonAsync<ModelLabModelDetailResponse>();
+            }
+        }
+        catch
+        {
+            // The run remains useful even if its model metadata cannot be loaded.
         }
     }
 
@@ -659,7 +765,7 @@
                 throw new InvalidOperationException(await ReadErrorMessageAsync(response));
             }
 
-            Navigation.NavigateTo("model-lab");
+            Navigation.NavigateTo(detail is null ? "model-lab/models" : $"model-lab/models/{detail.Run.ModelId}");
         }
         catch (Exception ex)
         {

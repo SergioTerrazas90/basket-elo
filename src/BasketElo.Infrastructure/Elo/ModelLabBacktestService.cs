@@ -128,7 +128,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 custom.ScoredPredictions.Count),
             custom.Summary,
             baseline.Summary,
-            custom.Ratings.Take(MaxRatingsReturned).ToList(),
+            MergeRatings(custom.Ratings, baseline.Ratings).Take(MaxRatingsReturned).ToList(),
             custom.ScoredPredictions
                 .OrderByDescending(x => x.MarginError)
                 .Take(MaxMissesReturned)
@@ -142,6 +142,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             custom.ScoredPredictions,
             baseline.ScoredPredictions,
             custom.Ratings,
+            baseline.Ratings,
             custom.Evolution);
     }
 
@@ -498,6 +499,18 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 x.Value.GamesPlayed,
                 RoundRating(x.Value.RecentDeltas.Sum())))
             .ToList();
+
+    private static IReadOnlyCollection<ModelLabRatingRow> MergeRatings(
+        IReadOnlyCollection<ModelLabRatingRow> modelRatings,
+        IReadOnlyCollection<ModelLabRatingRow> baselineRatings)
+    {
+        var baselineByTeam = baselineRatings.ToDictionary(x => x.TeamId);
+        return modelRatings
+            .Select(model => baselineByTeam.TryGetValue(model.TeamId, out var baseline)
+                ? model with { BaselineRank = baseline.Rank, BaselineElo = baseline.Elo }
+                : model)
+            .ToList();
+    }
 
     private static int GetRank(IReadOnlyDictionary<Guid, RatingState> ratings, Guid teamId)
     {

@@ -14,7 +14,7 @@
         <div>
             <p class="eyebrow">Model Lab library</p>
             <h1>@(model?.Name ?? "Saved model")</h1>
-            <p>@(model?.Description ?? "Parameters, versions, and run-specific results.")</p>
+            <p>@(model?.Description ?? "Versions, rating rules, and historical run results.")</p>
         </div>
         <div class="hero-actions">
             @if (model is not null)
@@ -24,7 +24,10 @@
                 </button>
             }
             <a class="btn btn-outline-secondary" href="model-lab/models">All models</a>
-            <a class="btn btn-primary" href="model-lab">Open editor</a>
+            @if (model is not null && !model.IsArchived)
+            {
+                <a class="btn btn-primary" href="@($"model-lab/models/{model.Id}/run")">Run model</a>
+            }
         </div>
     </section>
 
@@ -45,8 +48,8 @@
     {
         <section class="model-identity-grid">
             <div><span>Status</span><strong>@(model.IsArchived ? "Archived" : "Active")</strong></div>
-            <div><span>Competition</span><strong>@model.LeagueName</strong></div>
-            <div><span>Current version</span><strong>v@model.CurrentVersion.VersionNumber</strong></div>
+            <div><span>Model scope</span><strong>Reusable across competitions</strong></div>
+            <div><span>Current version</span><strong>v@(model.CurrentVersion.VersionNumber)</strong></div>
             <div><span>Updated</span><strong>@FormatDateTime(model.UpdatedAtUtc)</strong></div>
         </section>
 
@@ -76,8 +79,8 @@
         <section class="detail-panel">
             <div class="section-head compact">
                 <div>
-                    <h2>Current parameters</h2>
-                    <p>These define the model. Rankings remain attached to individual runs below.</p>
+                    <h2>Current version · v@(model.CurrentVersion.VersionNumber)</h2>
+                    <p>This parameter set is immutable. Editing it creates v@(model.CurrentVersion.VersionNumber + 1), while existing runs stay attached to their original version.</p>
                 </div>
             </div>
             <div class="parameter-grid">
@@ -110,9 +113,9 @@
                             <span class="@StatusClass(run.Status)">@FormatStatus(run.Status)</span>
                             <div>
                                 <strong>@RunHeadline(run)</strong>
-                                <small>@EloPoolKeys.DisplayName(run.EloPoolKey) · @FormatScope(run.ScopeType) · @FormatDateTime(run.CreatedAtUtc)</small>
+                                <small>@VersionLabel(run) · @FormatScope(run.ScopeType) · @FormatWindow(run.ScoredWindow) · @FormatDateTime(run.CreatedAtUtc)</small>
                             </div>
-                            <span class="open-run">Open →</span>
+                            <span class="open-run">View results →</span>
                         </a>
                     }
                 </div>
@@ -128,13 +131,14 @@
             </div>
             <div class="table-responsive">
                 <table class="table align-middle compact-table">
-                    <thead><tr><th>Version</th><th>Created</th><th>K</th><th>Home</th><th>Margin</th><th>Weight</th></tr></thead>
+                    <thead><tr><th>Version</th><th>Created</th><th>Runs</th><th>K</th><th>Home</th><th>Margin</th><th>Weight</th></tr></thead>
                     <tbody>
                         @foreach (var version in model.Versions.OrderByDescending(version => version.VersionNumber))
                         {
                             <tr>
-                                <td><strong>v@version.VersionNumber</strong></td>
+                                <td><strong>v@(version.VersionNumber)</strong></td>
                                 <td>@FormatDateTime(version.CreatedAtUtc)</td>
+                                <td>@VersionRunCount(version.Id)</td>
                                 <td>@version.Parameters.KFactor</td>
                                 <td>@version.Parameters.HomeAdvantageElo.ToString("0")</td>
                                 <td>@(version.Parameters.UsesMarginAdjustment ? "On" : "Off")</td>
@@ -162,6 +166,14 @@
 
     private ModelLabRunSummaryResponse? LatestCompletedRun => runs.FirstOrDefault(run =>
         run.Status == ModelLabRunStatuses.Completed);
+
+    private string VersionLabel(ModelLabRunSummaryResponse run)
+    {
+        var version = model?.Versions.FirstOrDefault(version => version.Id == run.ModelVersionId);
+        return version is null ? "Saved version" : $"v{version.VersionNumber}";
+    }
+
+    private int VersionRunCount(Guid versionId) => runs.Count(run => run.ModelVersionId == versionId);
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 
@@ -258,6 +270,9 @@
     };
 
     private static string FormatDateTime(DateTime value) => value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    private static string FormatWindow(ModelLabBacktestWindow window)
+        => $"{window.FromUtc.ToLocalTime():yyyy-MM-dd} to {window.ToUtc.ToLocalTime():yyyy-MM-dd}";
 
     private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
     {

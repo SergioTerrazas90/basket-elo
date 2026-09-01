@@ -1,0 +1,109 @@
+@using System.Globalization
+@using BasketElo.Domain.Elo
+
+@if (ChartTeams.Count == 0)
+{
+    <div class="ranking-chart-empty">No ranking data is available for this comparison.</div>
+}
+else
+{
+    <div class="ranking-chart-scroll">
+        <svg class="ranking-chart" viewBox="0 0 920 570" role="img" aria-labelledby="@ChartTitleId @ChartDescriptionId">
+            <title id="@ChartTitleId">Team ranking comparison between models</title>
+            <desc id="@ChartDescriptionId">A slope chart connecting each team's rank across the compared models. Lines moving upward indicate a better rank.</desc>
+
+            @for (var detailIndex = 0; detailIndex < Details.Count; detailIndex++)
+            {
+                var x = ModelX(detailIndex);
+                <line class="ranking-axis" x1="@x" y1="@PlotTop" x2="@x" y2="@PlotBottom" />
+                <foreignObject x="@(x - 80)" y="10" width="160" height="28"><div class="ranking-model-label">@Details[detailIndex].Run.ModelName</div></foreignObject>
+                @foreach (var tick in RankTicks)
+                {
+                    var y = RankY(tick);
+                    <line class="ranking-tick" x1="@(x - 6)" y1="@y" x2="@(x + 6)" y2="@y" />
+                    <foreignObject x="@(x - 20)" y="@(y - 22)" width="40" height="16"><div class="ranking-tick-label">#@tick</div></foreignObject>
+                }
+            }
+
+            @for (var teamIndex = 0; teamIndex < ChartTeams.Count; teamIndex++)
+            {
+                var team = ChartTeams[teamIndex];
+                <g class="ranking-team" style="--team-color: @TeamColor(teamIndex)" tabindex="0">
+                    <title>@TeamTooltip(team)</title>
+                    <polyline class="ranking-team-line" points="@TeamPoints(team)" />
+                    @for (var detailIndex = 0; detailIndex < Details.Count; detailIndex++)
+                    {
+                        var rank = RankFor(Details[detailIndex], team.TeamId);
+                        if (rank.HasValue)
+                        {
+                            <circle class="ranking-team-point" cx="@ModelX(detailIndex)" cy="@RankY(rank.Value)" r="5" />
+                            <foreignObject x="@(ModelX(detailIndex) - 18)" y="@(RankY(rank.Value) - 21)" width="36" height="17"><div class="ranking-point-rank">@rank</div></foreignObject>
+                        }
+                    }
+                    <foreignObject x="0" y="@(RankY(RankFor(Details[0], team.TeamId) ?? MaxRank) - 9)" width="164" height="20"><div class="ranking-team-name is-start">@team.TeamName</div></foreignObject>
+                    <foreignObject x="@(ModelX(Details.Count - 1) + 14)" y="@(RankY(RankFor(Details[^1], team.TeamId) ?? MaxRank) - 9)" width="164" height="20"><div class="ranking-team-name is-end">@team.TeamName</div></foreignObject>
+                </g>
+            }
+        </svg>
+    </div>
+    <p class="ranking-chart-note">Showing the ten teams with the best average rank. Hover or focus a line to follow one team.</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ModelLabRunDetailResponse> Details { get; set; } = [];
+
+    private const double PlotTop = 68;
+    private const double PlotBottom = 520;
+    private string ChartTitleId { get; } = $"ranking-title-{Guid.NewGuid():N}";
+    private string ChartDescriptionId { get; } = $"ranking-description-{Guid.NewGuid():N}";
+
+    private IReadOnlyList<ChartTeam> ChartTeams => Details
+        .SelectMany(detail => detail.Ratings)
+        .GroupBy(row => row.TeamId)
+        .Select(group => new ChartTeam(group.Key, group.First().TeamName, Details.Average(detail => RankFor(detail, group.Key) ?? 999)))
+        .OrderBy(team => team.AverageRank)
+        .ThenBy(team => team.TeamName)
+        .Take(10)
+        .ToList();
+
+    private int MaxRank => Math.Max(10, ChartTeams.SelectMany(team => Details.Select(detail => RankFor(detail, team.TeamId) ?? 10)).DefaultIfEmpty(10).Max());
+    private IReadOnlyList<int> RankTicks => new[] { 1, 5, 10, MaxRank }.Distinct().Order().ToList();
+
+    private double ModelX(int index)
+    {
+        if (Details.Count <= 1) return 460;
+        return 180 + index * (560d / (Details.Count - 1));
+    }
+
+    private double RankY(int rank)
+        => PlotTop + (Math.Clamp(rank, 1, MaxRank) - 1d) / Math.Max(1, MaxRank - 1) * (PlotBottom - PlotTop);
+
+    private string TeamPoints(ChartTeam team)
+        => string.Join(" ", Details.Select((detail, index) =>
+        {
+            var rank = RankFor(detail, team.TeamId) ?? MaxRank;
+            return $"{ModelX(index).ToString("0.##", CultureInfo.InvariantCulture)},{RankY(rank).ToString("0.##", CultureInfo.InvariantCulture)}";
+        }));
+
+    private string TeamTooltip(ChartTeam team)
+        => $"{team.TeamName}: {string.Join(", ", Details.Select(detail => $"{detail.Run.ModelName} #{RankFor(detail, team.TeamId)}"))}";
+
+    private static int? RankFor(ModelLabRunDetailResponse detail, Guid teamId)
+        => detail.Ratings.FirstOrDefault(row => row.TeamId == teamId)?.Rank;
+
+    private static string TeamColor(int index) => index switch
+    {
+        0 => "#1e745f",
+        1 => "#e9782d",
+        2 => "#2d6f9b",
+        3 => "#7456a6",
+        4 => "#b24e39",
+        5 => "#0f4b52",
+        6 => "#8a6d3b",
+        7 => "#4d7e88",
+        8 => "#a24d75",
+        _ => "#657260"
+    };
+
+    private sealed record ChartTeam(Guid TeamId, string TeamName, double AverageRank);
+}

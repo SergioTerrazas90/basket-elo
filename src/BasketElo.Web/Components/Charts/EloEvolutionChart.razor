@@ -6,20 +6,20 @@
     <div class="elo-chart">
         @if (EnableRangeNavigation)
         {
-            <div class="elo-chart-toolbar" aria-label="Chart range controls">
+            <div class="elo-chart-toolbar" aria-label='@T["ChartRangeControls"]'>
                 <div class="elo-chart-controls">
                     <label class="elo-chart-sampling-select">
-                        <span>View</span>
-                        <select aria-label="Chart sampling mode" value="@samplingMode" @onchange="HandleSamplingModeChanged">
-                            <option value="@EloChartSamplingMode.GameByGame">Games</option>
-                            <option value="@EloChartSamplingMode.Weekly">Weeks</option>
-                            <option value="@EloChartSamplingMode.Monthly">Months</option>
+                        <span>@T["View"]</span>
+                        <select aria-label='@T["ChartSamplingMode"]' value="@samplingMode" @onchange="HandleSamplingModeChanged">
+                            <option value="@EloChartSamplingMode.GameByGame">@T["Games"]</option>
+                            <option value="@EloChartSamplingMode.Weekly">@T["Weeks"]</option>
+                            <option value="@EloChartSamplingMode.Monthly">@T["Months"]</option>
                         </select>
                     </label>
                     <div class="elo-chart-range-buttons">
                         @if (HasZoom)
                         {
-                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">Reset zoom</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ShowFullRange">@T["ResetZoom"]</button>
                         }
                         @if (ShowDiagnostics)
                         {
@@ -56,8 +56,8 @@
 
     @if (ShowSeriesControls && EnableRangeNavigation && SourceSeries.Count > 1)
     {
-        <div class="elo-chart-series-controls" aria-label="Chart legend and visibility controls">
-            <span class="elo-chart-series-controls-label">Legend</span>
+        <div class="elo-chart-series-controls" aria-label='@T["ChartLegendControls"]'>
+            <span class="elo-chart-series-controls-label">@T["Legend"]</span>
             <button type="button"
                     class="btn btn-sm btn-outline-secondary"
                     @onclick="ToggleAllSeriesAsync"
@@ -93,7 +93,7 @@
                 <strong>@selectedPoint.Elo.ToString("0") ELO</strong>
                 @if (selectedPoint.EloDelta.HasValue)
                 {
-                    <span>Change @FormatMovement(selectedPoint.EloDelta.Value)</span>
+                    <span>@T["Change"] @FormatMovement(selectedPoint.EloDelta.Value)</span>
                 }
                 @if (ChartCompetitionLabel(selectedPoint) is { } selectedCompetition)
                 {
@@ -101,13 +101,13 @@
                 }
                 @if (ChartResultLabel(selectedPoint) is { } selectedResult)
                 {
-                    <span>Result @selectedResult</span>
+                    <span>@T["Result"] @selectedResult</span>
                 }
                 @if (selectedPoint.Rank.HasValue)
                 {
-                    <span>Rank #@selectedPoint.Rank</span>
+                    <span>@T["Rank"] #@selectedPoint.Rank</span>
                 }
-                <button type="button" class="elo-chart-selection-clear" @onclick="ClearSelection" aria-label="Clear selected chart point">×</button>
+                <button type="button" class="elo-chart-selection-clear" @onclick="ClearSelection" aria-label='@T["ClearSelectedChartPoint"]'>×</button>
             </div>
         }
 
@@ -128,7 +128,7 @@
                     {
                         <div class="elo-chart-comparison-heading">
                             <strong>Radzen / SVG</strong>
-                            <span>Current renderer</span>
+                            <span>@T["CurrentRenderer"]</span>
                         </div>
                     }
                     <RadzenChart @key="samplingMode"
@@ -166,7 +166,7 @@
                                         <span>@point.Elo.ToString("0") ELO</span>
                                         @if (point.EloDelta.HasValue)
                                         {
-                                            <span>Change @FormatMovement(point.EloDelta.Value)</span>
+                                            <span>@T["Change"] @FormatMovement(point.EloDelta.Value)</span>
                                         }
                                         @if (ChartCompetitionLabel(point) is { } competition)
                                         {
@@ -174,11 +174,11 @@
                                         }
                                         @if (ChartResultLabel(point) is { } result)
                                         {
-                                            <span>Result @result</span>
+                                            <span>@T["Result"] @result</span>
                                         }
                                         @if (point.Rank.HasValue)
                                         {
-                                            <span>Rank #@point.Rank</span>
+                                            <span>@T["Rank"] #@point.Rank</span>
                                         }
                                     </div>
                                 </TooltipTemplate>
@@ -222,14 +222,14 @@
                     {
                         <div class="elo-chart-comparison-heading">
                             <strong>Dygraphs / Canvas</strong>
-                            <span>New renderer</span>
+                            <span>@T["NewRenderer"]</span>
                         </div>
                     }
                     <div @ref="chartHost"
                          class="elo-dygraph-chart"
                          style="@ChartStyle"
                          role="img"
-                         aria-label="ELO history chart"></div>
+                         aria-label='@T["EloHistoryChart"]'></div>
                 </section>
             }
         </div>

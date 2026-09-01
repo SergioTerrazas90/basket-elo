@@ -50,7 +50,7 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
         var normalized = NormalizeAndValidate(request);
         var now = DateTime.UtcNow;
 
-        await EnforceCreateLimitsAsync(ownerUserId, entitlement, normalized.LeagueName, cancellationToken);
+        await EnforceCreateLimitsAsync(ownerUserId, entitlement, cancellationToken);
         await EnsureOwnerUserExistsAsync(ownerUserId, now, cancellationToken);
 
         var model = new ModelLabModel
@@ -82,7 +82,6 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
     {
         var normalized = NormalizeAndValidate(request);
         EnforceCanSave(entitlement);
-        EnforceLeagueLimit(entitlement, normalized.LeagueName);
 
         var model = await FindOwnedModel(ownerUserId, modelId)
             .SingleOrDefaultAsync(cancellationToken);
@@ -119,11 +118,9 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
     private async Task EnforceCreateLimitsAsync(
         Guid ownerUserId,
         ModelLabEntitlement entitlement,
-        string leagueName,
         CancellationToken cancellationToken)
     {
         EnforceCanSave(entitlement);
-        EnforceLeagueLimit(entitlement, leagueName);
 
         if (entitlement.SavedModelLimit.HasValue)
         {
@@ -155,20 +152,6 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
             false,
             entitlement.SavedModelLimit,
             entitlement.RequiredLeagueName);
-    }
-
-    private static void EnforceLeagueLimit(ModelLabEntitlement entitlement, string leagueName)
-    {
-        if (!string.IsNullOrWhiteSpace(entitlement.RequiredLeagueName) &&
-            !string.Equals(leagueName, entitlement.RequiredLeagueName, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ModelLabLimitException(
-                "free_league_restricted",
-                $"Free users can save models for {entitlement.RequiredLeagueName} only.",
-                true,
-                entitlement.SavedModelLimit,
-                entitlement.RequiredLeagueName);
-        }
     }
 
     public async Task<ModelLabModelDetailResponse?> SetArchivedAsync(
@@ -243,12 +226,7 @@ public sealed class ModelLabModelService(BasketEloDbContext dbContext) : IModelL
             throw new ArgumentException($"Model description must be {MaxDescriptionLength} characters or fewer.");
         }
 
-        var leagueName = request.LeagueName.Trim();
-        if (string.IsNullOrWhiteSpace(leagueName))
-        {
-            throw new ArgumentException("Choose a league before saving a model.");
-        }
-
+        var leagueName = request.LeagueName?.Trim() ?? string.Empty;
         if (leagueName.Length > 200)
         {
             throw new ArgumentException("League name must be 200 characters or fewer.");

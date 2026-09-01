@@ -3,35 +3,35 @@
 @using BasketElo.Domain.Elo
 @using BasketElo.Infrastructure.Backfill
 
-<SeoHead Title="Basketball Results Data Sources & Coverage | BasketElo"
-         Description="See the official archives, historical databases, competitions, and seasons used to build BasketElo's NBA, European club, and national-team basketball ratings."
+<SeoHead Title='@T["SourcesSeoTitle"]'
+         Description='@T["SourcesSeoDescription"]'
          CanonicalPath="/data-sources"
          SchemaType="Dataset" />
 
 <div class="data-sources-page info-page">
     <header class="info-hero be-reveal" style="--reveal-order: 0">
         <div class="info-hero-copy">
-            <p class="info-kicker">Sources</p>
-            <h1>Basketball results data sources and coverage.</h1>
-            <p class="info-lede">Browse the archives and data services behind the ratings, with the seasons currently accounted for in each competition.</p>
+            <p class="info-kicker">@T["Sources"]</p>
+            <h1>@T["SourcesHeroTitle"]</h1>
+            <p class="info-lede">@T["SourcesHeroText"]</p>
         </div>
-        <dl class="info-facts" aria-label="Catalog summary">
-            <div><dt>FIBA competitions</dt><dd>@FibaCompetitionCount</dd></div>
-            <div><dt>Club &amp; domestic</dt><dd>@ClubCompetitionCount</dd></div>
-            <div><dt>Source paths</dt><dd>@SourceCount</dd></div>
+        <dl class="info-facts" aria-label='@T["CatalogSummary"]'>
+            <div><dt>@T["FibaCompetitions"]</dt><dd>@FibaCompetitionCount</dd></div>
+            <div><dt>@T["ClubAndDomestic"]</dt><dd>@ClubCompetitionCount</dd></div>
+            <div><dt>@T["SourcePaths"]</dt><dd>@SourceCount</dd></div>
         </dl>
     </header>
 
-    <aside class="info-note be-reveal" style="--reveal-order: 1" aria-label="Coverage note">
-        <strong>Coverage is not the same as completeness.</strong>
-        <span>A listed season means it is part of the ingestion catalog. Provider warnings, source gaps, and partial seasons remain recorded in the ingestion run history.</span>
+    <aside class="info-note be-reveal" style="--reveal-order: 1" aria-label='@T["CoverageNote"]'>
+        <strong>@T["CoverageNotCompleteness"]</strong>
+        <span>@T["CoverageNoteText"]</span>
     </aside>
 
     <details class="source-catalog-group fiba-catalog be-reveal" style="--reveal-order: 2" open>
         <summary class="source-catalog-summary">
-            <span class="info-kicker">International</span>
-            <span><strong>FIBA competitions</strong><small>World tournaments and continental national teams</small></span>
-            <span class="source-catalog-count">@FibaCompetitionCount competitions</span>
+            <span class="info-kicker">@T["International"]</span>
+            <span><strong>@T["FibaCompetitions"]</strong><small>@T["WorldAndContinentalTeams"]</small></span>
+            <span class="source-catalog-count">@FibaCompetitionCount @T["CompetitionsLower"]</span>
             <span class="source-catalog-toggle" aria-hidden="true"></span>
         </summary>
 
@@ -42,7 +42,7 @@
                 <article class="fiba-region-card" id="fiba-@region.Slug">
                     <header>
                         <span class="source-region-index">@((regionIndex + 1).ToString("00"))</span>
-                        <div><h3>@region.Name</h3><p>@RegionDescription(region.Name)</p></div>
+                        <div><h3>@RegionLabel(region.Name)</h3><p>@RegionDescription(region.Name)</p></div>
                         <span>@region.Leagues.Count</span>
                     </header>
                     <div class="fiba-competition-list">
@@ -62,7 +62,7 @@
                                                 <span>@source.CoverageLabel</span>
                                             </div>
                                             <div class="data-source-seasons">
-                                                <span class="data-source-label">Seasons accounted for</span>
+                                                <span class="data-source-label">@T["SeasonsAccountedFor"]</span>
                                                 <p>@string.Join(", ", source.Seasons)</p>
                                             </div>
                                         </div>
@@ -78,9 +78,9 @@
 
     <details class="source-catalog-group data-source-list be-reveal" style="--reveal-order: 3">
         <summary class="source-catalog-summary">
-            <span class="info-kicker">Club basketball</span>
-            <span><strong>Club and domestic sources</strong><small>European clubs, domestic competitions, regional leagues, and the NBA</small></span>
-            <span class="source-catalog-count">@ClubCompetitionCount competitions</span>
+            <span class="info-kicker">@T["ClubBasketball"]</span>
+            <span><strong>@T["ClubAndDomesticSources"]</strong><small>@T["ClubSourcesDescription"]</small></span>
+            <span class="source-catalog-count">@ClubCompetitionCount @T["CompetitionsLower"]</span>
             <span class="source-catalog-toggle" aria-hidden="true"></span>
         </summary>
 
@@ -91,8 +91,8 @@
                 <details class="data-source-region">
                 <summary id="club-@region.Slug">
                     <span class="source-region-index">@((regionIndex + 1).ToString("00"))</span>
-                    <strong>@region.Name</strong>
-                    <span>@region.Leagues.Count @((region.Leagues.Count == 1) ? "competition" : "competitions")</span>
+                    <strong>@RegionLabel(region.Name)</strong>
+                    <span>@region.Leagues.Count @(region.Leagues.Count == 1 ? T["CompetitionLower"] : T["CompetitionsLower"])</span>
                     <span class="source-region-toggle" aria-hidden="true"></span>
                 </summary>
                 <div class="data-source-region-list">
@@ -113,7 +113,7 @@
                                             <span>@source.CoverageLabel</span>
                                         </div>
                                         <div class="data-source-seasons">
-                                            <span class="data-source-label">Seasons accounted for</span>
+                                            <span class="data-source-label">@T["SeasonsAccountedFor"]</span>
                                             <p>@string.Join(", ", source.Seasons)</p>
                                         </div>
                                     </div>
@@ -193,16 +193,29 @@
             _ => 10
         };
 
-    private static string RegionDescription(string region)
+    private string RegionDescription(string region)
         => region switch
         {
-            "World" => "World Cup & Olympics",
+            "World" => T["WorldCupAndOlympics"],
             "Africa" => "AfroBasket",
             "Americas" => "AmeriCup",
             "Asia" => "Asia Cup",
             "Europe" => "EuroBasket",
-            "Oceania" => "Oceania Championship",
-            _ => "National teams"
+            "Oceania" => T["OceaniaChampionship"],
+            _ => T["NationalTeams"]
+        };
+
+    private string RegionLabel(string region)
+        => region switch
+        {
+            "World" => T["World"],
+            "Africa" => T["Africa"],
+            "Americas" => T["Americas"],
+            "Asia" => T["Asia"],
+            "Europe" => T["Europe"],
+            "Oceania" => T["Oceania"],
+            "United States" => T["UnitedStates"],
+            _ => region
         };
 
     private static string SeasonLabel(string season)
@@ -211,12 +224,12 @@
     private static int SeasonSortKey(string season)
         => SeasonLabelNormalizer.ParseStartYear(season);
 
-    private static string PoolLabel(string pool)
+    private string PoolLabel(string pool)
         => pool switch
         {
             EloPoolKeys.Nba => "NBA",
-            EloPoolKeys.NationalTeams => "National teams",
-            _ => "Europe clubs"
+            EloPoolKeys.NationalTeams => T["NationalTeams"],
+            _ => T["EuropeClubs"]
         };
 
     private static string NormalizeCountry(string country)
@@ -225,14 +238,14 @@
             ? "United States"
             : country;
 
-    private static string CoverageLabel(ConfiguredBackfillLeague league)
+    private string CoverageLabel(ConfiguredBackfillLeague league)
         => league.Provider switch
         {
-            FiveThirtyEightBasketballDataProvider.Source => "Pinned archive · CC BY 4.0",
-            ApiSportsBasketballDataProvider.Source => "Live and historical basketball feed",
-            FibaBasketballDataProvider.Source => "Official competition history",
-            GlobalSportsArchiveBasketballDataProvider.Source => "Historical results archive",
-            _ => "Historical results archive"
+            FiveThirtyEightBasketballDataProvider.Source => T["PinnedArchive"],
+            ApiSportsBasketballDataProvider.Source => T["LiveHistoricalFeed"],
+            FibaBasketballDataProvider.Source => T["OfficialCompetitionHistory"],
+            GlobalSportsArchiveBasketballDataProvider.Source => T["HistoricalResultsArchive"],
+            _ => T["HistoricalResultsArchive"]
         };
 
     private static string SourceName(string provider)

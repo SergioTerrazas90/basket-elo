@@ -1,4 +1,4 @@
-:8081 {
+basketelo.com, www.basketelo.com {
     encode zstd gzip
 
     header {

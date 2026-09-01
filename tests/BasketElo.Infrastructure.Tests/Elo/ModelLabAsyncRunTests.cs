@@ -139,6 +139,70 @@ public class ModelLabAsyncRunTests
     }
 
     [Fact]
+    public async Task LatestCompatibleComparisonRequiresExactModelsAndCurrentVersions()
+    {
+        await using var dbContext = CreateContext();
+        var (ownerId, firstModel, firstVersion) = await SeedModelAsync(dbContext);
+        var secondModel = new ModelLabModel { OwnerUserId = ownerId, Name = "Second model", LeagueName = "" };
+        var secondVersion = new ModelLabModelVersion
+        {
+            Model = secondModel,
+            VersionNumber = 1,
+            BaseRating = 1500m,
+            KFactor = 25,
+            HomeAdvantageElo = 90m,
+            ProbabilityScale = 400m,
+            UsesMarginAdjustment = true,
+            PointsPerEloMargin = 20m,
+            CompetitionWeight = 1m
+        };
+        secondModel.Versions.Add(secondVersion);
+        dbContext.ModelLabModels.Add(secondModel);
+        await dbContext.SaveChangesAsync();
+
+        var comparisonGroupId = Guid.NewGuid();
+        var firstRun = CompletedRun(ownerId, firstModel.Id, firstVersion.Id, firstModel.Name);
+        var secondRun = CompletedRun(ownerId, secondModel.Id, secondVersion.Id, secondModel.Name);
+        firstRun.ComparisonGroupId = comparisonGroupId;
+        secondRun.ComparisonGroupId = comparisonGroupId;
+        dbContext.ModelLabRuns.AddRange(firstRun, secondRun);
+        await dbContext.SaveChangesAsync();
+        var service = new ModelLabRunService(dbContext, new FakeBacktestService(), new RecordingDispatcher());
+
+        var compatible = await service.GetLatestCompatibleComparisonAsync(
+            ownerId,
+            [firstModel.Id, secondModel.Id],
+            CancellationToken.None);
+
+        Assert.NotNull(compatible);
+        Assert.Equal(comparisonGroupId, compatible.ComparisonGroupId);
+        Assert.Equal(2, compatible.Runs.Count);
+        var available = await service.ListCompatibleComparisonsAsync(ownerId, 6, CancellationToken.None);
+        Assert.Equal(comparisonGroupId, Assert.Single(available).ComparisonGroupId);
+
+        dbContext.ChangeTracker.Clear();
+        dbContext.ModelLabModelVersions.Add(new ModelLabModelVersion
+        {
+            ModelId = firstModel.Id,
+            VersionNumber = 2,
+            BaseRating = 1500m,
+            KFactor = 30,
+            HomeAdvantageElo = 100m,
+            ProbabilityScale = 400m,
+            UsesMarginAdjustment = true,
+            PointsPerEloMargin = 20m,
+            CompetitionWeight = 1m
+        });
+        await dbContext.SaveChangesAsync();
+
+        Assert.Null(await service.GetLatestCompatibleComparisonAsync(
+            ownerId,
+            [firstModel.Id, secondModel.Id],
+            CancellationToken.None));
+        Assert.Empty(await service.ListCompatibleComparisonsAsync(ownerId, 6, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task CancelQueuedRunFreesActiveSlotAndPreventsActiveDelete()
     {
         await using var dbContext = CreateContext();
@@ -331,6 +395,7 @@ public class ModelLabAsyncRunTests
                 [],
                 [],
                 [],
+                response.Ratings,
                 response.Ratings,
                 [evolution]));
         }

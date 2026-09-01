@@ -17,6 +17,19 @@ public sealed class ModelLabRunJobProcessor(
 {
     public async Task<bool> TryProcessNextPendingJobAsync(CancellationToken cancellationToken)
     {
+        // Model Lab backtests share the historical ELO pipeline. Keep one job in flight
+        // at a time so comparison batches are orchestrated instead of competing for it.
+        var hasInFlightJob = await dbContext.ModelLabRuns
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.Status == ModelLabRunStatuses.Running ||
+                (x.Status == ModelLabRunStatuses.Queued && x.HangfireJobId != null),
+                cancellationToken);
+        if (hasInFlightJob)
+        {
+            return false;
+        }
+
         var runId = await dbContext.ModelLabRuns
             .Where(x => x.Status == ModelLabRunStatuses.Queued && x.HangfireJobId == null)
             .OrderBy(x => x.CreatedAtUtc)

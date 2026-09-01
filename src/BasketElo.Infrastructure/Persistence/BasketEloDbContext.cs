@@ -51,6 +51,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.Email).HasMaxLength(320).IsRequired();
             entity.Property(x => x.NormalizedEmail).HasMaxLength(320).IsRequired();
             entity.Property(x => x.AvatarUrl).HasMaxLength(1000);
+            entity.Property(x => x.PreferredCulture).HasMaxLength(20);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.Property(x => x.LastLoginAtUtc).IsRequired();
             entity.HasIndex(x => x.NormalizedEmail).IsUnique();
@@ -199,7 +200,9 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasIndex(x => new { x.IsRetained, x.ExpiresAtUtc });
             entity.HasIndex(x => x.OwnerUserId)
                 .IsUnique()
-                .HasFilter("\"Status\" IN ('queued', 'running')");
+                .HasFilter("\"Status\" IN ('queued', 'running') AND \"ComparisonGroupId\" IS NULL");
+            entity.HasIndex(x => new { x.OwnerUserId, x.ComparisonGroupId })
+                .HasFilter("\"Status\" IN ('queued', 'running') AND \"ComparisonGroupId\" IS NOT NULL");
             entity.HasIndex(x => new { x.OwnerUserId, x.EloPoolKey, x.CreatedAtUtc });
             entity.HasIndex(x => new { x.ModelId, x.CreatedAtUtc });
             entity.HasIndex(x => x.ModelVersionId);
@@ -272,6 +275,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.TeamName).HasMaxLength(200).IsRequired();
             entity.Property(x => x.Elo).HasPrecision(10, 2).IsRequired();
             entity.Property(x => x.RecentMovement).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.BaselineElo).HasPrecision(10, 2);
             entity.HasOne(x => x.Run)
                 .WithMany(x => x.Ratings)
                 .HasForeignKey(x => x.RunId)

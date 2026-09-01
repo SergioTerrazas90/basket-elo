@@ -1,7 +1,7 @@
 @using System.Globalization
 @using BasketElo.Domain.Elo
 
-@if (IsOpen || isDismissShieldVisible)
+@if (IsOpen)
 {
     <div class="game-elo-explainer-backdrop"
          aria-hidden="true"
@@ -14,7 +14,7 @@
     <section class="game-elo-explainer" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="game-elo-explainer-title">
         <div class="explainer-head">
             <div>
-                <p class="eyebrow">ELO explainer</p>
+                <p class="eyebrow">@T["EloExplainer"]</p>
                 <h3 id="game-elo-explainer-title">@Title</h3>
                 @if (Explanation is not null)
                 {
@@ -25,12 +25,12 @@
                     class="btn btn-sm btn-outline-secondary"
                     @onclick="CloseAsync"
                     @onclick:preventDefault="true"
-                    @onclick:stopPropagation="true">Close</button>
+                    @onclick:stopPropagation="true">@T["Close"]</button>
         </div>
 
         @if (IsLoading)
         {
-            <div class="explainer-state">Loading ELO explanation...</div>
+            <div class="explainer-state">@T["LoadingEloExplanation"]</div>
         }
         else if (!string.IsNullOrWhiteSpace(ErrorMessage))
         {
@@ -49,36 +49,36 @@
             </div>
 
             <div class="explainer-grid">
-                <TeamExplanationCard Label="Home" Team="Explanation.Home" />
-                <TeamExplanationCard Label="Away" Team="Explanation.Away" />
+                <TeamExplanationCard Label='@T["Home"]' Team="Explanation.Home" />
+                <TeamExplanationCard Label='@T["Away"]' Team="Explanation.Away" />
             </div>
 
             <dl class="ruleset-facts">
                 <div>
-                    <dt>Ruleset</dt>
+                    <dt>@T["Ruleset"]</dt>
                     <dd>@Explanation.RulesetVersion</dd>
                 </div>
                 <div>
-                    <dt>K factor</dt>
+                    <dt>@T["KFactor"]</dt>
                     <dd>@Explanation.Ruleset.KFactor</dd>
                 </div>
                 <div>
-                    <dt>Home advantage</dt>
+                    <dt>@T["HomeAdvantage"]</dt>
                     <dd>@Explanation.Ruleset.HomeAdvantageElo.ToString("0") ELO</dd>
                 </div>
                 <div>
-                    <dt>Margin adjustment</dt>
-                    <dd>@(Explanation.Ruleset.UsesMarginAdjustment ? "On" : "Off")</dd>
+                    <dt>@T["MarginAdjustment"]</dt>
+                    <dd>@(Explanation.Ruleset.UsesMarginAdjustment ? T["On"] : T["Off"])</dd>
                 </div>
                 @if (Explanation.Ruleset.PointsPerEloMargin.HasValue)
                 {
                     <div>
-                        <dt>Point margin scale</dt>
-                        <dd>@Explanation.Ruleset.PointsPerEloMargin.Value.ToString("0") ELO / point</dd>
+                        <dt>@T["PointMarginScale"]</dt>
+                        <dd>@Explanation.Ruleset.PointsPerEloMargin.Value.ToString("0") ELO / @T["Point"]</dd>
                     </div>
                 }
                 <div>
-                    <dt>Competition weight</dt>
+                    <dt>@T["CompetitionWeight"]</dt>
                     <dd>@Explanation.Ruleset.CompetitionWeight.ToString("0.##")x</dd>
                 </div>
             </dl>
@@ -99,28 +99,18 @@
     [Parameter]
     public EventCallback OnClose { get; set; }
 
-    private bool isDismissShieldVisible;
-
     private bool IsOpen
         => IsLoading || !string.IsNullOrWhiteSpace(ErrorMessage) || Explanation is not null;
 
     private async Task CloseAsync()
     {
-        isDismissShieldVisible = true;
         await OnClose.InvokeAsync();
-        await InvokeAsync(StateHasChanged);
-
-        // Keep the page shielded until the pointer sequence that closed the
-        // dialog is fully complete, preventing click-through navigation.
-        await Task.Delay(400);
-        isDismissShieldVisible = false;
-        await InvokeAsync(StateHasChanged);
     }
 
     private string Title
         => Explanation is null
-            ? "Game rating impact"
-            : $"{Explanation.HomeTeam} vs {Explanation.AwayTeam}";
+            ? T["GameRatingImpact"]
+            : $"{Explanation.HomeTeam} {T["Versus"]} {Explanation.AwayTeam}";
 
     private static string FormatScore(EloGameExplanationResponse explanation)
         => explanation.HomeScore.HasValue && explanation.AwayScore.HasValue

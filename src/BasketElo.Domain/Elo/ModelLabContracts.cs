@@ -143,7 +143,27 @@ public sealed record CreateModelLabRunRequest(
     DateTime ScoredToUtc,
     string ScopeType = ModelLabScopeTypes.SingleCompetition,
     IReadOnlyCollection<Guid>? CompetitionIds = null,
-    string? EloPoolKey = null);
+    string? EloPoolKey = null,
+    string? LeagueName = null);
+
+public sealed record CreateModelLabComparisonRequest(
+    IReadOnlyCollection<Guid> ModelIds,
+    DateTime InitializationFromUtc,
+    DateTime InitializationToUtc,
+    DateTime ScoredFromUtc,
+    DateTime ScoredToUtc,
+    string ScopeType = ModelLabScopeTypes.SingleCompetition,
+    IReadOnlyCollection<Guid>? CompetitionIds = null,
+    string? EloPoolKey = null,
+    string? LeagueName = null);
+
+public sealed record ModelLabComparisonCreateResponse(
+    IReadOnlyCollection<ModelLabRunCreateResponse> Runs);
+
+public sealed record ModelLabSavedComparisonResponse(
+    Guid ComparisonGroupId,
+    DateTime CompletedAtUtc,
+    IReadOnlyCollection<ModelLabRunSummaryResponse> Runs);
 
 public sealed record ModelLabRunCreateResponse(
     Guid RunId,
@@ -233,7 +253,9 @@ public sealed record ModelLabRatingRow(
     string TeamName,
     decimal Elo,
     int GamesPlayed,
-    decimal RecentMovement);
+    decimal RecentMovement,
+    int? BaselineRank = null,
+    decimal? BaselineElo = null);
 
 public sealed record ModelLabPredictionRow(
     Guid GameId,

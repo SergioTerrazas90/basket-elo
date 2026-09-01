@@ -98,4 +98,4 @@ if ($LASTEXITCODE -ne 0) {
     throw "Remote restart or status check failed."
 }
 
-Write-Host "Deployment completed. Open http://${VpsHost}:8081/"
+Write-Host "Deployment completed. Open https://basketelo.com/"

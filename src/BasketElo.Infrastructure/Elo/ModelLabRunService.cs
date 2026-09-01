@@ -22,6 +22,141 @@ public sealed class ModelLabRunService(
         ModelLabEntitlement entitlement,
         CreateModelLabRunRequest request,
         CancellationToken cancellationToken)
+        => await CreateAsyncCore(ownerUserId, entitlement, request, enforceActiveLimit: true, comparisonGroupId: null, cancellationToken: cancellationToken);
+
+    public async Task<ModelLabComparisonCreateResponse> CreateComparisonAsync(
+        Guid ownerUserId,
+        ModelLabEntitlement entitlement,
+        CreateModelLabComparisonRequest request,
+        CancellationToken cancellationToken)
+    {
+        var modelIds = request.ModelIds?.Distinct().Take(3).ToList() ?? [];
+        if (modelIds.Count < 2)
+        {
+            throw new ArgumentException("Select at least two models to compare.");
+        }
+
+        var selectedModels = await dbContext.ModelLabModels
+            .AsNoTracking()
+            .Where(x => modelIds.Contains(x.Id) && x.OwnerUserId == ownerUserId && !x.IsArchived)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+        if (selectedModels.Count != modelIds.Count)
+        {
+            throw new ArgumentException("One or more selected models could not be found or are archived.");
+        }
+
+        await EnforceStoredRunLimitAsync(ownerUserId, entitlement, cancellationToken, modelIds.Count);
+
+        if (await HasActiveRunAsync(ownerUserId, null, cancellationToken))
+        {
+            throw ActiveRunLimitException(entitlement);
+        }
+
+        var comparisonGroupId = Guid.NewGuid();
+
+        var results = new List<ModelLabRunCreateResponse>(modelIds.Count);
+        foreach (var modelId in modelIds)
+        {
+            var run = await CreateAsyncCore(
+                ownerUserId,
+                entitlement,
+                new CreateModelLabRunRequest(
+                    modelId,
+                    null,
+                    request.InitializationFromUtc,
+                    request.InitializationToUtc,
+                    request.ScoredFromUtc,
+                    request.ScoredToUtc,
+                    request.ScopeType,
+                    request.CompetitionIds,
+                    request.EloPoolKey,
+                    request.LeagueName),
+                enforceActiveLimit: false,
+                comparisonGroupId: comparisonGroupId,
+                cancellationToken: cancellationToken);
+
+            if (run is null)
+            {
+                throw new ArgumentException("One or more selected models could not be found.");
+            }
+
+            results.Add(run);
+        }
+
+        return new ModelLabComparisonCreateResponse(results);
+    }
+
+    public async Task<ModelLabSavedComparisonResponse?> GetLatestCompatibleComparisonAsync(
+        Guid ownerUserId,
+        IReadOnlyCollection<Guid> modelIds,
+        CancellationToken cancellationToken)
+    {
+        var selectedModelIds = modelIds.Distinct().Take(3).ToHashSet();
+        if (selectedModelIds.Count < 2)
+        {
+            return null;
+        }
+
+        var comparisons = await ListCompatibleComparisonsAsync(ownerUserId, MaxRunsReturned, cancellationToken);
+        return comparisons.FirstOrDefault(comparison =>
+            comparison.Runs.Select(run => run.ModelId).ToHashSet().SetEquals(selectedModelIds));
+    }
+
+    public async Task<IReadOnlyCollection<ModelLabSavedComparisonResponse>> ListCompatibleComparisonsAsync(
+        Guid ownerUserId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var pageSize = Math.Clamp(take, 1, 50);
+
+        var versions = await dbContext.ModelLabModelVersions
+            .AsNoTracking()
+            .Where(version => version.Model.OwnerUserId == ownerUserId && !version.Model.IsArchived)
+            .Select(version => new { version.ModelId, version.Id, version.VersionNumber })
+            .ToListAsync(cancellationToken);
+        var currentVersionByModel = versions
+            .GroupBy(version => version.ModelId)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(version => version.VersionNumber).First().Id);
+        if (currentVersionByModel.Count < 2)
+        {
+            return [];
+        }
+
+        var recentComparisonRuns = await dbContext.ModelLabRuns
+            .AsNoTracking()
+            .Where(run => run.OwnerUserId == ownerUserId &&
+                          run.ComparisonGroupId.HasValue &&
+                          run.Status == ModelLabRunStatuses.Completed)
+            .OrderByDescending(run => run.CompletedAtUtc)
+            .Take(MaxRunsReturned * 3)
+            .ToListAsync(cancellationToken);
+
+        return recentComparisonRuns
+            .GroupBy(run => run.ComparisonGroupId!.Value)
+            .Where(group => group.Count() is >= 2 and <= 3 &&
+                            group.Select(run => run.ModelId).Distinct().Count() == group.Count() &&
+                            group.All(run => currentVersionByModel.TryGetValue(run.ModelId, out var currentVersionId) && currentVersionId == run.ModelVersionId))
+            .OrderByDescending(group => group.Max(run => run.CompletedAtUtc ?? run.CreatedAtUtc))
+            .Take(pageSize)
+            .Select(group =>
+            {
+                var orderedRuns = group.OrderBy(run => run.ModelName).ToList();
+                return new ModelLabSavedComparisonResponse(
+                    group.Key,
+                    orderedRuns.Max(run => run.CompletedAtUtc ?? run.CreatedAtUtc),
+                    orderedRuns.Select(run => ToSummaryResponse(run, null)).ToList());
+            })
+            .ToList();
+    }
+
+    private async Task<ModelLabRunCreateResponse?> CreateAsyncCore(
+        Guid ownerUserId,
+        ModelLabEntitlement entitlement,
+        CreateModelLabRunRequest request,
+        bool enforceActiveLimit,
+        Guid? comparisonGroupId,
+        CancellationToken cancellationToken)
     {
         var model = await dbContext.ModelLabModels
             .Include(x => x.Versions)
@@ -46,12 +181,23 @@ public sealed class ModelLabRunService(
             throw new ArgumentException("The selected model version does not exist.");
         }
 
-        var scopeType = NormalizeScopeType(request.ScopeType);
-        EnforceScopeLimit(entitlement, model.LeagueName, scopeType);
-        await EnforceStoredRunLimitAsync(ownerUserId, entitlement, cancellationToken);
-        await EnforceSingleActiveRunAsync(ownerUserId, entitlement, cancellationToken);
+        var runLeagueName = string.IsNullOrWhiteSpace(request.LeagueName)
+            ? model.LeagueName
+            : request.LeagueName.Trim();
+        if (string.IsNullOrWhiteSpace(runLeagueName))
+        {
+            throw new ArgumentException("Choose a competition in the run configuration before running the model.");
+        }
 
-        var poolKey = await ResolvePoolKeyAsync(model.LeagueName, request, cancellationToken);
+        var scopeType = NormalizeScopeType(request.ScopeType);
+        EnforceScopeLimit(entitlement, runLeagueName, scopeType);
+        await EnforceStoredRunLimitAsync(ownerUserId, entitlement, cancellationToken);
+        if (enforceActiveLimit)
+        {
+            await EnforceSingleActiveRunAsync(ownerUserId, entitlement, cancellationToken);
+        }
+
+        var poolKey = await ResolvePoolKeyAsync(runLeagueName, request, cancellationToken);
         var now = DateTime.UtcNow;
         var run = new ModelLabRun
         {
@@ -59,10 +205,11 @@ public sealed class ModelLabRunService(
             ModelId = model.Id,
             ModelVersionId = version.Id,
             ModelName = model.Name,
-            LeagueName = model.LeagueName,
+            LeagueName = runLeagueName,
             EloPoolKey = poolKey,
             ScopeType = scopeType,
             Status = ModelLabRunStatuses.Queued,
+            ComparisonGroupId = comparisonGroupId,
             RequestCompetitionIdsJson = JsonSerializer.Serialize(request.CompetitionIds ?? []),
             ProgressPercent = 0,
             ProgressStage = "Waiting for a worker",
@@ -194,8 +341,10 @@ public sealed class ModelLabRunService(
             });
         }
 
+        var baselineRatingsByTeam = execution.BaselineRatings.ToDictionary(x => x.TeamId);
         foreach (var rating in execution.Ratings)
         {
+            baselineRatingsByTeam.TryGetValue(rating.TeamId, out var baselineRating);
             run.Ratings.Add(new ModelLabRunRating
             {
                 OwnerUserId = run.OwnerUserId,
@@ -204,7 +353,9 @@ public sealed class ModelLabRunService(
                 TeamName = rating.TeamName,
                 Elo = rating.Elo,
                 GamesPlayed = rating.GamesPlayed,
-                RecentMovement = rating.RecentMovement
+                RecentMovement = rating.RecentMovement,
+                BaselineRank = baselineRating?.Rank,
+                BaselineElo = baselineRating?.Elo
             });
         }
 
@@ -355,7 +506,9 @@ public sealed class ModelLabRunService(
                 x.TeamName,
                 x.Elo,
                 x.GamesPlayed,
-                x.RecentMovement))
+                x.RecentMovement,
+                x.BaselineRank,
+                x.BaselineElo))
             .ToListAsync(cancellationToken);
 
         var biggestMisses = await dbContext.ModelLabRunPredictions
@@ -743,7 +896,8 @@ public sealed class ModelLabRunService(
     private async Task EnforceStoredRunLimitAsync(
         Guid ownerUserId,
         ModelLabEntitlement entitlement,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int additionalRuns = 0)
     {
         if (!entitlement.StoredRunLimit.HasValue)
         {
@@ -752,14 +906,17 @@ public sealed class ModelLabRunService(
 
         var runCount = await CountRunsAsync(ownerUserId, cancellationToken);
 
-        if (runCount < entitlement.StoredRunLimit.Value)
+        var withinLimit = additionalRuns > 0
+            ? runCount + additionalRuns <= entitlement.StoredRunLimit.Value
+            : runCount < entitlement.StoredRunLimit.Value;
+        if (withinLimit)
         {
             return;
         }
 
         var message = entitlement.IsPaid
             ? $"Paid users can store up to {entitlement.StoredRunLimit.Value} Model Lab runs. Delete an old run before saving another."
-            : $"Free users can store one Model Lab run. Delete your existing run or upgrade for up to 100 saved runs.";
+            : $"Free users can store up to {entitlement.StoredRunLimit.Value} Model Lab runs. Delete an old run before starting another comparison.";
 
         throw new ModelLabLimitException(
             "stored_run_limit_reached",

@@ -347,6 +347,68 @@ public sealed class ModelLabController(
         }
     }
 
+    [HttpPost("comparisons")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabComparisonCreateResponse>> CreateComparison(
+        [FromBody] CreateModelLabComparisonRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        try
+        {
+            var ownerUserId = GetCurrentUserId();
+            var entitlement = await entitlementService.GetAsync(ownerUserId, cancellationToken);
+            return Accepted(await runService.CreateComparisonAsync(ownerUserId, entitlement, request, cancellationToken));
+        }
+        catch (ModelLabLimitException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("comparisons/latest")]
+    [RequireInternalUser]
+    public async Task<ActionResult<ModelLabSavedComparisonResponse>> GetLatestCompatibleComparison(
+        [FromQuery] Guid[] modelIds,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        var comparison = await runService.GetLatestCompatibleComparisonAsync(
+            GetCurrentUserId(),
+            modelIds,
+            cancellationToken);
+        return comparison is null ? NotFound() : Ok(comparison);
+    }
+
+    [HttpGet("comparisons")]
+    [RequireInternalUser]
+    public async Task<ActionResult<IReadOnlyCollection<ModelLabSavedComparisonResponse>>> ListCompatibleComparisons(
+        [FromQuery] int take,
+        CancellationToken cancellationToken)
+    {
+        if (!TryRequireRealUser(out var loginResult))
+        {
+            return loginResult;
+        }
+
+        return Ok(await runService.ListCompatibleComparisonsAsync(
+            GetCurrentUserId(),
+            take <= 0 ? 6 : take,
+            cancellationToken));
+    }
+
     [HttpPost("backtests")]
     public async Task<ActionResult<ModelLabBacktestResponse>> RunBacktest(
         [FromBody] ModelLabBacktestRequest request,

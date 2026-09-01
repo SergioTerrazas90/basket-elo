@@ -431,10 +431,6 @@ label,
     transform: translateY(0);
 }
 
-.content > :first-child {
-    animation: be-page-enter var(--motion-enter) both;
-}
-
 .be-story {
     display: grid;
     width: min(100%, 1220px);
@@ -841,16 +837,6 @@ label,
 .be-reveal {
     animation: be-content-rise var(--motion-enter) both;
     animation-delay: calc(var(--reveal-order, 0) * 70ms);
-}
-
-@keyframes be-page-enter {
-    from {
-        opacity: 0;
-    }
-
-    to {
-        opacity: 1;
-    }
 }
 
 @keyframes be-content-rise {

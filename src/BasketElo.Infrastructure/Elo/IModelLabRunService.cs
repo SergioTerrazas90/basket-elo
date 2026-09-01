@@ -10,6 +10,22 @@ public interface IModelLabRunService
         CreateModelLabRunRequest request,
         CancellationToken cancellationToken);
 
+    Task<ModelLabComparisonCreateResponse> CreateComparisonAsync(
+        Guid ownerUserId,
+        ModelLabEntitlement entitlement,
+        CreateModelLabComparisonRequest request,
+        CancellationToken cancellationToken);
+
+    Task<ModelLabSavedComparisonResponse?> GetLatestCompatibleComparisonAsync(
+        Guid ownerUserId,
+        IReadOnlyCollection<Guid> modelIds,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<ModelLabSavedComparisonResponse>> ListCompatibleComparisonsAsync(
+        Guid ownerUserId,
+        int take,
+        CancellationToken cancellationToken);
+
     Task ExecuteAsync(Guid runId, CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<ModelLabRunSummaryResponse>> ListAsync(

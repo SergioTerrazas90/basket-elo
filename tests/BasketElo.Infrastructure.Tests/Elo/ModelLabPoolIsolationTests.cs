@@ -99,7 +99,7 @@ public class ModelLabPoolIsolationTests
     }
 
     [Fact]
-    public async Task OptionsExposeCompetitionPoolKeys()
+    public async Task OptionsExposeCompetitionPoolKeysAndNormalizeSeasonLabels()
     {
         await using var dbContext = new BasketEloDbContext(
             new DbContextOptionsBuilder<BasketEloDbContext>()
@@ -109,7 +109,23 @@ public class ModelLabPoolIsolationTests
         var home = Team("Home");
         var away = Team("Away");
         var season = Season(nba);
-        dbContext.AddRange(nba, home, away, season, Game(nba, season, home, away, "nba-1"));
+        var legacySeason = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = nba.Id,
+            Competition = nba,
+            Label = "2024",
+            StartDateUtc = season.StartDateUtc,
+            EndDateUtc = season.EndDateUtc
+        };
+        dbContext.AddRange(
+            nba,
+            home,
+            away,
+            season,
+            legacySeason,
+            Game(nba, season, home, away, "nba-1"),
+            Game(nba, legacySeason, home, away, "nba-2"));
         await dbContext.SaveChangesAsync();
 
         var options = await new ModelLabBacktestService(dbContext).GetOptionsAsync(CancellationToken.None);
@@ -117,6 +133,8 @@ public class ModelLabPoolIsolationTests
         var pool = Assert.Single(options.Pools);
         Assert.Equal(EloPoolKeys.Nba, pool.Key);
         Assert.Equal(EloPoolKeys.Nba, Assert.Single(options.Competitions).EloPoolKey);
+        var modelLabSeason = Assert.Single(options.Seasons);
+        Assert.Equal("2024-2025", modelLabSeason.Label);
     }
 
     private static Competition Competition(string name, string country, string pool) => new()

@@ -1779,8 +1779,8 @@
         if (seasons.Count > 0)
         {
             var scoredStartIndex = seasons.Count - 1;
-            var initializationStartIndex = Math.Max(0, scoredStartIndex - 2);
-            var initializationEndIndex = Math.Max(initializationStartIndex, scoredStartIndex - 1);
+            var initializationStartIndex = Math.Max(0, scoredStartIndex - 1);
+            var initializationEndIndex = initializationStartIndex;
 
             initializationFromSeason = seasons[initializationStartIndex].Label;
             initializationToSeason = seasons[initializationEndIndex].Label;

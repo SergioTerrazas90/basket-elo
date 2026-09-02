@@ -1953,6 +1953,29 @@
 }
 
 @media (max-width: 760px) {
+    .rankings-page {
+        gap: var(--space-4);
+    }
+
+    .ranking-toolbar {
+        min-height: 0;
+        gap: 0.4rem;
+        padding: 0.5rem 0;
+    }
+
+    .advanced-filters {
+        gap: 0.4rem;
+        margin-top: -0.75rem;
+        padding: 0.75rem;
+    }
+
+    .advanced-filters .filter-field,
+    .advanced-filters .season-range-field {
+        flex: 0 0 auto !important;
+        min-height: 0;
+        gap: 0.2rem;
+    }
+
     .rankings-workspace-bar {
         display: grid;
         grid-template-columns: 1fr;

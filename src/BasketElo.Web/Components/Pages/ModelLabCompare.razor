@@ -314,7 +314,7 @@
         selectedCompetitionId = AvailableCompetitions.FirstOrDefault()?.Id ?? Guid.Empty;
         selectedCompetitionIds = AvailableCompetitions.Take(2).Select(x => x.Id).ToHashSet();
         var seasons = AvailableSeasons; if (seasons.Count == 0) return;
-        var scored = seasons.Count - 1; var initStart = Math.Max(0, scored - 2); var initEnd = Math.Max(initStart, scored - 1);
+        var scored = seasons.Count - 1; var initStart = Math.Max(0, scored - 1); var initEnd = initStart;
         initializationFromSeason = seasons[initStart].Label; initializationToSeason = seasons[initEnd].Label; scoredFromSeason = seasons[scored].Label; scoredToSeason = seasons[scored].Label; ApplySeasons();
     }
 

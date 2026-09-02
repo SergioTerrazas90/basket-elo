@@ -394,6 +394,14 @@
         flex-direction: column;
     }
 
+    .elo-chart-series-controls {
+        max-height: 6.5rem;
+        min-height: 0;
+        overflow-y: auto;
+        align-content: flex-start;
+        padding-bottom: var(--space-2);
+    }
+
     .elo-chart-comparison {
         grid-template-columns: 1fr;
     }

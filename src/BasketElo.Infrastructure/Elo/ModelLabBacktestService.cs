@@ -1,6 +1,7 @@
 using BasketElo.Domain.Elo;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
+using BasketElo.Infrastructure.Backfill;
 using Microsoft.EntityFrameworkCore;
 
 namespace BasketElo.Infrastructure.Elo;
@@ -15,7 +16,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
         var games = dbContext.Games.AsNoTracking();
         var defaults = EloCalculator.GetRulesetParameters(EloRulesetVersions.AdjustedV1);
         var leagueOptions = await GetLeagueOptionsAsync(cancellationToken);
-        var seasons = await games
+        var seasonRows = await games
             .GroupBy(x => x.Season.Label)
             .Select(x => new
             {
@@ -26,6 +27,19 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
             .OrderBy(x => x.FirstGameUtc)
             .ThenBy(x => x.Label)
             .ToListAsync(cancellationToken);
+
+        // Historical imports can contain both a single-year label (for example,
+        // "2024") and its two-year equivalent ("2024-2025"). They represent the
+        // same season in Model Lab, so expose one consistently formatted option.
+        var seasons = seasonRows
+            .GroupBy(x => SeasonLabelNormalizer.ToFullSeasonLabel(x.Label), StringComparer.OrdinalIgnoreCase)
+            .Select(group => new ModelLabSeasonOption(
+                group.Key,
+                group.Min(x => x.FirstGameUtc),
+                group.Max(x => x.LastGameUtc)))
+            .OrderBy(x => x.FirstGameUtc)
+            .ThenBy(x => x.Label)
+            .ToList();
 
         return new ModelLabOptionsResponse(
             ToParameterSet(defaults),
@@ -50,9 +64,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                     x.CountryCode,
                     ResolvePoolKey(x.EloPoolKey)))
                 .ToList(),
-            seasons
-                .Select(x => new ModelLabSeasonOption(x.Label, x.FirstGameUtc, x.LastGameUtc))
-                .ToList(),
+            seasons,
             await games.MinAsync(x => (DateTime?)x.GameDateTimeUtc, cancellationToken),
             await games.MaxAsync(x => (DateTime?)x.GameDateTimeUtc, cancellationToken));
     }

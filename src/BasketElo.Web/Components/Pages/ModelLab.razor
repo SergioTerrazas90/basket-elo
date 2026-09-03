@@ -188,10 +188,7 @@
 
                     <div class="filter-field">
                         <div class="label-with-info">
-                            <label class="toggle-field" for="usesMargin">
-                                <input id="usesMargin" type="checkbox" @bind="usesMarginAdjustment" />
-                                <span>@T["MarginAdjustment"]</span>
-                            </label>
+                            <label for="usesMargin">@T["MarginAdjustment"]</label>
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("usesMargin")'
@@ -201,6 +198,10 @@
                                 i
                             </button>
                         </div>
+                        <label class="toggle-field" for="usesMargin">
+                            <input id="usesMargin" type="checkbox" @bind="usesMarginAdjustment" />
+                            <span>@(usesMarginAdjustment ? T["On"] : T["Off"])</span>
+                        </label>
                     </div>
 
                     <div class="filter-field">

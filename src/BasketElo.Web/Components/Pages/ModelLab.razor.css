@@ -587,11 +587,6 @@
     gap: var(--space-2);
 }
 
-.label-with-info .toggle-field {
-    min-height: auto;
-    margin: 0;
-}
-
 .info-button {
     display: inline-flex;
     width: 1.45rem;
@@ -619,14 +614,21 @@
     min-height: 2.4rem;
     align-items: center;
     gap: 0.55rem;
-    margin: 1.45rem 0 0;
+    margin: 0;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
     color: var(--color-muted);
     font-weight: 750;
+    cursor: pointer;
 }
 
 .toggle-field input {
     width: 1rem;
     height: 1rem;
+    margin: 0;
+    accent-color: var(--color-brand);
 }
 
 .run-actions {

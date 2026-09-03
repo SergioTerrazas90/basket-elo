@@ -6,12 +6,28 @@
 @using System.Text.Json
 @using BasketElo.Domain.Elo
 @using BasketElo.Domain.Entities
+@using BasketElo.Infrastructure.Identity
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Options
 @inject HttpClient Http
 @inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IOptions<AuthOptions> AuthOptions
 
 <PageTitle>My Models - Basket ELO</PageTitle>
 
 <div class="model-library-page">
+    @if (!isLoading && !isAuthenticated)
+    {
+        <section class="anonymous-signin" aria-labelledby="anonymous-signin-title">
+            <p class="eyebrow">Model Lab</p>
+            <h1 id="anonymous-signin-title">Sign in to use Model Lab</h1>
+            <p>Model Lab is available to signed-in users. Sign in to create, run, save, and compare your own ELO models.</p>
+            <a class="btn btn-primary anonymous-signin-action" href="@AccessHref">@AccessLabel</a>
+        </section>
+    }
+    else
+    {
     <section class="library-hero">
         <div>
             <p class="eyebrow">Model Lab</p>
@@ -43,15 +59,7 @@
     {
         <section class="loading-panel">Loading saved models...</section>
     }
-    else if (models.Count == 0)
-    {
-        <section class="empty-state">
-            <h2>No saved models yet</h2>
-            <p>Create your first model, adjust its rating rules, and test it against historical results.</p>
-            <a class="btn btn-primary" href="model-lab/new">Create a model</a>
-        </section>
-    }
-    else
+    else if (models.Count > 0)
     {
         @if (availableComparisons.Count > 0)
         {
@@ -72,12 +80,6 @@
                             <div class="available-card-topline">
                                 <span class="ready-pill"><i></i>Ready</span>
                                 <time datetime="@comparison.CompletedAtUtc.ToString("O")">@FormatComparisonDate(comparison.CompletedAtUtc)</time>
-                            </div>
-                            <div class="available-models" aria-label="Compared models">
-                                @foreach (var run in comparison.Runs)
-                                {
-                                    <span><i></i>@run.ModelName <small>@ModelVersionLabel(run.ModelId)</small></span>
-                                }
                             </div>
                             <strong class="available-verdict">@ComparisonHeadline(comparison)</strong>
                             <div class="available-context">
@@ -149,6 +151,7 @@
             }
         </section>
     }
+    }
 </div>
 
 @code {
@@ -157,10 +160,19 @@
     private List<ModelLabSavedComparisonResponse> availableComparisons = [];
     private HashSet<Guid> selectedModelIds = [];
     private bool isLoading = true;
+    private bool isAuthenticated;
     private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        isAuthenticated = authenticationState.User.Identity?.IsAuthenticated == true;
+        if (!isAuthenticated)
+        {
+            isLoading = false;
+            return;
+        }
+
         try
         {
             using var modelResponse = await Http.GetAsync("api/model-lab/models?includeArchived=true");
@@ -193,6 +205,14 @@
 
     private ModelLabRunSummaryResponse? LastRunFor(Guid modelId)
         => runs.Where(run => run.ModelId == modelId).OrderByDescending(run => run.CreatedAtUtc).FirstOrDefault();
+
+    private string AccessHref
+        => AuthOptions.Value.Enabled
+            ? "/auth/login?returnUrl=%2Fmodel-lab"
+            : "/dev/persona?persona=free&returnUrl=%2Fmodel-lab";
+
+    private string AccessLabel
+        => AuthOptions.Value.Enabled ? "Sign in with Google" : "Sign in to Model Lab";
 
     private ModelLabSavedComparisonResponse? SelectedCompatibleComparison
         => selectedModelIds.Count < 2
@@ -231,9 +251,6 @@
         return $"model-lab/compare?models={Uri.EscapeDataString(modelQuery)}";
     }
 
-    private string ModelVersionLabel(Guid modelId)
-        => models.FirstOrDefault(model => model.Id == modelId) is { } model ? $"v{model.CurrentVersion.VersionNumber}" : string.Empty;
-
     private static string ComparisonHeadline(ModelLabSavedComparisonResponse comparison)
     {
         var runs = comparison.Runs.ToList();
@@ -245,7 +262,7 @@
         AwardBest(runs, wins, run => run.Summary.AverageMarginError, higherIsBetter: false);
         var bestScore = wins.Values.Max();
         var leaders = runs.Where(run => wins[run.ModelId] == bestScore).ToList();
-        return leaders.Count == 1 ? $"{leaders[0].ModelName} leads {bestScore}/4" : $"Split decision · {bestScore}/4 each";
+        return leaders.Count == 1 ? $"Best result · {bestScore}/4 metrics" : $"Split decision · {bestScore}/4 each";
     }
 
     private static void AwardBest(

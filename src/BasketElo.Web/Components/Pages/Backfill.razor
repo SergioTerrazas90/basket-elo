@@ -9,8 +9,8 @@
     <section class="page-header">
         <div>
             <p class="eyebrow">Coverage Dashboard</p>
-            <h1>League and season backfill coverage</h1>
-            <p class="intro">See what is already loaded, spot gaps from 2000-2001 onward, and queue one season or a full league from the same screen.</p>
+            <h1>Competition and season backfill coverage</h1>
+            <p class="intro">See what is already loaded, spot gaps from the configured competition catalog, and queue one season or a full competition from the same screen.</p>
         </div>
         <button class="btn btn-outline-primary" @onclick="RefreshAsync" disabled="@isBusy">Refresh</button>
     </section>
@@ -35,7 +35,7 @@
         </div>
 
         <div class="filter-field">
-            <label for="leagueFilter">League</label>
+            <label for="leagueFilter">Competition</label>
             <select id="leagueFilter" class="form-select" @bind="selectedLeague">
                 <option value="">All</option>
                 @foreach (var league in LeagueOptions)
@@ -75,7 +75,7 @@
     {
         <section class="summary-panel">
             <div class="summary-card">
-                <span class="summary-label">Configured Leagues</span>
+                <span class="summary-label">Configured Competitions</span>
                 <strong>@LeagueSummaries.Count</strong>
             </div>
             <div class="summary-card">
@@ -94,8 +94,8 @@
 
         <section class="table-section">
             <div class="section-head">
-                <h2>League overview</h2>
-                <p>Queue every configured season for a league in one click.</p>
+                <h2>Competition overview</h2>
+                <p>Queue every configured season for a competition in one click.</p>
             </div>
 
             <div class="table-responsive">
@@ -103,7 +103,7 @@
                     <thead>
                         <tr>
                             <th>Country</th>
-                            <th>League</th>
+                            <th>Competition</th>
                             <th>Seasons</th>
                             <th>Completed</th>
                             <th>Warnings</th>
@@ -125,7 +125,7 @@
                                     <button class="btn btn-sm btn-outline-primary"
                                             @onclick="() => TriggerLeagueAsync(league)"
                                             disabled="@isBusy">
-                                        Trigger league
+                                        Trigger competition
                                     </button>
                                 </td>
                             </tr>
@@ -146,7 +146,7 @@
                     <thead>
                         <tr>
                             <th>Country</th>
-                            <th>League</th>
+                            <th>Competition</th>
                             <th>Season</th>
                             <th>Status</th>
                             <th>Last Run</th>

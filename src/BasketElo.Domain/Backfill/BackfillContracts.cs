@@ -4,7 +4,8 @@ public record BasketballProviderLeague(
     string Source,
     string SourceLeagueId,
     string Name,
-    string? CountryCode);
+    string? CountryCode,
+    string CompetitionType);
 
 public record BasketballProviderGame(
     string Source,

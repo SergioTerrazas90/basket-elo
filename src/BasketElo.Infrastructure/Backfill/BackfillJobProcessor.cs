@@ -10,6 +10,7 @@ namespace BasketElo.Infrastructure.Backfill;
 public class BackfillJobProcessor(
     BasketEloDbContext dbContext,
     IEnumerable<IBasketballDataProvider> providers,
+    IBackfillCatalog backfillCatalog,
     ILogger<BackfillJobProcessor> logger) : IBackfillJobProcessor
 {
     public async Task<bool> TryProcessNextPendingJobAsync(CancellationToken cancellationToken)
@@ -76,13 +77,25 @@ public class BackfillJobProcessor(
         }
 
         ConsumeRequestBudget(job);
+        var configuredLeague = backfillCatalog.GetLeagues()
+            .FirstOrDefault(x =>
+                string.Equals(x.Provider, job.Provider, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.Country, job.Country, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.LeagueName, job.LeagueName, StringComparison.OrdinalIgnoreCase));
+        var providerSeason = configuredLeague?.ProviderSeasonMap?.GetValueOrDefault(job.Season) ?? job.Season;
+
         var gamesResult = await provider.GetGamesAsync(
             league,
-            job.Season,
+            providerSeason,
             new BackfillExecutionContext(job.MaxRequests, job.RequestsUsed - 1),
             cancellationToken);
 
         if (gamesResult.HasMorePages)
+        {
+            job.WarningCount += 1;
+        }
+
+        if (gamesResult.Games.Count == 0)
         {
             job.WarningCount += 1;
         }
@@ -136,6 +149,8 @@ public class BackfillJobProcessor(
                 }
                 else
                 {
+                    existingGame.CompetitionId = competition.Id;
+                    existingGame.SeasonId = season.Id;
                     existingGame.GameDateTimeUtc = providerGame.GameDateTimeUtc;
                     existingGame.HomeScore = providerGame.HomeScore;
                     existingGame.AwayScore = providerGame.AwayScore;
@@ -176,13 +191,14 @@ public class BackfillJobProcessor(
 
         if (competition is null)
         {
+            var normalizedType = NormalizeCompetitionType(providerLeague.CompetitionType);
             competition = new Competition
             {
                 Id = Guid.NewGuid(),
                 Name = providerLeague.Name,
-                Type = "domestic_first_division",
+                Type = normalizedType,
                 CountryCode = countryCode,
-                Tier = 1,
+                Tier = normalizedType == "cup" ? 0 : 1,
                 IsActive = true,
                 CreatedAtUtc = DateTime.UtcNow
             };
@@ -284,6 +300,13 @@ public class BackfillJobProcessor(
             return (start, end);
         }
 
+        if (int.TryParse(seasonLabel, out var singleYear))
+        {
+            var start = new DateTime(singleYear, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var end = new DateTime(singleYear, 12, 31, 23, 59, 59, DateTimeKind.Utc);
+            return (start, end);
+        }
+
         var fallbackStart = new DateTime(DateTime.UtcNow.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var fallbackEnd = fallbackStart.AddYears(1).AddSeconds(-1);
         return (fallbackStart, fallbackEnd);
@@ -298,6 +321,13 @@ public class BackfillJobProcessor(
 
         var normalized = providerCountryCode.Trim().ToUpperInvariant();
         return normalized.Length <= 3 ? normalized : normalized[..3];
+    }
+
+    private static string NormalizeCompetitionType(string? providerCompetitionType)
+    {
+        return string.Equals(providerCompetitionType, "cup", StringComparison.OrdinalIgnoreCase)
+            ? "cup"
+            : "league";
     }
 
     private static void ConsumeRequestBudget(BackfillJob job)

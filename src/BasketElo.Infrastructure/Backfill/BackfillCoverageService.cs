@@ -126,18 +126,31 @@ public class BackfillCoverageService(
     {
         return countryCode?.ToUpperInvariant() switch
         {
+            "ES" => "Spain",
             "ESP" => "Spain",
+            "FR" => "France",
             "FRA" => "France",
+            "LT" => "Lithuania",
             "LTU" => "Lithuania",
+            "GR" => "Greece",
             "GRC" => "Greece",
+            "IT" => "Italy",
             "ITA" => "Italy",
+            "TR" => "Turkey",
             "TUR" => "Turkey",
+            "LV" => "Latvia",
             "LVA" => "Latvia",
+            "BE" => "Belgium",
             "BEL" => "Belgium",
+            "DE" => "Germany",
             "DEU" => "Germany",
+            "IL" => "Israel",
             "ISR" => "Israel",
+            "PL" => "Poland",
             "POL" => "Poland",
+            "CZ" => "Czech Republic",
             "CZE" => "Czech Republic",
+            "RU" => "Russia",
             "RUS" => "Russia",
             _ => countryCode ?? string.Empty
         };

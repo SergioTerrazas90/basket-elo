@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text;
+using System.Globalization;
 using BasketElo.Domain.Backfill;
 using Microsoft.Extensions.Options;
 
@@ -19,7 +21,7 @@ public class ApiSportsBasketballDataProvider(
     {
         EnsureRequestAvailable(context);
 
-        var uri = $"/leagues?country={Uri.EscapeDataString(country)}&name={Uri.EscapeDataString(leagueName)}";
+        var uri = $"/leagues?country={Uri.EscapeDataString(country)}";
         using var request = CreateRequest(uri);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -31,11 +33,13 @@ public class ApiSportsBasketballDataProvider(
             return null;
         }
 
+        var candidates = new List<BasketballProviderLeague>();
         foreach (var item in responseArray.EnumerateArray())
         {
-            if (!item.TryGetProperty("league", out var leagueElement))
+            var leagueElement = item;
+            if (item.TryGetProperty("league", out var nestedLeagueElement))
             {
-                continue;
+                leagueElement = nestedLeagueElement;
             }
 
             var id = leagueElement.GetProperty("id").ToString();
@@ -43,15 +47,26 @@ public class ApiSportsBasketballDataProvider(
             string? countryCode = null;
             if (item.TryGetProperty("country", out var countryElement))
             {
-                countryCode = countryElement.TryGetProperty("code", out var codeElement)
-                    ? codeElement.GetString()
-                    : null;
+                if (countryElement.ValueKind == JsonValueKind.Object)
+                {
+                    countryCode = countryElement.TryGetProperty("code", out var codeElement)
+                        ? codeElement.GetString()
+                        : null;
+                }
+                else if (item.TryGetProperty("country", out var flatCountryElement) && flatCountryElement.ValueKind == JsonValueKind.String)
+                {
+                    countryCode = flatCountryElement.GetString();
+                }
             }
 
-            return new BasketballProviderLeague(Source, id, name, countryCode);
+            var competitionType = leagueElement.TryGetProperty("type", out var typeElement)
+                ? typeElement.GetString() ?? "League"
+                : "League";
+
+            candidates.Add(new BasketballProviderLeague(Source, id, name, countryCode, competitionType));
         }
 
-        return null;
+        return FindBestLeagueMatch(country, leagueName, candidates);
     }
 
     public async Task<(IReadOnlyCollection<BasketballProviderGame> Games, bool HasMorePages)> GetGamesAsync(
@@ -163,4 +178,85 @@ public class ApiSportsBasketballDataProvider(
             throw new InvalidOperationException("Backfill request budget reached.");
         }
     }
+
+    private static BasketballProviderLeague? FindBestLeagueMatch(
+        string country,
+        string leagueName,
+        IReadOnlyCollection<BasketballProviderLeague> candidates)
+    {
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        var desiredNames = GetCandidateNames(country, leagueName)
+            .Select(Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var desiredName in desiredNames)
+        {
+            var exactMatch = candidates.FirstOrDefault(x => Normalize(x.Name) == desiredName);
+            if (exactMatch is not null)
+            {
+                return exactMatch;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> GetCandidateNames(string country, string leagueName)
+    {
+        yield return leagueName;
+
+        foreach (var alias in GetAliases(country, leagueName))
+        {
+            yield return alias;
+        }
+    }
+
+    private static IReadOnlyCollection<string> GetAliases(string country, string leagueName)
+    {
+        var key = $"{country.Trim().ToUpperInvariant()}|{leagueName.Trim().ToUpperInvariant()}";
+        return LeagueAliases.TryGetValue(key, out var aliases)
+            ? aliases
+            : Array.Empty<string>();
+    }
+
+    private static string Normalize(string value)
+    {
+        var decomposed = value.Trim().Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(decomposed.Length);
+
+        foreach (var character in decomposed)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(character);
+            if (category == UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(char.ToLowerInvariant(character));
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static readonly IReadOnlyDictionary<string, string[]> LeagueAliases = new Dictionary<string, string[]>
+    {
+        ["FRANCE|LNB PRO A"] = ["LNB"],
+        ["GREECE|A1 ETHNIKI"] = ["Basket League"],
+        ["ITALY|SERIE A"] = ["Lega A"],
+        ["TURKEY|BSL"] = ["Super Ligi"],
+        ["BELGIUM|BLB"] = ["EuroMillions Basketball League", "Pro Basketball League"],
+        ["GERMANY|BBL"] = ["BBL"],
+        ["ISRAEL|BSL"] = ["Super League"],
+        ["POLAND|PLK"] = ["Tauron Basket Liga"],
+        ["RUSSIA|RUSSIA TOP TIER"] = ["Super League", "PBL"],
+        ["SPAIN|COPA DEL REY"] = ["Spanish Cup"]
+    };
 }

@@ -5,7 +5,9 @@ public record ConfiguredBackfillLeague(
     string Country,
     string LeagueName,
     string DisplayName,
-    string StartSeason);
+    string StartSeason,
+    IReadOnlyCollection<string>? SeasonsOverride = null,
+    IReadOnlyDictionary<string, string>? ProviderSeasonMap = null);
 
 public record BackfillCoverageRow(
     string Provider,

@@ -7,10 +7,7 @@
 {
     <AuthorizeView>
         <Authorized>
-            <div class="auth-status">
-                <span>@DisplayName(context.User)</span>
-                <a href="auth/logout">@T["SignOut"]</a>
-            </div>
+            <AccountMenu User="context.User" />
         </Authorized>
         <NotAuthorized>
             <a class="auth-sign-in" href="auth/login">@T["SignIn"]</a>
@@ -30,6 +27,7 @@ else
                     }
                 </select>
             </div>
+            <AccountMenu User="context.User" />
         </Authorized>
         <NotAuthorized>
             <div class="dev-persona-switch">

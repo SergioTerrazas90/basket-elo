@@ -4,11 +4,13 @@ using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Jobs;
 using BasketElo.Infrastructure.Persistence;
 using BasketElo.Web.Auth;
+using BasketElo.Web.Billing;
 using BasketElo.Web.Elo;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Hangfire;
 using Radzen;
@@ -17,6 +19,7 @@ using System.Text;
 using System.Xml.Linq;
 using System.Globalization;
 using BasketElo.Web.Localization;
+using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
 const string devPersonaCookieName = "BasketElo.DevPersona";
@@ -32,7 +35,9 @@ builder.Services.AddRadzenComponents();
 builder.Services.AddSingleton<EloRebuildNotificationCenter>();
 builder.Services.AddHostedService<PostgresEloRebuildNotificationListener>();
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
+builder.Services.Configure<StripeBillingOptions>(builder.Configuration.GetSection(StripeBillingOptions.SectionName));
 builder.Services.AddScoped<IApplicationUserLoginService, ApplicationUserLoginService>();
+builder.Services.AddScoped<IStripeBillingService, StripeBillingService>();
 var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>() ?? new AuthOptions();
 
 var connectionString = builder.Configuration.GetConnectionString("Postgres")
@@ -69,6 +74,15 @@ if (authOptions.Enabled && isGoogleLoginConfigured)
         options.ClientId = googleClientId!;
         options.ClientSecret = googleClientSecret!;
         options.ClaimActions.MapJsonKey(AuthClaimTypes.AvatarUrl, "picture");
+        options.Events.OnRedirectToAuthorizationEndpoint = context =>
+        {
+            var accountSelectionUrl = QueryHelpers.AddQueryString(
+                context.RedirectUri,
+                "prompt",
+                "select_account");
+            context.Response.Redirect(accountSelectionUrl);
+            return Task.CompletedTask;
+        };
         options.Events.OnCreatingTicket = async context =>
         {
             var principal = context.Principal ?? throw new InvalidOperationException("Google did not return a user principal.");
@@ -312,6 +326,40 @@ app.MapGet("/dev/persona", (HttpContext httpContext, string? persona, string? re
     return Results.Redirect(NormalizeReturnUrl(httpContext, returnUrl));
 });
 
+app.MapPost("/billing/stripe/webhook", async (
+    HttpRequest request,
+    IStripeBillingService billingService,
+    ILoggerFactory loggerFactory,
+    CancellationToken cancellationToken) =>
+{
+    if (!billingService.GetAvailability().WebhookEnabled)
+    {
+        return Results.NotFound();
+    }
+
+    var signatureHeader = request.Headers["Stripe-Signature"].ToString();
+    if (string.IsNullOrWhiteSpace(signatureHeader))
+    {
+        return Results.BadRequest();
+    }
+
+    using var reader = new StreamReader(request.Body);
+    var payload = await reader.ReadToEndAsync(cancellationToken);
+    try
+    {
+        await billingService.ProcessWebhookAsync(payload, signatureHeader, cancellationToken);
+        return Results.Ok();
+    }
+    catch (StripeException exception)
+    {
+        loggerFactory.CreateLogger("StripeWebhook").LogWarning(
+            exception,
+            "Rejected a Stripe webhook with an invalid signature or payload.");
+        return Results.BadRequest();
+    }
+})
+.DisableAntiforgery();
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
@@ -438,7 +486,7 @@ static bool IsPrivateOrUtilityPath(PathString path)
     string[] prefixes =
     [
         "/admin", "/backfill", "/games", "/upcoming", "/home", "/counter",
-        "/weather", "/error", "/auth", "/dev", "/signin-google", "/model-lab/runs"
+        "/weather", "/error", "/auth", "/dev", "/billing", "/signin-google", "/model-lab/runs"
     ];
 
     return prefixes.Any(prefix => value.Equals(prefix, StringComparison.OrdinalIgnoreCase) ||

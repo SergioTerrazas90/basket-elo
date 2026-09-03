@@ -17,6 +17,36 @@ This deploy shape mirrors a simple VPS setup:
 
 The frontend and backend are intentionally kept as separate services. The web app is Blazor Server and calls the API from the server side through `ApiBaseUrl`, so the API does not need to be public.
 
+## Stripe Billing
+
+Premium uses Stripe-hosted Checkout for recurring subscriptions and Stripe's
+Customer Portal for payment-method, invoice, and cancellation management. Keep
+`StripeBilling__Enabled=false` until all values below are configured.
+
+1. In Stripe, create one Premium product with monthly and annual recurring prices.
+2. Enable and configure the Customer Portal for subscription management.
+3. Create a webhook endpoint at
+   `https://basketelo.com/billing/stripe/webhook` for these events:
+   `checkout.session.completed`, `customer.subscription.created`,
+   `customer.subscription.updated`, and `customer.subscription.deleted`.
+4. Add the following values to `/etc/basket-elo/basket-elo.env`:
+
+```dotenv
+StripeBilling__SecretKey=sk_live_...
+StripeBilling__WebhookSecret=whsec_...
+StripeBilling__PremiumMonthlyPriceId=price_...
+StripeBilling__PremiumAnnualPriceId=price_...
+StripeBilling__AutomaticTaxEnabled=false
+StripeBilling__Enabled=true
+```
+
+Use Stripe test-mode keys and prices first. Test and live objects are separate,
+so replace every key, price ID, and webhook secret together when going live.
+Only subscriptions on the two configured Premium prices grant Premium access.
+Administrators retain Premium access independently of Stripe. Automatic Tax is
+off by default and should only be enabled after the corresponding Stripe tax
+settings and registrations are ready.
+
 The worker hosts at most three shared ELO workers. Canonical/public rebuilds use
 the higher-priority queue and Model Lab backtests use the lower-priority queue.
 Set `EloJobs__WorkerCount=3` in the environment file; values outside 1–3 are

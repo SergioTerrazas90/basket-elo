@@ -11,6 +11,8 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<ApplicationUserExternalLogin> ApplicationUserExternalLogins => Set<ApplicationUserExternalLogin>();
     public DbSet<ApplicationRole> ApplicationRoles => Set<ApplicationRole>();
     public DbSet<ApplicationUserRole> ApplicationUserRoles => Set<ApplicationUserRole>();
+    public DbSet<BillingSubscription> BillingSubscriptions => Set<BillingSubscription>();
+    public DbSet<StripeWebhookEvent> StripeWebhookEvents => Set<StripeWebhookEvent>();
     public DbSet<ModelLabModel> ModelLabModels => Set<ModelLabModel>();
     public DbSet<ModelLabModelVersion> ModelLabModelVersions => Set<ModelLabModelVersion>();
     public DbSet<ModelLabRun> ModelLabRuns => Set<ModelLabRun>();
@@ -52,9 +54,11 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.NormalizedEmail).HasMaxLength(320).IsRequired();
             entity.Property(x => x.AvatarUrl).HasMaxLength(1000);
             entity.Property(x => x.PreferredCulture).HasMaxLength(20);
+            entity.Property(x => x.StripeCustomerId).HasMaxLength(255);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.Property(x => x.LastLoginAtUtc).IsRequired();
             entity.HasIndex(x => x.NormalizedEmail).IsUnique();
+            entity.HasIndex(x => x.StripeCustomerId).IsUnique();
         });
 
         modelBuilder.Entity<ApplicationUserExternalLogin>(entity =>
@@ -374,6 +378,35 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasIndex(x => x.PredecessorTeamId);
             entity.HasIndex(x => x.SuccessorTeamId);
             entity.HasIndex(x => x.CanonicalName);
+        });
+
+        modelBuilder.Entity<BillingSubscription>(entity =>
+        {
+            entity.ToTable("billing_subscriptions");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.StripeSubscriptionId).HasMaxLength(255).IsRequired();
+            entity.Property(x => x.StripeCustomerId).HasMaxLength(255).IsRequired();
+            entity.Property(x => x.StripeProductId).HasMaxLength(255);
+            entity.Property(x => x.StripePriceId).HasMaxLength(255);
+            entity.Property(x => x.Status).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.Property(x => x.UpdatedAtUtc).IsRequired();
+            entity.HasOne(x => x.User)
+                .WithMany(x => x.BillingSubscriptions)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => x.StripeSubscriptionId).IsUnique();
+            entity.HasIndex(x => new { x.UserId, x.UpdatedAtUtc });
+            entity.HasIndex(x => new { x.UserId, x.Status });
+        });
+
+        modelBuilder.Entity<StripeWebhookEvent>(entity =>
+        {
+            entity.ToTable("stripe_webhook_events");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).HasMaxLength(255);
+            entity.Property(x => x.EventType).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.ProcessedAtUtc).IsRequired();
         });
 
         modelBuilder.Entity<ModelLabRunEvolutionPoint>(entity =>

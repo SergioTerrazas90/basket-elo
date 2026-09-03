@@ -1,3 +1,4 @@
+using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -17,7 +18,16 @@ public sealed class ModelLabEntitlementService(
         var user = await dbContext.ApplicationUsers
             .AsNoTracking()
             .Where(x => x.Id == ownerUserId)
-            .Select(x => new { x.Email })
+            .Select(x => new
+            {
+                x.Email,
+                IsAdmin = x.UserRoles.Any(userRole => userRole.Role.Key == ApplicationRoleKeys.Admin),
+                HasStripePremium = x.BillingSubscriptions.Any(subscription =>
+                    subscription.IsPremium &&
+                    (subscription.Status == BillingSubscriptionStatuses.Active ||
+                     subscription.Status == BillingSubscriptionStatuses.Trialing ||
+                     subscription.Status == BillingSubscriptionStatuses.PastDue))
+            })
             .SingleOrDefaultAsync(cancellationToken);
 
         if (user is null)
@@ -26,7 +36,9 @@ public sealed class ModelLabEntitlementService(
         }
 
         var normalizedEmail = AuthOptions.NormalizeEmail(user.Email);
-        var isPaid = options.Value.GetNormalizedPaidEmails().Contains(normalizedEmail);
+        var isPaid = user.IsAdmin ||
+            user.HasStripePremium ||
+            options.Value.GetNormalizedPaidEmails().Contains(normalizedEmail);
         if (isPaid)
         {
             return new ModelLabEntitlement(

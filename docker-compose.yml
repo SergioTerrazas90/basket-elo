@@ -83,6 +83,12 @@ services:
       InternalAuth__SharedSecret: ${BASKET_ELO_INTERNAL_AUTH_SECRET:-local-dev-secret}
       Authentication__Google__ClientId: ${BASKET_ELO_GOOGLE_CLIENT_ID:-}
       Authentication__Google__ClientSecret: ${BASKET_ELO_GOOGLE_CLIENT_SECRET:-}
+      StripeBilling__Enabled: ${BASKET_ELO_STRIPE_ENABLED:-false}
+      StripeBilling__SecretKey: ${BASKET_ELO_STRIPE_SECRET_KEY:-}
+      StripeBilling__WebhookSecret: ${BASKET_ELO_STRIPE_WEBHOOK_SECRET:-}
+      StripeBilling__PremiumMonthlyPriceId: ${BASKET_ELO_STRIPE_MONTHLY_PRICE_ID:-}
+      StripeBilling__PremiumAnnualPriceId: ${BASKET_ELO_STRIPE_ANNUAL_PRICE_ID:-}
+      StripeBilling__AutomaticTaxEnabled: ${BASKET_ELO_STRIPE_AUTOMATIC_TAX_ENABLED:-false}
     depends_on:
       - api
     ports:

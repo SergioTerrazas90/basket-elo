@@ -114,6 +114,8 @@ public sealed record EloRankingRow(
     string TeamName,
     string Country,
     decimal Elo,
+    decimal PeakElo,
+    DateTime? PeakEloDateUtc,
     int GamesPlayed,
     decimal RecentMovement,
     DateTime? LastGameUtc,

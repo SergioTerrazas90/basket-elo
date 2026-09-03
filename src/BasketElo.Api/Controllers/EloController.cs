@@ -794,6 +794,13 @@ public class EloController(
                 cutoffUtc,
                 cancellationToken);
 
+            var archivePeakRatings = await GetPeakRatingsAsync(
+                poolKey,
+                selectedRuleset,
+                archivePageRatings.Select(x => x.TeamId).ToList(),
+                cutoffUtc,
+                cancellationToken);
+
             var archiveRows = archivePageRatings
                 .Select((rating, index) => new EloRankingRow(
                     rating.TeamId,
@@ -802,6 +809,8 @@ public class EloController(
                     rating.TeamName,
                     DisplayCountryFromCode(rating.CountryCode),
                     rating.Elo,
+                    archivePeakRatings.GetValueOrDefault(rating.TeamId)?.Elo ?? rating.Elo,
+                    archivePeakRatings.GetValueOrDefault(rating.TeamId)?.DateUtc ?? rating.GameDateTimeUtc,
                     rating.GamesPlayed,
                     archiveRecentMovement.GetValueOrDefault(rating.TeamId),
                     rating.GameDateTimeUtc,
@@ -929,6 +938,13 @@ public class EloController(
             null,
             cancellationToken);
 
+        var peakRatings = await GetPeakRatingsAsync(
+            poolKey,
+            selectedRuleset,
+            pageRatings.Select(x => x.TeamId).ToList(),
+            null,
+            cancellationToken);
+
         var rows = pageRatings
             .Select((rating, index) => new EloRankingRow(
                 rating.TeamId,
@@ -937,6 +953,8 @@ public class EloController(
                 rating.TeamName,
                 DisplayCountryFromCode(rating.CountryCode),
                 rating.Elo,
+                peakRatings.GetValueOrDefault(rating.TeamId)?.Elo ?? rating.Elo,
+                peakRatings.GetValueOrDefault(rating.TeamId)?.DateUtc ?? rating.LastGameUtc,
                 rating.GamesPlayed,
                 recentMovement.GetValueOrDefault(rating.TeamId),
                 rating.LastGameUtc,
@@ -2727,6 +2745,10 @@ public class EloController(
         int GamesPlayed,
         DateTime? LastGameUtc);
 
+    private sealed record PeakRatingSnapshot(
+        decimal Elo,
+        DateTime DateUtc);
+
     private sealed record RecentFormRow(
         Guid Id,
         Guid GameId,
@@ -2850,6 +2872,46 @@ public class EloController(
                         .OrderByDescending(x => x, StringComparer.Ordinal)
                         .ToList());
             }) ?? new EloRankingFilterOptions([], [], []);
+    }
+
+    private async Task<Dictionary<Guid, PeakRatingSnapshot>> GetPeakRatingsAsync(
+        string poolKey,
+        string rulesetVersion,
+        IReadOnlyCollection<Guid> teamIds,
+        DateTime? toUtc,
+        CancellationToken cancellationToken)
+    {
+        if (teamIds.Count == 0)
+        {
+            return [];
+        }
+
+        var query = dbContext.RatingHistories
+            .AsNoTracking()
+            .Where(x => x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion && teamIds.Contains(x.TeamId));
+
+        if (toUtc.HasValue)
+        {
+            query = query.Where(x => x.GameDateTimeUtc <= toUtc.Value);
+        }
+
+        var rows = await query
+            .Select(x => new
+            {
+                x.TeamId,
+                x.GameDateTimeUtc,
+                x.Id,
+                PeakElo = x.PreElo > x.PostElo ? x.PreElo : x.PostElo
+            })
+            .GroupBy(x => x.TeamId)
+            .Select(group => group
+                .OrderByDescending(x => x.PeakElo)
+                .ThenBy(x => x.GameDateTimeUtc)
+                .ThenBy(x => x.Id)
+                .First())
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(x => x.TeamId, x => new PeakRatingSnapshot(x.PeakElo, x.GameDateTimeUtc));
     }
 
     private async Task<Dictionary<Guid, decimal>> GetRecentMovementAsync(

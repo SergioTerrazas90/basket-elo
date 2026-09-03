@@ -41,33 +41,121 @@
         </div>
 
         <div class="rankings-workspace-bar">
-            <div class="workspace-control workspace-pool-control">
-                <span class="workspace-label" title='@T["Pool"]'>@T["Pool"]</span>
-                <nav class="rating-pool-tabs" aria-label='@T["RatingPools"]'>
-                    @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
-                    {
-                        <a class="@PoolTabClass(option.Key)"
-                           href="@BuildPoolHref(option.Key)"
-                           data-enhance-nav="true"
-                           aria-current="@PoolTabAriaCurrent(option.Key)">
-                            @(option.Key == EloPoolKeys.EuropeClubs ? T["Europe"] : option.Key == EloPoolKeys.NationalTeams ? T["NationalTeams"] : option.DisplayName)
-                        </a>
-                    }
-                </nav>
-            </div>
-
-            @if (!IsMoversView)
-            {
-                <div class="workspace-control workspace-view-control">
-                    <span class="workspace-label">@T["View"]</span>
-                    <nav class="rankings-view-tabs" aria-label='@T["RankingViews"]'>
-                        <a class='@ViewTabClass("rankings")' href='@BuildRankingsHref(1, "rankings")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("rankings")'>@T["Rankings"]</a>
-                        <a class='@ViewTabClass("graph")' href='@BuildRankingsHref(1, "graph")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("graph")'>@T["Graph"]</a>
-                        <a class='@ViewTabClass("fixtures")' href='@BuildRankingsHref(1, "fixtures")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("fixtures")'>@T["Fixtures"]</a>
-                        <a class='@ViewTabClass("results")' href='@BuildRankingsHref(1, "results")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("results")'>@T["Results"]</a>
+            <div class="workspace-navigation">
+                <div class="workspace-control workspace-pool-control">
+                    <span class="workspace-label" title='@T["Pool"]'>@T["Pool"]</span>
+                    <nav class="rating-pool-tabs" aria-label='@T["RatingPools"]'>
+                        @foreach (var option in EloPoolCatalog.All.OrderBy(x => x.DisplayOrder))
+                        {
+                            <a class="@PoolTabClass(option.Key)"
+                               href="@BuildPoolHref(option.Key)"
+                               data-enhance-nav="true"
+                               aria-current="@PoolTabAriaCurrent(option.Key)">
+                                @(option.Key == EloPoolKeys.EuropeClubs ? T["Europe"] : option.Key == EloPoolKeys.NationalTeams ? T["NationalTeams"] : option.DisplayName)
+                            </a>
+                        }
                     </nav>
                 </div>
-            }
+
+                @if (!IsMoversView)
+                {
+                    <div class="workspace-control workspace-view-control">
+                        <span class="workspace-label">@T["View"]</span>
+                        <nav class="rankings-view-tabs" aria-label='@T["RankingViews"]'>
+                            <a class='@ViewTabClass("rankings")' href='@BuildRankingsHref(1, "rankings")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("rankings")'>@T["Rankings"]</a>
+                            <a class='@ViewTabClass("graph")' href='@BuildRankingsHref(1, "graph")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("graph")'>@T["Graph"]</a>
+                            <a class='@ViewTabClass("fixtures")' href='@BuildRankingsHref(1, "fixtures")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("fixtures")'>@T["Fixtures"]</a>
+                            <a class='@ViewTabClass("results")' href='@BuildRankingsHref(1, "results")' data-enhance-nav="true" aria-current='@ViewTabAriaCurrent("results")'>@T["Results"]</a>
+                        </nav>
+                    </div>
+                }
+            </div>
+
+            <section class="ranking-toolbar" aria-label='@T["RankingControls"]'>
+                @if (ShowsTeamScopeFilter)
+                {
+                    <div class="scope-control-block">
+                        <span class="filter-label">@(selectedPool == EloPoolKeys.Nba ? T["Franchises"] : T["Teams"])</span>
+                        <div class="franchise-scope-control" role="group" aria-label="@TeamScopeAriaLabel()">
+                            <button type="button" class="@TeamScopeClass(EloTeamScopes.Current)" @onclick="() => SelectTeamScopeAsync(EloTeamScopes.Current)" disabled="@isBusy">
+                                @T["Current"]
+                            </button>
+                            <button type="button" class="@TeamScopeClass(EloTeamScopes.Historical)" @onclick="() => SelectTeamScopeAsync(EloTeamScopes.Historical)" disabled="@isBusy">
+                                @T["Historical"]
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                <div class="filter-field team-search-field">
+                    <label for="teamSearch">@T["Team"]</label>
+                    <div class="clearable-field">
+                        <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" @bind:after="TeamSearchChangedAsync" placeholder='@T["SearchTeams"]' />
+                        <button type="button" class="clear-filter" aria-label='@T["ClearTeamSearch"]' title='@T["ClearTeamSearch"]' @onclick="ClearTeamSearch" disabled="@(!HasTeamSearch)">
+                            &times;
+                        </button>
+                    </div>
+                </div>
+
+                <button type="button"
+                        class="filter-toggle"
+                        aria-expanded="@showAdvancedFilters"
+                        aria-controls="advanced-ranking-filters"
+                        @onclick="ToggleAdvancedFilters">
+                    <span>@T["Filters"]</span>
+                    @if (ActiveFilterCount > 0)
+                    {
+                        <span class="filter-count" aria-label="@($"{ActiveFilterCount} active filters")">@ActiveFilterCount</span>
+                    }
+                    <span class="filter-toggle-icon" aria-hidden="true">@(showAdvancedFilters ? "−" : "+")</span>
+                </button>
+
+                @if (HasActiveFilters)
+                {
+                    <button type="button" class="clear-all-filters" @onclick="ResetFiltersAsync" disabled="@isBusy">
+                        @T["ClearAll"]
+                    </button>
+                }
+
+                @if (response is not null)
+                {
+                    <div class="toolbar-model-control">
+                        <div class="toolbar-model-label">
+                            <span>@T["RatingModel"]</span>
+                            <span class="snapshot-model-help">
+                                <button type="button"
+                                        class="snapshot-model-info"
+                                        title='@T["AboutRatingModels"]'
+                                        aria-label="@(showRulesetHelp ? "Close rating model explanation" : "Explain the rating models")"
+                                        aria-expanded="@(showRulesetHelp ? "true" : "false")"
+                                        aria-controls="rating-model-help"
+                                        @onclick="ToggleRulesetHelp">i</button>
+                                @if (showRulesetHelp)
+                                {
+                                    <span id="rating-model-help" class="snapshot-model-popover" role="note">
+                                        <strong>@T["TwoWaysSameGames"]</strong>
+                                        <span>@T["RatingModelsDescription"]</span>
+                                        <a href="/how-it-works#rulesets-heading">@T["ReadFullMethod"] <span aria-hidden="true">→</span></a>
+                                    </span>
+                                }
+                            </span>
+                        </div>
+                        <div class="rating-model-switch" role="group" aria-label='@T["RatingModel"]'>
+                            @foreach (var ruleset in EloRulesetVersions.All)
+                            {
+                                <button type="button"
+                                        class="rating-model-option @(string.Equals(selectedRuleset, ruleset, StringComparison.Ordinal) ? "is-active" : null)"
+                                        aria-pressed="@(string.Equals(selectedRuleset, ruleset, StringComparison.Ordinal) ? "true" : "false")"
+                                        title="@RulesetDisplayName(ruleset)"
+                                        disabled="@isBusy"
+                                        @onclick="() => SelectRulesetAsync(ruleset)">
+                                    @RulesetShortName(ruleset)
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </section>
         </div>
     </header>
 
@@ -77,53 +165,6 @@
             @errorMessage
         </div>
     }
-
-    <section class="ranking-toolbar" aria-label='@T["RankingControls"]'>
-        @if (ShowsTeamScopeFilter)
-        {
-            <div class="scope-control-block">
-                <span class="filter-label">@(selectedPool == EloPoolKeys.Nba ? T["Franchises"] : T["Teams"])</span>
-                <div class="franchise-scope-control" role="group" aria-label="@TeamScopeAriaLabel()">
-                    <button type="button" class="@TeamScopeClass(EloTeamScopes.Current)" @onclick="() => SelectTeamScopeAsync(EloTeamScopes.Current)" disabled="@isBusy">
-                        @T["Current"]
-                    </button>
-                    <button type="button" class="@TeamScopeClass(EloTeamScopes.Historical)" @onclick="() => SelectTeamScopeAsync(EloTeamScopes.Historical)" disabled="@isBusy">
-                        @T["Historical"]
-                    </button>
-                </div>
-            </div>
-        }
-
-        <div class="filter-field team-search-field">
-            <label for="teamSearch">@T["Team"]</label>
-            <div class="clearable-field">
-                <input id="teamSearch" class="form-control" @bind="teamSearch" @bind:event="oninput" @bind:after="TeamSearchChangedAsync" placeholder='@T["SearchTeams"]' />
-                <button type="button" class="clear-filter" aria-label='@T["ClearTeamSearch"]' title='@T["ClearTeamSearch"]' @onclick="ClearTeamSearch" disabled="@(!HasTeamSearch)">
-                    &times;
-                </button>
-            </div>
-        </div>
-
-        <button type="button"
-                class="filter-toggle"
-                aria-expanded="@showAdvancedFilters"
-                aria-controls="advanced-ranking-filters"
-                @onclick="ToggleAdvancedFilters">
-            <span>@T["Filters"]</span>
-            @if (ActiveFilterCount > 0)
-            {
-                <span class="filter-count" aria-label="@($"{ActiveFilterCount} active filters")">@ActiveFilterCount</span>
-            }
-            <span class="filter-toggle-icon" aria-hidden="true">@(showAdvancedFilters ? "−" : "+")</span>
-        </button>
-
-        @if (HasActiveFilters)
-        {
-            <button type="button" class="clear-all-filters" @onclick="ResetFiltersAsync" disabled="@isBusy">
-                @T["ClearAll"]
-            </button>
-        }
-    </section>
 
     @if (HasActiveFilters)
     {
@@ -283,70 +324,6 @@
     }
     else if (response is not null)
     {
-        <section class="results-header" aria-label='@T["RankingSnapshot"]'>
-            <div class="results-context">
-                <span class="results-kicker">@((selectedView == "movers") ? T["MovementView"] : T["CurrentRankings"])</span>
-                <strong>@response.Summary.FilteredTeams <span>@T["OfTeams", response.Summary.RatedTeams]</span></strong>
-                @if (!string.IsNullOrWhiteSpace(ScopeDetail()))
-                {
-                    <small class="results-scope-detail">@ScopeDetail()</small>
-                }
-            </div>
-            <dl class="snapshot-metadata">
-                <div>
-                    <dt>@LatestGameLabel()</dt>
-                    <dd>@FormatDate(response.Summary.LatestGameUtc)</dd>
-                </div>
-                <div>
-                    <dt>@LeaderLabel()</dt>
-                    <dd>@(response.Summary.TopTeamName ?? "-") <span>(@FormatRating(response.Summary.TopTeamElo))</span></dd>
-                </div>
-                <div class="snapshot-model">
-                    <dt>
-                        <span>@T["RatingModel"]</span>
-                        <span class="snapshot-model-help">
-                            <button type="button"
-                                    class="snapshot-model-info"
-                                    title='@T["AboutRatingModels"]'
-                                    aria-label="@(showRulesetHelp ? "Close rating model explanation" : "Explain the rating models")"
-                                    aria-expanded="@(showRulesetHelp ? "true" : "false")"
-                                    aria-controls="rating-model-help"
-                                    @onclick="ToggleRulesetHelp">i</button>
-                            @if (showRulesetHelp)
-                            {
-                                <span id="rating-model-help" class="snapshot-model-popover" role="note">
-                                    <strong>@T["TwoWaysSameGames"]</strong>
-                                    <span>@T["RatingModelsDescription"]</span>
-                                    <a href="/how-it-works#rulesets-heading">@T["ReadFullMethod"] <span aria-hidden="true">→</span></a>
-                                </span>
-                            }
-                        </span>
-                    </dt>
-                    <dd>
-                        <div class="rating-model-switch" role="group" aria-label='@T["RatingModel"]'>
-                            @foreach (var ruleset in EloRulesetVersions.All)
-                            {
-                                <button type="button"
-                                        class="rating-model-option @(string.Equals(selectedRuleset, ruleset, StringComparison.Ordinal) ? "is-active" : null)"
-                                        aria-pressed="@(string.Equals(selectedRuleset, ruleset, StringComparison.Ordinal) ? "true" : "false")"
-                                        title="@RulesetDisplayName(ruleset)"
-                                        disabled="@isBusy"
-                                        @onclick="() => SelectRulesetAsync(ruleset)">
-                                    @RulesetShortName(ruleset)
-                                </button>
-                            }
-                        </div>
-                    </dd>
-                </div>
-            </dl>
-        </section>
-
-        <div class="ranking-freshness-note" aria-label='@T["DataFreshnessCoverage"]'>
-            <span><strong>@T["DataSnapshot"]</strong> @T["LatestRatedResult"]: @FormatDate(response.Summary.LatestGameUtc)</span>
-            <span>@T["CoverageVaries"]</span>
-            <a href="/data-sources">@T["ExploreCoverage"] <span aria-hidden="true">→</span></a>
-        </div>
-
         @if (IsArchiveMode)
         {
             <section class="archive-state">
@@ -656,8 +633,9 @@
         {
             <section class="rankings-table-section">
                 <div class="section-head">
-                    <div>
+                    <div class="ranking-table-title">
                         <h2>@T["RankingTable"]</h2>
+                        <span>(@LatestGameLabel(): @FormatDate(response.Summary.LatestGameUtc))</span>
                     </div>
                     <div class="table-section-controls">
                         <span class="table-page-summary">@TableContextLabel()</span>
@@ -700,17 +678,16 @@
                                 {
                                     <th class="numeric" scope="col">ELO</th>
                                 }
-                                @if (ShowRankingColumn("games"))
+                                @if (ShowRankingColumn("peakElo"))
                                 {
-                                    <th class="numeric" scope="col">@T["Games"]</th>
-                                }
-                                @if (ShowRankingColumn("lastGame"))
-                                {
-                                    <th scope="col">@T["LastGame"]</th>
+                                    <th class="numeric" scope="col">@T["PeakElo"]</th>
                                 }
                                 @if (ShowRankingColumn("form"))
                                 {
-                                    <th class="numeric" scope="col">@T["LastGames"]</th>
+                                    <th class="numeric form-column-header" scope="col">
+                                        <span>@T["LastGames"]</span>
+                                        <small>@T["OldestToNewest"]</small>
+                                    </th>
                                 }
                             </tr>
                         </thead>
@@ -756,13 +733,14 @@
                                         {
                                             <td class="numeric rating">@row.Elo.ToString("0")</td>
                                         }
-                                        @if (ShowRankingColumn("games"))
+                                        @if (ShowRankingColumn("peakElo"))
                                         {
-                                            <td class="numeric">@row.GamesPlayed</td>
-                                        }
-                                        @if (ShowRankingColumn("lastGame"))
-                                        {
-                                            <td>@FormatDate(row.LastGameUtc)</td>
+                                            <td class="numeric peak-rating">
+                                                <span class="peak-rating-content">
+                                                    <strong>@FormatRating(row.PeakElo)</strong>
+                                                    <small>@FormatDate(row.PeakEloDateUtc)</small>
+                                                </span>
+                                            </td>
                                         }
                                         @if (ShowRankingColumn("form"))
                                         {
@@ -2962,7 +2940,7 @@
     private bool ShowRankingColumn(string column)
         => column switch
         {
-            "rank" or "team" or "elo" or "games" or "lastGame" or "form" => true,
+            "rank" or "team" or "elo" or "peakElo" or "form" => true,
             "movement" => false,
             "country" => ShowsCountryColumn,
             "globalRank" => response?.Summary.IsFiltered == true,
@@ -3547,7 +3525,7 @@
         => selectedPool is not EloPoolKeys.Nba and not EloPoolKeys.NationalTeams;
 
     private int RankingTableColumnCount
-        => new[] { "rank", "globalRank", "team", "country", "elo", "games", "lastGame", "form" }
+        => new[] { "rank", "globalRank", "team", "country", "elo", "peakElo", "form" }
             .Count(ShowRankingColumn);
 
     private bool IsHistoricalTeamScope

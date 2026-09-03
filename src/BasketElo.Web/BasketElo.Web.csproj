@@ -4,6 +4,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="8.0.4" />
     <PackageReference Include="Npgsql" Version="8.0.3" />
     <PackageReference Include="Radzen.Blazor" Version="11.1.2" />
+    <PackageReference Include="Stripe.net" Version="52.4.1" />
     <ProjectReference Include="..\BasketElo.Domain\BasketElo.Domain.csproj" />
     <ProjectReference Include="..\BasketElo.Infrastructure\BasketElo.Infrastructure.csproj" />
   </ItemGroup>

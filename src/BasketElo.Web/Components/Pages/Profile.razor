@@ -1,0 +1,305 @@
+@page "/profile"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using BasketElo.Domain.Elo
+@using BasketElo.Infrastructure.Identity
+@using BasketElo.Web.Billing
+@inject HttpClient Http
+@inject IStripeBillingService BillingService
+@inject NavigationManager Navigation
+
+<div class="profile-page">
+    <header class="profile-hero be-reveal" style="--reveal-order: 0">
+        <div class="profile-hero-main">
+            <div class="profile-avatar" aria-hidden="true">@Initials</div>
+            <div>
+                <p class="profile-kicker">@T["Account"]</p>
+                <h1>@T["YourProfile"]</h1>
+                <p class="profile-lede">@T["ProfileIntro"]</p>
+            </div>
+        </div>
+        <span class="profile-plan-badge @(IsPremium ? "is-premium" : string.Empty)">
+            <span class="profile-plan-dot" aria-hidden="true"></span>
+            @PlanLabel
+        </span>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(BillingNotice))
+    {
+        <p class="profile-billing-notice" role="status">@BillingNotice</p>
+    }
+
+    @if (isLoading)
+    {
+        <div class="profile-loading" role="status" aria-live="polite">
+            <span class="profile-loading-dot" aria-hidden="true"></span>
+            @T["LoadingProfile"]
+        </div>
+    }
+    else
+    {
+        <div class="profile-content-grid">
+            <section class="profile-card identity-card be-reveal" style="--reveal-order: 1" aria-labelledby="identity-heading">
+                <div class="profile-card-heading">
+                    <div>
+                        <p class="profile-section-label">01</p>
+                        <h2 id="identity-heading">@T["ProfileDetails"]</h2>
+                    </div>
+                    <span class="profile-card-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                            <circle cx="12" cy="8" r="3.25"></circle>
+                            <path d="M5.5 19.2c.8-3.05 3-4.7 6.5-4.7s5.7 1.65 6.5 4.7"></path>
+                        </svg>
+                    </span>
+                </div>
+                <dl class="profile-details">
+                    <div>
+                        <dt>@T["Name"]</dt>
+                        <dd>@DisplayName</dd>
+                    </div>
+                    <div>
+                        <dt>@T["Email"]</dt>
+                        <dd>@Email</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <section class="profile-card plan-card @(IsPremium ? "is-premium" : string.Empty) be-reveal" style="--reveal-order: 2" aria-labelledby="plan-heading">
+                <div class="profile-card-heading">
+                    <div>
+                        <p class="profile-section-label">02</p>
+                        <h2 id="plan-heading">@T["CurrentPlan"]</h2>
+                    </div>
+                    <span class="profile-plan-chip">@PlanLabel</span>
+                </div>
+
+                <div class="profile-plan-summary">
+                    <strong>@ModelAllowance</strong>
+                    <span>@T["ModelsPerMonth"]</span>
+                </div>
+                <p class="profile-plan-intro">@PlanIntro</p>
+
+                <ul class="profile-benefits">
+                    <li><span aria-hidden="true">✓</span><span>@T["OneModelAtATime"]</span></li>
+                    <li><span aria-hidden="true">✓</span><span>@T["FairUsePolicy"]</span></li>
+                    <li><span aria-hidden="true">✓</span><span>@AccessDescription</span></li>
+                </ul>
+
+                @if (!IsPremium)
+                {
+                    @if (billingAvailability.CheckoutEnabled)
+                    {
+                        <div class="profile-upgrade-action">
+                            <div>
+                                <strong>@T["UpgradeToPremium"]</strong>
+                                <span>@T["StripeCheckoutDescription"]</span>
+                            </div>
+                            <div class="profile-billing-actions">
+                                @if (billingAvailability.MonthlyEnabled)
+                                {
+                                    <button type="button"
+                                            class="btn btn-primary"
+                                            disabled="@billingBusy"
+                                            @onclick='() => StartCheckoutAsync(StripeBillingCadences.Monthly)'>
+                                        @T["SubscribeMonthly"]
+                                    </button>
+                                }
+                                @if (billingAvailability.AnnualEnabled)
+                                {
+                                    <button type="button"
+                                            class="btn btn-outline-primary"
+                                            disabled="@billingBusy"
+                                            @onclick='() => StartCheckoutAsync(StripeBillingCadences.Annual)'>
+                                        @T["SubscribeAnnually"]
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="profile-upgrade-note">
+                            <span class="profile-upgrade-spark" aria-hidden="true">✦</span>
+                            <span>@T["PremiumComingSoon"]</span>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="profile-active-note">
+                        <span class="profile-active-check" aria-hidden="true">✓</span>
+                        <span>@PremiumStatusDescription</span>
+                    </div>
+                    @if (billingAccount?.CanManageBilling == true)
+                    {
+                        <button type="button"
+                                class="btn btn-outline-primary profile-manage-billing"
+                                disabled="@billingBusy"
+                                @onclick="OpenBillingPortalAsync">
+                            @T["ManageBilling"]
+                        </button>
+                    }
+                }
+            </section>
+
+            <section class="profile-card policy-card be-reveal" style="--reveal-order: 3" aria-labelledby="policy-heading">
+                <div class="profile-card-heading">
+                    <div>
+                        <p class="profile-section-label">03</p>
+                        <h2 id="policy-heading">@T["HowLimitsWork"]</h2>
+                    </div>
+                </div>
+                <div class="policy-list">
+                    <div><span class="policy-number">01</span><p>@T["RunOneByOneDescription"]</p></div>
+                    <div><span class="policy-number">02</span><p>@T["FairUseDescription"]</p></div>
+                    <div><span class="policy-number">03</span><p>@T["SupportProjectDescription"]</p></div>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(loadError))
+    {
+        <p class="profile-error" role="alert">@loadError</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(billingError))
+    {
+        <p class="profile-error" role="alert">@billingError</p>
+    }
+</div>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private const int FreeModelAllowance = 10;
+    private const int PremiumModelAllowance = 200;
+
+    private ModelLabEntitlementResponse? entitlement;
+    private StripeBillingAvailability billingAvailability = new(false, false, false, false);
+    private StripeBillingAccountState? billingAccount;
+    private bool isLoading = true;
+    private bool billingBusy;
+    private string? loadError;
+    private string? billingError;
+    private string displayName = string.Empty;
+    private string email = string.Empty;
+    private Guid? userId;
+
+    private bool IsPremium => entitlement?.IsPaid == true;
+    private string PlanLabel => IsPremium ? T["Premium"].Value : T["Free"].Value;
+    private string PlanIntro => IsPremium ? T["PremiumPlanIntro"].Value : T["FreePlanIntro"].Value;
+    private string AccessDescription => IsPremium ? T["AllCompetitionsAccess"].Value : T["StarterAccess"].Value;
+    private int ModelAllowance => IsPremium ? PremiumModelAllowance : FreeModelAllowance;
+    private string DisplayName => string.IsNullOrWhiteSpace(displayName) ? T["SignedIn"].Value : displayName;
+    private string Email => email;
+    private string ProfileUrl => new Uri(new Uri(Navigation.BaseUri), "profile").AbsoluteUri;
+    private string? BillingNotice
+        => Navigation.ToAbsoluteUri(Navigation.Uri).Query.Contains("billing=success", StringComparison.OrdinalIgnoreCase)
+            ? T["StripeCheckoutSuccess"].Value
+            : Navigation.ToAbsoluteUri(Navigation.Uri).Query.Contains("billing=canceled", StringComparison.OrdinalIgnoreCase)
+                ? T["StripeCheckoutCanceled"].Value
+                : null;
+    private string PremiumStatusDescription
+        => billingAccount?.CancelAtPeriodEnd == true
+            ? T["PremiumCancelsAtPeriodEnd"].Value
+            : T["PremiumActiveDescription"].Value;
+
+    private string Initials
+    {
+        get
+        {
+            var parts = DisplayName
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            return parts.Length switch
+            {
+                0 => "BE",
+                1 => parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant(),
+                _ => $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant()
+            };
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is not null)
+        {
+            var authenticationState = await AuthenticationStateTask;
+            displayName = authenticationState.User.FindFirstValue(ClaimTypes.Name) ?? string.Empty;
+            email = authenticationState.User.FindFirstValue(ClaimTypes.Email) ?? string.Empty;
+            if (Guid.TryParse(authenticationState.User.FindFirstValue(ClaimTypes.NameIdentifier), out var authenticatedUserId))
+            {
+                userId = authenticatedUserId;
+            }
+        }
+
+        try
+        {
+            entitlement = await Http.GetFromJsonAsync<ModelLabEntitlementResponse>("api/model-lab/entitlement");
+            billingAvailability = BillingService.GetAvailability();
+            if (userId.HasValue)
+            {
+                billingAccount = await BillingService.GetAccountStateAsync(userId.Value, CancellationToken.None);
+            }
+        }
+        catch (Exception)
+        {
+            loadError = T["ProfilePlanUnavailable"].Value;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task StartCheckoutAsync(string cadence)
+    {
+        if (!userId.HasValue || billingBusy)
+        {
+            return;
+        }
+
+        billingBusy = true;
+        billingError = null;
+        try
+        {
+            var checkoutUrl = await BillingService.CreateCheckoutSessionAsync(
+                userId.Value,
+                cadence,
+                ProfileUrl,
+                CancellationToken.None);
+            Navigation.NavigateTo(checkoutUrl, forceLoad: true);
+        }
+        catch (Exception)
+        {
+            billingError = T["BillingActionFailed"].Value;
+            billingBusy = false;
+        }
+    }
+
+    private async Task OpenBillingPortalAsync()
+    {
+        if (!userId.HasValue || billingBusy)
+        {
+            return;
+        }
+
+        billingBusy = true;
+        billingError = null;
+        try
+        {
+            var portalUrl = await BillingService.CreatePortalSessionAsync(
+                userId.Value,
+                ProfileUrl,
+                CancellationToken.None);
+            Navigation.NavigateTo(portalUrl, forceLoad: true);
+        }
+        catch (Exception)
+        {
+            billingError = T["BillingActionFailed"].Value;
+            billingBusy = false;
+        }
+    }
+}

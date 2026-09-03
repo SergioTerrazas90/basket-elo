@@ -555,22 +555,22 @@
     background: var(--color-surface-muted);
 }
 
-.advanced-settings summary {
+.advanced-settings-heading {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 0.15rem var(--space-3);
-    cursor: pointer;
+    gap: 0.2rem;
+}
+
+.advanced-settings-heading h3 {
+    margin: 0;
     color: var(--color-brand-dark);
+    font-size: 1rem;
     font-weight: 850;
 }
 
-.advanced-settings summary::marker {
-    color: var(--color-brand);
-}
-
-.advanced-settings summary small {
+.advanced-settings-heading p {
+    margin: 0;
     color: var(--color-subtle);
+    font-size: 0.84rem;
     font-weight: 650;
 }
 
@@ -612,21 +612,6 @@
     border-color: var(--color-brand);
     background: var(--color-brand);
     color: var(--color-inverse);
-}
-
-.info-panel {
-    display: grid;
-    gap: var(--space-2);
-    padding: var(--space-3);
-    border: 1px solid rgba(36, 92, 122, 0.24);
-    border-radius: var(--radius-md);
-    background: var(--color-brand-soft);
-    color: var(--color-brand-dark);
-    font-size: 0.88rem;
-}
-
-.info-panel p {
-    margin: 0;
 }
 
 .toggle-field {

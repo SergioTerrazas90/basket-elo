@@ -1,0 +1,136 @@
+@if (!string.IsNullOrWhiteSpace(InfoKey))
+{
+    <div class="info-dialog-backdrop" @onclick="CloseAsync">
+        <section id="modelLabInfoDialog"
+                 class="info-dialog"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="modelLabInfoDialogTitle"
+                 @onclick:stopPropagation="true">
+            <div class="info-dialog-header">
+                <span>About this setting</span>
+                <button type="button" class="info-dialog-close" aria-label="Close explanation" @onclick="CloseAsync">&times;</button>
+            </div>
+            <h2 id="modelLabInfoDialogTitle">@Title</h2>
+            <div class="info-dialog-copy">
+                @foreach (var paragraph in Paragraphs)
+                {
+                    <p>@paragraph</p>
+                }
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string? InfoKey { get; set; }
+
+    [Parameter]
+    public bool IsSingleCompetition { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private string Title => InfoKey switch
+    {
+        "modelName" => "Model name",
+        "baseRating" => "Base rating",
+        "kFactor" => "K factor",
+        "homeAdvantage" => "Home advantage",
+        "probabilityScale" => "Probability scale",
+        "competitionWeight" => "Competition weight",
+        "usesMargin" => "Margin adjustment",
+        "pointScale" => "Point margin scale",
+        "marginDampenerFactor" => "Dampener factor",
+        "maxMarginMultiplier" => "Margin cap",
+        "eloPool" => "ELO pool",
+        "scopeType" => "Scope",
+        "leagueName" => "Competition selection",
+        "initSeason" => "Initialization seasons",
+        "scoredSeason" => "Scored seasons",
+        _ => "Model Lab setting"
+    };
+
+    private IReadOnlyList<string> Paragraphs => InfoKey switch
+    {
+        "modelName" =>
+        [
+            "This is only a label for the experiment you are running. It does not affect ratings, probability, or margin calculations."
+        ],
+        "baseRating" =>
+        [
+            "New teams start here before they have any games in the simulation. Changing this mostly shifts the whole league up or down unless teams enter the model at different times."
+        ],
+        "kFactor" =>
+        [
+            "This controls how quickly ratings move after each game. Higher values react faster to recent results, but can make ratings noisier."
+        ],
+        "homeAdvantage" =>
+        [
+            "This many ELO points are added to the home team before calculating win probability, expected margin, and the rating update."
+        ],
+        "probabilityScale" =>
+        [
+            "This controls how quickly ELO difference turns into win probability. Smaller values make the model more confident; larger values keep predictions closer to 50%.",
+            "For the current game, win probability uses the classic ELO curve from rating difference. It does not come directly from the expected point margin.",
+            "Classic chess ELO uses 400, where a 400-point gap means about a 91% expected score. Basketball may calibrate near 400, but noisy data or volatile leagues may fit better around 450–550.",
+            "Use Brier score and log loss to judge this parameter. Winner accuracy only checks which side is above 50%, so it will miss probability calibration issues."
+        ],
+        "competitionWeight" =>
+        [
+            "This multiplies rating movement after the game. Use it to model competitions where results should count more or less than the default."
+        ],
+        "usesMargin" =>
+        [
+            "When enabled, the model compares the actual margin to the expected margin and boosts or dampens the ELO update. Blowouts can move ratings more than narrow wins."
+        ],
+        "pointScale" =>
+        [
+            "This translates ELO difference into expected point margin. With 28, a 140-point ELO gap equals about 5 expected points.",
+            "Smaller values make the same ELO gap imply a larger spread. Larger values make expected margins more conservative.",
+            "This affects expected margin and margin-adjusted rating updates. Those rating updates can change future win probabilities, but the current game's probability still uses the probability scale above."
+        ],
+        "marginDampenerFactor" =>
+        [
+            "This scales the logarithmic boost or dampener from margin overperformance. The default is 5.",
+            "Higher values make margin adjustment gentler because the same shortfall or blowout is divided into a smaller effect. Lower values make margin matter faster.",
+            "For underperformance, the model uses ln(shortfall + 1) divided by this factor before reducing the multiplier."
+        ],
+        "maxMarginMultiplier" =>
+        [
+            "This caps how far point margin can move the normal win/loss ELO delta. The default is 1.5x.",
+            "The lower bound is derived from the same cap. A 1.5x cap means the weakest multiplier is 1 / 1.5, or about 0.667x.",
+            "Raising the cap lets blowouts and underwhelming wins have more influence. Lowering it keeps updates closer to plain ELO."
+        ],
+        "eloPool" =>
+        [
+            "Each run has one isolated rating pool. All-competition runs include every eligible competition inside this pool only."
+        ],
+        "scopeType" =>
+        [
+            "Selected and all-competition runs use one shared rating pool. Games are processed chronologically across the whole selected scope."
+        ],
+        "leagueName" when IsSingleCompetition =>
+        [
+            "The backtest runs inside one competition. Use this when you want clean league-specific model comparisons."
+        ],
+        "leagueName" =>
+        [
+            "The backtest processes all selected competitions in one shared model universe. Cross-competition games affect ratings naturally when they exist."
+        ],
+        "initSeason" =>
+        [
+            "The initialization seasons build ratings before scoring begins. Earlier starts give teams more history, but may include older team strength.",
+            "The app resolves the selected seasons to the first and last game dates available in the database."
+        ],
+        "scoredSeason" =>
+        [
+            "Scored seasons record predictions before each game updates ratings. These games drive winner accuracy, Brier score, log loss, and margin error.",
+            "Use the same scored seasons when comparing models so metric changes come from parameters, not a different sample."
+        ],
+        _ => []
+    };
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+}

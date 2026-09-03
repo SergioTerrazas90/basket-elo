@@ -9,6 +9,7 @@
 @using BasketElo.Domain.Entities
 @using BasketElo.Infrastructure.Identity
 @using BasketElo.Web.Auth
+@using BasketElo.Web.Components.ModelLab
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.Options
 @inject HttpClient Http
@@ -90,19 +91,13 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("modelName")'
-                                    aria-controls="modelNameInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Model name context"
                                     @onclick='() => ToggleInfoPanel("modelName")'>
                                 i
                             </button>
                         </div>
                         <input id="modelName" class="form-control" @bind="modelName" maxlength="80" />
-                        @if (IsInfoPanelVisible("modelName"))
-                        {
-                            <div id="modelNameInfo" class="info-panel">
-                                <p>This is only a label for the experiment you are running. It does not affect ratings, probability, or margin calculations.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field wide">
@@ -116,19 +111,13 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("baseRating")'
-                                    aria-controls="baseRatingInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Base rating context"
                                     @onclick='() => ToggleInfoPanel("baseRating")'>
                                 i
                             </button>
                         </div>
                         <input id="baseRating" class="form-control" type="number" min="500" max="2500" step="10" @bind="baseRating" />
-                        @if (IsInfoPanelVisible("baseRating"))
-                        {
-                            <div id="baseRatingInfo" class="info-panel">
-                                <p>New teams start here before they have any games in the simulation. Changing this mostly shifts the whole league up or down unless teams enter the model at different times.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field">
@@ -137,19 +126,13 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("kFactor")'
-                                    aria-controls="kFactorInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="K factor context"
                                     @onclick='() => ToggleInfoPanel("kFactor")'>
                                 i
                             </button>
                         </div>
                         <input id="kFactor" class="form-control" type="number" min="1" max="100" step="1" @bind="kFactor" />
-                        @if (IsInfoPanelVisible("kFactor"))
-                        {
-                            <div id="kFactorInfo" class="info-panel">
-                                <p>This controls how quickly ratings move after each game. Higher values react faster to recent results, but can make ratings noisier.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field">
@@ -158,26 +141,20 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("homeAdvantage")'
-                                    aria-controls="homeAdvantageInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Home advantage context"
                                     @onclick='() => ToggleInfoPanel("homeAdvantage")'>
                                 i
                             </button>
                         </div>
                         <input id="homeAdvantage" class="form-control" type="number" min="-200" max="300" step="5" @bind="homeAdvantageElo" />
-                        @if (IsInfoPanelVisible("homeAdvantage"))
-                        {
-                            <div id="homeAdvantageInfo" class="info-panel">
-                                <p>This many ELO points are added to the home team before calculating win probability, expected margin, and the rating update.</p>
-                            </div>
-                        }
                     </div>
 
-                    <details class="advanced-settings wide">
-                        <summary>
-                            <span>@T["AdvancedSettings"]</span>
-                            <small>@T["AdvancedSettingsDescription"]</small>
-                        </summary>
+                    <section class="advanced-settings wide" aria-labelledby="model-calculations-title">
+                        <div class="advanced-settings-heading">
+                            <h3 id="model-calculations-title">Calibration and margin</h3>
+                            <p>Probability calibration, competition weighting, and margin adjustments.</p>
+                        </div>
                         <div class="control-grid advanced-settings-grid">
                     <div class="filter-field wide">
                         <div class="label-with-info">
@@ -185,30 +162,13 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("probabilityScale")'
-                                    aria-controls="probabilityScaleInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Probability scale context"
                                     @onclick='() => ToggleInfoPanel("probabilityScale")'>
                                 i
                             </button>
                         </div>
                         <input id="probabilityScale" class="form-control" type="number" min="200" max="800" step="25" @bind="probabilityScale" />
-                        @if (IsInfoPanelVisible("probabilityScale"))
-                        {
-                            <div id="probabilityScaleInfo" class="info-panel">
-                                <p>
-                                    This controls how quickly ELO difference turns into win probability. Smaller values make the model more confident; larger values keep predictions closer to 50%.
-                                </p>
-                                <p>
-                                    For the current game, win probability uses the classic ELO curve from rating difference. It does not come directly from the expected point margin.
-                                </p>
-                                <p>
-                                    Classic chess ELO uses 400, where a 400-point gap means about a 91% expected score. Basketball may calibrate near 400, but noisy data or volatile leagues may fit better around 450-550.
-                                </p>
-                                <p>
-                                    Use Brier score and log loss to judge this parameter. Winner accuracy only checks which side is above 50%, so it will miss probability calibration issues.
-                                </p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field">
@@ -217,19 +177,13 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("competitionWeight")'
-                                    aria-controls="competitionWeightInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Competition weight context"
                                     @onclick='() => ToggleInfoPanel("competitionWeight")'>
                                 i
                             </button>
                         </div>
                         <input id="competitionWeight" class="form-control" type="number" min="0.1" max="3" step="0.05" @bind="competitionWeight" />
-                        @if (IsInfoPanelVisible("competitionWeight"))
-                        {
-                            <div id="competitionWeightInfo" class="info-panel">
-                                <p>This multiplies rating movement after the game. Use it to model competitions where results should count more or less than the default.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field">
@@ -241,18 +195,12 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("usesMargin")'
-                                    aria-controls="usesMarginInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Margin adjustment context"
                                     @onclick='() => ToggleInfoPanel("usesMargin")'>
                                 i
                             </button>
                         </div>
-                        @if (IsInfoPanelVisible("usesMargin"))
-                        {
-                            <div id="usesMarginInfo" class="info-panel">
-                                <p>When enabled, the model compares the actual margin to the expected margin and boosts or dampens the ELO update. Blowouts can move ratings more than narrow wins.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field">
@@ -261,21 +209,13 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("pointScale")'
-                                    aria-controls="pointScaleInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Point margin scale context"
                                     @onclick='() => ToggleInfoPanel("pointScale")'>
                                 i
                             </button>
                         </div>
                         <input id="pointScale" class="form-control" type="number" min="5" max="100" step="1" @bind="pointsPerEloMargin" disabled="@(!usesMarginAdjustment)" />
-                        @if (IsInfoPanelVisible("pointScale"))
-                        {
-                            <div id="pointScaleInfo" class="info-panel">
-                                <p>This translates ELO difference into expected point margin. With 28, a 140-point ELO gap equals about 5 expected points.</p>
-                                <p>Smaller values make the same ELO gap imply a larger spread. Larger values make expected margins more conservative.</p>
-                                <p>This affects expected margin and margin-adjusted rating updates. Those rating updates can change future win probabilities, but the current game's probability still uses the probability scale above.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field">
@@ -284,21 +224,13 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("marginDampenerFactor")'
-                                    aria-controls="marginDampenerFactorInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Dampener factor context"
                                     @onclick='() => ToggleInfoPanel("marginDampenerFactor")'>
                                 i
                             </button>
                         </div>
                         <input id="marginDampenerFactor" class="form-control" type="number" min="1" max="20" step="0.25" @bind="marginDampenerFactor" disabled="@(!usesMarginAdjustment)" />
-                        @if (IsInfoPanelVisible("marginDampenerFactor"))
-                        {
-                            <div id="marginDampenerFactorInfo" class="info-panel">
-                                <p>This scales the logarithmic boost or dampener from margin overperformance. The default is 5.</p>
-                                <p>Higher values make margin adjustment gentler because the same shortfall or blowout is divided into a smaller effect. Lower values make margin matter faster.</p>
-                                <p>For underperformance, the model uses ln(shortfall + 1) divided by this factor before reducing the multiplier.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field">
@@ -307,24 +239,16 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("maxMarginMultiplier")'
-                                    aria-controls="maxMarginMultiplierInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Margin cap context"
                                     @onclick='() => ToggleInfoPanel("maxMarginMultiplier")'>
                                 i
                             </button>
                         </div>
                         <input id="maxMarginMultiplier" class="form-control" type="number" min="1" max="3" step="0.05" @bind="maxMarginMultiplier" disabled="@(!usesMarginAdjustment)" />
-                        @if (IsInfoPanelVisible("maxMarginMultiplier"))
-                        {
-                            <div id="maxMarginMultiplierInfo" class="info-panel">
-                                <p>This caps how far point margin can move the normal win/loss ELO delta. The default is 1.5x.</p>
-                                <p>The lower bound is derived from the same cap. A 1.5x cap means the weakest multiplier is 1 / 1.5, or about 0.667x.</p>
-                                <p>Raising the cap lets blowouts and underwhelming wins have more influence. Lowering it keeps updates closer to plain ELO.</p>
-                            </div>
-                        }
                     </div>
                         </div>
-                    </details>
+                    </section>
                 </div>
 
                 <div class="saved-model-panel">
@@ -390,7 +314,7 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("eloPool")'
-                                    aria-controls="eloPoolInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="ELO pool context"
                                     @onclick='() => ToggleInfoPanel("eloPool")'>
                                 i
@@ -406,12 +330,6 @@
                                 <option value="@pool.Key">@pool.DisplayName</option>
                             }
                         </select>
-                        @if (IsInfoPanelVisible("eloPool"))
-                        {
-                            <div id="eloPoolInfo" class="info-panel">
-                                <p>Each run has one isolated rating pool. All-competition runs include every eligible competition inside this pool only.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field wide">
@@ -420,7 +338,7 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("scopeType")'
-                                    aria-controls="scopeTypeInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Scope context"
                                     @onclick='() => ToggleInfoPanel("scopeType")'>
                                 i
@@ -434,12 +352,6 @@
                                 <option value="@ModelLabScopeTypes.AllCompetitions">@T["AllCompetitions"]</option>
                             }
                         </select>
-                        @if (IsInfoPanelVisible("scopeType"))
-                        {
-                            <div id="scopeTypeInfo" class="info-panel">
-                                <p>Selected and all-competition runs use one shared rating pool. Games are processed chronologically across the whole selected scope.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field wide">
@@ -448,7 +360,7 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("leagueName")'
-                                    aria-controls="leagueNameInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="League context"
                                     @onclick='() => ToggleInfoPanel("leagueName")'>
                                 i
@@ -477,19 +389,6 @@
                                 }
                             </select>
                         }
-                        @if (IsInfoPanelVisible("leagueName"))
-                        {
-                            <div id="leagueNameInfo" class="info-panel">
-                                @if (scopeType == ModelLabScopeTypes.SingleCompetition)
-                                {
-                                    <p>The backtest runs inside one competition. Use this when you want clean league-specific model comparisons.</p>
-                                }
-                                else
-                                {
-                                    <p>The backtest processes all selected competitions in one shared model universe. Cross-competition games affect ratings naturally when they exist.</p>
-                                }
-                            </div>
-                        }
                         <p class="field-note">@LeagueAccessNote</p>
                     </div>
 
@@ -499,7 +398,7 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("initSeason")'
-                                    aria-controls="initSeasonInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Initialization start context"
                                     @onclick='() => ToggleInfoPanel("initSeason")'>
                                 i
@@ -511,13 +410,6 @@
                                 <option value="@season.Label">@season.Label</option>
                             }
                         </select>
-                        @if (IsInfoPanelVisible("initSeason"))
-                        {
-                            <div id="initSeasonInfo" class="info-panel">
-                                <p>The initialization seasons build ratings before scoring begins. Earlier starts give teams more history, but may include older team strength.</p>
-                                <p>The app resolves the selected seasons to the first and last game dates available in the database.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field">
@@ -538,7 +430,7 @@
                             <button type="button"
                                     class="info-button"
                                     aria-expanded='@IsInfoPanelVisible("scoredSeason")'
-                                    aria-controls="scoredSeasonInfo"
+                                    aria-controls="modelLabInfoDialog"
                                     title="Scored start context"
                                     @onclick='() => ToggleInfoPanel("scoredSeason")'>
                                 i
@@ -550,13 +442,6 @@
                                 <option value="@season.Label">@season.Label</option>
                             }
                         </select>
-                        @if (IsInfoPanelVisible("scoredSeason"))
-                        {
-                            <div id="scoredSeasonInfo" class="info-panel">
-                                <p>Scored seasons record predictions before each game updates ratings. These games drive winner accuracy, Brier score, log loss, and margin error.</p>
-                                <p>Use the same scored seasons when comparing models so metric changes come from parameters, not a different sample.</p>
-                            </div>
-                        }
                     </div>
 
                     <div class="filter-field">
@@ -760,6 +645,10 @@
             </section>
         }
     }
+
+    <ModelLabInfoDialog InfoKey="@activeInfoPanel"
+                        IsSingleCompetition="@(scopeType == ModelLabScopeTypes.SingleCompetition)"
+                        OnClose="CloseInfoPanel" />
 </div>
 
 @code {
@@ -1943,6 +1832,9 @@
 
     private void ToggleInfoPanel(string key)
         => activeInfoPanel = IsInfoPanelVisible(key) ? null : key;
+
+    private void CloseInfoPanel()
+        => activeInfoPanel = null;
 
     private int BaselineMetricWins
         => result is null

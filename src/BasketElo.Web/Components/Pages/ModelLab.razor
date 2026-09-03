@@ -74,7 +74,7 @@
             <div class="model-panel">
                 <div class="section-head">
                     <div>
-                        <p class="eyebrow">@(IsExistingModelRoute ? "Run model" : "Create model")</p>
+                        <p class="step-label">@T["Step"] 1</p>
                         <h2>@(IsExistingModelRoute ? $"{loadedModel?.Name ?? "Model"} · v{loadedModel?.CurrentVersion.VersionNumber}" : "New model")</h2>
                         <p>@(IsExistingModelRoute ? "The model is fixed for this run. Choose the data and evaluation period below." : "Define the rating rules you want to test, then save the model or run it immediately.")</p>
                     </div>

@@ -5,6 +5,50 @@
 
 .eyebrow { margin: 0 0 .3rem; color: var(--color-teal); font-size: .76rem; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
 
+.anonymous-signin {
+    position: relative;
+    display: flex;
+    min-height: min(28rem, calc(100vh - 12rem));
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    padding: clamp(2.25rem, 7vw, 5rem) clamp(1.5rem, 6vw, 4rem);
+    overflow: hidden;
+    border: 1px solid rgba(31, 122, 104, .2);
+    border-radius: var(--radius-xl);
+    background:
+        radial-gradient(circle at 50% 0, rgba(31, 122, 104, .13), transparent 42%),
+        radial-gradient(circle at 100% 100%, rgba(233, 120, 45, .09), transparent 30%),
+        var(--color-surface);
+    box-shadow: 0 18px 45px rgba(30, 45, 43, .07);
+    text-align: center;
+}
+
+.anonymous-signin h1 {
+    margin: .45rem 0 .85rem;
+    color: var(--color-text);
+    font-family: var(--font-display);
+    font-size: clamp(2.15rem, 5vw, 3.5rem);
+    font-weight: 650;
+    letter-spacing: -.04em;
+    line-height: 1;
+}
+
+.anonymous-signin > p:not(.eyebrow) {
+    max-width: 37rem;
+    margin: 0;
+    color: var(--color-muted);
+    font-size: clamp(.92rem, 1.5vw, 1.05rem);
+    line-height: 1.6;
+}
+
+.anonymous-signin-action {
+    min-height: 2.85rem;
+    margin-top: 1.5rem;
+    padding-inline: 1.1rem;
+    box-shadow: 0 10px 24px rgba(15, 79, 75, .2);
+}
+
 .google-signin-button {
     display: inline-flex;
     min-height: 2.5rem;
@@ -166,7 +210,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
         "topline topline"
-        "models verdict"
+        "verdict verdict"
         "context open";
     min-width: 0;
     gap: .55rem .8rem;
@@ -223,47 +267,14 @@
     font-weight: 700;
 }
 
-.available-models {
-    grid-area: models;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: .4rem;
-}
-
-.available-models > span {
-    display: inline-flex;
-    align-items: center;
-    min-width: 0;
-    gap: .35rem;
-    padding: .28rem .48rem;
-    border-radius: var(--radius-pill);
-    background: var(--color-surface-muted);
-    font-size: .72rem;
-    font-weight: 780;
-}
-
-.available-models > span i {
-    width: .48rem;
-    height: .48rem;
-    border-radius: 50%;
-    background: var(--color-teal);
-}
-
-.available-models > span:nth-child(2) i { background: var(--color-accent); }
-.available-models > span:nth-child(3) i { background: var(--color-purple); }
-.available-models small { color: var(--color-subtle); font-size: .62rem; }
-
 .available-verdict {
     grid-area: verdict;
     align-self: center;
-    max-width: 9rem;
     overflow: hidden;
     color: var(--color-brand-dark);
     font-family: var(--font-display);
     font-size: 1rem;
     line-height: 1.05;
-    text-align: right;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -405,6 +416,12 @@
 }
 
 @media (max-width: 640px) {
+    .anonymous-signin {
+        min-height: 0;
+        padding: 2.75rem 1.25rem;
+        border-radius: var(--radius-lg);
+    }
+
     .library-hero,
     .model-card-heading {
         flex-direction: column;
@@ -426,7 +443,6 @@
         grid-template-columns: 1fr;
         grid-template-areas:
             "topline"
-            "models"
             "verdict"
             "context"
             "open";

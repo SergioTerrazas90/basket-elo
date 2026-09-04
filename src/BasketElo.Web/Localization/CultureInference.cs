@@ -12,12 +12,6 @@ public static class CultureInference
 
     public static string? Infer(HttpRequest request)
     {
-        var browserCulture = InferFromAcceptLanguage(request.Headers.AcceptLanguage.ToString());
-        if (browserCulture is not null)
-        {
-            return browserCulture;
-        }
-
         var countryCode = request.Headers["CF-IPCountry"].FirstOrDefault()
             ?? request.Headers["X-Country-Code"].FirstOrDefault()
             ?? request.Headers["X-Geo-Country"].FirstOrDefault();
@@ -27,7 +21,7 @@ public static class CultureInference
             return SupportedCultures.Spanish;
         }
 
-        return null;
+        return InferFromAcceptLanguage(request.Headers.AcceptLanguage.ToString());
     }
 
     private static string? InferFromAcceptLanguage(string value)

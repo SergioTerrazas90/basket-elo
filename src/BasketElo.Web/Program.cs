@@ -38,6 +38,7 @@ builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOpt
 builder.Services.Configure<StripeBillingOptions>(builder.Configuration.GetSection(StripeBillingOptions.SectionName));
 builder.Services.AddScoped<IApplicationUserLoginService, ApplicationUserLoginService>();
 builder.Services.AddScoped<IStripeBillingService, StripeBillingService>();
+builder.Services.AddScoped<UserCultureResolver>();
 builder.Services.AddSingleton<IStripeSubscriptionGateway, StripeSubscriptionGateway>();
 var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>() ?? new AuthOptions();
 
@@ -219,7 +220,8 @@ if (!authOptions.Enabled)
 
 app.Use(async (httpContext, next) =>
 {
-    var resolution = await ResolveRequestCultureAsync(httpContext);
+    var resolver = httpContext.RequestServices.GetRequiredService<UserCultureResolver>();
+    var resolution = await resolver.ResolveAsync(httpContext, httpContext.RequestAborted);
     if (resolution.PersistCookie)
     {
         SetCultureCookie(httpContext, resolution.CultureName);
@@ -397,36 +399,6 @@ app.MapGet("/sitemap.xml", async (HttpContext httpContext, IConfiguration config
 });
 
 app.Run();
-
-static async Task<(string CultureName, bool PersistCookie)> ResolveRequestCultureAsync(HttpContext httpContext)
-{
-    // A language explicitly selected on this device must win immediately, even if
-    // an older account preference is still being synchronized or another tab is open.
-    if (SupportedCultures.TryNormalize(
-        httpContext.Request.Cookies[SupportedCultures.CultureCookieName],
-        out var cookieCulture))
-    {
-        return (cookieCulture, false);
-    }
-
-    var userId = GetAuthenticatedUserId(httpContext.User);
-    if (userId.HasValue)
-    {
-        var dbContext = httpContext.RequestServices.GetRequiredService<BasketEloDbContext>();
-        var preferredCulture = await dbContext.ApplicationUsers
-            .AsNoTracking()
-            .Where(x => x.Id == userId.Value)
-            .Select(x => x.PreferredCulture)
-            .SingleOrDefaultAsync(httpContext.RequestAborted);
-
-        if (SupportedCultures.TryNormalize(preferredCulture, out var normalizedPreference))
-        {
-            return (normalizedPreference, false);
-        }
-    }
-
-    return (CultureInference.Infer(httpContext.Request) ?? SupportedCultures.English, true);
-}
 
 static void SetCultureCookie(HttpContext httpContext, string cultureName)
 {

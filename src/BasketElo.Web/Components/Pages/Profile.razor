@@ -78,6 +78,10 @@
                     <strong>@ModelAllowance</strong>
                     <span>@T["ModelsPerMonth"]</span>
                 </div>
+                @if (IsPremium && entitlement?.MonthlyRunWindowEndUtc is DateTime allowanceReset)
+                {
+                    <p class="profile-allowance-reset">@T["AllowanceResetsOn", allowanceReset.ToLocalTime().ToString("d MMMM yyyy")]</p>
+                }
                 <p class="profile-plan-intro">@PlanIntro</p>
 
                 <ul class="profile-benefits">
@@ -131,14 +135,26 @@
                         <span class="profile-active-check" aria-hidden="true">✓</span>
                         <span>@PremiumStatusDescription</span>
                     </div>
-                    @if (billingAccount?.CanManageBilling == true)
+                    @if (billingAccount?.CanChangeCancellation == true)
                     {
-                        <button type="button"
-                                class="btn btn-outline-primary profile-manage-billing"
-                                disabled="@billingBusy"
-                                @onclick="OpenBillingPortalAsync">
-                            @T["ManageBilling"]
-                        </button>
+                        @if (billingAccount.CancelAtPeriodEnd)
+                        {
+                            <button type="button"
+                                    class="btn btn-outline-primary profile-manage-billing"
+                                    disabled="@billingBusy"
+                                    @onclick='() => UpdateCancellationAsync(false)'>
+                                @(billingBusy ? T["Updating"] : T["KeepPremium"])
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button"
+                                    class="btn btn-outline-danger profile-manage-billing"
+                                    disabled="@billingBusy"
+                                    @onclick="ShowCancelConfirmation">
+                                @T["CancelPremium"]
+                            </button>
+                        }
                     }
                 }
             </section>
@@ -167,6 +183,27 @@
     {
         <p class="profile-error" role="alert">@billingError</p>
     }
+
+    @if (showCancelConfirmation)
+    {
+        <div class="profile-dialog-backdrop" @onclick="CloseCancelConfirmation">
+            <section class="profile-dialog"
+                     role="dialog"
+                     aria-modal="true"
+                     aria-labelledby="cancel-premium-title"
+                     @onclick:stopPropagation="true">
+                <p class="profile-section-label">@T["Premium"]</p>
+                <h2 id="cancel-premium-title">@T["CancelPremiumQuestion"]</h2>
+                <p>@CancelConfirmationDescription</p>
+                <div class="profile-dialog-actions">
+                    <button type="button" class="btn btn-outline-secondary" disabled="@billingBusy" @onclick="CloseCancelConfirmation">@T["GoBack"]</button>
+                    <button type="button" class="btn btn-danger" disabled="@billingBusy" @onclick='() => UpdateCancellationAsync(true)'>
+                        @(billingBusy ? T["Updating"] : T["ConfirmCancellation"])
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
 </div>
 
 @code {
@@ -181,6 +218,8 @@
     private StripeBillingAccountState? billingAccount;
     private bool isLoading = true;
     private bool billingBusy;
+    private bool showCancelConfirmation;
+    private string? billingStatusMessage;
     private string? loadError;
     private string? billingError;
     private string displayName = string.Empty;
@@ -198,15 +237,24 @@
     private string Email => email;
     private string ProfileUrl => new Uri(new Uri(Navigation.BaseUri), "profile").AbsoluteUri;
     private string? BillingNotice
-        => Navigation.ToAbsoluteUri(Navigation.Uri).Query.Contains("billing=success", StringComparison.OrdinalIgnoreCase)
+        => !string.IsNullOrWhiteSpace(billingStatusMessage)
+            ? billingStatusMessage
+            : Navigation.ToAbsoluteUri(Navigation.Uri).Query.Contains("billing=success", StringComparison.OrdinalIgnoreCase)
             ? T["StripeCheckoutSuccess"].Value
             : Navigation.ToAbsoluteUri(Navigation.Uri).Query.Contains("billing=canceled", StringComparison.OrdinalIgnoreCase)
                 ? T["StripeCheckoutCanceled"].Value
                 : null;
     private string PremiumStatusDescription
         => billingAccount?.CancelAtPeriodEnd == true
-            ? T["PremiumCancelsAtPeriodEnd"].Value
+            ? billingAccount.CurrentPeriodEndUtc is DateTime end
+                ? T["PremiumCancelsOn", end.ToLocalTime().ToString("d MMMM yyyy")].Value
+                : T["PremiumCancelsAtPeriodEnd"].Value
             : T["PremiumActiveDescription"].Value;
+
+    private string CancelConfirmationDescription
+        => billingAccount?.CurrentPeriodEndUtc is DateTime end
+            ? T["CancelPremiumDescriptionWithDate", end.ToLocalTime().ToString("d MMMM yyyy")].Value
+            : T["CancelPremiumDescription"].Value;
 
     private string Initials
     {
@@ -281,7 +329,21 @@
         }
     }
 
-    private async Task OpenBillingPortalAsync()
+    private void ShowCancelConfirmation()
+    {
+        billingError = null;
+        showCancelConfirmation = true;
+    }
+
+    private void CloseCancelConfirmation()
+    {
+        if (!billingBusy)
+        {
+            showCancelConfirmation = false;
+        }
+    }
+
+    private async Task UpdateCancellationAsync(bool cancelAtPeriodEnd)
     {
         if (!userId.HasValue || billingBusy)
         {
@@ -290,17 +352,24 @@
 
         billingBusy = true;
         billingError = null;
+        billingStatusMessage = null;
         try
         {
-            var portalUrl = await BillingService.CreatePortalSessionAsync(
+            billingAccount = await BillingService.SetCancelAtPeriodEndAsync(
                 userId.Value,
-                ProfileUrl,
+                cancelAtPeriodEnd,
                 CancellationToken.None);
-            Navigation.NavigateTo(portalUrl, forceLoad: true);
+            showCancelConfirmation = false;
+            billingStatusMessage = cancelAtPeriodEnd
+                ? T["PremiumCancellationScheduled"].Value
+                : T["PremiumCancellationReversed"].Value;
         }
         catch (Exception)
         {
             billingError = T["BillingActionFailed"].Value;
+        }
+        finally
+        {
             billingBusy = false;
         }
     }

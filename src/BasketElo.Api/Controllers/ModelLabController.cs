@@ -505,5 +505,7 @@ public sealed class ModelLabController(
             entitlement.SavedModelLimit,
             entitlement.StoredRunLimit,
             entitlement.MonthlyRunLimit,
-            entitlement.RequiredLeagueName);
+            entitlement.RequiredLeagueName,
+            entitlement.MonthlyRunWindowStartUtc,
+            entitlement.MonthlyRunWindowEndUtc);
 }

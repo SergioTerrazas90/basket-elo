@@ -21,12 +21,22 @@ public sealed class ModelLabEntitlementService(
             .Select(x => new
             {
                 x.Email,
+                x.CreatedAtUtc,
                 IsAdmin = x.UserRoles.Any(userRole => userRole.Role.Key == ApplicationRoleKeys.Admin),
                 HasStripePremium = x.BillingSubscriptions.Any(subscription =>
                     subscription.IsPremium &&
                     (subscription.Status == BillingSubscriptionStatuses.Active ||
                      subscription.Status == BillingSubscriptionStatuses.Trialing ||
-                     subscription.Status == BillingSubscriptionStatuses.PastDue))
+                     subscription.Status == BillingSubscriptionStatuses.PastDue)),
+                PremiumStartedAtUtc = x.BillingSubscriptions
+                    .Where(subscription =>
+                        subscription.IsPremium &&
+                        (subscription.Status == BillingSubscriptionStatuses.Active ||
+                         subscription.Status == BillingSubscriptionStatuses.Trialing ||
+                         subscription.Status == BillingSubscriptionStatuses.PastDue))
+                    .OrderByDescending(subscription => subscription.UpdatedAtUtc)
+                    .Select(subscription => subscription.PremiumStartedAtUtc)
+                    .FirstOrDefault()
             })
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -41,6 +51,7 @@ public sealed class ModelLabEntitlementService(
             options.Value.GetNormalizedPaidEmails().Contains(normalizedEmail);
         if (isPaid)
         {
+            var window = GetMonthlyWindow(user.PremiumStartedAtUtc ?? user.CreatedAtUtc, DateTime.UtcNow);
             return new ModelLabEntitlement(
                 "paid",
                 true,
@@ -48,7 +59,9 @@ public sealed class ModelLabEntitlementService(
                 null,
                 Math.Max(0, options.Value.PaidStoredRunLimit),
                 Math.Max(0, options.Value.PaidMonthlyRunLimit),
-                null);
+                null,
+                window.StartUtc,
+                window.EndUtc);
         }
 
         return new ModelLabEntitlement(
@@ -60,4 +73,26 @@ public sealed class ModelLabEntitlementService(
             null,
             options.Value.FreeLeagueName);
     }
+
+    internal static (DateTime StartUtc, DateTime EndUtc) GetMonthlyWindow(DateTime anchorUtc, DateTime nowUtc)
+    {
+        var anchor = EnsureUtc(anchorUtc);
+        var now = EnsureUtc(nowUtc);
+        var elapsedMonths = ((now.Year - anchor.Year) * 12) + now.Month - anchor.Month;
+        if (anchor.AddMonths(elapsedMonths) > now)
+        {
+            elapsedMonths--;
+        }
+
+        elapsedMonths = Math.Max(0, elapsedMonths);
+        return (anchor.AddMonths(elapsedMonths), anchor.AddMonths(elapsedMonths + 1));
+    }
+
+    private static DateTime EnsureUtc(DateTime value)
+        => value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        };
 }

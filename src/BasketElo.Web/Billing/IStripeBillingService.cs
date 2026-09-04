@@ -12,9 +12,9 @@ public interface IStripeBillingService
         string profileUrl,
         CancellationToken cancellationToken);
 
-    Task<string> CreatePortalSessionAsync(
+    Task<StripeBillingAccountState> SetCancelAtPeriodEndAsync(
         Guid userId,
-        string profileUrl,
+        bool cancelAtPeriodEnd,
         CancellationToken cancellationToken);
 
     Task ProcessWebhookAsync(
@@ -30,9 +30,10 @@ public sealed record StripeBillingAvailability(
     bool WebhookEnabled);
 
 public sealed record StripeBillingAccountState(
-    bool CanManageBilling,
+    bool CanChangeCancellation,
     string? SubscriptionStatus,
-    bool CancelAtPeriodEnd);
+    bool CancelAtPeriodEnd,
+    DateTime? CurrentPeriodEndUtc);
 
 public static class StripeBillingCadences
 {

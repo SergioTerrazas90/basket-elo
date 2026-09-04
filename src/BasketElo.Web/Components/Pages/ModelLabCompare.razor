@@ -133,7 +133,7 @@
                         <strong>@FormatSeasonRange(scoredFromSeason, scoredToSeason)</strong> scored after @FormatSeasonRange(initializationFromSeason, initializationToSeason) initialization
                         @if (runQuota?.MonthlyRunLimit is int monthlyLimit)
                         {
-                            <small class="field-note">This month: @runQuota.MonthlyRuns/@monthlyLimit models</small>
+                            <small class="field-note">Current allowance: @runQuota.MonthlyRuns/@monthlyLimit models</small>
                         }
                         @if (MonthlyComparisonUnavailable)
                         {

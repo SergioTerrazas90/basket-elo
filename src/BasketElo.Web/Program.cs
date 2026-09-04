@@ -38,6 +38,7 @@ builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOpt
 builder.Services.Configure<StripeBillingOptions>(builder.Configuration.GetSection(StripeBillingOptions.SectionName));
 builder.Services.AddScoped<IApplicationUserLoginService, ApplicationUserLoginService>();
 builder.Services.AddScoped<IStripeBillingService, StripeBillingService>();
+builder.Services.AddSingleton<IStripeSubscriptionGateway, StripeSubscriptionGateway>();
 var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<AuthOptions>() ?? new AuthOptions();
 
 var connectionString = builder.Configuration.GetConnectionString("Postgres")

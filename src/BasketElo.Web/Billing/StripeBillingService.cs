@@ -11,6 +11,7 @@ namespace BasketElo.Web.Billing;
 public sealed class StripeBillingService(
     BasketEloDbContext dbContext,
     IOptions<StripeBillingOptions> options,
+    IStripeSubscriptionGateway subscriptionGateway,
     ILogger<StripeBillingService> logger) : IStripeBillingService
 {
     private const string UserIdMetadataKey = "basketelo_user_id";
@@ -29,27 +30,29 @@ public sealed class StripeBillingService(
         Guid userId,
         CancellationToken cancellationToken)
     {
-        var user = await dbContext.ApplicationUsers
-            .AsNoTracking()
-            .Where(x => x.Id == userId)
-            .Select(x => new
+        var subscription = await GetCurrentPremiumSubscriptionAsync(userId, cancellationToken);
+        if (subscription is not null &&
+            !subscription.CurrentPeriodEndUtc.HasValue &&
+            options.Value.IsSubscriptionManagementConfigured)
+        {
+            var subscriptionId = subscription.StripeSubscriptionId;
+            try
             {
-                x.StripeCustomerId,
-                Subscription = x.BillingSubscriptions
-                    .OrderByDescending(subscription => subscription.UpdatedAtUtc)
-                    .Select(subscription => new
-                    {
-                        subscription.Status,
-                        subscription.CancelAtPeriodEnd
-                    })
-                    .FirstOrDefault()
-            })
-            .SingleOrDefaultAsync(cancellationToken);
+                var stripeSubscription = await subscriptionGateway.GetAsync(subscriptionId, cancellationToken);
+                await SyncSubscriptionAsync(stripeSubscription, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                subscription = await GetCurrentPremiumSubscriptionAsync(userId, cancellationToken);
+            }
+            catch (StripeException exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Could not refresh Stripe subscription {SubscriptionId} while loading billing state.",
+                    subscriptionId);
+            }
+        }
 
-        return new StripeBillingAccountState(
-            options.Value.IsPortalConfigured && !string.IsNullOrWhiteSpace(user?.StripeCustomerId),
-            user?.Subscription?.Status,
-            user?.Subscription?.CancelAtPeriodEnd == true);
+        return ToAccountState(subscription);
     }
 
     public async Task<string> CreateCheckoutSessionAsync(
@@ -155,36 +158,28 @@ public sealed class StripeBillingService(
         return session.Url ?? throw new InvalidOperationException("Stripe did not return a Checkout URL.");
     }
 
-    public async Task<string> CreatePortalSessionAsync(
+    public async Task<StripeBillingAccountState> SetCancelAtPeriodEndAsync(
         Guid userId,
-        string profileUrl,
+        bool cancelAtPeriodEnd,
         CancellationToken cancellationToken)
     {
         var value = options.Value;
-        if (!value.IsPortalConfigured)
+        if (!value.IsSubscriptionManagementConfigured)
         {
-            throw new InvalidOperationException("Stripe Customer Portal is not configured.");
+            throw new InvalidOperationException("Subscription management is not configured.");
         }
 
-        var customerId = await dbContext.ApplicationUsers
-            .AsNoTracking()
-            .Where(x => x.Id == userId)
-            .Select(x => x.StripeCustomerId)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(customerId))
-        {
-            throw new InvalidOperationException("This account does not have Stripe billing details yet.");
-        }
+        var subscription = await GetCurrentPremiumSubscriptionAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException("This account does not have an active Premium subscription to update.");
 
-        var session = await new Stripe.BillingPortal.SessionService(CreateClient(value.SecretKey)).CreateAsync(
-            new Stripe.BillingPortal.SessionCreateOptions
-            {
-                Customer = customerId,
-                ReturnUrl = profileUrl
-            },
-            cancellationToken: cancellationToken);
+        var updated = await subscriptionGateway.SetCancelAtPeriodEndAsync(
+            subscription.StripeSubscriptionId,
+            cancelAtPeriodEnd,
+            cancellationToken);
 
-        return session.Url ?? throw new InvalidOperationException("Stripe did not return a Customer Portal URL.");
+        await SyncSubscriptionAsync(updated, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToAccountState(await GetCurrentPremiumSubscriptionAsync(userId, cancellationToken));
     }
 
     public async Task ProcessWebhookAsync(
@@ -313,6 +308,12 @@ public sealed class StripeBillingService(
         stored.IsPremium = IsPremiumPrice(price?.Id);
         stored.Status = subscription.Status;
         stored.CancelAtPeriodEnd = subscription.CancelAtPeriodEnd;
+        stored.PremiumStartedAtUtc = EnsureUtc(subscription.StartDate);
+        if (subscription.Items?.Data?.FirstOrDefault() is { } item)
+        {
+            stored.CurrentPeriodStartUtc = EnsureUtc(item.CurrentPeriodStart);
+            stored.CurrentPeriodEndUtc = EnsureUtc(item.CurrentPeriodEnd);
+        }
         stored.UpdatedAtUtc = DateTime.UtcNow;
 
         if (dbContext.Entry(stored).State == EntityState.Detached)
@@ -337,6 +338,29 @@ public sealed class StripeBillingService(
     }
 
     private static StripeClient CreateClient(string secretKey) => new(secretKey.Trim());
+
+    private Task<BillingSubscription?> GetCurrentPremiumSubscriptionAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+        => dbContext.BillingSubscriptions
+            .Where(subscription =>
+                subscription.UserId == userId &&
+                subscription.IsPremium &&
+                (subscription.Status == BillingSubscriptionStatuses.Active ||
+                 subscription.Status == BillingSubscriptionStatuses.Trialing ||
+                 subscription.Status == BillingSubscriptionStatuses.PastDue))
+            .OrderByDescending(subscription => subscription.UpdatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private StripeBillingAccountState ToAccountState(BillingSubscription? subscription)
+        => new(
+            options.Value.IsSubscriptionManagementConfigured && subscription is not null,
+            subscription?.Status,
+            subscription?.CancelAtPeriodEnd == true,
+            subscription?.CurrentPeriodEndUtc);
+
+    private static DateTime EnsureUtc(DateTime value)
+        => value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
 
     private bool IsPremiumPrice(string? priceId)
     {

@@ -11,6 +11,9 @@ public class BillingSubscription
     public bool IsPremium { get; set; }
     public string Status { get; set; } = BillingSubscriptionStatuses.Incomplete;
     public bool CancelAtPeriodEnd { get; set; }
+    public DateTime? PremiumStartedAtUtc { get; set; }
+    public DateTime? CurrentPeriodStartUtc { get; set; }
+    public DateTime? CurrentPeriodEndUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 

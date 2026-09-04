@@ -860,7 +860,7 @@
                         ? $"Saved runs: 0/{entitlementLimit}"
                         : "Saved runs";
             return runQuota?.MonthlyRunLimit is int monthlyLimit
-                ? $"{stored} · This month: {runQuota.MonthlyRuns}/{monthlyLimit}"
+                ? $"{stored} · Current allowance: {runQuota.MonthlyRuns}/{monthlyLimit}"
                 : stored;
         }
     }

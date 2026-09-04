@@ -73,6 +73,10 @@ public class ModelLabEntitlementServiceTests
     {
         await using var dbContext = CreateDbContext();
         var user = CreateUser("subscriber@example.com");
+        var now = DateTime.UtcNow;
+        var twoMonthsAgo = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-2);
+        var anniversaryDay = Math.Max(1, now.Day - 1);
+        var premiumStartedAtUtc = twoMonthsAgo.AddDays(anniversaryDay - 1);
         dbContext.AddRange(
             user,
             new BillingSubscription
@@ -84,13 +88,16 @@ public class ModelLabEntitlementServiceTests
                 StripeCustomerId = "cus_premium",
                 StripePriceId = "price_premium",
                 IsPremium = true,
-                Status = BillingSubscriptionStatuses.Active
+                Status = BillingSubscriptionStatuses.Active,
+                PremiumStartedAtUtc = premiumStartedAtUtc
             });
         await dbContext.SaveChangesAsync();
 
         var entitlement = await CreateService(dbContext).GetAsync(user.Id, CancellationToken.None);
 
         Assert.True(entitlement.IsPaid);
+        Assert.Equal(premiumStartedAtUtc.AddMonths(2), entitlement.MonthlyRunWindowStartUtc);
+        Assert.Equal(premiumStartedAtUtc.AddMonths(3), entitlement.MonthlyRunWindowEndUtc);
     }
 
     [Theory]

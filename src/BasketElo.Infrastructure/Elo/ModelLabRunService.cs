@@ -485,9 +485,14 @@ public sealed class ModelLabRunService(
         CancellationToken cancellationToken)
     {
         var runCount = await CountRunsAsync(ownerUserId, cancellationToken);
-        var monthlyRunCount = await CountMonthlyRunsAsync(ownerUserId, DateTime.UtcNow, cancellationToken);
+        var now = DateTime.UtcNow;
+        var monthlyWindow = GetMonthlyRunWindow(entitlement, now);
+        var monthlyRunCount = await CountMonthlyRunsAsync(
+            ownerUserId,
+            monthlyWindow.StartUtc,
+            monthlyWindow.EndUtc,
+            cancellationToken);
         var monthlyLimit = entitlement.MonthlyRunLimit;
-        var monthStart = GetMonthStartUtc(DateTime.UtcNow);
         return new ModelLabRunQuotaResponse(
             runCount,
             entitlement.StoredRunLimit,
@@ -495,7 +500,7 @@ public sealed class ModelLabRunService(
             monthlyRunCount,
             monthlyLimit,
             monthlyLimit.HasValue && monthlyRunCount >= monthlyLimit.Value,
-            monthlyLimit.HasValue ? monthStart.AddMonths(1) : null);
+            monthlyLimit.HasValue ? monthlyWindow.EndUtc : null);
     }
 
     public async Task<ModelLabRunDetailResponse?> GetAsync(
@@ -987,11 +992,12 @@ public sealed class ModelLabRunService(
             return null;
         }
 
+        var window = GetMonthlyRunWindow(entitlement, nowUtc);
         var used = await EnforceMonthlyRunLimitAsync(ownerUserId, entitlement, 1, cancellationToken, nowUtc);
         var usage = new ModelLabMonthlyRunUsage
         {
             OwnerUserId = ownerUserId,
-            MonthStartUtc = GetMonthStartUtc(nowUtc),
+            MonthStartUtc = window.StartUtc,
             SlotNumber = used + 1,
             RunId = runId,
             UsageType = usageType,
@@ -1014,33 +1020,44 @@ public sealed class ModelLabRunService(
         }
 
         var now = nowUtc ?? DateTime.UtcNow;
-        var used = await CountMonthlyRunsAsync(ownerUserId, now, cancellationToken);
+        var window = GetMonthlyRunWindow(entitlement, now);
+        var used = await CountMonthlyRunsAsync(ownerUserId, window.StartUtc, window.EndUtc, cancellationToken);
         if (used + additionalRuns <= entitlement.MonthlyRunLimit.Value)
         {
             return used;
         }
 
-        throw MonthlyRunLimitException(entitlement, GetMonthStartUtc(now).AddMonths(1));
+        throw MonthlyRunLimitException(entitlement, window.EndUtc);
     }
 
     private Task<int> CountMonthlyRunsAsync(
         Guid ownerUserId,
-        DateTime nowUtc,
+        DateTime windowStartUtc,
+        DateTime windowEndUtc,
         CancellationToken cancellationToken)
-    {
-        var monthStart = GetMonthStartUtc(nowUtc);
-        var nextMonth = monthStart.AddMonths(1);
-        return dbContext.ModelLabMonthlyRunUsages
+        => dbContext.ModelLabMonthlyRunUsages
             .AsNoTracking()
             .CountAsync(x =>
                 x.OwnerUserId == ownerUserId &&
-                x.MonthStartUtc >= monthStart &&
-                x.MonthStartUtc < nextMonth,
+                x.CreatedAtUtc >= windowStartUtc &&
+                x.CreatedAtUtc < windowEndUtc,
                 cancellationToken);
-    }
 
-    private static DateTime GetMonthStartUtc(DateTime utc)
-        => new(utc.Year, utc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+    private static (DateTime StartUtc, DateTime EndUtc) GetMonthlyRunWindow(
+        ModelLabEntitlement entitlement,
+        DateTime nowUtc)
+    {
+        if (entitlement.MonthlyRunWindowStartUtc is DateTime start &&
+            entitlement.MonthlyRunWindowEndUtc is DateTime end &&
+            start <= nowUtc &&
+            end > nowUtc)
+        {
+            return (start, end);
+        }
+
+        var calendarStart = new DateTime(nowUtc.Year, nowUtc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        return (calendarStart, calendarStart.AddMonths(1));
+    }
 
     private static ModelLabLimitException MonthlyRunLimitException(
         ModelLabEntitlement entitlement,

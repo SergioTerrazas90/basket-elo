@@ -7,4 +7,6 @@ public sealed record ModelLabEntitlement(
     int? SavedModelLimit,
     int? StoredRunLimit,
     int? MonthlyRunLimit,
-    string? RequiredLeagueName);
+    string? RequiredLeagueName,
+    DateTime? MonthlyRunWindowStartUtc = null,
+    DateTime? MonthlyRunWindowEndUtc = null);

@@ -120,7 +120,9 @@ public sealed record ModelLabEntitlementResponse(
     int? SavedModelLimit,
     int? StoredRunLimit,
     int? MonthlyRunLimit,
-    string? RequiredLeagueName);
+    string? RequiredLeagueName,
+    DateTime? MonthlyRunWindowStartUtc,
+    DateTime? MonthlyRunWindowEndUtc);
 
 public sealed record ModelLabBacktestResponse(
     string ModelName,

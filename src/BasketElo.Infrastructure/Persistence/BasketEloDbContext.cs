@@ -407,6 +407,9 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.StripeProductId).HasMaxLength(255);
             entity.Property(x => x.StripePriceId).HasMaxLength(255);
             entity.Property(x => x.Status).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.PremiumStartedAtUtc);
+            entity.Property(x => x.CurrentPeriodStartUtc);
+            entity.Property(x => x.CurrentPeriodEndUtc);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.Property(x => x.UpdatedAtUtc).IsRequired();
             entity.HasOne(x => x.User)

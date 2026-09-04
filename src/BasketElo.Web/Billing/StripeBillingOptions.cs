@@ -16,7 +16,7 @@ public sealed class StripeBillingOptions
         (!string.IsNullOrWhiteSpace(PremiumMonthlyPriceId) ||
          !string.IsNullOrWhiteSpace(PremiumAnnualPriceId));
 
-    public bool IsPortalConfigured => Enabled && !string.IsNullOrWhiteSpace(SecretKey);
+    public bool IsSubscriptionManagementConfigured => Enabled && !string.IsNullOrWhiteSpace(SecretKey);
 
     public bool IsWebhookConfigured => Enabled &&
         !string.IsNullOrWhiteSpace(SecretKey) &&

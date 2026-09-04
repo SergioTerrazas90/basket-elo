@@ -12,6 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="Stripe.net" Version="52.4.1" />
     <PackageReference Include="xunit" Version="2.9.1" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
       <PrivateAssets>all</PrivateAssets>
@@ -21,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\BasketElo.Api\BasketElo.Api.csproj" />
     <ProjectReference Include="..\..\src\BasketElo.Infrastructure\BasketElo.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\BasketElo.Web\BasketElo.Web.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Update="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />

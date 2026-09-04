@@ -984,8 +984,7 @@
 
     private IReadOnlyList<ModelLabSeasonOption> AvailableSeasons
         => options?.Seasons
-            .OrderBy(x => x.FirstGameUtc)
-            .ThenBy(x => x.Label)
+            .OrderBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
             .ToList() ?? [];
 
     private string InitializationSeasonSummary

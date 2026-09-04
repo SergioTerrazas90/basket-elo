@@ -37,7 +37,7 @@ public sealed class ModelLabBacktestService(BasketEloDbContext dbContext) : IMod
                 group.Key,
                 group.Min(x => x.FirstGameUtc),
                 group.Max(x => x.LastGameUtc)))
-            .OrderBy(x => x.FirstGameUtc)
+            .OrderBy(x => SeasonLabelNormalizer.ParseStartYear(x.Label))
             .ThenBy(x => x.Label)
             .ToList();
 

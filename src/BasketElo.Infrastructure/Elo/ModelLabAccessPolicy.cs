@@ -14,8 +14,19 @@ public static class ModelLabAccessPolicy
             return options;
         }
 
+        var minimumDateUtc = new DateTime(minimumYear, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var seasons = options.Seasons
-            .Where(season => SeasonLabelNormalizer.ParseStartYear(season.Label) >= minimumYear)
+            .Where(season =>
+                SeasonLabelNormalizer.ParseStartYear(season.Label) >= minimumYear &&
+                season.LastGameUtc >= minimumDateUtc)
+            .Select(season => season with
+            {
+                FirstGameUtc = season.FirstGameUtc < minimumDateUtc
+                    ? minimumDateUtc
+                    : season.FirstGameUtc
+            })
+            .OrderBy(season => SeasonLabelNormalizer.ParseStartYear(season.Label))
+            .ThenBy(season => season.Label)
             .ToList();
 
         return options with

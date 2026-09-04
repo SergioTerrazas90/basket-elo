@@ -151,7 +151,7 @@ public class ModelLabEntitlementServiceTests
             new DateTime(2020, 6, 1, 0, 0, 0, DateTimeKind.Utc));
         var allowedSeason = new ModelLabSeasonOption(
             "2020-2021",
-            new DateTime(2020, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+            new DateTime(2018, 9, 1, 0, 0, 0, DateTimeKind.Utc),
             new DateTime(2021, 6, 1, 0, 0, 0, DateTimeKind.Utc));
         var options = new ModelLabOptionsResponse(
             new ModelLabParameterSet(1500m, 20, 70m, 400m, true, 28m, 1m),
@@ -168,7 +168,7 @@ public class ModelLabEntitlementServiceTests
         var paidOptions = ModelLabAccessPolicy.FilterOptions(paid, options);
 
         Assert.Equal("2020-2021", Assert.Single(freeOptions.Seasons).Label);
-        Assert.Equal(allowedSeason.FirstGameUtc, freeOptions.FirstGameUtc);
+        Assert.Equal(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc), freeOptions.FirstGameUtc);
         Assert.Collection(paidOptions.Seasons, _ => { }, _ => { });
         Assert.Equal(oldSeason.FirstGameUtc, paidOptions.FirstGameUtc);
     }

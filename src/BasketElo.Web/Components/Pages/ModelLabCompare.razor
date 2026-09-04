@@ -267,7 +267,7 @@
     private CancellationTokenSource? pollingCancellation;
 
     private IReadOnlyList<ModelLabPoolOption> AvailablePools => options?.Pools.ToList() ?? [];
-    private IReadOnlyList<ModelLabSeasonOption> AvailableSeasons => options?.Seasons.OrderBy(x => x.FirstGameUtc).ThenBy(x => x.Label).ToList() ?? [];
+    private IReadOnlyList<ModelLabSeasonOption> AvailableSeasons => options?.Seasons.OrderBy(x => x.Label, StringComparer.OrdinalIgnoreCase).ToList() ?? [];
     private IReadOnlyList<ModelLabCompetitionOption> AvailableCompetitions => options?.Competitions.Where(x => string.Equals(x.EloPoolKey, selectedPoolKey, StringComparison.OrdinalIgnoreCase)).ToList() ?? [];
     private bool CanUseMultiCompetitionScopes => string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName);
     private string SelectedPoolDisplayName => options?.Pools.FirstOrDefault(x => x.Key == selectedPoolKey)?.DisplayName ?? selectedPoolKey;

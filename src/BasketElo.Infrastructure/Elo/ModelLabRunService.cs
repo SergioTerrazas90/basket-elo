@@ -201,6 +201,12 @@ public sealed class ModelLabRunService(
 
         var scopeType = NormalizeScopeType(request.ScopeType);
         EnforceScopeLimit(entitlement, runLeagueName, scopeType);
+        ModelLabAccessPolicy.EnforceHistoryLimit(
+            entitlement,
+            request.InitializationFromUtc,
+            request.InitializationToUtc,
+            request.ScoredFromUtc,
+            request.ScoredToUtc);
         await EnforceStoredRunLimitAsync(ownerUserId, entitlement, cancellationToken);
         if (enforceActiveLimit)
         {
@@ -745,6 +751,13 @@ public sealed class ModelLabRunService(
             throw new ArgumentException("Only a failed or cancelled Model Lab run can be retried.");
         }
 
+        EnforceScopeLimit(entitlement, run.LeagueName, run.ScopeType);
+        ModelLabAccessPolicy.EnforceHistoryLimit(
+            entitlement,
+            run.InitializationFromUtc,
+            run.InitializationToUtc,
+            run.ScoredFromUtc,
+            run.ScoredToUtc);
         await EnforceSingleActiveRunAsync(ownerUserId, entitlement, cancellationToken);
         var now = DateTime.UtcNow;
         await ReserveMonthlyRunSlotAsync(

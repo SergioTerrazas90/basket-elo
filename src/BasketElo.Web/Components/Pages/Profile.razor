@@ -75,8 +75,8 @@
                 </div>
 
                 <div class="profile-plan-summary">
-                    <strong>@ModelAllowance</strong>
-                    <span>@T["ModelsPerMonth"]</span>
+                    <strong>@PlanSummaryValue</strong>
+                    <span>@PlanSummaryLabel</span>
                 </div>
                 @if (IsPremium && entitlement?.MonthlyRunWindowEndUtc is DateTime allowanceReset)
                 {
@@ -217,7 +217,6 @@
     [CascadingParameter]
     private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
 
-    private const int FreeModelAllowance = 10;
     private const int PremiumModelAllowance = 200;
 
     private ModelLabEntitlementResponse? entitlement;
@@ -237,10 +236,11 @@
     private PremiumPlanPricing PlanPricing => billingAvailability.Pricing;
     private string PlanLabel => IsPremium ? T["Premium"].Value : T["Free"].Value;
     private string PlanIntro => IsPremium ? T["PremiumPlanIntro"].Value : T["FreePlanIntro"].Value;
-    private string AccessDescription => IsPremium ? T["AllCompetitionsAccess"].Value : T["StarterAccess"].Value;
-    private int ModelAllowance => IsPremium
-        ? entitlement?.MonthlyRunLimit ?? PremiumModelAllowance
-        : FreeModelAllowance;
+    private string AccessDescription => IsPremium ? T["AllCompetitionsAccess"].Value : T["FreeCompetitionAccess"].Value;
+    private string PlanSummaryValue => IsPremium
+        ? (entitlement?.MonthlyRunLimit ?? PremiumModelAllowance).ToString()
+        : $"{entitlement?.MinimumSeasonStartYear ?? 2020}+";
+    private string PlanSummaryLabel => IsPremium ? T["ModelsPerMonth"].Value : T["HistoricalData"].Value;
     private string DisplayName => string.IsNullOrWhiteSpace(displayName) ? T["SignedIn"].Value : displayName;
     private string Email => email;
     private string ProfileUrl => new Uri(new Uri(Navigation.BaseUri), "profile").AbsoluteUri;

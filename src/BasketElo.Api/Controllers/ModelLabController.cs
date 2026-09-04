@@ -16,7 +16,9 @@ public sealed class ModelLabController(
     [HttpGet("options")]
     public async Task<ActionResult<ModelLabOptionsResponse>> GetOptions(CancellationToken cancellationToken)
     {
-        return Ok(await backtestService.GetOptionsAsync(cancellationToken));
+        var entitlement = await GetRequestEntitlementAsync(cancellationToken);
+        var options = await backtestService.GetOptionsAsync(cancellationToken);
+        return Ok(ModelLabAccessPolicy.FilterOptions(entitlement, options));
     }
 
     [HttpGet("entitlement")]
@@ -462,6 +464,13 @@ public sealed class ModelLabController(
                 entitlement.SavedModelLimit,
                 entitlement.RequiredLeagueName);
         }
+
+        ModelLabAccessPolicy.EnforceHistoryLimit(
+            entitlement,
+            request.InitializationFromUtc,
+            request.InitializationToUtc,
+            request.ScoredFromUtc,
+            request.ScoredToUtc);
     }
 
     private Guid GetCurrentUserId()
@@ -506,6 +515,7 @@ public sealed class ModelLabController(
             entitlement.StoredRunLimit,
             entitlement.MonthlyRunLimit,
             entitlement.RequiredLeagueName,
+            entitlement.MinimumSeasonStartYear,
             entitlement.MonthlyRunWindowStartUtc,
             entitlement.MonthlyRunWindowEndUtc);
 }

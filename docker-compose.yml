@@ -32,7 +32,8 @@ services:
       ModelLab__FreeStoredRunLimit: ${BASKET_ELO_FREE_STORED_RUN_LIMIT:-3}
       ModelLab__PaidStoredRunLimit: ${BASKET_ELO_PAID_STORED_RUN_LIMIT:-100}
       ModelLab__PaidMonthlyRunLimit: ${BASKET_ELO_PAID_MONTHLY_RUN_LIMIT:-200}
-      ModelLab__FreeLeagueName: ${BASKET_ELO_FREE_LEAGUE_NAME:-ACB}
+      ModelLab__FreeMinimumSeasonStartYear: ${BASKET_ELO_FREE_MINIMUM_SEASON_START_YEAR:-2020}
+      ModelLab__AnonymousLeagueName: ${BASKET_ELO_ANONYMOUS_LEAGUE_NAME:-ACB}
       ModelLab__PaidEmails: ${BASKET_ELO_PAID_EMAILS:-dev-paid@basket-elo.local}
     depends_on:
       postgres:

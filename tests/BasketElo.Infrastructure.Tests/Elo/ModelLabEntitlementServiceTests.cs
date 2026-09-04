@@ -1,3 +1,4 @@
+using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Elo;
 using BasketElo.Infrastructure.Persistence;
@@ -47,6 +48,7 @@ public class ModelLabEntitlementServiceTests
         Assert.Equal(100, entitlement.StoredRunLimit);
         Assert.Equal(200, entitlement.MonthlyRunLimit);
         Assert.Null(entitlement.RequiredLeagueName);
+        Assert.Null(entitlement.MinimumSeasonStartYear);
     }
 
     [Fact]
@@ -125,6 +127,50 @@ public class ModelLabEntitlementServiceTests
         var entitlement = await CreateService(dbContext).GetAsync(user.Id, CancellationToken.None);
 
         Assert.False(entitlement.IsPaid);
+        Assert.Null(entitlement.RequiredLeagueName);
+        Assert.Equal(2020, entitlement.MinimumSeasonStartYear);
+    }
+
+    [Fact]
+    public void AnonymousAccessRetainsPreviewCompetitionAndStartsAt2020()
+    {
+        using var dbContext = CreateDbContext();
+
+        var entitlement = CreateService(dbContext).GetAnonymous();
+
+        Assert.Equal("ACB", entitlement.RequiredLeagueName);
+        Assert.Equal(2020, entitlement.MinimumSeasonStartYear);
+    }
+
+    [Fact]
+    public void FreeOptionsBeginAt2020WhilePaidOptionsKeepFullHistory()
+    {
+        var oldSeason = new ModelLabSeasonOption(
+            "2019-2020",
+            new DateTime(2019, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+            new DateTime(2020, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        var allowedSeason = new ModelLabSeasonOption(
+            "2020-2021",
+            new DateTime(2020, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+            new DateTime(2021, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        var options = new ModelLabOptionsResponse(
+            new ModelLabParameterSet(1500m, 20, 70m, 400m, true, 28m, 1m),
+            [],
+            [],
+            [],
+            [oldSeason, allowedSeason],
+            oldSeason.FirstGameUtc,
+            allowedSeason.LastGameUtc);
+        var free = new ModelLabEntitlement("free", true, false, 1, 3, null, null, 2020);
+        var paid = new ModelLabEntitlement("paid", true, true, null, 100, 200, null);
+
+        var freeOptions = ModelLabAccessPolicy.FilterOptions(free, options);
+        var paidOptions = ModelLabAccessPolicy.FilterOptions(paid, options);
+
+        Assert.Equal("2020-2021", Assert.Single(freeOptions.Seasons).Label);
+        Assert.Equal(allowedSeason.FirstGameUtc, freeOptions.FirstGameUtc);
+        Assert.Collection(paidOptions.Seasons, _ => { }, _ => { });
+        Assert.Equal(oldSeason.FirstGameUtc, paidOptions.FirstGameUtc);
     }
 
     private static ApplicationUser CreateUser(string email)
@@ -153,6 +199,7 @@ public class ModelLabEntitlementServiceTests
                 PaidMonthlyRunLimit = 200,
                 FreeSavedModelLimit = 1,
                 FreeStoredRunLimit = 3,
-                FreeLeagueName = "ACB"
+                FreeMinimumSeasonStartYear = 2020,
+                AnonymousLeagueName = "ACB"
             }));
 }

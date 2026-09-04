@@ -34,6 +34,61 @@ public class ModelLabAsyncRunTests
     }
 
     [Fact]
+    public async Task FreeUsersCanRunAllCompetitionsFromThe2020Season()
+    {
+        await using var dbContext = CreateContext();
+        var (ownerId, model, version) = await SeedModelAsync(dbContext);
+        var service = new ModelLabRunService(dbContext, new FakeBacktestService(), new RecordingDispatcher());
+
+        var created = await service.CreateAsync(
+            ownerId,
+            FreeEntitlement(),
+            CreateRequest(model.Id, version.Id),
+            CancellationToken.None);
+
+        Assert.NotNull(created);
+        var run = await dbContext.ModelLabRuns.SingleAsync(x => x.Id == created.RunId);
+        Assert.Equal(ModelLabScopeTypes.AllCompetitions, run.ScopeType);
+        Assert.Equal(EloPoolKeys.Nba, run.EloPoolKey);
+    }
+
+    [Fact]
+    public async Task FreeUsersCannotCreateOrRetryRunsBeforeThe2020Season()
+    {
+        await using var dbContext = CreateContext();
+        var (ownerId, model, version) = await SeedModelAsync(dbContext);
+        var service = new ModelLabRunService(dbContext, new FakeBacktestService(), new RecordingDispatcher());
+        var oldRequest = CreateRequest(model.Id, version.Id) with
+        {
+            InitializationFromUtc = new DateTime(2019, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+        };
+
+        var createException = await Assert.ThrowsAsync<ModelLabLimitException>(() => service.CreateAsync(
+            ownerId,
+            FreeEntitlement(),
+            oldRequest,
+            CancellationToken.None));
+
+        Assert.Equal("history_restricted", createException.Code);
+        Assert.Empty(await dbContext.ModelLabRuns.ToListAsync());
+
+        var failed = CompletedRun(ownerId, model.Id, version.Id, "Old failed run");
+        failed.Status = ModelLabRunStatuses.Failed;
+        failed.InitializationFromUtc = new DateTime(2019, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        dbContext.ModelLabRuns.Add(failed);
+        await dbContext.SaveChangesAsync();
+
+        var retryException = await Assert.ThrowsAsync<ModelLabLimitException>(() => service.RetryAsync(
+            ownerId,
+            failed.Id,
+            FreeEntitlement(),
+            CancellationToken.None));
+
+        Assert.Equal("history_restricted", retryException.Code);
+        Assert.Equal(ModelLabRunStatuses.Failed, failed.Status);
+    }
+
+    [Fact]
     public async Task HangfireJobClaimsRunAndPersistsCompletedResult()
     {
         await using var dbContext = CreateContext();
@@ -469,6 +524,9 @@ public class ModelLabAsyncRunTests
 
     private static ModelLabEntitlement PaidEntitlement()
         => new("paid", true, true, 20, 100, 200, null);
+
+    private static ModelLabEntitlement FreeEntitlement()
+        => new("free", true, false, 1, 3, null, null, 2020);
 
     private sealed class RecordingDispatcher : IModelLabJobDispatcher
     {

@@ -11,7 +11,15 @@ public sealed class ModelLabEntitlementService(
     IOptions<ModelLabPlanOptions> options) : IModelLabEntitlementService
 {
     public ModelLabEntitlement GetAnonymous()
-        => new("anonymous", false, false, 0, 0, null, options.Value.FreeLeagueName);
+        => new(
+            "anonymous",
+            false,
+            false,
+            0,
+            0,
+            null,
+            options.Value.AnonymousLeagueName,
+            Math.Max(1900, options.Value.FreeMinimumSeasonStartYear));
 
     public async Task<ModelLabEntitlement> GetAsync(Guid ownerUserId, CancellationToken cancellationToken)
     {
@@ -60,6 +68,7 @@ public sealed class ModelLabEntitlementService(
                 Math.Max(0, options.Value.PaidStoredRunLimit),
                 Math.Max(0, options.Value.PaidMonthlyRunLimit),
                 null,
+                null,
                 window.StartUtc,
                 window.EndUtc);
         }
@@ -71,7 +80,8 @@ public sealed class ModelLabEntitlementService(
             Math.Max(0, options.Value.FreeSavedModelLimit),
             Math.Max(0, options.Value.FreeStoredRunLimit),
             null,
-            options.Value.FreeLeagueName);
+            null,
+            Math.Max(1900, options.Value.FreeMinimumSeasonStartYear));
     }
 
     internal static (DateTime StartUtc, DateTime EndUtc) GetMonthlyWindow(DateTime anchorUtc, DateTime nowUtc)

@@ -103,19 +103,26 @@
                                 @if (billingAvailability.MonthlyEnabled)
                                 {
                                     <button type="button"
-                                            class="btn btn-primary"
+                                            class="btn btn-primary profile-price-choice"
                                             disabled="@billingBusy"
                                             @onclick='() => StartCheckoutAsync(StripeBillingCadences.Monthly)'>
-                                        @T["SubscribeMonthly"]
+                                        <span class="profile-price-choice-name">@T["SubscribeMonthly"]</span>
+                                        <strong>@T["PricePerMonth", PlanPricing.Format(PlanPricing.MonthlyAmount)]</strong>
+                                        <small>@T["BilledMonthly"]</small>
                                     </button>
                                 }
                                 @if (billingAvailability.AnnualEnabled)
                                 {
                                     <button type="button"
-                                            class="btn btn-outline-primary"
+                                            class="btn btn-outline-primary profile-price-choice is-annual"
                                             disabled="@billingBusy"
                                             @onclick='() => StartCheckoutAsync(StripeBillingCadences.Annual)'>
-                                        @T["SubscribeAnnually"]
+                                        <span class="profile-price-choice-name">
+                                            @T["SubscribeAnnually"]
+                                            <span class="profile-price-saving">@T["SavePerYear", PlanPricing.Format(PlanPricing.AnnualSavings)]</span>
+                                        </span>
+                                        <strong>@T["PricePerYear", PlanPricing.Format(PlanPricing.AnnualAmount)]</strong>
+                                        <small>@T["AnnualMonthlyEquivalent", PlanPricing.Format(PlanPricing.AnnualMonthlyEquivalent)]</small>
                                     </button>
                                 }
                             </div>
@@ -214,7 +221,7 @@
     private const int PremiumModelAllowance = 200;
 
     private ModelLabEntitlementResponse? entitlement;
-    private StripeBillingAvailability billingAvailability = new(false, false, false, false);
+    private StripeBillingAvailability billingAvailability = new(false, false, false, false, PremiumPlanPricing.Default);
     private StripeBillingAccountState? billingAccount;
     private bool isLoading = true;
     private bool billingBusy;
@@ -227,6 +234,7 @@
     private Guid? userId;
 
     private bool IsPremium => entitlement?.IsPaid == true;
+    private PremiumPlanPricing PlanPricing => billingAvailability.Pricing;
     private string PlanLabel => IsPremium ? T["Premium"].Value : T["Free"].Value;
     private string PlanIntro => IsPremium ? T["PremiumPlanIntro"].Value : T["FreePlanIntro"].Value;
     private string AccessDescription => IsPremium ? T["AllCompetitionsAccess"].Value : T["StarterAccess"].Value;

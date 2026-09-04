@@ -42,6 +42,69 @@
     line-height: 1.6;
 }
 
+.plan-comparison-wrap {
+    width: min(100%, 64rem);
+    margin-top: 1.8rem;
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: rgba(255, 253, 248, 0.82);
+    box-shadow: var(--shadow-sm);
+    text-align: left;
+}
+
+.plan-comparison {
+    width: 100%;
+    min-width: 42rem;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.plan-comparison th,
+.plan-comparison td {
+    border-bottom: 1px solid var(--color-border);
+    padding: 0.78rem 0.9rem;
+    color: var(--color-text);
+    font-size: 0.79rem;
+    line-height: 1.35;
+    vertical-align: middle;
+}
+
+.plan-comparison thead th {
+    background: var(--color-surface-muted);
+    color: var(--color-brand-dark);
+    font-size: 0.76rem;
+    font-weight: 850;
+    text-align: center;
+}
+
+.plan-comparison thead th:first-child,
+.plan-comparison tbody th {
+    width: 25%;
+    text-align: left;
+}
+
+.plan-comparison tbody th {
+    color: var(--color-muted);
+    font-weight: 760;
+}
+
+.plan-comparison tbody td { text-align: center; }
+.plan-comparison tbody tr:last-child th,
+.plan-comparison tbody tr:last-child td { border-bottom: 0; }
+.plan-comparison .is-recommended { background: rgba(233, 120, 45, 0.075); }
+.plan-comparison thead .is-recommended { background: var(--color-accent-soft); }
+.plan-comparison thead .is-recommended span,
+.plan-comparison thead .is-recommended small { display: block; }
+.plan-comparison thead .is-recommended small,
+.plan-comparison td small {
+    margin-top: 0.15rem;
+    color: var(--color-accent-dark);
+    font-size: 0.64rem;
+    font-weight: 800;
+}
+.plan-comparison td strong { color: var(--color-brand-dark); font-size: 0.88rem; }
+
 .anonymous-signin-action {
     min-height: 2.85rem;
     margin-top: 1.5rem;
@@ -420,6 +483,12 @@
         min-height: 0;
         padding: 2.75rem 1.25rem;
         border-radius: var(--radius-lg);
+    }
+
+    .plan-comparison-wrap {
+        width: calc(100% + 0.5rem);
+        margin-inline: -0.25rem;
+        border-radius: var(--radius-md);
     }
 
     .library-hero,

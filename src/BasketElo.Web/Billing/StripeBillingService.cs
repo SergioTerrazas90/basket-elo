@@ -23,7 +23,8 @@ public sealed class StripeBillingService(
             value.IsCheckoutConfigured,
             value.IsCheckoutConfigured && !string.IsNullOrWhiteSpace(value.PremiumMonthlyPriceId),
             value.IsCheckoutConfigured && !string.IsNullOrWhiteSpace(value.PremiumAnnualPriceId),
-            value.IsWebhookConfigured);
+            value.IsWebhookConfigured,
+            value.GetPlanPricing());
     }
 
     public async Task<StripeBillingAccountState> GetAccountStateAsync(

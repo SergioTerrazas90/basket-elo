@@ -12,6 +12,38 @@ namespace BasketElo.Infrastructure.Tests.Billing;
 public class StripeBillingServiceTests
 {
     [Fact]
+    public async Task AvailabilityCarriesTheConfiguredPlanPrices()
+    {
+        await using var dbContext = new BasketEloDbContext(
+            new DbContextOptionsBuilder<BasketEloDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options);
+        var service = new StripeBillingService(
+            dbContext,
+            Options.Create(new StripeBillingOptions
+            {
+                Enabled = true,
+                SecretKey = "sk_test_local",
+                PremiumMonthlyPriceId = "price_monthly",
+                PremiumAnnualPriceId = "price_annual",
+                PremiumMonthlyPriceAmount = 10m,
+                PremiumAnnualPriceAmount = 100m,
+                PremiumPriceCurrency = "EUR"
+            }),
+            new FakeSubscriptionGateway(),
+            NullLogger<StripeBillingService>.Instance);
+
+        var availability = service.GetAvailability();
+
+        Assert.True(availability.MonthlyEnabled);
+        Assert.True(availability.AnnualEnabled);
+        Assert.Equal(10m, availability.Pricing.MonthlyAmount);
+        Assert.Equal(100m, availability.Pricing.AnnualAmount);
+        Assert.Equal(20m, availability.Pricing.AnnualSavings);
+        Assert.Equal("EUR", availability.Pricing.Currency);
+    }
+
+    [Fact]
     public async Task CancellationAndReactivationStayInsideApplicationService()
     {
         await using var dbContext = new BasketEloDbContext(

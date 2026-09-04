@@ -9,6 +9,9 @@ public sealed class StripeBillingOptions
     public string WebhookSecret { get; set; } = string.Empty;
     public string PremiumMonthlyPriceId { get; set; } = string.Empty;
     public string PremiumAnnualPriceId { get; set; } = string.Empty;
+    public decimal PremiumMonthlyPriceAmount { get; set; } = 10m;
+    public decimal PremiumAnnualPriceAmount { get; set; } = 100m;
+    public string PremiumPriceCurrency { get; set; } = "EUR";
     public bool AutomaticTaxEnabled { get; set; }
 
     public bool IsCheckoutConfigured => Enabled &&
@@ -21,4 +24,10 @@ public sealed class StripeBillingOptions
     public bool IsWebhookConfigured => Enabled &&
         !string.IsNullOrWhiteSpace(SecretKey) &&
         !string.IsNullOrWhiteSpace(WebhookSecret);
+
+    public PremiumPlanPricing GetPlanPricing()
+        => new(
+            PremiumMonthlyPriceAmount,
+            PremiumAnnualPriceAmount,
+            PremiumPriceCurrency);
 }

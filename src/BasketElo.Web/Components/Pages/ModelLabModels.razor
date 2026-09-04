@@ -7,12 +7,14 @@
 @using BasketElo.Domain.Elo
 @using BasketElo.Domain.Entities
 @using BasketElo.Infrastructure.Identity
+@using BasketElo.Web.Billing
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.Options
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IOptions<AuthOptions> AuthOptions
+@inject IStripeBillingService BillingService
 
 <PageTitle>My Models - Basket ELO</PageTitle>
 
@@ -22,7 +24,64 @@
         <section class="anonymous-signin" aria-labelledby="anonymous-signin-title">
             <p class="eyebrow">Model Lab</p>
             <h1 id="anonymous-signin-title">Sign in to use Model Lab</h1>
-            <p>Model Lab is available to signed-in users. Sign in to create, run, save, and compare your own ELO models.</p>
+            <p>@T["ModelLabPlanComparisonIntro"]</p>
+            <div class="plan-comparison-wrap">
+                <table class="plan-comparison">
+                    <caption class="visually-hidden">@T["ModelLabPlanComparisonCaption"]</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">@T["PlanFeature"]</th>
+                            <th scope="col">@T["Free"]</th>
+                            <th scope="col">@T["MonthlyPlan"]</th>
+                            <th scope="col" class="is-recommended">
+                                <span>@T["AnnualPlan"]</span>
+                                <small>@T["BestValue"]</small>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <th scope="row">@T["PlanPrice"]</th>
+                            <td><strong>@T["FreePrice"]</strong></td>
+                            <td><strong>@T["PricePerMonth", PlanPricing.Format(PlanPricing.MonthlyAmount)]</strong></td>
+                            <td class="is-recommended">
+                                <strong>@T["PricePerYear", PlanPricing.Format(PlanPricing.AnnualAmount)]</strong>
+                                <small>@T["SavePerYear", PlanPricing.Format(PlanPricing.AnnualSavings)]</small>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">@T["BacktestScope"]</th>
+                            <td>@T["AcbOnly"]</td>
+                            <td>@T["AllCompetitions"]</td>
+                            <td class="is-recommended">@T["AllCompetitions"]</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">@T["SavedModels"]</th>
+                            <td>@T["OneSavedModel"]</td>
+                            <td>@T["UnlimitedSavedModels"]</td>
+                            <td class="is-recommended">@T["UnlimitedSavedModels"]</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">@T["StoredResults"]</th>
+                            <td>@T["ThreeStoredResults"]</td>
+                            <td>@T["HundredStoredResults"]</td>
+                            <td class="is-recommended">@T["HundredStoredResults"]</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">@T["AllCompetitionRuns"]</th>
+                            <td>@T["NotIncluded"]</td>
+                            <td>@T["PremiumRunsPerMonth"]</td>
+                            <td class="is-recommended">@T["PremiumRunsPerMonth"]</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">@T["ModelComparisons"]</th>
+                            <td>@T["NotIncluded"]</td>
+                            <td>@T["CompareUpToThreeModels"]</td>
+                            <td class="is-recommended">@T["CompareUpToThreeModels"]</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
             @if (AuthOptions.Value.Enabled)
             {
                 <a class="google-signin-button" href="@AccessHref">
@@ -177,9 +236,12 @@
     private bool isLoading = true;
     private bool isAuthenticated;
     private string? errorMessage;
+    private StripeBillingAvailability billingAvailability = new(false, false, false, false, PremiumPlanPricing.Default);
+    private PremiumPlanPricing PlanPricing => billingAvailability.Pricing;
 
     protected override async Task OnInitializedAsync()
     {
+        billingAvailability = BillingService.GetAvailability();
         var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         isAuthenticated = authenticationState.User.Identity?.IsAuthenticated == true;
         if (!isAuthenticated)

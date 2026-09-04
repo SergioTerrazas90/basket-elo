@@ -27,7 +27,32 @@ public sealed record StripeBillingAvailability(
     bool CheckoutEnabled,
     bool MonthlyEnabled,
     bool AnnualEnabled,
-    bool WebhookEnabled);
+    bool WebhookEnabled,
+    PremiumPlanPricing Pricing);
+
+public sealed record PremiumPlanPricing(
+    decimal MonthlyAmount,
+    decimal AnnualAmount,
+    string Currency)
+{
+    public static PremiumPlanPricing Default { get; } = new(10m, 100m, "EUR");
+
+    public decimal AnnualMonthlyEquivalent => AnnualAmount / 12m;
+    public decimal AnnualSavings => Math.Max(0m, MonthlyAmount * 12m - AnnualAmount);
+
+    public string Format(decimal amount)
+    {
+        var value = amount.ToString(amount == decimal.Truncate(amount) ? "0" : "0.00");
+        if (!string.Equals(Currency, "EUR", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{value} {Currency.ToUpperInvariant()}";
+        }
+
+        return System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "es"
+            ? $"{value} €"
+            : $"€{value}";
+    }
+}
 
 public sealed record StripeBillingAccountState(
     bool CanChangeCancellation,

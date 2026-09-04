@@ -110,6 +110,7 @@ public sealed record ModelLabLimitErrorResponse(
     bool UpgradeRequired,
     int? SavedModelLimit,
     int? StoredRunLimit,
+    int? MonthlyRunLimit,
     string? AllowedLeagueName);
 
 public sealed record ModelLabEntitlementResponse(
@@ -118,6 +119,7 @@ public sealed record ModelLabEntitlementResponse(
     bool IsPaid,
     int? SavedModelLimit,
     int? StoredRunLimit,
+    int? MonthlyRunLimit,
     string? RequiredLeagueName);
 
 public sealed record ModelLabBacktestResponse(
@@ -203,7 +205,11 @@ public sealed record ModelLabRunSummaryResponse(
 public sealed record ModelLabRunQuotaResponse(
     int StoredRuns,
     int? StoredRunLimit,
-    bool IsLimitReached);
+    bool IsLimitReached,
+    int MonthlyRuns,
+    int? MonthlyRunLimit,
+    bool IsMonthlyLimitReached,
+    DateTime? MonthlyLimitResetsAtUtc);
 
 public sealed record ModelLabRunDetailResponse(
     ModelLabRunSummaryResponse Run,

@@ -203,7 +203,7 @@ public class ModelLabAsyncRunTests
     }
 
     [Fact]
-    public async Task CancelQueuedRunFreesActiveSlotAndPreventsActiveDelete()
+    public async Task DeletingCanceledRunDoesNotRestoreMonthlyAllowance()
     {
         await using var dbContext = CreateContext();
         var (ownerId, model, version) = await SeedModelAsync(dbContext);
@@ -219,11 +219,110 @@ public class ModelLabAsyncRunTests
         await Assert.ThrowsAsync<ArgumentException>(() =>
             service.DeleteAsync(ownerId, first.RunId, CancellationToken.None));
         var canceled = await service.CancelAsync(ownerId, first.RunId, CancellationToken.None);
+        var deleted = await service.DeleteAsync(ownerId, first.RunId, CancellationToken.None);
         var second = await service.CreateAsync(ownerId, PaidEntitlement(), request, CancellationToken.None);
 
         Assert.Equal(ModelLabRunStatuses.Canceled, canceled?.Status);
+        Assert.True(deleted);
         Assert.Contains("queued-job", dispatcher.DeletedJobIds);
         Assert.Equal(ModelLabRunStatuses.Queued, second?.Status);
+        Assert.Equal(2, await dbContext.ModelLabMonthlyRunUsages.CountAsync(x => x.OwnerUserId == ownerId));
+    }
+
+    [Fact]
+    public async Task PremiumMonthlyLimitRejectsRunTwoHundredAndOneAndResetsByUtcMonth()
+    {
+        await using var dbContext = CreateContext();
+        var (ownerId, model, version) = await SeedModelAsync(dbContext);
+        var now = DateTime.UtcNow;
+        var currentMonth = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        dbContext.ModelLabMonthlyRunUsages.AddRange(Enumerable.Range(1, 200).Select(slot =>
+            new ModelLabMonthlyRunUsage
+            {
+                OwnerUserId = ownerId,
+                MonthStartUtc = currentMonth,
+                SlotNumber = slot,
+                RunId = Guid.NewGuid(),
+                UsageType = ModelLabRunUsageTypes.Run,
+                CreatedAtUtc = currentMonth
+            }));
+        await dbContext.SaveChangesAsync();
+        var service = new ModelLabRunService(dbContext, new FakeBacktestService(), new RecordingDispatcher());
+
+        var exception = await Assert.ThrowsAsync<ModelLabLimitException>(() => service.CreateAsync(
+            ownerId,
+            PaidEntitlement(),
+            CreateRequest(model.Id, version.Id),
+            CancellationToken.None));
+
+        Assert.Equal("monthly_run_limit_reached", exception.Code);
+        Assert.Equal(200, exception.MonthlyRunLimit);
+        var quota = await service.GetQuotaAsync(ownerId, PaidEntitlement(), CancellationToken.None);
+        Assert.Equal(200, quota.MonthlyRuns);
+        Assert.True(quota.IsMonthlyLimitReached);
+
+        var currentUsage = await dbContext.ModelLabMonthlyRunUsages.ToListAsync();
+        dbContext.ModelLabMonthlyRunUsages.RemoveRange(currentUsage);
+        await dbContext.SaveChangesAsync();
+        dbContext.ModelLabMonthlyRunUsages.AddRange(Enumerable.Range(1, 200).Select(slot =>
+            new ModelLabMonthlyRunUsage
+            {
+                OwnerUserId = ownerId,
+                MonthStartUtc = currentMonth.AddMonths(-1),
+                SlotNumber = slot,
+                RunId = Guid.NewGuid(),
+                UsageType = ModelLabRunUsageTypes.Run,
+                CreatedAtUtc = currentMonth.AddMonths(-1)
+            }));
+        await dbContext.SaveChangesAsync();
+
+        var created = await service.CreateAsync(
+            ownerId,
+            PaidEntitlement(),
+            CreateRequest(model.Id, version.Id),
+            CancellationToken.None);
+
+        Assert.NotNull(created);
+        Assert.Equal(1, (await service.GetQuotaAsync(ownerId, PaidEntitlement(), CancellationToken.None)).MonthlyRuns);
+    }
+
+    [Fact]
+    public async Task ComparisonCountsEveryModelAndRejectsBeforeCreatingPartialRuns()
+    {
+        await using var dbContext = CreateContext();
+        var (ownerId, firstModel, _) = await SeedModelAsync(dbContext);
+        var secondModel = await SeedAdditionalModelAsync(dbContext, ownerId, "Second model");
+        var now = DateTime.UtcNow;
+        var currentMonth = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        dbContext.ModelLabMonthlyRunUsages.AddRange(Enumerable.Range(1, 199).Select(slot =>
+            new ModelLabMonthlyRunUsage
+            {
+                OwnerUserId = ownerId,
+                MonthStartUtc = currentMonth,
+                SlotNumber = slot,
+                RunId = Guid.NewGuid(),
+                UsageType = ModelLabRunUsageTypes.Run,
+                CreatedAtUtc = currentMonth
+            }));
+        await dbContext.SaveChangesAsync();
+        var service = new ModelLabRunService(dbContext, new FakeBacktestService(), new RecordingDispatcher());
+        var request = new CreateModelLabComparisonRequest(
+            [firstModel.Id, secondModel.Id],
+            currentMonth.AddMonths(-2),
+            currentMonth.AddMonths(-1).AddTicks(-1),
+            currentMonth.AddMonths(-1),
+            currentMonth.AddTicks(-1),
+            ModelLabScopeTypes.AllCompetitions,
+            [],
+            EloPoolKeys.Nba,
+            "NBA");
+
+        var exception = await Assert.ThrowsAsync<ModelLabLimitException>(() =>
+            service.CreateComparisonAsync(ownerId, PaidEntitlement(), request, CancellationToken.None));
+
+        Assert.Equal("monthly_run_limit_reached", exception.Code);
+        Assert.Empty(await dbContext.ModelLabRuns.ToListAsync());
+        Assert.Equal(199, await dbContext.ModelLabMonthlyRunUsages.CountAsync());
     }
 
     [Fact]
@@ -295,6 +394,34 @@ public class ModelLabAsyncRunTests
         return (ownerId, model, version);
     }
 
+    private static async Task<ModelLabModel> SeedAdditionalModelAsync(
+        BasketEloDbContext dbContext,
+        Guid ownerId,
+        string name)
+    {
+        var model = new ModelLabModel
+        {
+            OwnerUserId = ownerId,
+            Name = name,
+            LeagueName = "NBA"
+        };
+        model.Versions.Add(new ModelLabModelVersion
+        {
+            Model = model,
+            VersionNumber = 1,
+            BaseRating = 1500m,
+            KFactor = 20,
+            HomeAdvantageElo = 100m,
+            ProbabilityScale = 400m,
+            UsesMarginAdjustment = true,
+            PointsPerEloMargin = 20m,
+            CompetitionWeight = 1m
+        });
+        dbContext.ModelLabModels.Add(model);
+        await dbContext.SaveChangesAsync();
+        return model;
+    }
+
     private static CreateModelLabRunRequest CreateRequest(Guid modelId, Guid versionId)
         => new(
             modelId,
@@ -327,7 +454,7 @@ public class ModelLabAsyncRunTests
     };
 
     private static ModelLabEntitlement PaidEntitlement()
-        => new("paid", true, true, 20, 100, null);
+        => new("paid", true, true, 20, 100, 200, null);
 
     private sealed class RecordingDispatcher : IModelLabJobDispatcher
     {

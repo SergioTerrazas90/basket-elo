@@ -191,7 +191,9 @@
     private string PlanLabel => IsPremium ? T["Premium"].Value : T["Free"].Value;
     private string PlanIntro => IsPremium ? T["PremiumPlanIntro"].Value : T["FreePlanIntro"].Value;
     private string AccessDescription => IsPremium ? T["AllCompetitionsAccess"].Value : T["StarterAccess"].Value;
-    private int ModelAllowance => IsPremium ? PremiumModelAllowance : FreeModelAllowance;
+    private int ModelAllowance => IsPremium
+        ? entitlement?.MonthlyRunLimit ?? PremiumModelAllowance
+        : FreeModelAllowance;
     private string DisplayName => string.IsNullOrWhiteSpace(displayName) ? T["SignedIn"].Value : displayName;
     private string Email => email;
     private string ProfileUrl => new Uri(new Uri(Navigation.BaseUri), "profile").AbsoluteUri;

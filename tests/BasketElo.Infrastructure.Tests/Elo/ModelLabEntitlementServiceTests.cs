@@ -45,6 +45,7 @@ public class ModelLabEntitlementServiceTests
         Assert.True(entitlement.IsPaid);
         Assert.Null(entitlement.SavedModelLimit);
         Assert.Equal(100, entitlement.StoredRunLimit);
+        Assert.Equal(200, entitlement.MonthlyRunLimit);
         Assert.Null(entitlement.RequiredLeagueName);
     }
 
@@ -142,6 +143,7 @@ public class ModelLabEntitlementServiceTests
             {
                 PaidEmails = paidEmails,
                 PaidStoredRunLimit = 100,
+                PaidMonthlyRunLimit = 200,
                 FreeSavedModelLimit = 1,
                 FreeStoredRunLimit = 3,
                 FreeLeagueName = "ACB"

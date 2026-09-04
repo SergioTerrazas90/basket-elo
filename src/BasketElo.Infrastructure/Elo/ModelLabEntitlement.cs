@@ -6,4 +6,5 @@ public sealed record ModelLabEntitlement(
     bool IsPaid,
     int? SavedModelLimit,
     int? StoredRunLimit,
+    int? MonthlyRunLimit,
     string? RequiredLeagueName);

@@ -16,6 +16,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
     public DbSet<ModelLabModel> ModelLabModels => Set<ModelLabModel>();
     public DbSet<ModelLabModelVersion> ModelLabModelVersions => Set<ModelLabModelVersion>();
     public DbSet<ModelLabRun> ModelLabRuns => Set<ModelLabRun>();
+    public DbSet<ModelLabMonthlyRunUsage> ModelLabMonthlyRunUsages => Set<ModelLabMonthlyRunUsage>();
     public DbSet<ModelLabRunScope> ModelLabRunScopes => Set<ModelLabRunScope>();
     public DbSet<ModelLabRunPrediction> ModelLabRunPredictions => Set<ModelLabRunPrediction>();
     public DbSet<ModelLabRunRating> ModelLabRunRatings => Set<ModelLabRunRating>();
@@ -378,6 +379,23 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.HasIndex(x => x.PredecessorTeamId);
             entity.HasIndex(x => x.SuccessorTeamId);
             entity.HasIndex(x => x.CanonicalName);
+        });
+
+        modelBuilder.Entity<ModelLabMonthlyRunUsage>(entity =>
+        {
+            entity.ToTable("model_lab_monthly_run_usage");
+            entity.HasKey(x => new { x.OwnerUserId, x.MonthStartUtc, x.SlotNumber });
+            entity.Property(x => x.MonthStartUtc).IsRequired();
+            entity.Property(x => x.SlotNumber).IsRequired();
+            entity.Property(x => x.RunId).IsRequired();
+            entity.Property(x => x.UsageType).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.CreatedAtUtc).IsRequired();
+            entity.HasOne(x => x.OwnerUser)
+                .WithMany()
+                .HasForeignKey(x => x.OwnerUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.OwnerUserId, x.CreatedAtUtc });
+            entity.HasIndex(x => x.RunId);
         });
 
         modelBuilder.Entity<BillingSubscription>(entity =>

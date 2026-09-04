@@ -9,6 +9,7 @@ public sealed class ModelLabPlanOptions
     public int FreeSavedModelLimit { get; set; } = 1;
     public int FreeStoredRunLimit { get; set; } = 3;
     public int PaidStoredRunLimit { get; set; } = 100;
+    public int PaidMonthlyRunLimit { get; set; } = 200;
     public string FreeLeagueName { get; set; } = "ACB";
     public string PaidEmails { get; set; } = string.Empty;
 

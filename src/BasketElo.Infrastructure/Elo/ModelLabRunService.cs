@@ -4,6 +4,7 @@ using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Jobs;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace BasketElo.Infrastructure.Elo;
 
@@ -47,6 +48,7 @@ public sealed class ModelLabRunService(
         }
 
         await EnforceStoredRunLimitAsync(ownerUserId, entitlement, cancellationToken, modelIds.Count);
+        await EnforceMonthlyRunLimitAsync(ownerUserId, entitlement, modelIds.Count, cancellationToken);
 
         if (await HasActiveRunAsync(ownerUserId, null, cancellationToken))
         {
@@ -54,6 +56,9 @@ public sealed class ModelLabRunService(
         }
 
         var comparisonGroupId = Guid.NewGuid();
+        await using IDbContextTransaction? transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
         var results = new List<ModelLabRunCreateResponse>(modelIds.Count);
         foreach (var modelId in modelIds)
@@ -82,6 +87,11 @@ public sealed class ModelLabRunService(
             }
 
             results.Add(run);
+        }
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
         }
 
         return new ModelLabComparisonCreateResponse(results);
@@ -222,6 +232,13 @@ public sealed class ModelLabRunService(
             CompletedAtUtc = null
         };
 
+        var monthlyUsage = await ReserveMonthlyRunSlotAsync(
+            ownerUserId,
+            entitlement,
+            run.Id,
+            ModelLabRunUsageTypes.Run,
+            now,
+            cancellationToken);
         dbContext.ModelLabRuns.Add(run);
         try
         {
@@ -230,6 +247,11 @@ public sealed class ModelLabRunService(
         catch (DbUpdateException)
         {
             dbContext.Entry(run).State = EntityState.Detached;
+            if (monthlyUsage is not null)
+            {
+                dbContext.Entry(monthlyUsage).State = EntityState.Detached;
+            }
+
             if (await HasActiveRunAsync(ownerUserId, run.Id, cancellationToken))
             {
                 throw ActiveRunLimitException(entitlement);
@@ -463,10 +485,17 @@ public sealed class ModelLabRunService(
         CancellationToken cancellationToken)
     {
         var runCount = await CountRunsAsync(ownerUserId, cancellationToken);
+        var monthlyRunCount = await CountMonthlyRunsAsync(ownerUserId, DateTime.UtcNow, cancellationToken);
+        var monthlyLimit = entitlement.MonthlyRunLimit;
+        var monthStart = GetMonthStartUtc(DateTime.UtcNow);
         return new ModelLabRunQuotaResponse(
             runCount,
             entitlement.StoredRunLimit,
-            entitlement.StoredRunLimit.HasValue && runCount >= entitlement.StoredRunLimit.Value);
+            entitlement.StoredRunLimit.HasValue && runCount >= entitlement.StoredRunLimit.Value,
+            monthlyRunCount,
+            monthlyLimit,
+            monthlyLimit.HasValue && monthlyRunCount >= monthlyLimit.Value,
+            monthlyLimit.HasValue ? monthStart.AddMonths(1) : null);
     }
 
     public async Task<ModelLabRunDetailResponse?> GetAsync(
@@ -712,6 +741,14 @@ public sealed class ModelLabRunService(
         }
 
         await EnforceSingleActiveRunAsync(ownerUserId, entitlement, cancellationToken);
+        var now = DateTime.UtcNow;
+        await ReserveMonthlyRunSlotAsync(
+            ownerUserId,
+            entitlement,
+            run.Id,
+            ModelLabRunUsageTypes.Retry,
+            now,
+            cancellationToken);
         dbContext.ModelLabRunScopes.RemoveRange(dbContext.ModelLabRunScopes.Where(x => x.RunId == runId));
         dbContext.ModelLabRunPredictions.RemoveRange(dbContext.ModelLabRunPredictions.Where(x => x.RunId == runId));
         dbContext.ModelLabRunRatings.RemoveRange(dbContext.ModelLabRunRatings.Where(x => x.RunId == runId));
@@ -850,7 +887,8 @@ public sealed class ModelLabRunService(
             false,
             entitlement.SavedModelLimit,
             entitlement.RequiredLeagueName,
-            entitlement.StoredRunLimit);
+            entitlement.StoredRunLimit,
+            entitlement.MonthlyRunLimit);
 
     private async Task<Dictionary<Guid, int>> GetQueuePositionsAsync(CancellationToken cancellationToken)
     {
@@ -935,6 +973,86 @@ public sealed class ModelLabRunService(
                 x.IsRetained &&
                 x.Status == ModelLabRunStatuses.Completed,
                 cancellationToken);
+
+    private async Task<ModelLabMonthlyRunUsage?> ReserveMonthlyRunSlotAsync(
+        Guid ownerUserId,
+        ModelLabEntitlement entitlement,
+        Guid runId,
+        string usageType,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        if (!entitlement.MonthlyRunLimit.HasValue)
+        {
+            return null;
+        }
+
+        var used = await EnforceMonthlyRunLimitAsync(ownerUserId, entitlement, 1, cancellationToken, nowUtc);
+        var usage = new ModelLabMonthlyRunUsage
+        {
+            OwnerUserId = ownerUserId,
+            MonthStartUtc = GetMonthStartUtc(nowUtc),
+            SlotNumber = used + 1,
+            RunId = runId,
+            UsageType = usageType,
+            CreatedAtUtc = nowUtc
+        };
+        dbContext.ModelLabMonthlyRunUsages.Add(usage);
+        return usage;
+    }
+
+    private async Task<int> EnforceMonthlyRunLimitAsync(
+        Guid ownerUserId,
+        ModelLabEntitlement entitlement,
+        int additionalRuns,
+        CancellationToken cancellationToken,
+        DateTime? nowUtc = null)
+    {
+        if (!entitlement.MonthlyRunLimit.HasValue)
+        {
+            return 0;
+        }
+
+        var now = nowUtc ?? DateTime.UtcNow;
+        var used = await CountMonthlyRunsAsync(ownerUserId, now, cancellationToken);
+        if (used + additionalRuns <= entitlement.MonthlyRunLimit.Value)
+        {
+            return used;
+        }
+
+        throw MonthlyRunLimitException(entitlement, GetMonthStartUtc(now).AddMonths(1));
+    }
+
+    private Task<int> CountMonthlyRunsAsync(
+        Guid ownerUserId,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var monthStart = GetMonthStartUtc(nowUtc);
+        var nextMonth = monthStart.AddMonths(1);
+        return dbContext.ModelLabMonthlyRunUsages
+            .AsNoTracking()
+            .CountAsync(x =>
+                x.OwnerUserId == ownerUserId &&
+                x.MonthStartUtc >= monthStart &&
+                x.MonthStartUtc < nextMonth,
+                cancellationToken);
+    }
+
+    private static DateTime GetMonthStartUtc(DateTime utc)
+        => new(utc.Year, utc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    private static ModelLabLimitException MonthlyRunLimitException(
+        ModelLabEntitlement entitlement,
+        DateTime resetsAtUtc)
+        => new(
+            "monthly_run_limit_reached",
+            $"Premium users can run up to {entitlement.MonthlyRunLimit ?? 200} models per calendar month. Your allowance resets on {resetsAtUtc:MMMM d, yyyy} (UTC).",
+            false,
+            entitlement.SavedModelLimit,
+            entitlement.RequiredLeagueName,
+            entitlement.StoredRunLimit,
+            entitlement.MonthlyRunLimit);
 
     private static IReadOnlyCollection<ModelLabRunMetricBreakdown> BuildMetricBreakdowns(
         Guid ownerUserId,

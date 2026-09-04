@@ -289,6 +289,10 @@ public sealed class ModelLabController(
             var run = await runService.RetryAsync(ownerUserId, runId, entitlement, cancellationToken);
             return run is null ? NotFound() : AcceptedAtAction(nameof(GetRun), new { runId }, run);
         }
+        catch (ModelLabLimitException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ToLimitError(ex));
+        }
         catch (ArgumentException ex)
         {
             return Conflict(ex.Message);
@@ -478,12 +482,20 @@ public sealed class ModelLabController(
             false,
             null,
             0,
+            null,
             "ACB"));
         return false;
     }
 
     private static ModelLabLimitErrorResponse ToLimitError(ModelLabLimitException ex)
-        => new(ex.Code, ex.Message, ex.UpgradeRequired, ex.SavedModelLimit, ex.StoredRunLimit, ex.AllowedLeagueName);
+        => new(
+            ex.Code,
+            ex.Message,
+            ex.UpgradeRequired,
+            ex.SavedModelLimit,
+            ex.StoredRunLimit,
+            ex.MonthlyRunLimit,
+            ex.AllowedLeagueName);
 
     private static ModelLabEntitlementResponse ToEntitlementResponse(ModelLabEntitlement entitlement)
         => new(
@@ -492,5 +504,6 @@ public sealed class ModelLabController(
             entitlement.IsPaid,
             entitlement.SavedModelLimit,
             entitlement.StoredRunLimit,
+            entitlement.MonthlyRunLimit,
             entitlement.RequiredLeagueName);
 }

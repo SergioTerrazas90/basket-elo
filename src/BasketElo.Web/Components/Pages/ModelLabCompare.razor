@@ -129,8 +129,18 @@
                     </div>
                 </div>
                 <div class="compare-config-footer">
-                    <p class="compare-config-summary"><strong>@FormatSeasonRange(scoredFromSeason, scoredToSeason)</strong> scored after @FormatSeasonRange(initializationFromSeason, initializationToSeason) initialization</p>
-                    <button type="button" class="btn btn-primary compare-start-button" @onclick="StartComparisonAsync" disabled="@isStarting">@(isStarting ? "Starting…" : $"Run {selectedModels.Count} models")</button>
+                    <p class="compare-config-summary">
+                        <strong>@FormatSeasonRange(scoredFromSeason, scoredToSeason)</strong> scored after @FormatSeasonRange(initializationFromSeason, initializationToSeason) initialization
+                        @if (runQuota?.MonthlyRunLimit is int monthlyLimit)
+                        {
+                            <small class="field-note">This month: @runQuota.MonthlyRuns/@monthlyLimit models</small>
+                        }
+                        @if (MonthlyComparisonUnavailable)
+                        {
+                            <small class="field-note">This comparison needs @selectedModels.Count remaining model runs. The allowance resets next month.</small>
+                        }
+                    </p>
+                    <button type="button" class="btn btn-primary compare-start-button" @onclick="StartComparisonAsync" disabled="@(isStarting || MonthlyComparisonUnavailable)">@(isStarting ? "Starting…" : $"Run {selectedModels.Count} models")</button>
                 </div>
             </section>
         }
@@ -235,6 +245,7 @@
     private List<ComparisonRunState> comparisonRuns = [];
     private Dictionary<Guid, ModelLabRunDetailResponse> comparisonDetails = [];
     private ModelLabEntitlementResponse? entitlement;
+    private ModelLabRunQuotaResponse? runQuota;
     private ModelLabOptionsResponse? options;
     private string selectedPoolKey = EloPoolKeys.Default;
     private string scopeType = ModelLabScopeTypes.SingleCompetition;
@@ -261,6 +272,8 @@
     private bool CanUseMultiCompetitionScopes => string.IsNullOrWhiteSpace(entitlement?.RequiredLeagueName);
     private string SelectedPoolDisplayName => options?.Pools.FirstOrDefault(x => x.Key == selectedPoolKey)?.DisplayName ?? selectedPoolKey;
     private bool ComparisonComplete => comparisonDetails.Count == selectedModels.Count;
+    private bool MonthlyComparisonUnavailable
+        => runQuota?.MonthlyRunLimit is int limit && runQuota.MonthlyRuns + selectedModels.Count > limit;
     private IReadOnlyList<ModelLabRunDetailResponse> OrderedDetails => selectedModels.Select(model => DetailFor(model.Id)).Where(detail => detail is not null).Cast<ModelLabRunDetailResponse>().ToList();
     private string ComparisonContext
     {
@@ -290,6 +303,7 @@
         try
         {
             entitlement = await Http.GetFromJsonAsync<ModelLabEntitlementResponse>("api/model-lab/entitlement");
+            runQuota = await Http.GetFromJsonAsync<ModelLabRunQuotaResponse>("api/model-lab/runs/quota");
             options = await Http.GetFromJsonAsync<ModelLabOptionsResponse>("api/model-lab/options");
             using var response = await Http.GetAsync("api/model-lab/models?includeArchived=false");
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException(await ReadErrorMessageAsync(response));

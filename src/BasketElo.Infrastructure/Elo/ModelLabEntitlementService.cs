@@ -11,7 +11,7 @@ public sealed class ModelLabEntitlementService(
     IOptions<ModelLabPlanOptions> options) : IModelLabEntitlementService
 {
     public ModelLabEntitlement GetAnonymous()
-        => new("anonymous", false, false, 0, 0, options.Value.FreeLeagueName);
+        => new("anonymous", false, false, 0, 0, null, options.Value.FreeLeagueName);
 
     public async Task<ModelLabEntitlement> GetAsync(Guid ownerUserId, CancellationToken cancellationToken)
     {
@@ -47,6 +47,7 @@ public sealed class ModelLabEntitlementService(
                 true,
                 null,
                 Math.Max(0, options.Value.PaidStoredRunLimit),
+                Math.Max(0, options.Value.PaidMonthlyRunLimit),
                 null);
         }
 
@@ -56,6 +57,7 @@ public sealed class ModelLabEntitlementService(
             false,
             Math.Max(0, options.Value.FreeSavedModelLimit),
             Math.Max(0, options.Value.FreeStoredRunLimit),
+            null,
             options.Value.FreeLeagueName);
     }
 }

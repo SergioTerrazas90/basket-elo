@@ -6,11 +6,13 @@ public sealed class ModelLabLimitException(
     bool upgradeRequired,
     int? savedModelLimit,
     string? allowedLeagueName,
-    int? storedRunLimit = null) : Exception(message)
+    int? storedRunLimit = null,
+    int? monthlyRunLimit = null) : Exception(message)
 {
     public string Code { get; } = code;
     public bool UpgradeRequired { get; } = upgradeRequired;
     public int? SavedModelLimit { get; } = savedModelLimit;
     public int? StoredRunLimit { get; } = storedRunLimit;
+    public int? MonthlyRunLimit { get; } = monthlyRunLimit;
     public string? AllowedLeagueName { get; } = allowedLeagueName;
 }

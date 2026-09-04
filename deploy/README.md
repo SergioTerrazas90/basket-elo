@@ -19,17 +19,17 @@ The frontend and backend are intentionally kept as separate services. The web ap
 
 ## Stripe Billing
 
-Premium uses Stripe-hosted Checkout for recurring subscriptions and Stripe's
-Customer Portal for payment-method, invoice, and cancellation management. Keep
+Premium uses Stripe-hosted Checkout for recurring subscriptions. Cancellation
+and reactivation are handled directly from the BasketElo Profile page; Stripe
+remains the server-side payment processor and webhook source of truth. Keep
 `StripeBilling__Enabled=false` until all values below are configured.
 
 1. In Stripe, create one Premium product with monthly and annual recurring prices.
-2. Enable and configure the Customer Portal for subscription management.
-3. Create a webhook endpoint at
+2. Create a webhook endpoint at
    `https://basketelo.com/billing/stripe/webhook` for these events:
    `checkout.session.completed`, `customer.subscription.created`,
    `customer.subscription.updated`, and `customer.subscription.deleted`.
-4. Add the following values to `/etc/basket-elo/basket-elo.env`:
+3. Add the following values to `/etc/basket-elo/basket-elo.env`:
 
 ```dotenv
 StripeBilling__SecretKey=sk_live_...
@@ -45,7 +45,10 @@ so replace every key, price ID, and webhook secret together when going live.
 Only subscriptions on the two configured Premium prices grant Premium access.
 Administrators retain Premium access independently of Stripe. Automatic Tax is
 off by default and should only be enabled after the corresponding Stripe tax
-settings and registrations are ready.
+settings and registrations are ready. After configuration, verify the complete
+flow in Stripe test mode: subscribe, schedule cancellation from BasketElo,
+reverse cancellation with **Keep Premium**, and confirm that webhook updates
+preserve Premium access through the paid-period end.
 
 The worker hosts at most three shared ELO workers. Canonical/public rebuilds use
 the higher-priority queue and Model Lab backtests use the lower-priority queue.

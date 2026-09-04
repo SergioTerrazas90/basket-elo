@@ -15,10 +15,16 @@ public static class CultureInference
         var countryCode = request.Headers["CF-IPCountry"].FirstOrDefault()
             ?? request.Headers["X-Country-Code"].FirstOrDefault()
             ?? request.Headers["X-Geo-Country"].FirstOrDefault();
+        var normalizedCountryCode = countryCode?.Trim().ToUpperInvariant() ?? string.Empty;
 
-        if (SpanishCountryCodes.Contains(countryCode?.Trim().ToUpperInvariant() ?? string.Empty))
+        if (SpanishCountryCodes.Contains(normalizedCountryCode))
         {
             return SupportedCultures.Spanish;
+        }
+
+        if (normalizedCountryCode.Length == 2 && normalizedCountryCode.All(char.IsAsciiLetter))
+        {
+            return SupportedCultures.English;
         }
 
         return InferFromAcceptLanguage(request.Headers.AcceptLanguage.ToString());

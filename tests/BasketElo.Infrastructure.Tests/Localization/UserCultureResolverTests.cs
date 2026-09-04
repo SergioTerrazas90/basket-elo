@@ -78,10 +78,21 @@ public sealed class UserCultureResolverTests
     }
 
     [Fact]
-    public void BrowserLanguageIsFallbackWhenIpCountryIsNotSpanishSpeaking()
+    public void NonSpanishIpCountryDefaultsToEnglish()
     {
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers["CF-IPCountry"] = "FR";
+        httpContext.Request.Headers.AcceptLanguage = "es-ES,es;q=0.9";
+
+        var result = CultureInference.Infer(httpContext.Request);
+
+        Assert.Equal(SupportedCultures.English, result);
+    }
+
+    [Fact]
+    public void BrowserLanguageIsFallbackWhenIpCountryIsUnavailable()
+    {
+        var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers.AcceptLanguage = "es-ES,es;q=0.9";
 
         var result = CultureInference.Infer(httpContext.Request);

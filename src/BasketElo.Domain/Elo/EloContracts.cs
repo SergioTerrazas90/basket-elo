@@ -409,4 +409,7 @@ public sealed record EloPoolCatalogResponse(
 public interface IEloRebuildService
 {
     Task<EloRebuildResult> RebuildAsync(Guid runId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<EloRebuildResult>> RebuildAsync(
+        IReadOnlyCollection<Guid> runIds,
+        CancellationToken cancellationToken);
 }

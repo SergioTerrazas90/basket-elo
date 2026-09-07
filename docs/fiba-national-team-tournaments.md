@@ -14,6 +14,7 @@ pre-qualifiers:
 | Family | Cycle key | Finals competition | Qualifier competition | Pre-qualifier competition |
 | --- | --- | --- | --- | --- |
 | EuroBasket | `eurobasket-{year}` | `EuroBasket` | `EuroBasket Qualifiers` | `FIBA EuroBasket Pre-Qualifiers` |
+| EuroBasket Division B | `eurobasket-division-b-{year}` | `FIBA EuroBasket Division B` | â€” | â€” |
 | AfroBasket | `afrobasket-{year}` | `FIBA AfroBasket` | `FIBA AfroBasket Qualifiers` | `FIBA AfroBasket Pre-Qualifiers` |
 | Asia Cup | `asiacup-{year}` | `FIBA Asia Cup` | `FIBA Asia Cup Qualifiers` / `FIBA Asia Cup Qualification` | `FIBA Asia Cup Pre-Qualifiers` |
 | AmeriCup | `americup-{year}` | `FIBA AmeriCup` | `FIBA AmeriCup Qualifiers` | `FIBA AmeriCup Pre-Qualifiers` |
@@ -28,6 +29,12 @@ pre-qualifiers:
 The cycle year is the championship being qualified for. It is not always the
 calendar year shown on the source page. Every stage remains a separate
 competition, while the cycle filter groups the stages intentionally.
+
+The postponed EuroBasket and Asia Cup campaigns branded as 2021 use the 2022
+championship cycle, when their finals were actually played. The Asian
+championship spanning 28 December 1985 to 5 January 1986 uses the official 1986
+edition cycle. Multi-year World Cup qualifier feed labels use their terminal
+year (for example, `2026-2027` maps to `worldcup-2027`).
 
 Olympic-specific source mappings and reconciliation rules are documented in
 [`olympics-ingestion.md`](olympics-ingestion.md). Although this table includes
@@ -82,8 +89,9 @@ World Cup finals and qualifiers are now FIBA-canonical where the official
 FIBA archive exposes game cards. The deployed scope has 1,213 FIBA finals rows
 and 1,236 FIBA qualifier rows across played finals from 1950 through 2023 and
 qualifier cycles 2019, 2023, and 2027. Historical World Cup qualification
-routes before 2019 are linked to the corresponding `worldcup-{year}` cycle
-without duplicating their canonical continental/Olympic game rows. A further 97 GSA finals rows and 96 GSA
+routes before 2019 retain their canonical continental/Olympic cycle and link
+the corresponding `worldcup-{year}` target as separate qualification-route
+metadata, without duplicating game rows. A further 97 GSA finals rows and 96 GSA
 qualifier rows remain source-only because FIBA did not expose a one-to-one
 match. The World Cup cycle is separate from Olympic Qualification, Olympic
 Pre-Qualification, and all continental qualifier cycles. See
@@ -112,9 +120,10 @@ Source policy is mixed by historical availability. GSA supplies the current
 fallback for the 1991/1993 historical gaps. Pre-qualifiers retain both FIBA
 and GSA records where the source archives do not match cleanly.
 
-Keep EuroBasket Division B and World Cup European qualification outside the
-EuroBasket finals/qualifier family. Historical rounds are assigned to the
-EuroBasket they qualify for, rather than to the source page year.
+Keep EuroBasket Division B in its own `eurobasket-division-b-{year}` family and
+World Cup European qualification outside the EuroBasket finals/qualifier
+family. Historical rounds are assigned to the EuroBasket they qualify for,
+rather than to the source page year.
 
 Sources: [FIBA EuroBasket archive](https://www.fiba.basketball/en/history/208-fiba-eurobasket),
 [qualifiers](https://www.fiba.basketball/en/history/205-fiba-eurobasket-qualifiers),
@@ -138,8 +147,9 @@ and [AfroBasket history](https://www.fiba.basketball/en/events/fiba-afrobasket-2
 
 ## FIBA Asia Cup
 
-Asia Cup finals use the official FIBA archive from 1960 onward, with explicit
-handling for the duplicated 2003 archive label. Qualifiers and pre-qualifiers
+Asia Cup finals use the official FIBA archive from 1960 onward. The archive
+entry with event id 2651 is an Asian Champions Cup club event and is excluded;
+event 2675 is the 2003 national-team championship. Qualifiers and pre-qualifiers
 are stored under the championship cycle they feed. The current snapshot has
 1,159 FIBA finals rows, 142 FIBA qualifier rows, 65 FIBA pre-qualifier rows,
 and retained GSA comparison rows where reconciliation was not exact.

@@ -154,11 +154,10 @@ FIBA families currently used include:
   GSA contains the same games.
 - AfroBasket Pre-Qualifiers: FIBA's 2021 and 2025 preliminary competitions.
 - Asia Cup finals: the official FIBA finals archive editions from 1960 through
-  2025 that expose a year row. The duplicated archive label for 2003 is
-  resolved by event identity: event 2651 is the 2002 Malaysian tournament and
-  event 2675 is the 2003 championship. Event 2651 currently exposes no game
-  results, so it remains an explicit FIBA archive gap rather than a fabricated
-  game set.
+  2025. The championship crossing New Year is stored as the official 1986
+  edition even though GSA's selector says 1985. The duplicated 2003 archive
+  label is resolved by identity: event 2651 is an Asian Champions Cup club
+  event and is excluded; event 2675 is the 2003 national-team championship.
 - Asia Cup Qualifiers: the official 2021 and 2025 qualifier editions.
 - Asia Cup Pre-Qualifiers: the official 2019 edition qualifying for Asia Cup
   2021 and the official 2023 edition qualifying for Asia Cup 2025. These are
@@ -366,7 +365,8 @@ intentional:
   cycle for filtering but never share a competition identity;
 - World Cup qualifiers remain separate from continental qualifiers;
 - Olympic qualifiers remain separate from the Olympics tournament;
-- EuroBasket Division B remains separate from Division A.
+- EuroBasket Division B remains separate from Division A and uses independent
+  `eurobasket-division-b-{year}` cycles.
 
 When two providers contain the same match, the canonical record is selected by
 the configured source policy. FIBA is canonical for official AfroBasket, Asia

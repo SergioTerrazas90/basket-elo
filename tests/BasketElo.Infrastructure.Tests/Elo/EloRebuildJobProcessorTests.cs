@@ -31,7 +31,7 @@ public class EloRebuildJobProcessorTests
         var processed = await processor.TryProcessNextPendingJobAsync(CancellationToken.None);
 
         Assert.True(processed);
-        Assert.Equal(run.Id, Assert.Single(dispatcher.RunIds));
+        Assert.Equal(run.Id, Assert.Single(Assert.Single(dispatcher.RunIdBatches)));
         var stored = await dbContext.EloRebuildRuns.SingleAsync();
         Assert.Equal("hangfire-job-1", stored.HangfireJobId);
         Assert.Equal(EloRebuildRunStatus.Pending, stored.Status);
@@ -57,7 +57,7 @@ public class EloRebuildJobProcessorTests
         var processed = await processor.TryProcessNextPendingJobAsync(CancellationToken.None);
 
         Assert.False(processed);
-        Assert.Empty(dispatcher.RunIds);
+        Assert.Empty(dispatcher.RunIdBatches);
     }
 
     [Fact]
@@ -111,6 +111,36 @@ public class EloRebuildJobProcessorTests
         Assert.Empty(service.RunIds);
     }
 
+    [Fact]
+    public async Task PendingRulesetsForSamePoolAreDispatchedTogether()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var adjusted = CreateRun();
+        var basic = CreateRun();
+        basic.RulesetVersion = EloRulesetVersions.BasicEloV1;
+        basic.QueuedAtUtc = adjusted.QueuedAtUtc.AddSeconds(1);
+        dbContext.EloRebuildRuns.AddRange(adjusted, basic);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var dispatcher = new RecordingDispatcher();
+        var processor = new EloRebuildJobProcessor(
+            dbContext,
+            dispatcher,
+            NullLogger<EloRebuildJobProcessor>.Instance);
+
+        Assert.True(await processor.TryProcessNextPendingJobAsync(CancellationToken.None));
+
+        var batch = Assert.Single(dispatcher.RunIdBatches);
+        Assert.Equal(2, batch.Length);
+        Assert.Contains(adjusted.Id, batch);
+        Assert.Contains(basic.Id, batch);
+        var stored = await dbContext.EloRebuildRuns.ToListAsync();
+        Assert.All(stored, x => Assert.Equal("hangfire-job-1", x.HangfireJobId));
+    }
+
     private static EloRebuildRun CreateRun() => new()
     {
         Id = Guid.NewGuid(),
@@ -123,12 +153,12 @@ public class EloRebuildJobProcessorTests
 
     private sealed class RecordingDispatcher : ISystemEloJobDispatcher
     {
-        public List<Guid> RunIds { get; } = [];
+        public List<Guid[]> RunIdBatches { get; } = [];
 
-        public string EnqueueRebuild(Guid runId)
+        public string EnqueueRebuild(Guid[] runIds)
         {
-            RunIds.Add(runId);
-            return $"hangfire-job-{RunIds.Count}";
+            RunIdBatches.Add(runIds);
+            return $"hangfire-job-{RunIdBatches.Count}";
         }
     }
 
@@ -138,20 +168,33 @@ public class EloRebuildJobProcessorTests
 
         public async Task<EloRebuildResult> RebuildAsync(Guid runId, CancellationToken cancellationToken)
         {
-            RunIds.Add(runId);
-            var run = await dbContext.EloRebuildRuns.SingleAsync(x => x.Id == runId, cancellationToken);
-            Assert.Equal(EloRebuildRunStatus.Running, run.Status);
-            run.Status = EloRebuildRunStatus.Completed;
-            run.FinishedAtUtc = DateTime.UtcNow;
-            await dbContext.SaveChangesAsync(cancellationToken);
+            var results = await RebuildAsync([runId], cancellationToken);
+            return results.Single();
+        }
 
-            return new EloRebuildResult
+        public async Task<IReadOnlyList<EloRebuildResult>> RebuildAsync(
+            IReadOnlyCollection<Guid> runIds,
+            CancellationToken cancellationToken)
+        {
+            var results = new List<EloRebuildResult>();
+            foreach (var runId in runIds)
             {
-                RunId = runId,
-                EloPoolKey = EloPoolKeys.Nba,
-                RulesetVersion = EloRulesetVersions.AdjustedV1,
-                Status = EloRebuildRunStatus.Completed
-            };
+                RunIds.Add(runId);
+                var run = await dbContext.EloRebuildRuns.SingleAsync(x => x.Id == runId, cancellationToken);
+                Assert.Equal(EloRebuildRunStatus.Running, run.Status);
+                run.Status = EloRebuildRunStatus.Completed;
+                run.FinishedAtUtc = DateTime.UtcNow;
+                results.Add(new EloRebuildResult
+                {
+                    RunId = runId,
+                    EloPoolKey = EloPoolKeys.Nba,
+                    RulesetVersion = run.RulesetVersion,
+                    Status = EloRebuildRunStatus.Completed
+                });
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return results;
         }
     }
 }

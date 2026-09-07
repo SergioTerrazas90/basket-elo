@@ -10,7 +10,7 @@ qualification competitions are excluded.
 | --- | --- | --- |
 | FIBA World Cup | `worldcup-{year}` | Played finals 1950, 1954, 1959, 1963, 1967, 1970, 1974, 1978, 1982, 1986, 1990, 1994, 1998, 2002, 2006, 2010, 2014, 2019, 2023 |
 | FIBA World Cup Qualifiers | `worldcup-{year}` | 2019, 2023, 2027 |
-| Historical World Cup qualification routes | `worldcup-{year}` | Existing Olympic and continental qualifying tournaments linked for 1950â€“2014 where source rows are available |
+| Historical World Cup qualification routes | Own Olympic or continental cycle | Existing tournaments retain their own cycle for 1950â€“2014; the target World Cup is stored as separate qualification-route metadata |
 | FIBA World Cup Pre-Qualifiers* | `worldcup-{year}` | 2017 (2019 cycle), 2021 (2023 cycle), 2024â€“2025 (2027 cycle) |
 
 The official archive also displays a future 2027 finals row, but it has no
@@ -35,8 +35,8 @@ The official sources are the [FIBA Basketball World Cup archive](https://www.fib
 the [FIBA Basketball World Cup Qualifiers archive](https://www.fiba.basketball/en/history/200-fiba-basketball-world-cup-qualifiers),
 and the separate [World Cup Pre-Qualifiers archive](https://www.fiba.basketball/en/history/199-fiba-basketball-world-cup-pre-qualifiers).
 For historical cycles, the original continental/Olympic game row remains
-canonical and receives a secondary World Cup qualifier-cycle link; no second
-game row is created.
+canonical and receives a World Cup qualification-route link; that link is not
+tournament-cycle membership and no second game row is created.
 
 ## Historical qualification audit
 
@@ -60,10 +60,11 @@ history identifies the following model:
   not an earlier edition of the main World Cup Qualifiers family.
 
 Therefore the pre-2019 qualification history is represented by the relevant
-Olympics and continental tournament families and is also exposed through the
-linked `worldcup-{year}` qualifier cycle. The standalone global window-based
-World Cup Qualifiers family begins at 2019. Historical games are linked to the
-World Cup cycle without being copied or removed from their original competition.
+Olympics and continental tournament families. The standalone global
+window-based World Cup Qualifiers family begins at 2019. Historical games keep
+their original tournament cycle and expose the target World Cup only as a
+separate qualification pathway, without being copied or removed from their
+original competition.
 
 ## Remaining gaps
 
@@ -93,10 +94,11 @@ BasketElo.Tools fiba-dry-run --country World --league "FIBA World Cup Pre-Qualif
 
 Audit source keys, same-stage identities, cross-source duplicates, and cycle
 links after ingestion. Historical qualification links must be unique by game
-and World Cup cycle. The API exposes them through both the `worldcup-{year}`
-tournament-cycle filter and the `FIBA Basketball World Cup Qualifiers` league
-alias, while retaining the original competition name in each row. Repeat
-ingestion must queue zero jobs or update the same FIBA source rows.
+and World Cup target. The API exposes the target as a qualification route while
+retaining the original competition and tournament cycle. Tournament-cycle and
+league filters use actual membership only, so a continental championship is
+not returned as a World Cup or World Cup Qualifiers game. Repeat ingestion must
+queue zero jobs or update the same FIBA source rows.
 
 ## VPS audit
 

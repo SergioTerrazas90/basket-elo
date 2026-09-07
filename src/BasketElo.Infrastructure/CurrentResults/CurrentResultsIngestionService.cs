@@ -448,7 +448,10 @@ public sealed class CurrentResultsIngestionService(
         var family = TournamentCycleCatalog.SupportedFamilies.FirstOrDefault(
             value => string.Equals(value, request.TournamentCycleFamily!.Trim(), StringComparison.OrdinalIgnoreCase))
             ?? throw new ArgumentException("Tournament cycle family is not supported.");
-        var editionLabel = request.TournamentCycleEditionLabel!.Trim();
+        var editionLabel = TournamentCycleCatalog.ResolveEditionLabelFromFamily(
+                family,
+                request.TournamentCycleEditionLabel)
+            ?? throw new ArgumentException("Tournament cycle edition could not be normalized.");
 
         var key = TournamentCycleCatalog.ResolveKeyFromFamily(family, editionLabel)
             ?? throw new ArgumentException("Tournament cycle family and edition could not be converted to a cycle key.");
@@ -482,19 +485,16 @@ public sealed class CurrentResultsIngestionService(
             return;
         }
 
-        var expectedSeparator = expectedKey.IndexOf('-');
-        var actualSeparator = cycle.Key.IndexOf('-');
-        if (expectedSeparator <= 0 || actualSeparator <= 0)
+        var expectedFamily = TournamentCycleCatalog.ResolveFamilyFromKey(expectedKey);
+        if (expectedFamily is null)
         {
             return;
         }
 
-        var expectedFamilyPrefix = expectedKey[..expectedSeparator];
-        var actualFamilyPrefix = cycle.Key[..actualSeparator];
-        if (!string.Equals(expectedFamilyPrefix, actualFamilyPrefix, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(expectedFamily, cycle.Family, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"Competition '{competitionName}' belongs to the '{expectedFamilyPrefix}' cycle family, not '{actualFamilyPrefix}'.");
+                $"Competition '{competitionName}' belongs to the '{expectedFamily}' cycle family, not '{cycle.Family}'.");
         }
     }
 

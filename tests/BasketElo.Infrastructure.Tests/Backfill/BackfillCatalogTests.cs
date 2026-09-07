@@ -373,7 +373,9 @@ public class BackfillCatalogTests
             league.LeagueName == "FIBA Asia Cup Pre-Qualifiers");
 
         Assert.Contains("2025", catalog.GetSeasonsForLeague(finals));
-        Assert.Contains("2002", catalog.GetSeasonsForLeague(finals));
+        Assert.Contains("1986", catalog.GetSeasonsForLeague(finals));
+        Assert.DoesNotContain("1985", catalog.GetSeasonsForLeague(finals));
+        Assert.DoesNotContain("2002", catalog.GetSeasonsForLeague(finals));
         Assert.Equal(["2021", "2025"], catalog.GetSeasonsForLeague(qualifiers));
         Assert.Equal(["2021", "2025"], catalog.GetSeasonsForLeague(preQualifiers));
         Assert.Equal(EloPoolKeys.NationalTeams, finals.EloPoolKey);

@@ -121,7 +121,7 @@ public class GamesControllerTournamentCycleTests
     }
 
     [Fact]
-    public async Task HistoricalWorldCupQualificationLinkFiltersWithoutDuplicatingTheGame()
+    public async Task HistoricalWorldCupQualificationLinkIsPresentedAsARouteNotCycleMembership()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -163,20 +163,30 @@ public class GamesControllerTournamentCycleTests
         await dbContext.SaveChangesAsync();
 
         var controller = new GamesController(dbContext);
-        var result = await controller.GetGames(
+        var worldCupCycleResult = await controller.GetGames(
             null, null, null, null, "worldcup-2010", null, null, null, null, null, null, null, null, 1, 50, CancellationToken.None);
-        var response = Assert.IsType<OkObjectResult>(result.Result).Value as BasketElo.Domain.Games.GameBrowseResponse;
+        var worldCupCycleResponse = Assert.IsType<OkObjectResult>(worldCupCycleResult.Result).Value as BasketElo.Domain.Games.GameBrowseResponse;
 
-        Assert.NotNull(response);
-        var row = Assert.Single(response!.Games);
+        Assert.NotNull(worldCupCycleResponse);
+        Assert.Empty(worldCupCycleResponse!.Games);
+
+        var euroBasketCycleResult = await controller.GetGames(
+            null, null, null, null, "eurobasket-2009", null, null, null, null, null, null, null, null, 1, 50, CancellationToken.None);
+        var euroBasketCycleResponse = Assert.IsType<OkObjectResult>(euroBasketCycleResult.Result).Value as BasketElo.Domain.Games.GameBrowseResponse;
+        Assert.NotNull(euroBasketCycleResponse);
+        var row = Assert.Single(euroBasketCycleResponse!.Games);
         Assert.Equal("historical-2010-route", row.SourceGameId);
-        Assert.Equal("FIBA Basketball World Cup 2010", row.TournamentCycle);
+        Assert.Equal("EuroBasket 2009", row.TournamentCycle);
+        Assert.Equal(["FIBA Basketball World Cup 2010"], row.QualificationRoutes);
 
         var qualifierAliasResult = await controller.GetGames(
             null, null, "FIBA Basketball World Cup Qualifiers", null, null, null, null, null, null, null, null, null, null, 1, 50, CancellationToken.None);
         var qualifierAliasResponse = Assert.IsType<OkObjectResult>(qualifierAliasResult.Result).Value as BasketElo.Domain.Games.GameBrowseResponse;
         Assert.NotNull(qualifierAliasResponse);
-        Assert.Contains(qualifierAliasResponse!.Games, item => item.SourceGameId == "historical-2010-route");
+        Assert.Empty(qualifierAliasResponse!.Games);
+        Assert.DoesNotContain(
+            qualifierAliasResponse.Filters.TournamentCycles,
+            option => option.Key == "worldcup-2010");
     }
 
     private static Game CreateGame(

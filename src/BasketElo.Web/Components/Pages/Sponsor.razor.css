@@ -1,6 +1,6 @@
-.sponsor-contact-link {
+.sponsor-contact-card {
     display: grid;
-    gap: 0.3rem;
+    gap: 0.75rem;
     align-content: center;
     align-self: stretch;
     padding: var(--space-6);
@@ -8,15 +8,18 @@
     border-radius: var(--radius-xl);
     background: linear-gradient(145deg, var(--color-brand-dark), #155b61);
     color: var(--color-inverse);
-    text-decoration: none;
-    transition: transform var(--motion-standard), box-shadow var(--motion-standard);
 }
 
-.sponsor-contact-link:hover,
-.sponsor-contact-link:focus-visible { color: var(--color-inverse); box-shadow: var(--shadow-md); transform: translateY(-2px); }
-.sponsor-contact-link > span { color: #ffc489; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
-.sponsor-contact-link strong { color: var(--color-inverse); font-family: var(--font-display); font-size: 1.5rem; font-weight: 600; }
-.sponsor-contact-link small { color: rgba(255, 249, 238, 0.7); }
+.sponsor-contact-card > span { color: #ffc489; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.sponsor-contact-method { display: grid; gap: 0.15rem; color: var(--color-inverse); text-decoration: none; }
+.sponsor-contact-method + .sponsor-contact-method { padding-top: 0.75rem; border-top: 1px solid rgba(255, 249, 238, 0.2); }
+.sponsor-contact-method:hover,
+.sponsor-contact-method:focus-visible { color: var(--color-inverse); }
+.sponsor-contact-method:hover strong,
+.sponsor-contact-method:focus-visible strong { text-decoration: underline; text-underline-offset: 0.2em; }
+.sponsor-contact-method strong { color: var(--color-inverse); font-family: var(--font-display); font-size: 1.5rem; font-weight: 600; overflow-wrap: anywhere; }
+.sponsor-contact-method strong.sponsor-contact-email { font-size: clamp(1rem, 1.8vw, 1.25rem); }
+.sponsor-contact-method small { color: rgba(255, 249, 238, 0.7); }
 
 .sponsor-fit {
     display: grid;
@@ -29,6 +32,7 @@
 .sponsor-fit h3 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-size: 1.45rem; font-weight: 600; }
 .sponsor-fit p { margin: 0; color: var(--color-muted); line-height: 1.68; }
 .sponsor-note { max-width: 46rem; margin: var(--space-7) 0 0; color: var(--color-muted); }
+.sponsor-contact-actions { margin: var(--space-3) 0 0; color: var(--color-muted); }
 
 .support-placeholder {
     display: grid;

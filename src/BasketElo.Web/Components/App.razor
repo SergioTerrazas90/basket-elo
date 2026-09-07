@@ -23,6 +23,12 @@
     <script src="js/elo-dygraph.js?v=dygraph-19"></script>
     <script src="js/culture-switch.js?v=culture-switch-1"></script>
     <script src="_framework/blazor.web.js"></script>
+    @if (CloudflareAnalyticsToken is { } token)
+    {
+        <script type="module"
+                src="https://static.cloudflareinsights.com/beacon.min.js"
+                data-cf-beacon="@CreateCloudflareBeaconConfiguration(token)"></script>
+    }
 </body>
 
 </html>
@@ -30,4 +36,19 @@
 @code {
     private static readonly string ScopedStylesheetHref =
         $"BasketElo.Web.styles.css?v={typeof(App).Assembly.ManifestModule.ModuleVersionId:N}";
+
+    [Inject]
+    private IConfiguration Configuration { get; set; } = default!;
+
+    private string? CloudflareAnalyticsToken
+    {
+        get
+        {
+            var token = Configuration["CloudflareAnalytics:Token"]?.Trim();
+            return string.IsNullOrWhiteSpace(token) ? null : token;
+        }
+    }
+
+    private static string CreateCloudflareBeaconConfiguration(string token) =>
+        System.Text.Json.JsonSerializer.Serialize(new { token });
 }

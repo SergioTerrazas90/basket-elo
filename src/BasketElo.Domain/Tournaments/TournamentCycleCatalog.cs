@@ -5,6 +5,7 @@ public static class TournamentCycleCatalog
     public static IReadOnlyList<string> SupportedFamilies { get; } =
     [
         "EuroBasket",
+        "EuroBasket Division B",
         "AfroBasket",
         "FIBA Asia Cup",
         "FIBA AmeriCup",
@@ -26,10 +27,16 @@ public static class TournamentCycleCatalog
             return null;
         }
 
-        var normalizedEdition = editionLabel.Trim();
+        var normalizedEdition = ResolveEditionLabelFromFamily(normalizedFamily, editionLabel);
+        if (normalizedEdition is null)
+        {
+            return null;
+        }
+
         var prefix = normalizedFamily switch
         {
             "EuroBasket" => "eurobasket",
+            "EuroBasket Division B" => "eurobasket-division-b",
             "AfroBasket" => "afrobasket",
             "FIBA Asia Cup" => "asiacup",
             "FIBA AmeriCup" => "americup",
@@ -39,6 +46,24 @@ public static class TournamentCycleCatalog
         };
 
         return prefix is null ? null : $"{prefix}-{normalizedEdition}";
+    }
+
+    public static string? ResolveEditionLabelFromFamily(string? family, string? editionLabel)
+    {
+        if (string.IsNullOrWhiteSpace(family) || string.IsNullOrWhiteSpace(editionLabel))
+        {
+            return null;
+        }
+
+        var normalizedEdition = editionLabel.Trim();
+        return family.Trim().ToLowerInvariant() switch
+        {
+            "eurobasket" when normalizedEdition == "2021" => "2022",
+            "fiba asia cup" when normalizedEdition == "1985" => "1986",
+            "fiba asia cup" when normalizedEdition == "2021" => "2022",
+            "fiba basketball world cup" => TerminalYear(normalizedEdition),
+            _ => normalizedEdition
+        };
     }
 
     public static string? ResolveKey(string? country, string? competitionName, string? seasonLabel)
@@ -58,6 +83,8 @@ public static class TournamentCycleCatalog
             normalized.Equals("FIBA EuroBasket Qualifiers", StringComparison.OrdinalIgnoreCase) ||
             normalized.Equals("EuroBasket Pre-Qualifiers", StringComparison.OrdinalIgnoreCase) ||
             normalized.Equals("FIBA EuroBasket Pre-Qualifiers", StringComparison.OrdinalIgnoreCase));
+        var isEuroBasketDivisionBCompetition = string.Equals(country, "Europe", StringComparison.OrdinalIgnoreCase) &&
+            normalized.Equals("FIBA EuroBasket Division B", StringComparison.OrdinalIgnoreCase);
         var isAfroBasketCompetition = string.Equals(country, "Africa", StringComparison.OrdinalIgnoreCase) &&
             (normalized.Equals("AfroBasket", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA AfroBasket", StringComparison.OrdinalIgnoreCase) ||
@@ -67,6 +94,7 @@ public static class TournamentCycleCatalog
              normalized.Equals("FIBA AfroBasket Pre-Qualifiers", StringComparison.OrdinalIgnoreCase));
         var isAsiaCupCompetition = string.Equals(country, "Asia", StringComparison.OrdinalIgnoreCase) &&
             (normalized.Equals("FIBA Asia Cup", StringComparison.OrdinalIgnoreCase) ||
+             normalized.Equals("FIBA Asia Cup Qualification", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA Asia Cup Qualifiers", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA Asia Cup Pre-Qualifiers", StringComparison.OrdinalIgnoreCase));
         var isAmeriCupCompetition = string.Equals(country, "Americas", StringComparison.OrdinalIgnoreCase) &&
@@ -93,23 +121,28 @@ public static class TournamentCycleCatalog
              normalized.Equals("FIBA Olympic Qualifying Tournament", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("Olympics Pre-Qualification", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA Olympic Pre-Qualifying Tournament", StringComparison.OrdinalIgnoreCase));
-        var isWorldCupCompetition = string.Equals(country, "World", StringComparison.OrdinalIgnoreCase) &&
-            (normalized.Equals("FIBA Basketball World Cup", StringComparison.OrdinalIgnoreCase) ||
+        // Live feeds commonly put World Cup qualifiers under a regional
+        // confederation. Their competition identity still belongs to the
+        // global World Cup cycle.
+        var isWorldCupCompetition =
+            normalized.Equals("FIBA Basketball World Cup", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA Basketball World Cup Qualifiers", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA Basketball World Cup Pre-Qualifiers", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA World Cup", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA World Cup Qualifiers", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("FIBA World Cup Pre-Qualifiers", StringComparison.OrdinalIgnoreCase) ||
-             normalized.Equals("FIBA WC Qualification", StringComparison.OrdinalIgnoreCase));
+             normalized.Equals("FIBA WC Qualification", StringComparison.OrdinalIgnoreCase);
 
-        return isEuroBasketCompetition
-            ? $"eurobasket-{seasonLabel.Trim()}"
+        return isEuroBasketDivisionBCompetition
+            ? ResolveKeyFromFamily("EuroBasket Division B", seasonLabel)
+            : isEuroBasketCompetition
+            ? ResolveKeyFromFamily("EuroBasket", seasonLabel)
             : isAfroBasketCompetition
-                ? $"afrobasket-{seasonLabel.Trim()}"
+                ? ResolveKeyFromFamily("AfroBasket", seasonLabel)
                 : isAsiaCupCompetition
-                    ? $"asiacup-{seasonLabel.Trim()}"
+                    ? ResolveKeyFromFamily("FIBA Asia Cup", seasonLabel)
                     : isAmeriCupCompetition
-                        ? $"americup-{seasonLabel.Trim()}"
+                        ? ResolveKeyFromFamily("FIBA AmeriCup", seasonLabel)
                         : isCentrobasketCompetition
                             ? $"centrobasket-{seasonLabel.Trim()}"
                             : isCocabaCompetition
@@ -121,10 +154,58 @@ public static class TournamentCycleCatalog
                                         : isOceaniaCompetition
                                             ? $"oceania-{seasonLabel.Trim()}"
                                             : isWorldCupCompetition
-                                                ? $"worldcup-{seasonLabel.Trim()}"
+                                                ? ResolveKeyFromFamily("FIBA Basketball World Cup", seasonLabel)
                                             : isOlympicsCompetition
-                                                ? $"olympics-{seasonLabel.Trim()}"
+                                                ? ResolveKeyFromFamily("Olympics", seasonLabel)
                                                 : null;
+    }
+
+    private static string TerminalYear(string editionLabel)
+    {
+        var pieces = editionLabel.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return pieces.Length == 2 &&
+               pieces[0].Length == 4 &&
+               pieces[1].Length == 4 &&
+               int.TryParse(pieces[0], out var firstYear) &&
+               int.TryParse(pieces[1], out var secondYear) &&
+               secondYear >= firstYear
+            ? pieces[1]
+            : editionLabel;
+    }
+
+    public static string? ResolveFamilyFromKey(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return null;
+        }
+
+        var normalized = key.Trim();
+        return normalized.StartsWith("eurobasket-division-b-", StringComparison.OrdinalIgnoreCase)
+            ? "EuroBasket Division B"
+            : normalized.StartsWith("eurobasket-", StringComparison.OrdinalIgnoreCase)
+                ? "EuroBasket"
+                : normalized.StartsWith("afrobasket-", StringComparison.OrdinalIgnoreCase)
+                    ? "AfroBasket"
+                    : normalized.StartsWith("asiacup-", StringComparison.OrdinalIgnoreCase)
+                        ? "FIBA Asia Cup"
+                        : normalized.StartsWith("americup-", StringComparison.OrdinalIgnoreCase)
+                            ? "FIBA AmeriCup"
+                            : normalized.StartsWith("worldcup-", StringComparison.OrdinalIgnoreCase)
+                                ? "FIBA Basketball World Cup"
+                                : normalized.StartsWith("olympics-", StringComparison.OrdinalIgnoreCase)
+                                    ? "Olympics"
+                                    : normalized.StartsWith("oceania-", StringComparison.OrdinalIgnoreCase)
+                                        ? "FIBA Oceania Championship"
+                                        : normalized.StartsWith("centrobasket-", StringComparison.OrdinalIgnoreCase)
+                                            ? "Centrobasket Championship"
+                                            : normalized.StartsWith("cocaba-", StringComparison.OrdinalIgnoreCase)
+                                                ? "COCABA Championship"
+                                                : normalized.StartsWith("south-american-", StringComparison.OrdinalIgnoreCase)
+                                                    ? "South American Championship"
+                                                    : normalized.StartsWith("caribbean-", StringComparison.OrdinalIgnoreCase)
+                                                        ? "Caribbean Basketball Championship"
+                                                        : null;
     }
 
     public static string DisplayName(string family, string editionLabel)

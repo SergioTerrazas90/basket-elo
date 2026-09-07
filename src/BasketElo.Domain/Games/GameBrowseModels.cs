@@ -19,6 +19,7 @@ public record GameListItem(
     string LeagueName,
     string Season,
     string? TournamentCycle,
+    IReadOnlyCollection<string> QualificationRoutes,
     string? CompetitionPhase,
     string? CompetitionRound,
     string HomeTeam,

@@ -32,6 +32,11 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
     private const string AmeriCupSeedPath = "/competition/basketball/fiba-americup-2025-nicaragua/group-stage/120539/";
     private const string AmeriCupQualificationSeedPath = "/competition/basketball/fiba-americup-qualification-2025-nicaragua/qualifiers/93859/";
 
+    private static readonly HashSet<string> AsiaCup1986JanuarySourceIds =
+    [
+        "3275567", "3275568", "3275569", "3275570", "3275571", "3275572"
+    ];
+
     private static readonly IReadOnlyDictionary<string, DomesticArchiveLeague> DomesticLeagues =
         new Dictionary<string, DomesticArchiveLeague>(StringComparer.OrdinalIgnoreCase)
         {
@@ -64,7 +69,10 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
                 },
                 "pre-qualifying-round-final"),
             ["fiba-wc-qualification"] = new(WorldCupQualificationSeedPath, "fiba-wc-qualification"),
-            ["fiba-asia-cup"] = new(AsiaBasketSeedPath, "abc-championship|fiba-asia-championship|fiba-asia-cup"),
+            ["fiba-asia-cup"] = new(
+                AsiaBasketSeedPath,
+                "abc-championship|fiba-asia-championship|fiba-asia-cup",
+                SourceYears: new Dictionary<int, int> { [1986] = 1985 }),
             ["fiba-asia-cup-qualification"] = new(AsiaCupQualifiersSeedPath, "fiba-asia-cup-qualification"),
             ["asian-games"] = new(AsianGamesSeedPath, "asian-games"),
             ["eurobasket"] = new(EuroBasketSeedPath, "eurobasket"),
@@ -271,6 +279,9 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
         var year = SeasonLabelNormalizer.ParseStartYear(season);
         var warnings = new List<string>();
         var definition = GetDefinition(league);
+        var sourceYear = definition.SourceYears is not null && definition.SourceYears.TryGetValue(year, out var configuredSourceYear)
+            ? configuredSourceYear
+            : year;
         var seedPath = definition.SeasonSeedPaths is not null && definition.SeasonSeedPaths.TryGetValue(year, out var configuredSeedPath)
             ? configuredSeedPath
             : definition.SeedPath;
@@ -281,7 +292,7 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
         }
 
         var seed = await GetPageAsync(seedPath, context, cancellationToken);
-        var stagePaths = FindStagePaths(seed.Content, year, definition).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var stagePaths = FindStagePaths(seed.Content, sourceYear, definition).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (stagePaths.Count == 0)
         {
             warnings.Add($"Global Sports Archive {league.Name} edition {year} was not found in the historical selector.");
@@ -301,7 +312,7 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
             try
             {
                 bootstrap = await GetPageAsync(bootstrapPath, context, cancellationToken);
-                foreach (var discoveredPath in FindStagePaths(bootstrap.Content, year, definition))
+                foreach (var discoveredPath in FindStagePaths(bootstrap.Content, sourceYear, definition))
                 {
                     stagePaths.Add(discoveredPath);
                 }
@@ -401,7 +412,7 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
 
                 foreach (var pagedDocument in pages)
                 {
-                    foreach (var game in ParseGames(pagedDocument.Content, pagedDocument.FetchedAtUtc, pagedDocument.Revision, stagePath, year, warnings))
+                    foreach (var game in ParseGames(pagedDocument.Content, pagedDocument.FetchedAtUtc, pagedDocument.Revision, stagePath, sourceYear, warnings))
                     {
                         if (isAmeriCupQualification && !IsAmeriCupQualifierGame(game) ||
                             isAmeriCupPreQualification && !IsAmeriCupPreQualifierGame(game) ||
@@ -641,6 +652,14 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
                 continue;
             }
 
+            if (year == 1985 &&
+                gameDate.Year == 1985 &&
+                gameDate.Month == 1 &&
+                AsiaCup1986JanuarySourceIds.Contains(matchId.Groups["id"].Value))
+            {
+                gameDate = gameDate.AddYears(1);
+            }
+
             var timeText = HtmlEntity.DeEntitize(timeNode?.InnerText ?? string.Empty).Trim();
             var gameDateTime = gameDate;
             if (DateTime.TryParseExact(timeText, ["H:mm", "HH:mm"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var gameTime))
@@ -829,5 +848,6 @@ public sealed class GlobalSportsArchiveBasketballDataProvider(HttpClient httpCli
         string SeedPath,
         string CompetitionSlugPattern,
         IReadOnlyDictionary<int, string?>? SeasonSeedPaths = null,
-        string? StagePathPattern = null);
+        string? StagePathPattern = null,
+        IReadOnlyDictionary<int, int>? SourceYears = null);
 }

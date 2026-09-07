@@ -221,6 +221,7 @@
                             <th>League</th>
                             <th>Season</th>
                             <th>Tournament cycle</th>
+                            <th>Qualification route</th>
                             <th>Site treatment</th>
                             <th>Matchup</th>
                             <th>Score</th>
@@ -234,7 +235,7 @@
                         @if (response.Games.Count == 0)
                         {
                             <tr>
-                                <td colspan="12" class="empty-state">No games match the current filters.</td>
+                                <td colspan="13" class="empty-state">No games match the current filters.</td>
                             </tr>
                         }
                         else
@@ -253,6 +254,20 @@
                                             @if (!string.IsNullOrWhiteSpace(game.CompetitionPhase) || !string.IsNullOrWhiteSpace(game.CompetitionRound))
                                             {
                                                 <small class="source-game-id">@game.CompetitionPhase @game.CompetitionRound</small>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="muted-cell">-</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (game.QualificationRoutes.Count > 0)
+                                        {
+                                            @foreach (var route in game.QualificationRoutes)
+                                            {
+                                                <span>@route</span>
+                                                <small class="source-game-id">Qualification pathway</small>
                                             }
                                         }
                                         else

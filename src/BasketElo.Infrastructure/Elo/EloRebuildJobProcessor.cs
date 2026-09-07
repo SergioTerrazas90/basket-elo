@@ -13,23 +13,37 @@ public sealed class EloRebuildJobProcessor(
 {
     public async Task<bool> TryProcessNextPendingJobAsync(CancellationToken cancellationToken)
     {
-        var runId = await dbContext.EloRebuildRuns
+        var nextRun = await dbContext.EloRebuildRuns
             .Where(x => x.Status == EloRebuildRunStatus.Pending && x.HangfireJobId == null)
             .OrderBy(x => x.QueuedAtUtc)
-            .Select(x => (Guid?)x.Id)
+            .Select(x => new { x.Id, x.EloPoolKey })
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (!runId.HasValue)
+        if (nextRun is null)
         {
             return false;
         }
 
-        var hangfireJobId = jobDispatcher.EnqueueRebuild(runId.Value);
+        var candidates = await dbContext.EloRebuildRuns
+            .AsNoTracking()
+            .Where(x =>
+                x.EloPoolKey == nextRun.EloPoolKey &&
+                x.Status == EloRebuildRunStatus.Pending &&
+                x.HangfireJobId == null)
+            .OrderBy(x => x.QueuedAtUtc)
+            .Select(x => new { x.Id, x.RulesetVersion })
+            .ToListAsync(cancellationToken);
+        var runIds = candidates
+            .GroupBy(x => x.RulesetVersion, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.First().Id)
+            .ToArray();
+
+        var hangfireJobId = jobDispatcher.EnqueueRebuild(runIds);
         int linked;
         if (dbContext.Database.IsRelational())
         {
             linked = await dbContext.EloRebuildRuns
-                .Where(x => x.Id == runId.Value &&
+                .Where(x => runIds.Contains(x.Id) &&
                     x.Status == EloRebuildRunStatus.Pending &&
                     x.HangfireJobId == null)
                 .ExecuteUpdateAsync(setters => setters
@@ -38,33 +52,31 @@ public sealed class EloRebuildJobProcessor(
         else
         {
             var pendingRun = await dbContext.EloRebuildRuns
-                .SingleOrDefaultAsync(x => x.Id == runId.Value &&
+                .Where(x => runIds.Contains(x.Id) &&
                     x.Status == EloRebuildRunStatus.Pending &&
-                    x.HangfireJobId == null, cancellationToken);
-            if (pendingRun is null)
+                    x.HangfireJobId == null)
+                .ToListAsync(cancellationToken);
+            foreach (var run in pendingRun)
             {
-                linked = 0;
+                run.HangfireJobId = hangfireJobId;
             }
-            else
-            {
-                pendingRun.HangfireJobId = hangfireJobId;
-                await dbContext.SaveChangesAsync(cancellationToken);
-                linked = 1;
-            }
+            await dbContext.SaveChangesAsync(cancellationToken);
+            linked = pendingRun.Count;
         }
 
         if (linked == 0)
         {
             logger.LogInformation(
-                "ELO rebuild run {runId} was already dispatched; duplicate Hangfire job {hangfireJobId} will safely no-op.",
-                runId.Value,
+                "ELO rebuild runs {runIds} were already dispatched; duplicate Hangfire job {hangfireJobId} will safely no-op.",
+                runIds,
                 hangfireJobId);
             return true;
         }
 
         logger.LogInformation(
-            "Dispatched ELO rebuild run {runId} as high-priority Hangfire job {hangfireJobId}.",
-            runId.Value,
+            "Dispatched {runCount} ELO rebuild run(s) for pool {poolKey} as high-priority Hangfire job {hangfireJobId}.",
+            linked,
+            nextRun.EloPoolKey,
             hangfireJobId);
         return true;
     }

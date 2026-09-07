@@ -785,34 +785,16 @@ public class BackfillJobProcessor(
             return existing;
         }
 
-        var family = key.StartsWith("afrobasket-", StringComparison.OrdinalIgnoreCase)
-            ? "AfroBasket"
-            : key.StartsWith("asiacup-", StringComparison.OrdinalIgnoreCase)
-                ? "FIBA Asia Cup"
-                    : key.StartsWith("americup-", StringComparison.OrdinalIgnoreCase)
-                        ? "FIBA AmeriCup"
-                    : key.StartsWith("centrobasket-", StringComparison.OrdinalIgnoreCase)
-                        ? "Centrobasket Championship"
-                        : key.StartsWith("cocaba-", StringComparison.OrdinalIgnoreCase)
-                            ? "COCABA Championship"
-                            : key.StartsWith("south-american-", StringComparison.OrdinalIgnoreCase)
-                                ? "South American Championship"
-                                : key.StartsWith("caribbean-", StringComparison.OrdinalIgnoreCase)
-                                    ? "Caribbean Basketball Championship"
-                                        : key.StartsWith("oceania-", StringComparison.OrdinalIgnoreCase)
-                                            ? "FIBA Oceania Championship"
-                                        : key.StartsWith("worldcup-", StringComparison.OrdinalIgnoreCase)
-                                            ? "FIBA Basketball World Cup"
-                                        : key.StartsWith("olympics-", StringComparison.OrdinalIgnoreCase)
-                                            ? "Olympics"
-                                            : "EuroBasket";
+        var family = TournamentCycleCatalog.ResolveFamilyFromKey(key) ?? "EuroBasket";
+        var editionLabel = TournamentCycleCatalog.ResolveEditionLabelFromFamily(family, seasonLabel)
+            ?? seasonLabel.Trim();
         var cycle = new TournamentCycle
         {
             Id = Guid.NewGuid(),
             Key = key,
             Family = family,
-            EditionLabel = seasonLabel.Trim(),
-            DisplayName = TournamentCycleCatalog.DisplayName(family, seasonLabel.Trim()),
+            EditionLabel = editionLabel,
+            DisplayName = TournamentCycleCatalog.DisplayName(family, editionLabel),
             CreatedAtUtc = DateTime.UtcNow
         };
         dbContext.TournamentCycles.Add(cycle);

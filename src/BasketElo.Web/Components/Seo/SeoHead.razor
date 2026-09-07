@@ -1,4 +1,5 @@
 @using System.Text.Json
+@using System.Globalization
 @inject IConfiguration Configuration
 @inject NavigationManager Navigation
 
@@ -11,7 +12,7 @@
 
     <meta property="og:site_name" content="BasketElo" />
     <meta property="og:type" content="website" />
-    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale" content="@OpenGraphLocale" />
     <meta property="og:title" content="@Title" />
     <meta property="og:description" content="@Description" />
     <meta property="og:url" content="@CanonicalUrl" />
@@ -55,6 +56,10 @@
     private string RobotsContent => NoIndex
         ? "noindex, nofollow"
         : "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1";
+
+    private string CurrentLanguage => CultureInfo.CurrentUICulture.Name;
+
+    private string OpenGraphLocale => CultureInfo.CurrentUICulture.Name.Replace('-', '_');
 
     private string SiteRoot
     {
@@ -105,7 +110,7 @@
                 ["url"] = CanonicalUrl,
                 ["name"] = Title,
                 ["description"] = Description,
-                ["inLanguage"] = "en",
+                ["inLanguage"] = CurrentLanguage,
                 ["isPartOf"] = new Dictionary<string, object?> { ["@id"] = siteId }
             };
 
@@ -119,7 +124,7 @@
                     ["name"] = "BasketElo",
                     ["alternateName"] = "Basket ELO",
                     ["description"] = "Transparent basketball ELO rankings for NBA, European club, and national teams.",
-                    ["inLanguage"] = "en"
+                    ["inLanguage"] = CurrentLanguage
                 },
                 page
             };

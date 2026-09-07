@@ -11,11 +11,17 @@
             <h1>@T["SponsorHeroTitle"]</h1>
             <p class="info-lede">@T["SponsorHeroText"]</p>
         </div>
-        <a class="sponsor-contact-link" href="https://x.com/sergitm12" target="_blank" rel="noopener noreferrer">
+        <div class="sponsor-contact-card">
             <span>@T["GetInTouch"]</span>
-            <strong>Message @@sergitm12</strong>
-            <small>@T["OnX"] <span aria-hidden="true">↗</span></small>
-        </a>
+            <a class="sponsor-contact-method" href="https://x.com/BasketElo" target="_blank" rel="noopener noreferrer">
+                <strong>@@BasketElo</strong>
+                <small>@T["OnX"] <span aria-hidden="true">↗</span></small>
+            </a>
+            @((MarkupString)"<!--email_off-->")<a class="sponsor-contact-method" href="mailto:sergio@basketelo.com">
+                <strong class="sponsor-contact-email">sergio@basketelo.com</strong>
+                <small>@T["Email"] <span aria-hidden="true">↗</span></small>
+            </a>@((MarkupString)"<!--/email_off-->")
+        </div>
     </header>
 
     <aside class="support-placeholder be-reveal" style="--reveal-order: 1" aria-label='@T["BuyMeACoffeePlaceholder"]'>
@@ -45,7 +51,10 @@
                 <article><h3>@T["Unobtrusive"]</h3><p>@T["UnobtrusiveSponsorText"]</p></article>
             </div>
             <p class="sponsor-note">@T["SponsorNote"]</p>
-            <a class="info-text-link" href="https://x.com/sergitm12" target="_blank" rel="noopener noreferrer">@T["StartConversation"] <span aria-hidden="true">↗</span></a>
+            <p class="sponsor-contact-actions">
+                <a class="info-text-link" href="https://x.com/BasketElo" target="_blank" rel="noopener noreferrer">@T["StartConversation"] <span aria-hidden="true">↗</span></a>
+                @T["OrEmailMeAt"] @((MarkupString)"<!--email_off-->")<a class="info-text-link" href="mailto:sergio@basketelo.com">sergio@basketelo.com</a>@((MarkupString)"<!--/email_off-->").
+            </p>
         </div>
     </section>
 </div>

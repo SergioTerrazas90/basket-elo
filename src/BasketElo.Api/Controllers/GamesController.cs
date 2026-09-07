@@ -349,19 +349,7 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
         if (!string.IsNullOrWhiteSpace(leagueName))
         {
             var requestedLeague = leagueName.Trim();
-            var isWorldCupQualifierAlias = requestedLeague.Equals(
-                "FIBA Basketball World Cup Qualifiers",
-                StringComparison.OrdinalIgnoreCase) ||
-                requestedLeague.Equals(
-                    "FIBA World Cup Qualifiers",
-                    StringComparison.OrdinalIgnoreCase);
-            query = isWorldCupQualifierAlias
-                ? query.Where(x =>
-                    x.Competition.Name == requestedLeague ||
-                    x.TournamentCycleLinks.Any(link =>
-                        link.Stage == "qualifier" &&
-                        link.TournamentCycle.Family == "FIBA Basketball World Cup"))
-                : query.Where(x => x.Competition.Name == requestedLeague);
+            query = query.Where(x => x.Competition.Name == requestedLeague);
         }
 
         if (!string.IsNullOrWhiteSpace(season))
@@ -372,9 +360,7 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
         if (!string.IsNullOrWhiteSpace(tournamentCycle))
         {
             var cycleKey = tournamentCycle.Trim();
-            query = query.Where(x =>
-                (x.TournamentCycle != null && x.TournamentCycle.Key == cycleKey) ||
-                x.TournamentCycleLinks.Any(link => link.TournamentCycle.Key == cycleKey));
+            query = query.Where(x => x.TournamentCycle != null && x.TournamentCycle.Key == cycleKey);
         }
 
         if (playedYear is >= 1 and <= 9999)
@@ -449,10 +435,12 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
                 x.Competition.CountryCode,
                 LeagueName = x.Competition.Name,
                 Season = x.Season.Label,
-                TournamentCycle = x.TournamentCycleLinks
+                TournamentCycle = x.TournamentCycle == null ? null : x.TournamentCycle.DisplayName,
+                QualificationRoutes = x.TournamentCycleLinks
+                    .Where(link => link.Stage == "qualifier")
                     .OrderBy(link => link.TournamentCycle.DisplayName)
                     .Select(link => link.TournamentCycle.DisplayName)
-                    .FirstOrDefault() ?? (x.TournamentCycle == null ? null : x.TournamentCycle.DisplayName),
+                    .ToList(),
                 x.CompetitionPhase,
                 x.CompetitionRound,
                 HomeTeam = x.HomeTeam.CanonicalName,
@@ -479,6 +467,7 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
                 x.LeagueName,
                 x.Season,
                 x.TournamentCycle,
+                x.QualificationRoutes,
                 x.CompetitionPhase,
                 x.CompetitionRound,
                 x.HomeTeam,
@@ -609,16 +598,6 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
             .Distinct()
             .OrderBy(x => x)
             .ToListAsync(cancellationToken);
-        var hasHistoricalWorldCupQualifierLinks = await baseQuery
-            .AnyAsync(x => x.TournamentCycleLinks.Any(link =>
-                link.Stage == "qualifier" &&
-                link.TournamentCycle.Family == "FIBA Basketball World Cup"), cancellationToken);
-        if (hasHistoricalWorldCupQualifierLinks &&
-            !leagues.Contains("FIBA World Cup Qualifiers", StringComparer.OrdinalIgnoreCase))
-        {
-            leagues.Add("FIBA World Cup Qualifiers");
-            leagues.Sort(StringComparer.Ordinal);
-        }
 
         var seasons = await baseQuery
             .Select(x => x.Season.Label)
@@ -628,15 +607,7 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
             .Where(x => x.TournamentCycle != null)
             .Select(x => new { x.TournamentCycle!.Key, x.TournamentCycle.DisplayName })
             .Distinct();
-        var linkedTournamentCycleRows = baseQuery
-            .SelectMany(x => x.TournamentCycleLinks.Select(link => new
-            {
-                link.TournamentCycle.Key,
-                link.TournamentCycle.DisplayName
-            }));
         var tournamentCycleRows = await primaryTournamentCycleRows
-            .Concat(linkedTournamentCycleRows)
-            .Distinct()
             .OrderBy(x => x.DisplayName)
             .ToListAsync(cancellationToken);
 

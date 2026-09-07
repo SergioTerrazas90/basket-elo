@@ -1,4 +1,5 @@
 using BasketElo.Web.Components;
+using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Jobs;
@@ -272,6 +273,7 @@ app.MapGet("/auth/login", (HttpContext httpContext, IConfiguration configuration
 
 app.MapGet("/auth/logout", async (HttpContext httpContext) =>
 {
+    httpContext.Response.Headers.CacheControl = "no-store, no-cache";
     await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/");
 });
@@ -375,16 +377,40 @@ app.MapGet("/robots.txt", (HttpContext httpContext, IConfiguration configuration
 app.MapGet("/sitemap.xml", async (HttpContext httpContext, IConfiguration configuration, BasketEloDbContext dbContext, CancellationToken cancellationToken) =>
 {
     var siteRoot = ResolveSiteRoot(httpContext, configuration);
-    string[] publicPaths = ["", "movers", "browse", "model-lab", "how-it-works", "data-sources", "about", "sponsor"];
+    string[] publicPaths = [
+        "",
+        "nba-elo",
+        "acb-elo",
+        "euroleague-elo",
+        "european-basketball-rankings",
+        "basketball-national-team-rankings",
+        "movers",
+        "browse",
+        "model-lab",
+        "how-it-works",
+        "data-sources",
+        "about",
+        "sponsor"
+    ];
     var publicTeamPaths = await dbContext.TeamRatings
         .AsNoTracking()
         .Include(x => x.Team)
         .Where(x => x.RulesetVersion == BasketElo.Domain.Elo.EloRulesetVersions.Default)
-        .Select(x => new { x.TeamId, x.EloPoolKey, x.RulesetVersion, TeamName = x.Team.CanonicalName })
+        .Select(x => new { x.TeamId, x.EloPoolKey, x.RulesetVersion, TeamName = x.Team.CanonicalName, x.Team.CountryCode })
         .ToListAsync(cancellationToken);
+    var publicCountryPaths = publicTeamPaths
+        .Where(team => team.EloPoolKey == EloPoolKeys.EuropeClubs &&
+                       !string.IsNullOrWhiteSpace(team.CountryCode) &&
+                       team.CountryCode != "UNK" &&
+                       team.CountryCode != "INT")
+        .Select(team => CountryCodeCatalog.DisplayName(team.CountryCode))
+        .Where(country => !string.IsNullOrWhiteSpace(country))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Select(country => $"basketball-elo/{ToSlug(country)}");
     XNamespace ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
     var locations = publicPaths
         .Select(path => new Uri(new Uri(siteRoot), path).AbsoluteUri)
+        .Concat(publicCountryPaths.Select(path => new Uri(new Uri(siteRoot), path).AbsoluteUri))
         .Concat(publicTeamPaths.Select(team =>
             new Uri(
                 new Uri(siteRoot),

@@ -250,8 +250,8 @@ when the continental championship is called Asia Cup.
 
 FIBA is canonical for Asia Cup rows when the official game record is usable.
 The deployed reconciliation retains unmatched GSA finals and qualification
-rows for review, and the 2002 Malaysian archive gap remains explicit rather
-than being filled from standings.
+rows for review. FIBA history event 2651 is excluded because it is the Asian
+Champions Cup for clubs, not a missing 2002 men's national-team Asia Cup.
 
 ## Oceania
 

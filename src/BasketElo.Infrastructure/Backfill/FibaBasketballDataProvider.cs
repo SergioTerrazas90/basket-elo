@@ -397,12 +397,11 @@ public sealed class FibaBasketballDataProvider(HttpClient httpClient) : IBasketb
     {
         if (family.Equals("195-fiba-asia-cup", StringComparison.OrdinalIgnoreCase))
         {
-            // The archive has two rows labelled 2003. Resolve the host/event
-            // identity explicitly so the 2002 Malaysian event is not merged
-            // into the 2003 championship.
+            // The archive has two rows labelled 2003. Event 2651 is the Asian
+            // Champions Cup for clubs, so only the national-team event belongs
+            // in this provider.
             return year switch
             {
-                2002 => ["/en/history/195-fiba-asia-cup/2651"],
                 2003 => ["/en/history/195-fiba-asia-cup/2675"],
                 _ => null
             };

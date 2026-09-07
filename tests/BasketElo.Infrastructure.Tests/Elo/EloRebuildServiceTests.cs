@@ -12,6 +12,51 @@ namespace BasketElo.Infrastructure.Tests.Elo;
 public class EloRebuildServiceTests
 {
     [Fact]
+    public async Task RebuildsMultipleRulesetsFromOnePoolTogether()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var nba = Competition("NBA", "USA");
+        var season = Season(nba, "2025-2026");
+        var home = Team("Home", "USA");
+        var away = Team("Away", "CAN");
+        var game = Game(
+            nba,
+            season,
+            home,
+            away,
+            new DateTime(2026, 1, 10, 20, 0, 0, DateTimeKind.Utc),
+            90,
+            80,
+            "shared-stream-game");
+        var adjusted = RunningRun(EloRulesetVersions.AdjustedV1);
+        var basic = RunningRun(EloRulesetVersions.BasicEloV1);
+        dbContext.AddRange(nba, season, home, away, game, adjusted, basic);
+        await dbContext.SaveChangesAsync();
+        var service = new EloRebuildService(
+            dbContext,
+            new TestNotificationPublisher(),
+            NullLogger<EloRebuildService>.Instance);
+
+        var results = await service.RebuildAsync(
+            new[] { adjusted.Id, basic.Id },
+            CancellationToken.None);
+
+        Assert.Equal(2, results.Count);
+        Assert.All(results, x =>
+        {
+            Assert.Equal(EloRebuildRunStatus.Completed, x.Status);
+            Assert.Equal(1, x.GamesProcessed);
+            Assert.Equal(2, x.TeamsRated);
+        });
+        Assert.Equal(4, await dbContext.RatingHistories.CountAsync());
+        Assert.Equal(4, await dbContext.TeamRatings.CountAsync());
+        Assert.Equal(2, await dbContext.RatingHistories.Select(x => x.RulesetVersion).Distinct().CountAsync());
+    }
+
+    [Fact]
     public async Task NbaPoolRebuildsAllNbaHistoryWithoutChangingEuropePool()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()
@@ -179,6 +224,17 @@ public class EloRebuildServiceTests
         EloPoolKey = name == "NBA" ? EloPoolKeys.Nba : EloPoolKeys.EuropeClubs,
         CountryCode = countryCode,
         Tier = 1
+    };
+
+    private static EloRebuildRun RunningRun(string rulesetVersion) => new()
+    {
+        Id = Guid.NewGuid(),
+        EloPoolKey = EloPoolKeys.Nba,
+        RulesetVersion = rulesetVersion,
+        CompetitionName = string.Empty,
+        Status = EloRebuildRunStatus.Running,
+        QueuedAtUtc = DateTime.UtcNow,
+        StartedAtUtc = DateTime.UtcNow
     };
 
     private static Season Season(Competition competition, string label) => new()

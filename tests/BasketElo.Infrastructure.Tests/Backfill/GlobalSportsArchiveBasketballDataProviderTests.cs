@@ -146,6 +146,33 @@ public sealed class GlobalSportsArchiveBasketballDataProviderTests
     }
 
     [Fact]
+    public async Task MapsTheGsa1985SelectorToTheOfficial1986AsiaCupAndCorrectsKnownJanuaryDate()
+    {
+        var handler = new Asia1986FixtureHandler();
+        var provider = new GlobalSportsArchiveBasketballDataProvider(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://globalsportsarchive.com")
+        });
+
+        var league = await provider.ResolveLeagueAsync(
+            "Asia",
+            "FIBA Asia Cup",
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+        var result = await provider.GetGamesAsync(
+            league!,
+            "1986",
+            new BackfillExecutionContext(3, 0),
+            CancellationToken.None);
+
+        Assert.True(result.Games.Count == 1, string.Join(Environment.NewLine, result.Warnings));
+        var game = result.Games.Single();
+        Assert.Equal("gsa-3275567", game.SourceGameId);
+        Assert.Equal(new DateTime(1986, 1, 2, 0, 0, 0, DateTimeKind.Utc), game.GameDateTimeUtc);
+        Assert.Equal("1985-1986", game.Provenance?.SourceSeasonKey);
+    }
+
+    [Fact]
     public async Task RetainsScorelessGsaFixtureAsEloExcludedGameWithSourceUrl()
     {
         var handler = new ScorelessFixtureHandler();
@@ -224,6 +251,26 @@ public sealed class GlobalSportsArchiveBasketballDataProviderTests
                 <span class="team_a_name"><span class="team_full">China PR</span></span>
                 <span class="match_score">86 : 61</span>
                 <span class="team_b_name"><span class="team_full">Philippines</span></span>
+              </div>
+            </a>
+            """;
+    }
+
+    private sealed class Asia1986FixtureHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(Html)
+            });
+
+        private const string Html = """
+            <a href="/competition/basketball/abc-championship-1985-malaysia/group-stage/12345/">Group Stage</a>
+            <a href="https://globalsportsarchive.com/match/basketball/1985-01-02/china-pr-vs-malaysia/3275567/" title="match report">
+              <div class="gsa-c-match-row"><div class="gsa-c-match-c1"></div>
+                <div class="gsa-c-match-c2"><span class="gsa-c-team_full">China PR</span></div>
+                <div class="gsa-c-match-c3">98 : 76</div>
+                <div class="gsa-c-match-c4"><span class="gsa-c-team_full">Malaysia</span></div>
               </div>
             </a>
             """;

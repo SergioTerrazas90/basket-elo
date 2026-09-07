@@ -11,13 +11,19 @@ public class TournamentCycleCatalogTests
     [InlineData("FIBA EuroBasket Pre-Qualifiers", "2021")]
     public void StagesShareTheSameEditionKey(string competition, string season)
     {
-        Assert.Equal("eurobasket-2021", TournamentCycleCatalog.ResolveKey("Europe", competition, season));
+        Assert.Equal("eurobasket-2022", TournamentCycleCatalog.ResolveKey("Europe", competition, season));
     }
 
     [Fact]
-    public void UnrelatedCompetitionsRemainUnclassified()
+    public void DivisionBUsesAnIndependentCycleFamily()
     {
-        Assert.Null(TournamentCycleCatalog.ResolveKey("Europe", "FIBA EuroBasket Division B", "2021"));
+        Assert.Equal(
+            "eurobasket-division-b-2007",
+            TournamentCycleCatalog.ResolveKey("Europe", "FIBA EuroBasket Division B", "2007"));
+        Assert.Contains("EuroBasket Division B", TournamentCycleCatalog.SupportedFamilies);
+        Assert.Equal(
+            "EuroBasket Division B",
+            TournamentCycleCatalog.ResolveFamilyFromKey("eurobasket-division-b-2007"));
     }
 
     [Fact]
@@ -34,6 +40,9 @@ public class TournamentCycleCatalogTests
         Assert.Equal("asiacup-2025", TournamentCycleCatalog.ResolveKey("Asia", "FIBA Asia Cup", "2025"));
         Assert.Equal("asiacup-2025", TournamentCycleCatalog.ResolveKey("Asia", "FIBA Asia Cup Qualifiers", "2025"));
         Assert.Equal("asiacup-2025", TournamentCycleCatalog.ResolveKey("Asia", "FIBA Asia Cup Pre-Qualifiers", "2025"));
+        Assert.Equal("asiacup-2022", TournamentCycleCatalog.ResolveKey("Asia", "FIBA Asia Cup Qualification", "2021"));
+        Assert.Equal("asiacup-2022", TournamentCycleCatalog.ResolveKey("Asia", "FIBA Asia Cup Qualifiers", "2021"));
+        Assert.Equal("asiacup-1986", TournamentCycleCatalog.ResolveKey("Asia", "FIBA Asia Cup", "1985"));
     }
 
     [Fact]
@@ -81,5 +90,14 @@ public class TournamentCycleCatalogTests
         Assert.Equal("worldcup-2027", TournamentCycleCatalog.ResolveKey("World", "FIBA Basketball World Cup Qualifiers", "2027"));
         Assert.Equal("worldcup-2027", TournamentCycleCatalog.ResolveKey("World", "FIBA Basketball World Cup Pre-Qualifiers", "2027"));
         Assert.Equal("worldcup-2027", TournamentCycleCatalog.ResolveKey("World", "FIBA WC Qualification", "2027"));
+        Assert.Equal("worldcup-2027", TournamentCycleCatalog.ResolveKey("Americas", "FIBA World Cup Qualifiers", "2026-2027"));
+    }
+
+    [Fact]
+    public void ManualFamilyKeysUseTheCanonicalPlayedEdition()
+    {
+        Assert.Equal("eurobasket-2022", TournamentCycleCatalog.ResolveKeyFromFamily("EuroBasket", "2021"));
+        Assert.Equal("asiacup-1986", TournamentCycleCatalog.ResolveKeyFromFamily("FIBA Asia Cup", "1985"));
+        Assert.Equal("worldcup-2027", TournamentCycleCatalog.ResolveKeyFromFamily("FIBA Basketball World Cup", "2026-2027"));
     }
 }

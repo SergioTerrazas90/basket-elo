@@ -6,13 +6,13 @@ namespace BasketElo.Infrastructure.Jobs;
 
 public interface ISystemEloJobDispatcher
 {
-    string EnqueueRebuild(Guid runId);
+    string EnqueueRebuild(Guid[] runIds);
 }
 
 public sealed class SystemEloJobDispatcher(IBackgroundJobClient backgroundJobs) : ISystemEloJobDispatcher
 {
-    public string EnqueueRebuild(Guid runId) => backgroundJobs.Create(
+    public string EnqueueRebuild(Guid[] runIds) => backgroundJobs.Create(
         Job.FromExpression<SystemEloRebuildJob>(job =>
-            job.ExecuteAsync(runId, CancellationToken.None)),
+            job.ExecuteAsync(runIds, CancellationToken.None)),
         new EnqueuedState(EloJobQueues.SystemElo));
 }

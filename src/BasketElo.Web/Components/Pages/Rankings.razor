@@ -1,6 +1,12 @@
 @page "/"
 @page "/rankings"
 @page "/movers"
+@page "/nba-elo"
+@page "/acb-elo"
+@page "/euroleague-elo"
+@page "/european-basketball-rankings"
+@page "/basketball-national-team-rankings"
+@page "/basketball-elo/{CountrySlug}"
 @rendermode @(new InteractiveServerRenderMode(prerender: true))
 @implements IDisposable
 @using System.Globalization
@@ -20,16 +26,16 @@
 
 <SeoHead Title="@SeoTitle()"
          Description="@SeoDescription()"
-         CanonicalPath="@(selectedView == "movers" ? "/movers" : "/")"
+         CanonicalPath="@SeoCanonicalPath()"
+         NoIndex="@ShouldNoIndex"
          SchemaType="CollectionPage" />
 
 <div id="rankings-interactive-page" class="rankings-page @(IsGraphView ? "graph-page" : string.Empty)">
     <header class="rankings-header">
         <div class="rankings-page-heading">
             <div>
-                <p class="eyebrow">@T["LiveBoard"]</p>
-                <h1>@(selectedView == "movers" ? T["MoversTitle"] : T["RankingsTitle"])</h1>
-                <p class="rankings-intro">@T["RankingsIntro"]</p>
+                <h1>@PageTitleHeading()</h1>
+                <p class="rankings-intro">@PageIntro()</p>
             </div>
             <a class="rankings-method-note" href="how-it-works" aria-label='@T["ReadRankingsMethod"]'>
                 <span class="method-note-mark" aria-hidden="true">↗</span>
@@ -984,6 +990,52 @@
 
     }
 
+    @if (!IsMoversView)
+    {
+        <section class="rankings-seo-guide" aria-labelledby="rankings-seo-guide-heading">
+            <div class="rankings-seo-copy">
+                <p class="eyebrow">@T["EloRatingsGuide"]</p>
+                <h2 id="rankings-seo-guide-heading">@SeoGuideHeading()</h2>
+                <p>@SeoGuideDescription()</p>
+                <p>@T["EloGuideMethodText"] <a href="/how-it-works">@T["ReadBasketballEloMethod"]</a>.</p>
+            </div>
+            <nav class="rankings-seo-links" aria-label='@T["ExploreEloRankings"]'>
+                <a class="rankings-seo-link" href="/nba-elo">
+                    <strong>@T["NbaEloLinkTitle"]</strong>
+                    <span>@T["NbaEloLinkDescription"]</span>
+                </a>
+                <a class="rankings-seo-link" href="/acb-elo">
+                    <strong>@T["AcbEloLinkTitle"]</strong>
+                    <span>@T["AcbEloLinkDescription"]</span>
+                </a>
+                <a class="rankings-seo-link" href="/euroleague-elo">
+                    <strong>@T["EuroleagueEloLinkTitle"]</strong>
+                    <span>@T["EuroleagueEloLinkDescription"]</span>
+                </a>
+                <a class="rankings-seo-link" href="/european-basketball-rankings">
+                    <strong>@T["EuropeanEloLinkTitle"]</strong>
+                    <span>@T["EuropeanEloLinkDescription"]</span>
+                </a>
+                <a class="rankings-seo-link" href="/basketball-national-team-rankings">
+                    <strong>@T["NationalTeamEloLinkTitle"]</strong>
+                    <span>@T["NationalTeamEloLinkDescription"]</span>
+                </a>
+            </nav>
+            @if (CountryLandingLinks.Count > 1)
+            {
+                <div class="rankings-country-links">
+                    <h3>@T["BasketballEloByCountry"]</h3>
+                    <div>
+                        @foreach (var country in CountryLandingLinks)
+                        {
+                            <a href="@CountryEloHref(country)">@country</a>
+                        }
+                    </div>
+                </div>
+            }
+        </section>
+    }
+
 </div>
 
 @code {
@@ -992,6 +1044,9 @@
 
     [SupplyParameterFromQuery(Name = "pool")]
     public string? Pool { get; set; }
+
+    [Parameter]
+    public string? CountrySlug { get; set; }
 
     [SupplyParameterFromQuery(Name = "country")]
     public string? Country { get; set; }
@@ -1167,7 +1222,7 @@
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
     {
         var path = Navigation.ToBaseRelativePath(args.Location).Split('?', 2)[0].Trim('/');
-        if (path is not ("" or "rankings" or "movers"))
+        if (!IsRankingsRoutePath(path))
         {
             return;
         }
@@ -1236,16 +1291,31 @@
         var preserveCurrentData = IsPageOnlyNavigation(currentUri, lastLoadedUri) ||
             IsRankingsMoversNavigation(currentUri, lastLoadedUri);
 
-        selectedPool = EloPoolKeys.IsSupported(Pool?.Trim().ToLowerInvariant() ?? string.Empty)
-            ? Pool!.Trim().ToLowerInvariant()
-            : EloPoolKeys.Default;
+        var currentPath = Navigation.ToBaseRelativePath(currentUri).Split('?', 2)[0].Trim('/');
+        selectedPool = IsAcbEloPath(currentPath) || IsCountryEloPath(currentPath) || IsEuroleagueEloPath(currentPath) || IsEuropeanRankingsPath(currentPath)
+            ? EloPoolKeys.EuropeClubs
+            : IsNationalTeamRankingsPath(currentPath)
+                ? EloPoolKeys.NationalTeams
+            : IsNbaEloPath(currentPath)
+                ? EloPoolKeys.Nba
+                : EloPoolKeys.IsSupported(Pool?.Trim().ToLowerInvariant() ?? string.Empty)
+                    ? Pool!.Trim().ToLowerInvariant()
+                    : EloPoolKeys.Default;
         var poolChanged = !string.Equals(previousPool, selectedPool, StringComparison.Ordinal);
         selectedTeamScope = SupportsTeamScope
             ? EloTeamScopes.Normalize(Teams)
             : EloTeamScopes.Current;
         var teamScopeChanged = !string.Equals(previousTeamScope, selectedTeamScope, StringComparison.Ordinal);
-        selectedCountry = Country;
-        selectedCompetition = Competition;
+        selectedCountry = IsAcbEloPath(currentPath)
+            ? Country ?? "Spain"
+            : IsCountryEloPath(currentPath)
+                ? CountryPageName(currentPath) ?? CountryNameFromSlug(CountrySlugFromPath(currentPath))
+                : Country;
+        selectedCompetition = IsAcbEloPath(currentPath)
+            ? Competition ?? "ACB"
+            : IsEuroleagueEloPath(currentPath)
+                ? Competition ?? "Euroleague"
+                : Competition;
         countrySearch = selectedCountry;
         competitionSearch = selectedCompetition;
         selectedRuleset = EloRulesetVersions.All.Contains(Ruleset?.Trim(), StringComparer.OrdinalIgnoreCase)
@@ -1264,7 +1334,6 @@
         }
         minimumGames = Math.Max(0, MinGames ?? 0);
         teamSearch = Team;
-        var currentPath = Navigation.ToBaseRelativePath(currentUri).Split('?', 2)[0].Trim('/');
         var isMoversRoute = string.Equals(currentPath, "movers", StringComparison.OrdinalIgnoreCase);
         selectedView = isMoversRoute || string.Equals(View, "movers", StringComparison.OrdinalIgnoreCase)
             ? "movers"
@@ -2567,22 +2636,22 @@
         var view = string.Equals(requestedView, "movers", StringComparison.OrdinalIgnoreCase)
             ? "movers"
             : requestedView;
-        var route = view == "movers" ? "/movers" : "/rankings";
+        var route = view == "movers" ? "/movers" : PreferredRankingsRoute();
         var targetShowsTeamScope = SupportsTeamScope && view is not ("results" or "fixtures" or "movers");
         var targetShowsSeasonFilter = view is not "fixtures";
         var targetShowsMinimumGamesFilter = view is "rankings" or "graph" or "movers";
 
         var query = new Dictionary<string, object?>
         {
-            ["pool"] = selectedPool == EloPoolKeys.Default ? null : selectedPool,
+            ["pool"] = IsDedicatedEloRoute(route) || selectedPool == EloPoolKeys.Default ? null : selectedPool,
             ["teams"] = targetShowsTeamScope && selectedTeamScope == EloTeamScopes.Historical
                 ? selectedTeamScope
                 : null,
             ["movement"] = view == "movers" ? selectedMoverDirection : null,
             ["windowDays"] = view == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
             ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
-            ["country"] = selectedCountry,
-            ["competition"] = selectedCompetition,
+            ["country"] = IsCountryDefaultForRoute(route, selectedCountry) ? null : selectedCountry,
+            ["competition"] = IsCompetitionDefaultForRoute(route, selectedCompetition) ? null : selectedCompetition,
             ["fromSeason"] = targetShowsSeasonFilter ? selectedFromSeason : null,
             ["toSeason"] = targetShowsSeasonFilter ? selectedToSeason : null,
             ["minGames"] = targetShowsMinimumGamesFilter && minimumGames > 0 ? minimumGames : null,
@@ -2965,12 +3034,252 @@
     private string SeoTitle()
         => selectedView == "movers"
             ? "Biggest Basketball ELO Movers & Team Form | BasketElo"
-            : "Basketball ELO Rankings: NBA, Europe & National Teams | BasketElo";
+            : IsNbaEloLanding
+                ? T["NbaEloSeoTitle"]
+                : IsAcbEloLanding
+                    ? T["AcbEloSeoTitle"]
+                    : IsEuroleagueEloLanding
+                        ? T["EuroleagueEloSeoTitle"]
+                        : IsEuropeanRankingsLanding
+                            ? T["EuropeanEloSeoTitle"]
+                            : IsNationalTeamRankingsLanding
+                                ? T["NationalTeamEloSeoTitle"]
+                                : IsCountryEloLanding
+                                    ? T["CountryEloSeoTitle", CountryPageDisplayName]
+                                    : T["BasketballEloSeoTitle"];
 
     private string SeoDescription()
         => selectedView == "movers"
             ? "Track the biggest basketball ELO risers and fallers across the NBA, European clubs, and national teams, with recent form and rating changes."
-            : "Explore transparent basketball ELO rankings for NBA, European club, and national teams. Compare ratings, form, results, fixtures, and historical trends.";
+            : IsNbaEloLanding
+                ? T["NbaEloSeoDescription"]
+                : IsAcbEloLanding
+                    ? T["AcbEloSeoDescription"]
+                    : IsEuroleagueEloLanding
+                        ? T["EuroleagueEloSeoDescription"]
+                        : IsEuropeanRankingsLanding
+                            ? T["EuropeanEloSeoDescription"]
+                            : IsNationalTeamRankingsLanding
+                                ? T["NationalTeamEloSeoDescription"]
+                                : IsCountryEloLanding
+                                    ? T["CountryEloSeoDescription", CountryPageDisplayName]
+                                    : T["BasketballEloSeoDescription"];
+
+    private string SeoCanonicalPath()
+        => selectedView == "movers"
+            ? "/movers"
+            : IsNbaEloLanding
+                ? "/nba-elo"
+                : IsAcbEloLanding
+                    ? "/acb-elo"
+                    : IsEuroleagueEloLanding
+                        ? "/euroleague-elo"
+                        : IsEuropeanRankingsLanding
+                            ? "/european-basketball-rankings"
+                            : IsNationalTeamRankingsLanding
+                                ? "/basketball-national-team-rankings"
+                                : IsCountryEloLanding
+                                    ? $"/basketball-elo/{CountrySlugFromPath(CurrentPath)}"
+                                    : "/";
+
+    private string PageTitleHeading()
+        => selectedView == "movers"
+            ? T["MoversTitle"]
+            : IsNbaEloLanding
+                ? T["NbaEloPageTitle"]
+                : IsAcbEloLanding
+                    ? T["AcbEloPageTitle"]
+                    : IsEuroleagueEloLanding
+                        ? T["EuroleagueEloPageTitle"]
+                        : IsEuropeanRankingsLanding
+                            ? T["EuropeanEloPageTitle"]
+                            : IsNationalTeamRankingsLanding
+                                ? T["NationalTeamEloPageTitle"]
+                                : IsCountryEloLanding
+                                    ? T["CountryEloPageTitle", CountryPageDisplayName]
+                                    : T["RankingsTitle"];
+
+    private string PageIntro()
+        => IsNbaEloLanding
+            ? T["NbaEloPageIntro"]
+            : IsAcbEloLanding
+                ? T["AcbEloPageIntro"]
+                : IsEuroleagueEloLanding
+                    ? T["EuroleagueEloPageIntro"]
+                    : IsEuropeanRankingsLanding
+                        ? T["EuropeanEloPageIntro"]
+                        : IsNationalTeamRankingsLanding
+                            ? T["NationalTeamEloPageIntro"]
+                            : IsCountryEloLanding
+                                ? T["CountryEloPageIntro", CountryPageDisplayName]
+                                : T["RankingsIntro"];
+
+    private string SeoGuideHeading()
+        => IsNbaEloLanding
+            ? T["NbaEloGuideHeading"]
+            : IsAcbEloLanding
+                ? T["AcbEloGuideHeading"]
+                : IsEuroleagueEloLanding
+                    ? T["EuroleagueEloGuideHeading"]
+                    : IsEuropeanRankingsLanding
+                        ? T["EuropeanEloGuideHeading"]
+                        : IsNationalTeamRankingsLanding
+                            ? T["NationalTeamEloGuideHeading"]
+                            : IsCountryEloLanding
+                                ? T["CountryEloGuideHeading", CountryPageDisplayName]
+                                : T["BasketballEloGuideHeading"];
+
+    private string SeoGuideDescription()
+        => IsNbaEloLanding
+            ? T["NbaEloGuideDescription"]
+            : IsAcbEloLanding
+                ? T["AcbEloGuideDescription"]
+                : IsEuroleagueEloLanding
+                    ? T["EuroleagueEloGuideDescription"]
+                    : IsEuropeanRankingsLanding
+                        ? T["EuropeanEloGuideDescription"]
+                        : IsNationalTeamRankingsLanding
+                            ? T["NationalTeamEloGuideDescription"]
+                            : IsCountryEloLanding
+                                ? T["CountryEloGuideDescription", CountryPageDisplayName]
+                                : T["BasketballEloGuideDescription"];
+
+    private string CurrentPath
+        => Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', 2)[0].Trim('/');
+
+    private bool IsNbaEloLanding => IsNbaEloPath(CurrentPath);
+
+    private bool IsAcbEloLanding => IsAcbEloPath(CurrentPath);
+
+    private bool IsEuroleagueEloLanding => IsEuroleagueEloPath(CurrentPath);
+
+    private bool IsEuropeanRankingsLanding => IsEuropeanRankingsPath(CurrentPath);
+
+    private bool IsNationalTeamRankingsLanding => IsNationalTeamRankingsPath(CurrentPath);
+
+    private bool IsCountryEloLanding => IsCountryEloPath(CurrentPath);
+
+    private string CountryPageDisplayName
+        => CountryPageName(CurrentPath) ?? CountryNameFromSlug(CountrySlugFromPath(CurrentPath));
+
+    private bool ShouldNoIndex
+        => IsCountryEloLanding &&
+           (CountryPageName(CurrentPath) is null || response is { TotalCount: 0 });
+
+    private static bool IsNbaEloPath(string path)
+        => string.Equals(path, "nba-elo", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAcbEloPath(string path)
+        => string.Equals(path, "acb-elo", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEuroleagueEloPath(string path)
+        => string.Equals(path, "euroleague-elo", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEuropeanRankingsPath(string path)
+        => string.Equals(path, "european-basketball-rankings", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsNationalTeamRankingsPath(string path)
+        => string.Equals(path, "basketball-national-team-rankings", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCountryEloPath(string path)
+        => CountrySlugFromPath(path) is not null;
+
+    private static bool IsRankingsRoutePath(string path)
+        => path is "" or "rankings" or "movers" or "nba-elo" or "acb-elo" or "euroleague-elo" or "european-basketball-rankings" or "basketball-national-team-rankings" || IsCountryEloPath(path);
+
+    private static string? CountrySlugFromPath(string path)
+    {
+        const string prefix = "basketball-elo/";
+        if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var slug = path[prefix.Length..].Trim('/').ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(slug) || slug.Contains('/') ? null : slug;
+    }
+
+    private static string? CountryPageName(string path)
+    {
+        var slug = CountrySlugFromPath(path);
+        return slug is not null && CountryNamesBySlug.TryGetValue(slug, out var countryName)
+            ? countryName
+            : null;
+    }
+
+    private static string CountryNameFromSlug(string? slug)
+        => string.IsNullOrWhiteSpace(slug)
+            ? "Country"
+            : CultureInfo.GetCultureInfo("en-US").TextInfo.ToTitleCase(slug.Replace('-', ' '));
+
+    private string PreferredRankingsRoute()
+        => IsNbaEloLanding && selectedPool == EloPoolKeys.Nba && string.IsNullOrWhiteSpace(selectedCountry) && string.IsNullOrWhiteSpace(selectedCompetition)
+            ? "/nba-elo"
+            : IsAcbEloLanding && selectedPool == EloPoolKeys.EuropeClubs && string.Equals(selectedCountry, "Spain", StringComparison.OrdinalIgnoreCase) && string.Equals(selectedCompetition, "ACB", StringComparison.OrdinalIgnoreCase)
+                ? "/acb-elo"
+                : IsEuroleagueEloLanding && selectedPool == EloPoolKeys.EuropeClubs && string.IsNullOrWhiteSpace(selectedCountry) && string.Equals(selectedCompetition, "Euroleague", StringComparison.OrdinalIgnoreCase)
+                    ? "/euroleague-elo"
+                    : IsEuropeanRankingsLanding && selectedPool == EloPoolKeys.EuropeClubs && string.IsNullOrWhiteSpace(selectedCountry) && string.IsNullOrWhiteSpace(selectedCompetition)
+                        ? "/european-basketball-rankings"
+                        : IsNationalTeamRankingsLanding && selectedPool == EloPoolKeys.NationalTeams && string.IsNullOrWhiteSpace(selectedCountry) && string.IsNullOrWhiteSpace(selectedCompetition)
+                            ? "/basketball-national-team-rankings"
+                            : IsCountryEloLanding && selectedPool == EloPoolKeys.EuropeClubs && string.Equals(selectedCountry, CountryPageDisplayName, StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(selectedCompetition)
+                                ? $"/basketball-elo/{CountrySlugFromPath(CurrentPath)}"
+                                : "/rankings";
+
+    private static bool IsDedicatedEloRoute(string route)
+        => route is "/nba-elo" or "/acb-elo" or "/euroleague-elo" or "/european-basketball-rankings" or "/basketball-national-team-rankings" || IsCountryEloPath(route.Trim('/'));
+
+    private static bool IsCountryDefaultForRoute(string route, string? country)
+        => route == "/acb-elo" && string.Equals(country, "Spain", StringComparison.OrdinalIgnoreCase) ||
+           IsCountryEloPath(route.Trim('/')) && string.Equals(country, CountryPageName(route.Trim('/')), StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCompetitionDefaultForRoute(string route, string? competition)
+        => route == "/acb-elo" && string.Equals(competition, "ACB", StringComparison.OrdinalIgnoreCase) ||
+           route == "/euroleague-elo" && string.Equals(competition, "Euroleague", StringComparison.OrdinalIgnoreCase);
+
+    private IReadOnlyList<string> CountryLandingLinks
+        => selectedPool == EloPoolKeys.EuropeClubs
+            ? (response?.Filters.Countries ?? [])
+                .Where(country => !string.IsNullOrWhiteSpace(country))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(country => country, StringComparer.CurrentCulture)
+                .ToList()
+            : [];
+
+    private static string CountryEloHref(string country)
+        => $"/basketball-elo/{ToSlug(country)}";
+
+    private static readonly IReadOnlyDictionary<string, string> CountryNamesBySlug = BuildCountryNamesBySlug();
+
+    private static IReadOnlyDictionary<string, string> BuildCountryNamesBySlug()
+    {
+        var countries = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var culture in CultureInfo.GetCultures(CultureTypes.SpecificCultures))
+        {
+            try
+            {
+                var region = new RegionInfo(culture.Name);
+                var countryName = BasketElo.Infrastructure.Identity.CountryCodeCatalog.DisplayName(region.TwoLetterISORegionName);
+                if (!string.IsNullOrWhiteSpace(countryName))
+                {
+                    countries.TryAdd(ToSlug(countryName), countryName);
+                }
+            }
+            catch (ArgumentException)
+            {
+                // Some framework cultures do not have a corresponding geographic region.
+            }
+        }
+
+        foreach (var code in new[] { "XK", "ENG", "CIS", "DDR", "FRG", "GDR", "SCG", "TCH", "URS", "YUG" })
+        {
+            var countryName = BasketElo.Infrastructure.Identity.CountryCodeCatalog.DisplayName(code);
+            countries[ToSlug(countryName)] = countryName;
+        }
+
+        return countries;
+    }
 
     private string TeamScopeClass(string teamScope)
         => selectedTeamScope == teamScope ? "franchise-scope-option active" : "franchise-scope-option";

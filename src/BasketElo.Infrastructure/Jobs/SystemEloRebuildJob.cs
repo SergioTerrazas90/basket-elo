@@ -16,49 +16,77 @@ public sealed class SystemEloRebuildJob(
     [Queue(EloJobQueues.SystemElo)]
     public async Task ExecuteAsync(Guid runId, CancellationToken cancellationToken)
     {
+        await ExecuteAsync([runId], cancellationToken);
+    }
+
+    [Queue(EloJobQueues.SystemElo)]
+    public async Task ExecuteAsync(Guid[] runIds, CancellationToken cancellationToken)
+    {
+        if (runIds.Length == 0)
+        {
+            return;
+        }
+
         var startedAtUtc = DateTime.UtcNow;
+        var claimedRunIds = await dbContext.EloRebuildRuns
+            .AsNoTracking()
+            .Where(x => runIds.Contains(x.Id) && x.Status == EloRebuildRunStatus.Pending)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
         int claimed;
         if (dbContext.Database.IsRelational())
         {
             claimed = await dbContext.EloRebuildRuns
-                .Where(x => x.Id == runId && x.Status == EloRebuildRunStatus.Pending)
+                .Where(x => runIds.Contains(x.Id) && x.Status == EloRebuildRunStatus.Pending)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(x => x.Status, EloRebuildRunStatus.Running)
                     .SetProperty(x => x.StartedAtUtc, startedAtUtc), cancellationToken);
         }
         else
         {
-            var pendingRun = await dbContext.EloRebuildRuns
-                .SingleOrDefaultAsync(x => x.Id == runId && x.Status == EloRebuildRunStatus.Pending, cancellationToken);
-            if (pendingRun is null)
-            {
-                claimed = 0;
-            }
-            else
+            var pendingRuns = await dbContext.EloRebuildRuns
+                .Where(x => claimedRunIds.Contains(x.Id) && x.Status == EloRebuildRunStatus.Pending)
+                .ToListAsync(cancellationToken);
+            foreach (var pendingRun in pendingRuns)
             {
                 pendingRun.Status = EloRebuildRunStatus.Running;
                 pendingRun.StartedAtUtc = startedAtUtc;
-                await dbContext.SaveChangesAsync(cancellationToken);
-                claimed = 1;
             }
+            await dbContext.SaveChangesAsync(cancellationToken);
+            claimed = pendingRuns.Count;
         }
 
         if (claimed == 0)
         {
             logger.LogInformation(
-                "Skipping Hangfire ELO rebuild job for run {runId}; it is no longer pending.",
-                runId);
+                "Skipping Hangfire ELO rebuild job for runs {runIds}; none are still pending.",
+                runIds);
             return;
         }
 
-        logger.LogInformation("Processing system ELO rebuild run {runId}.", runId);
+        if (claimed != claimedRunIds.Count)
+        {
+            claimedRunIds = await dbContext.EloRebuildRuns
+                .AsNoTracking()
+                .Where(x =>
+                    claimedRunIds.Contains(x.Id) &&
+                    x.Status == EloRebuildRunStatus.Running &&
+                    x.StartedAtUtc == startedAtUtc)
+                .Select(x => x.Id)
+                .ToListAsync(cancellationToken);
+        }
+
+        logger.LogInformation(
+            "Processing {runCount} system ELO rebuild run(s) in one shared game stream.",
+            claimedRunIds.Count);
         try
         {
-            var result = await rebuildService.RebuildAsync(runId, cancellationToken);
-            if (result.Status == EloRebuildRunStatus.Failed)
+            var results = await rebuildService.RebuildAsync(claimedRunIds, cancellationToken);
+            var failed = results.FirstOrDefault(x => x.Status == EloRebuildRunStatus.Failed);
+            if (failed is not null)
             {
                 throw new InvalidOperationException(
-                    $"System ELO rebuild run '{runId}' failed: {result.Notes ?? "No failure details were recorded."}");
+                    $"System ELO rebuild run '{failed.RunId}' failed: {failed.Notes ?? "No failure details were recorded."}");
             }
         }
         finally

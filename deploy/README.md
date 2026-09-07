@@ -17,6 +17,19 @@ This deploy shape mirrors a simple VPS setup:
 
 The frontend and backend are intentionally kept as separate services. The web app is Blazor Server and calls the API from the server side through `ApiBaseUrl`, so the API does not need to be public.
 
+## Cloudflare Web Analytics
+
+Create a Web Analytics site in Cloudflare, copy its site token, and add it to
+`/etc/basket-elo/basket-elo.env`:
+
+```dotenv
+CloudflareAnalytics__Token=your_site_token
+```
+
+Restart `basket-elo-web` after changing the value. An empty token disables the
+beacon, so local development and unconfigured deployments do not send analytics.
+Cloudflare's beacon automatically measures Blazor's client-side navigations.
+
 ## Stripe Billing
 
 Premium uses Stripe-hosted Checkout for recurring subscriptions. Cancellation

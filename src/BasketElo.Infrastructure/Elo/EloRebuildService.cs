@@ -1,12 +1,9 @@
-using System.Data;
 using System.Text.Json;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Npgsql;
-using NpgsqlTypes;
 
 namespace BasketElo.Infrastructure.Elo;
 
@@ -15,7 +12,7 @@ public class EloRebuildService(
     IEloRebuildNotificationPublisher notificationPublisher,
     ILogger<EloRebuildService> logger) : IEloRebuildService
 {
-    private const int RatingHistoryBatchSize = 20_000;
+    private const int RatingHistoryBatchSize = 2000;
 
     public async Task<EloRebuildResult> RebuildAsync(Guid runId, CancellationToken cancellationToken)
     {
@@ -308,81 +305,18 @@ public class EloRebuildService(
             return;
         }
 
-        if (!dbContext.Database.IsNpgsql())
+        // This insert-heavy section can be optimized with Npgsql binary COPY if rebuild
+        // frequency or load warrants the PostgreSQL-specific maintenance. A production
+        // benchmark reduced the two-ruleset Europe Clubs rebuild from 4:30.937 to 1:56.681
+        // with semantically identical history and current ratings.
+        dbContext.RatingHistories.AddRange(historyBatch);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        foreach (var history in historyBatch)
         {
-            dbContext.RatingHistories.AddRange(historyBatch);
-            await dbContext.SaveChangesAsync(cancellationToken);
-            foreach (var history in historyBatch)
-            {
-                dbContext.Entry(history).State = EntityState.Detached;
-            }
-
-            historyBatch.Clear();
-            return;
+            dbContext.Entry(history).State = EntityState.Detached;
         }
 
-        var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
-        var openedHere = connection.State != ConnectionState.Open;
-        if (openedHere)
-        {
-            await connection.OpenAsync(cancellationToken);
-        }
-
-        try
-        {
-            await using var writer = await connection.BeginBinaryImportAsync(
-                """
-                COPY rating_history (
-                    "Id", "GameId", "TeamId", "OpponentTeamId", "EloPoolKey",
-                    "RulesetVersion", "GameDateTimeUtc", "PreElo", "PostElo",
-                    "EloDelta", "KFactorUsed", "ExpectedScore", "ActualScore",
-                    "MarginMultiplier", "CompetitionWeight", "GamesPlayedBefore",
-                    "RatingPositionAfter", "CreatedAtUtc"
-                ) FROM STDIN (FORMAT BINARY)
-                """,
-                cancellationToken);
-
-            foreach (var history in historyBatch)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                writer.StartRow();
-                writer.Write(history.Id, NpgsqlDbType.Uuid);
-                writer.Write(history.GameId, NpgsqlDbType.Uuid);
-                writer.Write(history.TeamId, NpgsqlDbType.Uuid);
-                writer.Write(history.OpponentTeamId, NpgsqlDbType.Uuid);
-                writer.Write(history.EloPoolKey, NpgsqlDbType.Varchar);
-                writer.Write(history.RulesetVersion, NpgsqlDbType.Varchar);
-                writer.Write(history.GameDateTimeUtc, NpgsqlDbType.TimestampTz);
-                writer.Write(history.PreElo, NpgsqlDbType.Numeric);
-                writer.Write(history.PostElo, NpgsqlDbType.Numeric);
-                writer.Write(history.EloDelta, NpgsqlDbType.Numeric);
-                writer.Write(history.KFactorUsed, NpgsqlDbType.Integer);
-                writer.Write(history.ExpectedScore, NpgsqlDbType.Numeric);
-                writer.Write(history.ActualScore, NpgsqlDbType.Numeric);
-                writer.Write(history.MarginMultiplier, NpgsqlDbType.Numeric);
-                writer.Write(history.CompetitionWeight, NpgsqlDbType.Numeric);
-                writer.Write(history.GamesPlayedBefore, NpgsqlDbType.Integer);
-                if (history.RatingPositionAfter.HasValue)
-                {
-                    writer.Write(history.RatingPositionAfter.Value, NpgsqlDbType.Integer);
-                }
-                else
-                {
-                    writer.WriteNull();
-                }
-                writer.Write(history.CreatedAtUtc, NpgsqlDbType.TimestampTz);
-            }
-
-            await writer.CompleteAsync(cancellationToken);
-            historyBatch.Clear();
-        }
-        finally
-        {
-            if (openedHere)
-            {
-                await connection.CloseAsync();
-            }
-        }
+        historyBatch.Clear();
     }
 
     private static string BuildNotes(EloRulesetParameters ruleset, string poolKey) =>

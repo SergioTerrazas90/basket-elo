@@ -7,6 +7,21 @@
 @page "/european-basketball-rankings"
 @page "/basketball-national-team-rankings"
 @page "/basketball-elo/{CountrySlug}"
+@page "/nba-elo/{SeasonSlug}"
+@page "/acb-elo/{SeasonSlug}"
+@page "/euroleague-elo/{SeasonSlug}"
+@page "/es"
+@page "/es/rankings"
+@page "/es/movers"
+@page "/es/nba-elo"
+@page "/es/acb-elo"
+@page "/es/euroleague-elo"
+@page "/es/european-basketball-rankings"
+@page "/es/basketball-national-team-rankings"
+@page "/es/basketball-elo/{CountrySlug}"
+@page "/es/nba-elo/{SeasonSlug}"
+@page "/es/acb-elo/{SeasonSlug}"
+@page "/es/euroleague-elo/{SeasonSlug}"
 @rendermode @(new InteractiveServerRenderMode(prerender: true))
 @implements IDisposable
 @using System.Globalization
@@ -27,6 +42,8 @@
 <SeoHead Title="@SeoTitle()"
          Description="@SeoDescription()"
          CanonicalPath="@SeoCanonicalPath()"
+         EnglishAlternatePath="@SeoEnglishPath()"
+         SpanishAlternatePath="@SeoSpanishPath()"
          NoIndex="@ShouldNoIndex"
          SchemaType="CollectionPage" />
 
@@ -326,7 +343,17 @@
 
     @if (isBusy && response is null)
     {
-        <section class="loading-panel" role="status" aria-live="polite">@T["LoadingRankings"]</section>
+        <section class="rankings-table-section rankings-loading-section" aria-busy="true">
+            <div class="section-head">
+                <div class="ranking-table-title">
+                    <h2>@T["RankingTable"]</h2>
+                </div>
+            </div>
+            <div class="ranking-table-loading" role="status" aria-live="polite">
+                <span class="ranking-loading-spinner" aria-hidden="true"></span>
+                <span>@T["LoadingRankings"]</span>
+            </div>
+        </section>
     }
     else if (response is not null)
     {
@@ -638,12 +665,35 @@
         @if (selectedView == "rankings")
         {
             <section class="rankings-table-section">
+                <div class="pool-navigation-loading" role="status" aria-live="polite">
+                    <span class="ranking-loading-spinner" aria-hidden="true"></span>
+                    <span>@T["LoadingRankings"]</span>
+                </div>
                 <div class="section-head">
                     <div class="ranking-table-title">
                         <h2>@T["RankingTable"]</h2>
-                        <span>(@LatestGameLabel(): @FormatDate(response.Summary.LatestGameUtc))</span>
                     </div>
                     <div class="table-section-controls">
+                        <dl class="snapshot-metadata">
+                            <div>
+                                <dt>@LatestGameLabel()</dt>
+                                <dd>@FormatDate(response.Summary.LatestGameUtc)</dd>
+                            </div>
+                            <div>
+                                <dt>@T["RatedTeams"]</dt>
+                                <dd>@response.Summary.FilteredTeams</dd>
+                            </div>
+                            <div>
+                                <dt>@LeaderLabel()</dt>
+                                <dd>
+                                    @(response.Summary.TopTeamName ?? "—")
+                                    @if (response.Summary.TopTeamElo.HasValue)
+                                    {
+                                        <span>· @FormatRating(response.Summary.TopTeamElo)</span>
+                                    }
+                                </dd>
+                            </div>
+                        </dl>
                         <span class="table-page-summary">@TableContextLabel()</span>
                         @if (CurrentTotalPages > 1)
                         {
@@ -683,6 +733,10 @@
                                 @if (ShowRankingColumn("elo"))
                                 {
                                     <th class="numeric" scope="col">ELO</th>
+                                }
+                                @if (ShowRankingColumn("games"))
+                                {
+                                    <th class="numeric" scope="col">@T["Games"]</th>
                                 }
                                 @if (ShowRankingColumn("peakElo"))
                                 {
@@ -738,6 +792,10 @@
                                         @if (ShowRankingColumn("elo"))
                                         {
                                             <td class="numeric rating">@row.Elo.ToString("0")</td>
+                                        }
+                                        @if (ShowRankingColumn("games"))
+                                        {
+                                            <td class="numeric">@row.GamesPlayed</td>
                                         }
                                         @if (ShowRankingColumn("peakElo"))
                                         {
@@ -1000,27 +1058,39 @@
                 <p>@T["EloGuideMethodText"] <a href="/how-it-works">@T["ReadBasketballEloMethod"]</a>.</p>
             </div>
             <nav class="rankings-seo-links" aria-label='@T["ExploreEloRankings"]'>
-                <a class="rankings-seo-link" href="/nba-elo">
+                <a class="rankings-seo-link" href="@LocalizedRoute("/nba-elo")">
                     <strong>@T["NbaEloLinkTitle"]</strong>
                     <span>@T["NbaEloLinkDescription"]</span>
                 </a>
-                <a class="rankings-seo-link" href="/acb-elo">
+                <a class="rankings-seo-link" href="@LocalizedRoute("/acb-elo")">
                     <strong>@T["AcbEloLinkTitle"]</strong>
                     <span>@T["AcbEloLinkDescription"]</span>
                 </a>
-                <a class="rankings-seo-link" href="/euroleague-elo">
+                <a class="rankings-seo-link" href="@LocalizedRoute("/euroleague-elo")">
                     <strong>@T["EuroleagueEloLinkTitle"]</strong>
                     <span>@T["EuroleagueEloLinkDescription"]</span>
                 </a>
-                <a class="rankings-seo-link" href="/european-basketball-rankings">
+                <a class="rankings-seo-link" href="@LocalizedRoute("/european-basketball-rankings")">
                     <strong>@T["EuropeanEloLinkTitle"]</strong>
                     <span>@T["EuropeanEloLinkDescription"]</span>
                 </a>
-                <a class="rankings-seo-link" href="/basketball-national-team-rankings">
+                <a class="rankings-seo-link" href="@LocalizedRoute("/basketball-national-team-rankings")">
                     <strong>@T["NationalTeamEloLinkTitle"]</strong>
                     <span>@T["NationalTeamEloLinkDescription"]</span>
                 </a>
             </nav>
+            @if (SeasonArchiveLinks.Count > 0)
+            {
+                <div class="rankings-country-links">
+                    <h3>@T["SeasonRankingsArchives"]</h3>
+                    <div>
+                        @foreach (var season in SeasonArchiveLinks)
+                        {
+                            <a href="@SeasonArchiveHref(season)" aria-current="@(string.Equals(SeoSeason, season, StringComparison.OrdinalIgnoreCase) ? "page" : null)">@SeasonDisplay(season)</a>
+                        }
+                    </div>
+                </div>
+            }
             @if (CountryLandingLinks.Count > 1)
             {
                 <div class="rankings-country-links">
@@ -1047,6 +1117,9 @@
 
     [Parameter]
     public string? CountrySlug { get; set; }
+
+    [Parameter]
+    public string? SeasonSlug { get; set; }
 
     [SupplyParameterFromQuery(Name = "country")]
     public string? Country { get; set; }
@@ -1291,7 +1364,9 @@
         var preserveCurrentData = IsPageOnlyNavigation(currentUri, lastLoadedUri) ||
             IsRankingsMoversNavigation(currentUri, lastLoadedUri);
 
-        var currentPath = Navigation.ToBaseRelativePath(currentUri).Split('?', 2)[0].Trim('/');
+        var rawCurrentPath = Navigation.ToBaseRelativePath(currentUri).Split('?', 2)[0].Trim('/');
+        var currentPath = RemoveLanguagePrefix(rawCurrentPath);
+        var pathSeason = SeasonFromPath(currentPath);
         selectedPool = IsAcbEloPath(currentPath) || IsCountryEloPath(currentPath) || IsEuroleagueEloPath(currentPath) || IsEuropeanRankingsPath(currentPath)
             ? EloPoolKeys.EuropeClubs
             : IsNationalTeamRankingsPath(currentPath)
@@ -1303,7 +1378,9 @@
                     : EloPoolKeys.Default;
         var poolChanged = !string.Equals(previousPool, selectedPool, StringComparison.Ordinal);
         selectedTeamScope = SupportsTeamScope
-            ? EloTeamScopes.Normalize(Teams)
+            ? pathSeason is not null
+                ? EloTeamScopes.Historical
+                : EloTeamScopes.Normalize(Teams)
             : EloTeamScopes.Current;
         var teamScopeChanged = !string.Equals(previousTeamScope, selectedTeamScope, StringComparison.Ordinal);
         selectedCountry = IsAcbEloPath(currentPath)
@@ -1321,8 +1398,8 @@
         selectedRuleset = EloRulesetVersions.All.Contains(Ruleset?.Trim(), StringComparer.OrdinalIgnoreCase)
             ? Ruleset!.Trim().ToLowerInvariant()
             : EloRulesetVersions.Default;
-        selectedFromSeason = FromSeason;
-        selectedToSeason = ToSeason;
+        selectedFromSeason = pathSeason ?? FromSeason;
+        selectedToSeason = pathSeason ?? ToSeason;
         if (!string.IsNullOrWhiteSpace(Season) && string.IsNullOrWhiteSpace(selectedFromSeason) && string.IsNullOrWhiteSpace(selectedToSeason))
         {
             selectedFromSeason = Season;
@@ -2640,11 +2717,13 @@
         var targetShowsTeamScope = SupportsTeamScope && view is not ("results" or "fixtures" or "movers");
         var targetShowsSeasonFilter = view is not "fixtures";
         var targetShowsMinimumGamesFilter = view is "rankings" or "graph" or "movers";
+        route = targetShowsSeasonFilter ? AddSeasonArchivePath(route, SeoSeason) : route;
+        var usesSeasonArchiveRoute = SeasonFromPath(route.Trim('/')) is not null;
 
         var query = new Dictionary<string, object?>
         {
             ["pool"] = IsDedicatedEloRoute(route) || selectedPool == EloPoolKeys.Default ? null : selectedPool,
-            ["teams"] = targetShowsTeamScope && selectedTeamScope == EloTeamScopes.Historical
+            ["teams"] = targetShowsTeamScope && selectedTeamScope == EloTeamScopes.Historical && !usesSeasonArchiveRoute
                 ? selectedTeamScope
                 : null,
             ["movement"] = view == "movers" ? selectedMoverDirection : null,
@@ -2652,32 +2731,32 @@
             ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
             ["country"] = IsCountryDefaultForRoute(route, selectedCountry) ? null : selectedCountry,
             ["competition"] = IsCompetitionDefaultForRoute(route, selectedCompetition) ? null : selectedCompetition,
-            ["fromSeason"] = targetShowsSeasonFilter ? selectedFromSeason : null,
-            ["toSeason"] = targetShowsSeasonFilter ? selectedToSeason : null,
+            ["fromSeason"] = targetShowsSeasonFilter && !usesSeasonArchiveRoute ? selectedFromSeason : null,
+            ["toSeason"] = targetShowsSeasonFilter && !usesSeasonArchiveRoute ? selectedToSeason : null,
             ["minGames"] = targetShowsMinimumGamesFilter && minimumGames > 0 ? minimumGames : null,
             ["team"] = teamSearch,
             ["view"] = view == "rankings" ? null : view,
             ["page"] = targetPage > 1 ? targetPage : null
         };
 
-        return Navigation.GetUriWithQueryParameters(route, query);
+        return Navigation.GetUriWithQueryParameters(LocalizedRoute(route), query);
     }
 
     private string BuildPoolHref(string poolKey)
     {
         var targetPool = EloPoolKeys.Normalize(poolKey);
         var targetView = selectedView;
-        var route = targetView == "movers" ? "/movers" : "/rankings";
+        var route = targetView == "movers" ? "/movers" : LandingRouteForContext(targetPool, null, null);
         var query = new Dictionary<string, object?>
         {
-            ["pool"] = targetPool == EloPoolKeys.Default ? null : targetPool,
+            ["pool"] = IsDedicatedEloRoute(route) || targetPool == EloPoolKeys.Default ? null : targetPool,
             ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
             ["movement"] = targetView == "movers" ? selectedMoverDirection : null,
             ["windowDays"] = targetView == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
             ["view"] = targetView is "rankings" or "movers" ? null : targetView
         };
 
-        return Navigation.GetUriWithQueryParameters(route, query);
+        return Navigation.GetUriWithQueryParameters(LocalizedRoute(route), query);
     }
 
     private static int ClampRequestedPage(int value, int totalPages)
@@ -3009,7 +3088,7 @@
     private bool ShowRankingColumn(string column)
         => column switch
         {
-            "rank" or "team" or "elo" or "peakElo" or "form" => true,
+            "rank" or "team" or "elo" or "games" or "peakElo" or "form" => true,
             "movement" => false,
             "country" => ShowsCountryColumn,
             "globalRank" => response?.Summary.IsFiltered == true,
@@ -3035,11 +3114,17 @@
         => selectedView == "movers"
             ? "Biggest Basketball ELO Movers & Team Form | BasketElo"
             : IsNbaEloLanding
-                ? T["NbaEloSeoTitle"]
+                ? SeoSeason is { } nbaSeason
+                    ? T["NbaSeasonEloSeoTitle", SeasonDisplay(nbaSeason)]
+                    : T["NbaEloSeoTitle"]
                 : IsAcbEloLanding
-                    ? T["AcbEloSeoTitle"]
+                    ? SeoSeason is { } acbSeason
+                        ? T["AcbSeasonEloSeoTitle", SeasonDisplay(acbSeason)]
+                        : T["AcbEloSeoTitle"]
                     : IsEuroleagueEloLanding
-                        ? T["EuroleagueEloSeoTitle"]
+                        ? SeoSeason is { } euroleagueSeason
+                            ? T["EuroleagueSeasonEloSeoTitle", SeasonDisplay(euroleagueSeason)]
+                            : T["EuroleagueEloSeoTitle"]
                         : IsEuropeanRankingsLanding
                             ? T["EuropeanEloSeoTitle"]
                             : IsNationalTeamRankingsLanding
@@ -3052,11 +3137,17 @@
         => selectedView == "movers"
             ? "Track the biggest basketball ELO risers and fallers across the NBA, European clubs, and national teams, with recent form and rating changes."
             : IsNbaEloLanding
-                ? T["NbaEloSeoDescription"]
+                ? SeoSeason is { } nbaSeason
+                    ? T["NbaSeasonEloSeoDescription", SeasonDisplay(nbaSeason)]
+                    : T["NbaEloSeoDescription"]
                 : IsAcbEloLanding
-                    ? T["AcbEloSeoDescription"]
+                    ? SeoSeason is { } acbSeason
+                        ? T["AcbSeasonEloSeoDescription", SeasonDisplay(acbSeason)]
+                        : T["AcbEloSeoDescription"]
                     : IsEuroleagueEloLanding
-                        ? T["EuroleagueEloSeoDescription"]
+                        ? SeoSeason is { } euroleagueSeason
+                            ? T["EuroleagueSeasonEloSeoDescription", SeasonDisplay(euroleagueSeason)]
+                            : T["EuroleagueEloSeoDescription"]
                         : IsEuropeanRankingsLanding
                             ? T["EuropeanEloSeoDescription"]
                             : IsNationalTeamRankingsLanding
@@ -3065,8 +3156,11 @@
                                     ? T["CountryEloSeoDescription", CountryPageDisplayName]
                                     : T["BasketballEloSeoDescription"];
 
-    private string SeoCanonicalPath()
-        => selectedView == "movers"
+    private string SeoCanonicalPath() => LocalizedRoute(SeoEnglishPath());
+
+    private string SeoEnglishPath()
+    {
+        var path = selectedView == "movers"
             ? "/movers"
             : IsNbaEloLanding
                 ? "/nba-elo"
@@ -3080,17 +3174,42 @@
                                 ? "/basketball-national-team-rankings"
                                 : IsCountryEloLanding
                                     ? $"/basketball-elo/{CountrySlugFromPath(CurrentPath)}"
-                                    : "/";
+                                    : CanonicalPathForCurrentState();
+
+        return AddSeasonArchivePath(path, SeoSeason);
+    }
+
+    private string SeoSpanishPath() => SpanishRoute(SeoEnglishPath());
+
+    private string CanonicalPathForCurrentState()
+    {
+        if ((CurrentPath.Length == 0 || CurrentPath == "rankings") &&
+            string.IsNullOrWhiteSpace(Pool) &&
+            string.IsNullOrWhiteSpace(Country) &&
+            string.IsNullOrWhiteSpace(Competition))
+        {
+            return "/";
+        }
+
+        var route = LandingRouteForContext(selectedPool, selectedCountry, selectedCompetition);
+        return route != "/rankings" ? route : "/";
+    }
 
     private string PageTitleHeading()
         => selectedView == "movers"
             ? T["MoversTitle"]
             : IsNbaEloLanding
-                ? T["NbaEloPageTitle"]
+                ? SeoSeason is { } nbaSeason
+                    ? T["NbaSeasonEloPageTitle", SeasonDisplay(nbaSeason)]
+                    : T["NbaEloPageTitle"]
                 : IsAcbEloLanding
-                    ? T["AcbEloPageTitle"]
+                    ? SeoSeason is { } acbSeason
+                        ? T["AcbSeasonEloPageTitle", SeasonDisplay(acbSeason)]
+                        : T["AcbEloPageTitle"]
                     : IsEuroleagueEloLanding
-                        ? T["EuroleagueEloPageTitle"]
+                        ? SeoSeason is { } euroleagueSeason
+                            ? T["EuroleagueSeasonEloPageTitle", SeasonDisplay(euroleagueSeason)]
+                            : T["EuroleagueEloPageTitle"]
                         : IsEuropeanRankingsLanding
                             ? T["EuropeanEloPageTitle"]
                             : IsNationalTeamRankingsLanding
@@ -3101,11 +3220,17 @@
 
     private string PageIntro()
         => IsNbaEloLanding
-            ? T["NbaEloPageIntro"]
+            ? SeoSeason is { } nbaSeason
+                ? T["NbaSeasonEloPageIntro", SeasonDisplay(nbaSeason)]
+                : T["NbaEloPageIntro"]
             : IsAcbEloLanding
-                ? T["AcbEloPageIntro"]
+                ? SeoSeason is { } acbSeason
+                    ? T["AcbSeasonEloPageIntro", SeasonDisplay(acbSeason)]
+                    : T["AcbEloPageIntro"]
                 : IsEuroleagueEloLanding
-                    ? T["EuroleagueEloPageIntro"]
+                    ? SeoSeason is { } euroleagueSeason
+                        ? T["EuroleagueSeasonEloPageIntro", SeasonDisplay(euroleagueSeason)]
+                        : T["EuroleagueEloPageIntro"]
                     : IsEuropeanRankingsLanding
                         ? T["EuropeanEloPageIntro"]
                         : IsNationalTeamRankingsLanding
@@ -3144,8 +3269,14 @@
                                 ? T["CountryEloGuideDescription", CountryPageDisplayName]
                                 : T["BasketballEloGuideDescription"];
 
-    private string CurrentPath
+    private string RawCurrentPath
         => Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', 2)[0].Trim('/');
+
+    private string CurrentPath => RemoveLanguagePrefix(RawCurrentPath);
+
+    private bool IsSpanishRoute
+        => RawCurrentPath.Equals("es", StringComparison.OrdinalIgnoreCase) ||
+           RawCurrentPath.StartsWith("es/", StringComparison.OrdinalIgnoreCase);
 
     private bool IsNbaEloLanding => IsNbaEloPath(CurrentPath);
 
@@ -3163,17 +3294,18 @@
         => CountryPageName(CurrentPath) ?? CountryNameFromSlug(CountrySlugFromPath(CurrentPath));
 
     private bool ShouldNoIndex
-        => IsCountryEloLanding &&
-           (CountryPageName(CurrentPath) is null || response is { TotalCount: 0 });
+        => HasInvalidSeasonArchivePath(CurrentPath) ||
+           IsCountryEloLanding && (CountryPageName(CurrentPath) is null || response is { TotalCount: 0 }) ||
+           IsSeasonArchive && response is { TotalCount: 0 };
 
     private static bool IsNbaEloPath(string path)
-        => string.Equals(path, "nba-elo", StringComparison.OrdinalIgnoreCase);
+        => IsBaseOrChildPath(path, "nba-elo");
 
     private static bool IsAcbEloPath(string path)
-        => string.Equals(path, "acb-elo", StringComparison.OrdinalIgnoreCase);
+        => IsBaseOrChildPath(path, "acb-elo");
 
     private static bool IsEuroleagueEloPath(string path)
-        => string.Equals(path, "euroleague-elo", StringComparison.OrdinalIgnoreCase);
+        => IsBaseOrChildPath(path, "euroleague-elo");
 
     private static bool IsEuropeanRankingsPath(string path)
         => string.Equals(path, "european-basketball-rankings", StringComparison.OrdinalIgnoreCase);
@@ -3185,7 +3317,129 @@
         => CountrySlugFromPath(path) is not null;
 
     private static bool IsRankingsRoutePath(string path)
-        => path is "" or "rankings" or "movers" or "nba-elo" or "acb-elo" or "euroleague-elo" or "european-basketball-rankings" or "basketball-national-team-rankings" || IsCountryEloPath(path);
+    {
+        path = RemoveLanguagePrefix(path);
+        return path is "" or "rankings" or "movers" or "nba-elo" or "acb-elo" or "euroleague-elo" or "european-basketball-rankings" or "basketball-national-team-rankings" ||
+               IsCountryEloPath(path) || IsNbaEloPath(path) || IsAcbEloPath(path) || IsEuroleagueEloPath(path);
+    }
+
+    private static string RemoveLanguagePrefix(string path)
+    {
+        var normalized = path.Trim('/');
+        return normalized.Equals("es", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : normalized.StartsWith("es/", StringComparison.OrdinalIgnoreCase)
+                ? normalized[3..]
+                : normalized;
+    }
+
+    private static bool IsBaseOrChildPath(string path, string basePath)
+        => string.Equals(path, basePath, StringComparison.OrdinalIgnoreCase) ||
+           path.StartsWith(basePath + "/", StringComparison.OrdinalIgnoreCase) &&
+           !path[(basePath.Length + 1)..].Contains('/');
+
+    private static string? SeasonFromPath(string path)
+    {
+        foreach (var basePath in new[] { "nba-elo", "acb-elo", "euroleague-elo" })
+        {
+            var prefix = basePath + "/";
+            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                TryNormalizeSeason(path[prefix.Length..], out var season))
+            {
+                return season;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryNormalizeSeason(string? value, out string season)
+    {
+        season = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var parts = value.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2 ||
+            parts[0].Length != 4 ||
+            !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var startYear) ||
+            !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var suppliedEndYear))
+        {
+            return false;
+        }
+
+        var endYear = parts[1].Length == 2 ? startYear / 100 * 100 + suppliedEndYear : suppliedEndYear;
+        if (endYear < startYear)
+        {
+            endYear += 100;
+        }
+
+        if (endYear != startYear + 1)
+        {
+            return false;
+        }
+
+        season = $"{startYear:D4}-{endYear:D4}";
+        return true;
+    }
+
+    private static bool HasInvalidSeasonArchivePath(string path)
+        => (IsNbaEloPath(path) || IsAcbEloPath(path) || IsEuroleagueEloPath(path)) &&
+           path.Contains('/') && SeasonFromPath(path) is null;
+
+    private bool IsSeasonArchive => SeasonFromPath(CurrentPath) is not null;
+
+    private string? SeoSeason
+    {
+        get
+        {
+            if (!(IsNbaEloLanding || IsAcbEloLanding || IsEuroleagueEloLanding))
+            {
+                return null;
+            }
+
+            var pathSeason = SeasonFromPath(CurrentPath);
+            if (pathSeason is not null)
+            {
+                return pathSeason;
+            }
+
+            return string.Equals(selectedFromSeason, selectedToSeason, StringComparison.OrdinalIgnoreCase) &&
+                   TryNormalizeSeason(selectedFromSeason, out var selectedSeason)
+                ? selectedSeason
+                : null;
+        }
+    }
+
+    private static string AddSeasonArchivePath(string route, string? season)
+    {
+        var normalizedRoute = route.TrimEnd('/');
+        if (season is null || normalizedRoute is not ("/nba-elo" or "/acb-elo" or "/euroleague-elo"))
+        {
+            return route;
+        }
+
+        TryNormalizeSeason(season, out var normalizedSeason);
+        var startYear = normalizedSeason[..4];
+        var endYear = normalizedSeason[^2..];
+        return $"{normalizedRoute}/{startYear}-{endYear}";
+    }
+
+    private static string SeasonDisplay(string season)
+        => TryNormalizeSeason(season, out var normalizedSeason)
+            ? $"{normalizedSeason[..4]}–{normalizedSeason[^2..]}"
+            : season;
+
+    private string LocalizedRoute(string route)
+        => IsSpanishRoute ? SpanishRoute(route) : route;
+
+    private static string SpanishRoute(string route)
+    {
+        var normalized = "/" + route.Trim('/');
+        return normalized == "/" ? "/es" : "/es" + normalized;
+    }
 
     private static string? CountrySlugFromPath(string path)
     {
@@ -3228,27 +3482,118 @@
                                 : "/rankings";
 
     private static bool IsDedicatedEloRoute(string route)
-        => route is "/nba-elo" or "/acb-elo" or "/euroleague-elo" or "/european-basketball-rankings" or "/basketball-national-team-rankings" || IsCountryEloPath(route.Trim('/'));
+    {
+        var path = RemoveLanguagePrefix(route.Trim('/'));
+        return path is "nba-elo" or "acb-elo" or "euroleague-elo" or "european-basketball-rankings" or "basketball-national-team-rankings" ||
+               IsNbaEloPath(path) || IsAcbEloPath(path) || IsEuroleagueEloPath(path) || IsCountryEloPath(path);
+    }
 
     private static bool IsCountryDefaultForRoute(string route, string? country)
-        => route == "/acb-elo" && string.Equals(country, "Spain", StringComparison.OrdinalIgnoreCase) ||
-           IsCountryEloPath(route.Trim('/')) && string.Equals(country, CountryPageName(route.Trim('/')), StringComparison.OrdinalIgnoreCase);
+    {
+        var path = RemoveLanguagePrefix(route.Trim('/'));
+        return IsAcbEloPath(path) && string.Equals(country, "Spain", StringComparison.OrdinalIgnoreCase) ||
+               IsCountryEloPath(path) && string.Equals(country, CountryPageName(path), StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool IsCompetitionDefaultForRoute(string route, string? competition)
-        => route == "/acb-elo" && string.Equals(competition, "ACB", StringComparison.OrdinalIgnoreCase) ||
-           route == "/euroleague-elo" && string.Equals(competition, "Euroleague", StringComparison.OrdinalIgnoreCase);
+    {
+        var path = RemoveLanguagePrefix(route.Trim('/'));
+        return IsAcbEloPath(path) && string.Equals(competition, "ACB", StringComparison.OrdinalIgnoreCase) ||
+               IsEuroleagueEloPath(path) && string.Equals(competition, "Euroleague", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string LandingRouteForContext(string pool, string? country, string? competition)
+    {
+        if (pool == EloPoolKeys.EuropeClubs)
+        {
+            if (string.Equals(competition, "Euroleague", StringComparison.OrdinalIgnoreCase))
+            {
+                return "/euroleague-elo";
+            }
+
+            if (string.Equals(country, "Spain", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(competition, "ACB", StringComparison.OrdinalIgnoreCase))
+            {
+                return "/acb-elo";
+            }
+
+            if (string.IsNullOrWhiteSpace(competition) && !string.IsNullOrWhiteSpace(country))
+            {
+                return CountryNamesBySlug.ContainsKey(ToSlug(country))
+                    ? CountryEloRoute(country)
+                    : "/rankings";
+            }
+
+            if (string.IsNullOrWhiteSpace(country) && string.IsNullOrWhiteSpace(competition))
+            {
+                return "/european-basketball-rankings";
+            }
+        }
+
+        if (pool == EloPoolKeys.NationalTeams && string.IsNullOrWhiteSpace(country) && string.IsNullOrWhiteSpace(competition))
+        {
+            return "/basketball-national-team-rankings";
+        }
+
+        if (pool == EloPoolKeys.Nba && string.IsNullOrWhiteSpace(country) && string.IsNullOrWhiteSpace(competition))
+        {
+            return "/nba-elo";
+        }
+
+        return "/rankings";
+    }
 
     private IReadOnlyList<string> CountryLandingLinks
-        => selectedPool == EloPoolKeys.EuropeClubs
-            ? (response?.Filters.Countries ?? [])
-                .Where(country => !string.IsNullOrWhiteSpace(country))
+    {
+        get
+        {
+            if (selectedPool != EloPoolKeys.EuropeClubs || response is null)
+            {
+                return [];
+            }
+
+            // Competition landing pages already contain their complete team field. Deriving links
+            // from those rows prevents a stale/all-time filter payload from advertising countries
+            // that have no team in the selected competition.
+            var countries = IsAcbEloLanding || IsEuroleagueEloLanding
+                ? response.Rankings.Select(row => row.Country)
+                : response.Filters.Countries;
+
+            return countries
+                .Where(country => !string.IsNullOrWhiteSpace(country) &&
+                    CountryNamesBySlug.ContainsKey(ToSlug(country)))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(country => country, StringComparer.CurrentCulture)
+                .ToList();
+        }
+    }
+
+    private IReadOnlyList<string> SeasonArchiveLinks
+        => IsNbaEloLanding || IsAcbEloLanding || IsEuroleagueEloLanding
+            ? (response?.Filters.Seasons ?? [])
+                .Select(season => TryNormalizeSeason(season, out var normalized) ? normalized : null)
+                .Where(season => season is not null)
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(season => season, StringComparer.Ordinal)
                 .ToList()
             : [];
 
-    private static string CountryEloHref(string country)
+    private string SeasonArchiveHref(string season)
+    {
+        var route = IsAcbEloLanding
+            ? "/acb-elo"
+            : IsEuroleagueEloLanding
+                ? "/euroleague-elo"
+                : "/nba-elo";
+        return LocalizedRoute(AddSeasonArchivePath(route, season));
+    }
+
+    private static string CountryEloRoute(string country)
         => $"/basketball-elo/{ToSlug(country)}";
+
+    private string CountryEloHref(string country)
+        => LocalizedRoute(CountryEloRoute(country));
 
     private static readonly IReadOnlyDictionary<string, string> CountryNamesBySlug = BuildCountryNamesBySlug();
 
@@ -3730,7 +4075,8 @@
     {
         var returnUrl = Navigation.ToBaseRelativePath(Navigation.Uri);
         var slug = string.IsNullOrWhiteSpace(teamName) ? "team" : ToSlug(teamName);
-        return $"/team/{teamId:D}/{slug}?pool={Uri.EscapeDataString(selectedPool)}&ruleset={Uri.EscapeDataString(selectedRuleset)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
+        var teamPath = LocalizedRoute($"/team/{teamId:D}/{slug}");
+        return $"{teamPath}?pool={Uri.EscapeDataString(selectedPool)}&ruleset={Uri.EscapeDataString(selectedRuleset)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
     }
 
     private static string ToSlug(string value)
@@ -3747,16 +4093,21 @@
     }
 
     private string RankingsContextHref(string? country = null, string? competition = null)
-        => Navigation.GetUriWithQueryParameters("/rankings", new Dictionary<string, object?>
+    {
+        var targetCountry = country ?? selectedCountry;
+        var targetCompetition = competition ?? selectedCompetition;
+        var route = LandingRouteForContext(selectedPool, targetCountry, targetCompetition);
+        return Navigation.GetUriWithQueryParameters(LocalizedRoute(route), new Dictionary<string, object?>
         {
-            ["pool"] = selectedPool,
-            ["country"] = country ?? selectedCountry,
-            ["competition"] = competition ?? selectedCompetition,
+            ["pool"] = IsDedicatedEloRoute(route) ? null : selectedPool,
+            ["country"] = IsCountryDefaultForRoute(route, targetCountry) ? null : targetCountry,
+            ["competition"] = IsCompetitionDefaultForRoute(route, targetCompetition) ? null : targetCompetition,
             ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
             ["fromSeason"] = selectedFromSeason,
             ["toSeason"] = selectedToSeason,
             ["teams"] = IsHistoricalTeamScope ? selectedTeamScope : null
         });
+    }
 
     private IReadOnlyList<EloTeamEvolutionSeries> EvolutionSeries
         => evolution?.Series
@@ -3834,7 +4185,7 @@
         => selectedPool is not EloPoolKeys.Nba and not EloPoolKeys.NationalTeams;
 
     private int RankingTableColumnCount
-        => new[] { "rank", "globalRank", "team", "country", "elo", "peakElo", "form" }
+        => new[] { "rank", "globalRank", "team", "country", "elo", "games", "peakElo", "form" }
             .Count(ShowRankingColumn);
 
     private bool IsHistoricalTeamScope

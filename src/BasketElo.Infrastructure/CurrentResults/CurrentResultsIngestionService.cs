@@ -292,7 +292,7 @@ public sealed class CurrentResultsIngestionService(
                 continue;
             }
 
-            var plannedFixtureMatch = await FindScheduledFixtureAsync(
+            var plannedFixtureMatch = await FindCrossSourceFixtureAsync(
                 target.Id,
                 home.Team.Id,
                 away.Team.Id,
@@ -661,7 +661,7 @@ public sealed class CurrentResultsIngestionService(
 
         if (existing is null)
         {
-            var plannedFixtureMatch = await FindScheduledFixtureAsync(
+            var plannedFixtureMatch = await FindCrossSourceFixtureAsync(
                 mapping.Competition.Id,
                 home.Team.Id,
                 away.Team.Id,
@@ -707,21 +707,26 @@ public sealed class CurrentResultsIngestionService(
             dbContext.Games.Add(game);
         }
 
+        changed |= game.GameDateTimeUtc != candidate.GameDateTimeUtc;
         var eloChanged = !tournamentCyclePendingConfirmation && existing is null && candidate.Status == CurrentResultStatuses.Finished && candidate.HomeScore.HasValue && candidate.AwayScore.HasValue;
         if (!game.HasManualResultOverride)
         {
-            var resultChanged = game.HomeScore != candidate.HomeScore || game.AwayScore != candidate.AwayScore || game.Status != candidate.Status;
-            changed |= resultChanged || game.GameDateTimeUtc != candidate.GameDateTimeUtc;
-            eloChanged |= !tournamentCyclePendingConfirmation && resultChanged && (game.Status == CurrentResultStatuses.Finished || candidate.Status == CurrentResultStatuses.Finished);
-            game.HomeScore = candidate.HomeScore;
-            game.AwayScore = candidate.AwayScore;
-            game.Status = candidate.Status;
-            game.EloEligible = !tournamentCyclePendingConfirmation && candidate.Status == CurrentResultStatuses.Finished && candidate.HomeScore.HasValue && candidate.AwayScore.HasValue;
-            game.EloExclusionReason = game.EloEligible
-                ? null
-                : tournamentCyclePendingConfirmation
-                    ? CurrentResultReviewReasons.TournamentCycleConfirmationRequired
-                    : candidate.Status == CurrentResultStatuses.Scheduled ? null : "current_result_not_final";
+            var preserveCompletedCrossSourceResult = reconciledAcrossSources && IsCompletedResult(game);
+            if (!preserveCompletedCrossSourceResult)
+            {
+                var resultChanged = game.HomeScore != candidate.HomeScore || game.AwayScore != candidate.AwayScore || game.Status != candidate.Status;
+                changed |= resultChanged;
+                eloChanged |= !tournamentCyclePendingConfirmation && resultChanged && (IsCompletedResult(game) || candidate.Status == CurrentResultStatuses.Finished);
+                game.HomeScore = candidate.HomeScore;
+                game.AwayScore = candidate.AwayScore;
+                game.Status = candidate.Status;
+                game.EloEligible = !tournamentCyclePendingConfirmation && candidate.Status == CurrentResultStatuses.Finished && candidate.HomeScore.HasValue && candidate.AwayScore.HasValue;
+                game.EloExclusionReason = game.EloEligible
+                    ? null
+                    : tournamentCyclePendingConfirmation
+                        ? CurrentResultReviewReasons.TournamentCycleConfirmationRequired
+                        : candidate.Status == CurrentResultStatuses.Scheduled ? null : "current_result_not_final";
+            }
         }
 
         if (!reconciledAcrossSources)
@@ -810,7 +815,7 @@ public sealed class CurrentResultsIngestionService(
             .SingleOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<PlannedFixtureMatch> FindScheduledFixtureAsync(
+    private async Task<PlannedFixtureMatch> FindCrossSourceFixtureAsync(
         Guid competitionId,
         Guid homeTeamId,
         Guid awayTeamId,
@@ -826,7 +831,6 @@ public sealed class CurrentResultsIngestionService(
                 x.CompetitionId == competitionId &&
                 x.HomeTeamId == homeTeamId &&
                 x.AwayTeamId == awayTeamId &&
-                x.Status == CurrentResultStatuses.Scheduled &&
                 x.GameDateTimeUtc >= minimumDateTimeUtc &&
                 x.GameDateTimeUtc <= maximumDateTimeUtc)
             .ToListAsync(cancellationToken);
@@ -857,6 +861,12 @@ public sealed class CurrentResultsIngestionService(
             ordered[0].SourceGameId);
         return new PlannedFixtureMatch(ordered[0], false);
     }
+
+    private static bool IsCompletedResult(Game game) =>
+        game.HomeScore.HasValue &&
+        game.AwayScore.HasValue &&
+        (string.Equals(game.Status, CurrentResultStatuses.Finished, StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(game.Status, "final", StringComparison.OrdinalIgnoreCase));
 
     private async Task UpsertReviewAsync(
         CurrentResultCandidate candidate,

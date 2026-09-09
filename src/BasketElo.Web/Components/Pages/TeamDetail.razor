@@ -1,17 +1,24 @@
 @page "/teams/{TeamId:guid}"
 @page "/team/{TeamId:guid}/{TeamSlug}"
+@page "/es/team/{TeamId:guid}/{TeamSlug}"
 @rendermode @(new InteractiveServerRenderMode(prerender: true))
 @implements IAsyncDisposable
 @using System.Globalization
+@using System.Net
 @using System.Text.Json
 @using Microsoft.AspNetCore.Components.Authorization
 @using BasketElo.Domain.Elo
 @using BasketElo.Domain.Entities
 @inject HttpClient Http
+@inject NavigationManager Navigation
+@inject IHttpContextAccessor HttpContextAccessor
 
 <SeoHead Title="@TeamSeoTitle"
          Description="@TeamSeoDescription"
          CanonicalPath="@TeamCanonicalPath"
+         EnglishAlternatePath="@TeamEnglishAlternatePath"
+         SpanishAlternatePath="@TeamSpanishAlternatePath"
+         NoIndex="@(!string.IsNullOrWhiteSpace(errorMessage))"
          SchemaType="ProfilePage"
          SocialImageAlt="@TeamSocialImageAlt" />
 
@@ -32,7 +39,7 @@
         <section class="team-hero">
             <div>
                 <a class="back-link" href="@BackHref">@T["BackToRankings"]</a>
-                <p class="eyebrow">@team.EloPoolName</p>
+                <p class="eyebrow">@TeamPoolDisplayName(team)</p>
                 <div class="team-title-line">
                     <h1>@team.TeamName</h1>
                     @if (!team.IsActive || team.EloPoolKey == EloPoolKeys.NationalTeams)
@@ -40,7 +47,7 @@
                         <span class="team-status-badge @TeamHeaderStatusClass(team)">@TeamHeaderStatusLabel(team)</span>
                     }
                 </div>
-                <p class="intro">@RulesetDisplayName(team.RulesetVersion) profile, latest rated games, and the team's continuous rating path.</p>
+                <p class="intro">@T["TeamProfileIntro", RulesetDisplayName(team.RulesetVersion)]</p>
             </div>
             <div class="team-rank-card">
                 <span>@T["PoolRank"]</span>
@@ -166,7 +173,7 @@
                                                     @onclick="() => LoadExplanationAsync(win.GameId)"
                                                     disabled="@IsExplanationLoading(win.GameId)"
                                                     title='@T["ExplainThisGame"]'>
-                                                @(IsExplanationLoading(win.GameId) ? "Loading" : FormatMovement(win.EloDelta))
+                                                @(IsExplanationLoading(win.GameId) ? T["LoadingShort"] : FormatMovement(win.EloDelta))
                                             </button>
                                         </div>
                                     }
@@ -189,7 +196,7 @@
                                                     @onclick="() => LoadExplanationAsync(loss.GameId)"
                                                     disabled="@IsExplanationLoading(loss.GameId)"
                                                     title='@T["ExplainThisGame"]'>
-                                                @(IsExplanationLoading(loss.GameId) ? "Loading" : FormatMovement(loss.EloDelta))
+                                                @(IsExplanationLoading(loss.GameId) ? T["LoadingShort"] : FormatMovement(loss.EloDelta))
                                             </button>
                                         </div>
                                     }
@@ -301,7 +308,7 @@
                                             <small>@game.Season</small>
                                         </div>
                                     </td>
-                                    <td>@(game.WasHome ? "vs" : "at") @game.Opponent</td>
+                                    <td>@(game.WasHome ? T["Versus"] : T["AwayAt"]) @game.Opponent</td>
                                     <td>@FormatScore(game)</td>
                                     <td class="numeric">
                                         @if (game.EloDelta.HasValue)
@@ -330,7 +337,7 @@
                                     </td>
                                     <td>
                                         <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => LoadExplanationAsync(game.GameId)" disabled="@IsExplanationLoading(game.GameId)">
-                                            @(IsExplanationLoading(game.GameId) ? "Loading" : "Explain")
+                                            @(IsExplanationLoading(game.GameId) ? T["LoadingShort"] : T["Explain"])
                                         </button>
                                     </td>
                                 </tr>
@@ -393,35 +400,56 @@
 
     private string TeamSeoTitle
         => team is null
-            ? "Basketball Team ELO Profile | BasketElo"
-            : $"{team.TeamName} ELO History & Ranking | BasketElo";
+            ? T["TeamSeoFallbackTitle"]
+            : T["TeamSeoTitle", team.TeamName];
 
     private string TeamSeoDescription
         => team is null
-            ? "Explore basketball team ELO rankings, rating history, recent form, and game-level explanations on BasketElo."
-            : $"Explore {team.TeamName}'s {team.EloPoolName} ELO rating, ranking, form, rating history, and game explanations on BasketElo.";
+            ? T["TeamSeoFallbackDescription"]
+            : T["TeamSeoDescription", TeamPoolDisplayName(team), team.TeamName];
 
     private string TeamSocialImageAlt
         => team is null
-            ? "BasketElo basketball team ELO profile"
-            : $"{team.TeamName} basketball ELO profile on BasketElo";
+            ? T["TeamSocialImageFallbackAlt"]
+            : T["TeamSocialImageAlt", team.TeamName];
 
     private string TeamCanonicalPath
-        => team is null
-            ? $"/team/{TeamId:D}/{TeamSlug ?? "team"}"
-            : $"/team/{team.TeamId:D}/{ToSlug(team.TeamName)}?pool={Uri.EscapeDataString(team.EloPoolKey)}&ruleset={Uri.EscapeDataString(team.RulesetVersion)}";
+        => BuildTeamPath(IsSpanishRoute);
+
+    private string? TeamEnglishAlternatePath
+        => string.IsNullOrWhiteSpace(errorMessage) ? BuildTeamPath(spanish: false) : null;
+
+    private string? TeamSpanishAlternatePath
+        => string.IsNullOrWhiteSpace(errorMessage) ? BuildTeamPath(spanish: true) : null;
+
+    private bool IsSpanishRoute
+        => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("es/team/", StringComparison.OrdinalIgnoreCase);
+
+    private string BuildTeamPath(bool spanish)
+    {
+        var localizedPrefix = spanish ? "/es" : string.Empty;
+        if (team is null)
+        {
+            return $"{localizedPrefix}/team/{TeamId:D}/{TeamSlug ?? "team"}";
+        }
+
+        return $"{localizedPrefix}/team/{team.TeamId:D}/{ToSlug(team.TeamName)}?pool={Uri.EscapeDataString(team.EloPoolKey)}&ruleset={Uri.EscapeDataString(team.RulesetVersion)}";
+    }
 
     private void HandleChartExpandedChanged(bool expanded)
         => isChartExpanded = expanded;
 
     private const int HistoryRefinementDebounceMilliseconds = 600;
 
-    private string BackHref => string.IsNullOrWhiteSpace(ReturnUrl) ? "/rankings" : "/" + ReturnUrl.TrimStart('/');
+    private string BackHref => string.IsNullOrWhiteSpace(ReturnUrl)
+        ? IsSpanishRoute ? "/es/rankings" : "/rankings"
+        : "/" + ReturnUrl.TrimStart('/');
 
     protected override async Task OnParametersSetAsync()
     {
         isBusy = true;
         errorMessage = null;
+        team = null;
         highlightedGameId = null;
         isChartExpanded = false;
         var authenticationState = AuthenticationStateTask is null
@@ -438,7 +466,12 @@
                 ? Ruleset!.Trim().ToLowerInvariant()
                 : EloRulesetVersions.Default;
             team = await Http.GetFromJsonAsync<EloTeamDetailResponse>($"api/elo/teams/{TeamId}?pool={Uri.EscapeDataString(poolKey)}&rulesetVersion={Uri.EscapeDataString(ruleset)}");
-            if (team is not null)
+            if (team is null)
+            {
+                errorMessage = T["TeamProfileNotFound"];
+                SetNotFoundStatus();
+            }
+            else
             {
                 fullTeamHistoryGames = team.RecentGames.ToList();
                 fullTeamHistoryTotalGames = team.RecentGamesTotalCount;
@@ -450,9 +483,14 @@
                 teamHistoryDataRevision++;
             }
         }
-        catch (Exception ex)
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            errorMessage = $"Could not load team profile: {ex.Message}";
+            errorMessage = T["TeamProfileNotFound"];
+            SetNotFoundStatus();
+        }
+        catch (Exception)
+        {
+            errorMessage = T["TeamProfileLoadError"];
         }
         finally
         {
@@ -510,6 +548,15 @@
         if (highlightedGameId == gameId)
         {
             highlightedGameId = null;
+        }
+    }
+
+    private void SetNotFoundStatus()
+    {
+        var response = HttpContextAccessor.HttpContext?.Response;
+        if (response is not null && !response.HasStarted)
+        {
+            response.StatusCode = StatusCodes.Status404NotFound;
         }
     }
 
@@ -799,27 +846,27 @@
 
         if (points.Count == 0)
         {
-            return "No rated history yet.";
+            return T["NoRatedHistoryYet"];
         }
 
         var first = teamHistoryVisibleFromUtc ?? points[0].GameDateTimeUtc;
         var last = teamHistoryVisibleToUtc ?? points[^1].GameDateTimeUtc;
         var shown = team?.RecentGames.Count ?? points.Count;
-        var gameLabel = team?.RecentGamesWasSampled == true ? "sampled games" : "games";
-
-        return $"Showing {shown} {gameLabel} from {FormatDate(first)} to {FormatDate(last)}.";
+        return team?.RecentGamesWasSampled == true
+            ? T["TeamHistorySampledRange", shown, FormatDate(first), FormatDate(last)]
+            : T["TeamHistoryRange", shown, FormatDate(first), FormatDate(last)];
     }
 
-    private static string GamesContextLabel(EloTeamDetailResponse team)
+    private string GamesContextLabel(EloTeamDetailResponse team)
     {
         if (team.RecentGamesTotalCount == 0)
         {
-            return "No imported games are available for this team yet.";
+            return T["NoImportedGames"];
         }
         var shown = team.RecentGames.Count;
         return team.RecentGamesWasSampled
-            ? $"Showing {shown} of {team.RecentGamesTotalCount} rated games represented by this chart interval."
-            : $"Showing all {shown} rated games represented by this chart interval.";
+            ? T["TeamGamesSampledRange", shown, team.RecentGamesTotalCount]
+            : T["TeamGamesRange", shown];
     }
 
     private static string FormatScore(EloTeamGameDto game)
@@ -827,20 +874,20 @@
             ? $"{game.TeamScore}-{game.OpponentScore}"
             : "-";
 
-    private static string IdentityEventLabel(string type) => type switch
+    private string IdentityEventLabel(string type) => type switch
     {
-        EloFranchiseIdentityEventTypes.Rename => "Rename",
-        EloFranchiseIdentityEventTypes.TemporaryRelocation => "Temporary move",
-        _ => "Relocation"
+        EloFranchiseIdentityEventTypes.Rename => T["Rename"],
+        EloFranchiseIdentityEventTypes.TemporaryRelocation => T["TemporaryMove"],
+        _ => T["Relocation"]
     };
 
-    private static string TeamHeaderStatusLabel(EloTeamDetailResponse team)
+    private string TeamHeaderStatusLabel(EloTeamDetailResponse team)
         => team.EloPoolKey switch
         {
-            EloPoolKeys.Nba => "Defunct franchise",
-            EloPoolKeys.EuropeClubs => "Historical club",
-            EloPoolKeys.NationalTeams => team.IsActive ? "National team" : "Historical national team",
-            _ => team.IsActive ? "Team" : "Historical team"
+            EloPoolKeys.Nba => T["DefunctFranchise"],
+            EloPoolKeys.EuropeClubs => T["HistoricalClub"],
+            EloPoolKeys.NationalTeams => team.IsActive ? T["NationalTeamStatus"] : T["HistoricalNationalTeam"],
+            _ => team.IsActive ? T["Team"] : T["HistoricalTeam"]
         };
 
     private static string TeamHeaderStatusClass(EloTeamDetailResponse team)
@@ -851,7 +898,11 @@
                 : string.Empty;
 
     private static string FormatDate(DateTime? value)
-        => value.HasValue ? value.Value.ToLocalTime().ToString("MMM d, yyyy") : "-";
+        => value.HasValue
+            ? value.Value.ToLocalTime().ToString(
+                CultureInfo.CurrentUICulture.Name.StartsWith("es", StringComparison.OrdinalIgnoreCase) ? "d MMM yyyy" : "MMM d, yyyy",
+                CultureInfo.CurrentUICulture)
+            : "-";
 
     private static string FormatRating(decimal value)
         => value == 0 ? "-" : value.ToString("0");
@@ -862,13 +913,22 @@
     private static string FormatRank(int? rank)
         => rank.HasValue ? $"#{rank.Value}" : "-";
 
-    private static string RulesetDisplayName(string ruleset)
-        => ruleset == EloRulesetVersions.BasicEloV1 ? "Basic ELO" : "Adjusted ELO";
+    private string RulesetDisplayName(string ruleset)
+        => ruleset == EloRulesetVersions.BasicEloV1 ? T["BasicElo"] : T["AdjustedElo"];
 
-    private static string RecentMovementOpponentLabel(EloTeamDetailResponse team)
+    private string RecentMovementOpponentLabel(EloTeamDetailResponse team)
         => string.IsNullOrWhiteSpace(team.RecentMovementOpponent)
-            ? "Latest rated game"
-            : $"vs {team.RecentMovementOpponent}";
+            ? T["LatestRatedGame"]
+            : $"{T["Versus"]} {team.RecentMovementOpponent}";
+
+    private string TeamPoolDisplayName(EloTeamDetailResponse team)
+        => team.EloPoolKey switch
+        {
+            EloPoolKeys.Nba => "NBA",
+            EloPoolKeys.EuropeClubs => T["EuropeClubs"],
+            EloPoolKeys.NationalTeams => T["NationalTeams"],
+            _ => team.EloPoolName
+        };
 
     private static string FormatRankChange(int value)
         => value > 0 ? $"+{value}" : value.ToString();
@@ -884,12 +944,12 @@
             _ => "0"
         };
 
-    private static string FormatRecord(EloTeamFormSummary form)
-        => form.GamesAvailable == 0 ? "No games" : $"{form.Wins}-{form.Losses}";
+    private string FormatRecord(EloTeamFormSummary form)
+        => form.GamesAvailable == 0 ? T["NoGames"] : $"{form.Wins}-{form.Losses}";
 
-    private static string FormatHistoricalHighlightGame(EloTeamFormGame game)
+    private string FormatHistoricalHighlightGame(EloTeamFormGame game)
     {
-        var location = game.WasHome ? "vs" : "at";
+        var location = game.WasHome ? T["Versus"] : T["AwayAt"];
         var score = game.TeamScore.HasValue && game.OpponentScore.HasValue
             ? $" {game.TeamScore}-{game.OpponentScore}"
             : string.Empty;

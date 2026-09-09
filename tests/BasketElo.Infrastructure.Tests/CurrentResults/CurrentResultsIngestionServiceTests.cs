@@ -115,6 +115,106 @@ public class CurrentResultsIngestionServiceTests
     }
 
     [Fact]
+    public async Task FinishedLivescoreResultReusesAndPreservesAlreadyFinishedFibaFixture()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "FIBA Basketball World Cup Qualifiers",
+            EloPoolKey = "national-teams",
+            IsActive = true
+        };
+        var homeTeam = new Team { Id = Guid.NewGuid(), CanonicalName = "Dominican Republic", CountryCode = "DO" };
+        var awayTeam = new Team { Id = Guid.NewGuid(), CanonicalName = "Chile", CountryCode = "CL" };
+        var season = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Label = "2027",
+            StartDateUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(2027, 12, 31, 23, 59, 59, DateTimeKind.Utc)
+        };
+        var cycle = new TournamentCycle
+        {
+            Id = Guid.NewGuid(),
+            Key = "worldcup-2027",
+            Family = "FIBA Basketball World Cup",
+            EditionLabel = "2027",
+            DisplayName = "FIBA Basketball World Cup 2027"
+        };
+        var official = new Game
+        {
+            Id = Guid.NewGuid(),
+            Source = "fiba",
+            SourceGameId = "127300",
+            SourceUrl = "https://www.fiba.basketball/game/127300",
+            SourceSeasonKey = "2027",
+            SourceRevision = "fiba-revision",
+            ParserVersion = "fiba-parser-v1",
+            CompetitionId = competition.Id,
+            SeasonId = season.Id,
+            TournamentCycleId = cycle.Id,
+            GameDateTimeUtc = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+            HomeTeamId = homeTeam.Id,
+            AwayTeamId = awayTeam.Id,
+            HomeScore = 101,
+            AwayScore = 66,
+            Status = CurrentResultStatuses.Finished,
+            EloEligible = true
+        };
+
+        dbContext.AddRange(competition, homeTeam, awayTeam, season, cycle, official);
+        await dbContext.SaveChangesAsync();
+
+        var candidate = new CurrentResultCandidate(
+            "1825128",
+            "https://www.livescores.com/basketball/event/1825128/",
+            new DateOnly(2026, 9, 1),
+            official.GameDateTimeUtc,
+            "World",
+            competition.Name,
+            "America: 2nd Round: Group E",
+            homeTeam.CanonicalName,
+            awayTeam.CanonicalName,
+            "team:world:dominican-republic",
+            "team:world:chile",
+            99,
+            66,
+            CurrentResultStatuses.Finished,
+            "FT",
+            "livescore-revision",
+            "livescore-test-v1");
+        var service = new CurrentResultsIngestionService(
+            dbContext,
+            new TestCurrentResultsProvider(candidate),
+            new TestBackfillCatalog(),
+            new CleanIdentityHealthCheckService(),
+            TimeProvider.System,
+            NullLogger<CurrentResultsIngestionService>.Instance);
+
+        var summary = await service.RunAsync(
+            candidate.SourceDate,
+            candidate.SourceDate,
+            dryRun: false,
+            CancellationToken.None);
+
+        var result = Assert.Single(await dbContext.Games.ToListAsync());
+        Assert.Equal(official.Id, result.Id);
+        Assert.Equal("fiba", result.Source);
+        Assert.Equal("127300", result.SourceGameId);
+        Assert.Equal((short)101, result.HomeScore);
+        Assert.Equal((short)66, result.AwayScore);
+        Assert.Equal(CurrentResultStatuses.Finished, result.Status);
+        Assert.Equal("fiba-revision", result.SourceRevision);
+        Assert.Equal(0, summary.GamesUpserted);
+    }
+
+    [Fact]
     public async Task NewFibaCycleWithoutConfirmedCycleIsStoredOutsideElo()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()

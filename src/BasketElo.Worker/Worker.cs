@@ -102,9 +102,9 @@ public class Worker : BackgroundService
                 await modelLabProcessor.TryProcessNextPendingJobAsync(stoppingToken) ||
                 await backfillProcessor.TryProcessNextPendingJobAsync(stoppingToken);
 
-            if (_logger.IsEnabled(LogLevel.Information) && !processed)
+            if (_logger.IsEnabled(LogLevel.Debug) && !processed)
             {
-                _logger.LogInformation("Worker heartbeat at {time}", DateTimeOffset.UtcNow);
+                _logger.LogDebug("Worker heartbeat at {time}", DateTimeOffset.UtcNow);
             }
 
             await Task.Delay(TimeSpan.FromSeconds(processed ? 2 : 5), stoppingToken);

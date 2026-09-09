@@ -9,6 +9,12 @@
     <meta name="robots" content="@RobotsContent" />
     <meta name="author" content="BasketElo" />
     <link rel="canonical" href="@CanonicalUrl" />
+    @if (EnglishAlternateUrl is not null && SpanishAlternateUrl is not null)
+    {
+        <link rel="alternate" hreflang="en" href="@EnglishAlternateUrl" />
+        <link rel="alternate" hreflang="es" href="@SpanishAlternateUrl" />
+        <link rel="alternate" hreflang="x-default" href="@EnglishAlternateUrl" />
+    }
 
     <meta property="og:site_name" content="BasketElo" />
     <meta property="og:type" content="website" />
@@ -40,6 +46,12 @@
 
     [Parameter]
     public string? CanonicalPath { get; set; }
+
+    [Parameter]
+    public string? EnglishAlternatePath { get; set; }
+
+    [Parameter]
+    public string? SpanishAlternatePath { get; set; }
 
     [Parameter]
     public bool NoIndex { get; set; }
@@ -86,6 +98,15 @@
             return new Uri(new Uri(SiteRoot), path.TrimStart('/')).AbsoluteUri;
         }
     }
+
+    private string? EnglishAlternateUrl => AbsoluteUrl(EnglishAlternatePath);
+
+    private string? SpanishAlternateUrl => AbsoluteUrl(SpanishAlternatePath);
+
+    private string? AbsoluteUrl(string? path)
+        => string.IsNullOrWhiteSpace(path)
+            ? null
+            : new Uri(new Uri(SiteRoot), path.TrimStart('/')).AbsoluteUri;
 
     private string SocialImageUrl
     {

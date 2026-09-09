@@ -1,5 +1,6 @@
 @page "/browse"
 @rendermode InteractiveServer
+@using System.Globalization
 @using BasketElo.Domain.Elo
 @inject HttpClient Http
 @inject NavigationManager Navigation
@@ -296,18 +297,70 @@
         });
 
     private string RankingsHref()
-        => Navigation.GetUriWithQueryParameters("/rankings", new Dictionary<string, object?>
+    {
+        var country = response?.Context?.Country;
+        var competition = response?.Context?.Competition;
+        var route = RankingsLandingRoute(country, competition);
+        var seasonSlug = ToSeasonSlug(Season);
+        var usesSeasonRoute = seasonSlug is not null && route is "/nba-elo" or "/acb-elo" or "/euroleague-elo";
+        if (usesSeasonRoute)
         {
-            ["pool"] = selectedPool,
-            ["country"] = response?.Context?.Country,
-            ["competition"] = response?.Context?.Competition,
-            ["season"] = Season
+            route = $"{route}/{seasonSlug}";
+        }
+
+        return Navigation.GetUriWithQueryParameters(LocalizedRankingsRoute(route), new Dictionary<string, object?>
+        {
+            ["pool"] = route == "/rankings" ? selectedPool : null,
+            ["country"] = route == "/rankings" ? country : null,
+            ["competition"] = route == "/rankings" ? competition : null,
+            ["season"] = usesSeasonRoute ? null : Season
         });
+    }
+
+    private static string LocalizedRankingsRoute(string route)
+        => CultureInfo.CurrentUICulture.Name.StartsWith("es", StringComparison.OrdinalIgnoreCase)
+            ? route == "/" ? "/es" : "/es" + route
+            : route;
+
+    private static string? ToSeasonSlug(string? season)
+    {
+        var parts = season?.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts is not { Length: 2 } ||
+            !int.TryParse(parts[0], out var startYear) ||
+            !int.TryParse(parts[1], out var endYear) ||
+            endYear != startYear + 1)
+        {
+            return null;
+        }
+
+        return $"{startYear:D4}-{endYear % 100:D2}";
+    }
+
+    private string RankingsLandingRoute(string? country, string? competition)
+    {
+        if (selectedPool == EloPoolKeys.EuropeClubs)
+        {
+            if (string.Equals(competition, "Euroleague", StringComparison.OrdinalIgnoreCase)) return "/euroleague-elo";
+            if (string.Equals(country, "Spain", StringComparison.OrdinalIgnoreCase) && string.Equals(competition, "ACB", StringComparison.OrdinalIgnoreCase)) return "/acb-elo";
+            if (string.IsNullOrWhiteSpace(competition) && !string.IsNullOrWhiteSpace(country)) return $"/basketball-elo/{ToSlug(country)}";
+            if (string.IsNullOrWhiteSpace(country) && string.IsNullOrWhiteSpace(competition)) return "/european-basketball-rankings";
+        }
+
+        if (selectedPool == EloPoolKeys.NationalTeams && string.IsNullOrWhiteSpace(country) && string.IsNullOrWhiteSpace(competition))
+        {
+            return "/basketball-national-team-rankings";
+        }
+
+        return selectedPool == EloPoolKeys.Nba && string.IsNullOrWhiteSpace(country) && string.IsNullOrWhiteSpace(competition)
+            ? "/nba-elo"
+            : "/rankings";
+    }
 
     private string TeamHref(Guid teamId, string? teamName = null)
     {
         var slug = string.IsNullOrWhiteSpace(teamName) ? "team" : ToSlug(teamName);
-        return $"/team/{teamId:D}/{slug}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri))}";
+        var teamPath = LocalizedRankingsRoute($"/team/{teamId:D}/{slug}");
+        return $"{teamPath}?pool={Uri.EscapeDataString(selectedPool)}&returnUrl={Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri))}";
     }
 
     private static string ToSlug(string value)

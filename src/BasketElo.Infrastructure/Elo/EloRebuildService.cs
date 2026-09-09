@@ -305,6 +305,10 @@ public class EloRebuildService(
             return;
         }
 
+        // This insert-heavy section can be optimized with Npgsql binary COPY if rebuild
+        // frequency or load warrants the PostgreSQL-specific maintenance. A production
+        // benchmark reduced the two-ruleset Europe Clubs rebuild from 4:30.937 to 1:56.681
+        // with semantically identical history and current ratings.
         dbContext.RatingHistories.AddRange(historyBatch);
         await dbContext.SaveChangesAsync(cancellationToken);
         foreach (var history in historyBatch)

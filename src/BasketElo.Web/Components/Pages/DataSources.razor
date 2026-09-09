@@ -58,7 +58,14 @@
                                     {
                                         <div class="data-source-row">
                                             <div class="data-source-provider">
-                                                <a href="@source.Url" target="_blank" rel="noopener noreferrer">@source.Name</a>
+                                                @if (string.IsNullOrWhiteSpace(source.Url))
+                                                {
+                                                    <strong class="data-source-title">@source.Name</strong>
+                                                }
+                                                else
+                                                {
+                                                    <a href="@source.Url" target="_blank" rel="noopener noreferrer">@source.Name</a>
+                                                }
                                                 <span>@source.CoverageLabel</span>
                                             </div>
                                             <div class="data-source-seasons">
@@ -109,7 +116,14 @@
                                 {
                                     <div class="data-source-row">
                                         <div class="data-source-provider">
-                                            <a href="@source.Url" target="_blank" rel="noopener noreferrer">@source.Name</a>
+                                            @if (string.IsNullOrWhiteSpace(source.Url))
+                                            {
+                                                <strong class="data-source-title">@source.Name</strong>
+                                            }
+                                            else
+                                            {
+                                                <a href="@source.Url" target="_blank" rel="noopener noreferrer">@source.Name</a>
+                                            }
                                             <span>@source.CoverageLabel</span>
                                         </div>
                                         <div class="data-source-seasons">
@@ -169,6 +183,8 @@
                     .ToList()))
             .ToList();
 
+        allRegions = AddPrintedBookSources(allRegions).ToList();
+
         fibaRegions = FilterRegions(allRegions, league => league.EloPoolKey == EloPoolKeys.NationalTeams);
         clubRegions = FilterRegions(allRegions, league => league.EloPoolKey != EloPoolKeys.NationalTeams);
     }
@@ -179,6 +195,29 @@
         => regions
             .Select(region => region with { Leagues = region.Leagues.Where(include).ToList() })
             .Where(region => region.Leagues.Count > 0)
+            .ToList();
+
+    private IReadOnlyList<RegionView> AddPrintedBookSources(IReadOnlyList<RegionView> regions)
+        => regions
+            .Select(region => region.Name != "Europe"
+                ? region
+                : region with
+                {
+                    Leagues = region.Leagues
+                        .Select(league => EuroBasketBookSeasons.TryGetValue(league.LeagueName, out var seasons)
+                            ? league with
+                            {
+                                Sources = league.Sources
+                                    .Append(new SourceView(
+                                        "Los campeonatos de Europa 1935-1995 — Carlos Jiménez",
+                                        null,
+                                        T["PrintedHistoricalSource"],
+                                        seasons))
+                                    .ToList()
+                            }
+                            : league)
+                        .ToList()
+                })
             .ToList();
 
     private static int RegionSortOrder(string region)
@@ -315,7 +354,15 @@
 
     private sealed record SourceView(
         string Name,
-        string Url,
+        string? Url,
         string CoverageLabel,
         IReadOnlyList<string> Seasons);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> EuroBasketBookSeasons =
+        new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["EuroBasket Qualifiers"] = ["1963", "1965", "1967", "1969", "1971", "1989", "1991"],
+            ["FIBA EuroBasket Division B"] = ["1973", "1975", "1977", "1979", "1981", "1983", "1985", "1987"],
+            ["FIBA EuroBasket Pre-Qualifiers"] = ["1991"]
+        };
 }

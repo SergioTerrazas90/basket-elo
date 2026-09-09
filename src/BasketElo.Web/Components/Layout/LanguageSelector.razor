@@ -61,7 +61,39 @@
     private string BuildCultureHref(string cultureName)
     {
         var currentUri = new Uri(Navigation.Uri);
-        var returnUrl = currentUri.PathAndQuery;
+        var returnUrl = LocalizedReturnUrl(currentUri, cultureName);
         return $"/culture/set?culture={Uri.EscapeDataString(cultureName)}&returnUrl={Uri.EscapeDataString(returnUrl)}";
+    }
+
+    private static string LocalizedReturnUrl(Uri currentUri, string cultureName)
+    {
+        var path = currentUri.AbsolutePath.TrimEnd('/');
+        var unprefixedPath = path.Equals("/es", StringComparison.OrdinalIgnoreCase)
+            ? "/"
+            : path.StartsWith("/es/", StringComparison.OrdinalIgnoreCase)
+                ? path[3..]
+                : path;
+
+        if (!IsLocalizedRankingPath(unprefixedPath))
+        {
+            return currentUri.PathAndQuery;
+        }
+
+        var localizedPath = cultureName == SupportedCultures.Spanish
+            ? unprefixedPath == "/" ? "/es" : "/es" + unprefixedPath
+            : unprefixedPath;
+        return localizedPath + currentUri.Query;
+    }
+
+    private static bool IsLocalizedRankingPath(string path)
+    {
+        var relative = path.Trim('/');
+        return relative is "" or "rankings" or "movers" or "nba-elo" or "acb-elo" or "euroleague-elo" or
+               "european-basketball-rankings" or "basketball-national-team-rankings" ||
+               relative.StartsWith("team/", StringComparison.OrdinalIgnoreCase) ||
+               relative.StartsWith("basketball-elo/", StringComparison.OrdinalIgnoreCase) ||
+               relative.StartsWith("nba-elo/", StringComparison.OrdinalIgnoreCase) ||
+               relative.StartsWith("acb-elo/", StringComparison.OrdinalIgnoreCase) ||
+               relative.StartsWith("euroleague-elo/", StringComparison.OrdinalIgnoreCase);
     }
 }

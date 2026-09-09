@@ -36,6 +36,27 @@ public sealed class CountryCodeCatalogTests
         Assert.Equal("England", CountryCodeCatalog.DisplayName("ENG"));
     }
 
+    [Theory]
+    [InlineData("ESP", "Spain")]
+    [InlineData("USA", "United States")]
+    [InlineData("YUG", "Yugoslavia")]
+    [InlineData("SCO", "Scotland")]
+    [InlineData("WAL", "Wales")]
+    public void DisplayName_UsesCanonicalNamesInsteadOfCodes(string code, string expected)
+    {
+        Assert.Equal(expected, CountryCodeCatalog.DisplayName(code));
+    }
+
+    [Theory]
+    [InlineData("UNK")]
+    [InlineData("INT")]
+    [InlineData("EUR")]
+    [InlineData("XYZ")]
+    public void DisplayName_DoesNotExposeUnknownOrRegionalCodes(string code)
+    {
+        Assert.Equal(string.Empty, CountryCodeCatalog.DisplayName(code));
+    }
+
     [Fact]
     public void AreEquivalent_TreatsAlpha2AndProviderAliasAsOneCountry()
     {

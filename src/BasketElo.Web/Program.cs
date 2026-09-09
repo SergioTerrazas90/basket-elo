@@ -221,14 +221,29 @@ if (!authOptions.Enabled)
 
 app.Use(async (httpContext, next) =>
 {
-    var resolver = httpContext.RequestServices.GetRequiredService<UserCultureResolver>();
-    var resolution = await resolver.ResolveAsync(httpContext, httpContext.RequestAborted);
-    if (resolution.PersistCookie)
+    string cultureName;
+    if (IsSpanishRankingContentPath(httpContext.Request.Path))
     {
-        SetCultureCookie(httpContext, resolution.CultureName);
+        cultureName = SupportedCultures.Spanish;
+        SetCultureCookie(httpContext, cultureName);
+    }
+    else if (IsEnglishRankingContentPath(httpContext.Request.Path))
+    {
+        cultureName = SupportedCultures.English;
+        SetCultureCookie(httpContext, cultureName);
+    }
+    else
+    {
+        var resolver = httpContext.RequestServices.GetRequiredService<UserCultureResolver>();
+        var resolution = await resolver.ResolveAsync(httpContext, httpContext.RequestAborted);
+        cultureName = resolution.CultureName;
+        if (resolution.PersistCookie)
+        {
+            SetCultureCookie(httpContext, cultureName);
+        }
     }
 
-    var culture = SupportedCultures.GetCulture(resolution.CultureName);
+    var culture = SupportedCultures.GetCulture(cultureName);
     CultureInfo.CurrentCulture = culture;
     CultureInfo.CurrentUICulture = culture;
     await next(httpContext);
@@ -396,31 +411,135 @@ app.MapGet("/sitemap.xml", async (HttpContext httpContext, IConfiguration config
         .AsNoTracking()
         .Include(x => x.Team)
         .Where(x => x.RulesetVersion == BasketElo.Domain.Elo.EloRulesetVersions.Default)
-        .Select(x => new { x.TeamId, x.EloPoolKey, x.RulesetVersion, TeamName = x.Team.CanonicalName, x.Team.CountryCode })
+        .Select(x => new { x.TeamId, x.EloPoolKey, x.RulesetVersion, TeamName = x.Team.CanonicalName, x.Team.CountryCode, x.UpdatedAtUtc })
         .ToListAsync(cancellationToken);
+    var currentEuropeanTeamIds = await GetCurrentEuropeanTeamIdsAsync(dbContext, cancellationToken);
     var publicCountryPaths = publicTeamPaths
         .Where(team => team.EloPoolKey == EloPoolKeys.EuropeClubs &&
+                       currentEuropeanTeamIds.Contains(team.TeamId) &&
                        !string.IsNullOrWhiteSpace(team.CountryCode) &&
                        team.CountryCode != "UNK" &&
                        team.CountryCode != "INT")
-        .Select(team => CountryCodeCatalog.DisplayName(team.CountryCode))
-        .Where(country => !string.IsNullOrWhiteSpace(country))
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .Select(country => $"basketball-elo/{ToSlug(country)}");
+        .Select(team => new { Country = CountryCodeCatalog.DisplayName(team.CountryCode), team.UpdatedAtUtc })
+        .Where(team => !string.IsNullOrWhiteSpace(team.Country))
+        .GroupBy(team => team.Country, StringComparer.OrdinalIgnoreCase)
+        .Select(group => new
+        {
+            Path = $"basketball-elo/{ToSlug(group.Key)}",
+            LastModifiedUtc = (DateTime?)group.Max(team => team.UpdatedAtUtc)
+        });
+    var publicSeasonRows = await dbContext.RatingHistories
+        .AsNoTracking()
+        .Where(history => history.RulesetVersion == BasketElo.Domain.Elo.EloRulesetVersions.Default &&
+                          (history.EloPoolKey == EloPoolKeys.Nba ||
+                           history.EloPoolKey == EloPoolKeys.EuropeClubs &&
+                           (history.Game.Competition.Name == "ACB" || history.Game.Competition.Name == "Euroleague")))
+        .GroupBy(history => new
+        {
+            history.EloPoolKey,
+            Competition = history.Game.Competition.Name,
+            Season = history.Game.Season.Label
+        })
+        .Select(group => new
+        {
+            group.Key.EloPoolKey,
+            group.Key.Competition,
+            group.Key.Season,
+            LastModifiedUtc = group.Max(history => history.CreatedAtUtc)
+        })
+        .ToListAsync(cancellationToken);
+    var publicSeasonPaths = publicSeasonRows
+        .Select(row => new
+        {
+            BasePath = row.EloPoolKey == EloPoolKeys.Nba
+                ? "nba-elo"
+                : string.Equals(row.Competition, "ACB", StringComparison.OrdinalIgnoreCase)
+                    ? "acb-elo"
+                    : string.Equals(row.Competition, "Euroleague", StringComparison.OrdinalIgnoreCase)
+                        ? "euroleague-elo"
+                        : null,
+            SeasonSlug = ToSeasonSlug(row.Season),
+            row.LastModifiedUtc
+        })
+        .Where(row => row.BasePath is not null && row.SeasonSlug is not null)
+        .GroupBy(row => $"{row.BasePath}/{row.SeasonSlug}", StringComparer.OrdinalIgnoreCase)
+        .Select(group => new
+        {
+            Path = group.Key,
+            LastModifiedUtc = (DateTime?)group.Max(row => row.LastModifiedUtc)
+        })
+        .ToList();
     XNamespace ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
-    var locations = publicPaths
-        .Select(path => new Uri(new Uri(siteRoot), path).AbsoluteUri)
-        .Concat(publicCountryPaths.Select(path => new Uri(new Uri(siteRoot), path).AbsoluteUri))
-        .Concat(publicTeamPaths.Select(team =>
-            new Uri(
-                new Uri(siteRoot),
-                $"team/{team.TeamId:D}/{ToSlug(team.TeamName)}?pool={Uri.EscapeDataString(team.EloPoolKey)}&ruleset={Uri.EscapeDataString(team.RulesetVersion)}")
-                .AbsoluteUri));
+    var poolLastModified = publicTeamPaths
+        .GroupBy(team => team.EloPoolKey, StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => (DateTime?)group.Max(team => team.UpdatedAtUtc), StringComparer.Ordinal);
+    var pathLastModified = publicPaths.ToDictionary(path => path, _ => (DateTime?)null, StringComparer.Ordinal);
+    pathLastModified[""] = poolLastModified.GetValueOrDefault(EloPoolKeys.Nba);
+    pathLastModified["nba-elo"] = poolLastModified.GetValueOrDefault(EloPoolKeys.Nba);
+    pathLastModified["european-basketball-rankings"] = poolLastModified.GetValueOrDefault(EloPoolKeys.EuropeClubs);
+    pathLastModified["basketball-national-team-rankings"] = poolLastModified.GetValueOrDefault(EloPoolKeys.NationalTeams);
+    pathLastModified["movers"] = publicTeamPaths.Count == 0 ? null : publicTeamPaths.Max(team => team.UpdatedAtUtc);
+
+    var acbLastModified = publicSeasonPaths
+        .Where(entry => entry.Path.StartsWith("acb-elo/", StringComparison.OrdinalIgnoreCase))
+        .Max(entry => entry.LastModifiedUtc);
+    var euroleagueLastModified = publicSeasonPaths
+        .Where(entry => entry.Path.StartsWith("euroleague-elo/", StringComparison.OrdinalIgnoreCase))
+        .Max(entry => entry.LastModifiedUtc);
+    pathLastModified["acb-elo"] = acbLastModified;
+    pathLastModified["euroleague-elo"] = euroleagueLastModified;
+
+    foreach (var country in publicCountryPaths)
+    {
+        pathLastModified[country.Path] = country.LastModifiedUtc;
+    }
+
+    foreach (var season in publicSeasonPaths)
+    {
+        pathLastModified[season.Path] = season.LastModifiedUtc;
+    }
+
+    foreach (var localizedEntry in pathLastModified
+                 .Where(entry => IsRankingSitemapPath(entry.Key))
+                 .Select(entry => new KeyValuePair<string, DateTime?>(
+                     string.IsNullOrEmpty(entry.Key) ? "es" : $"es/{entry.Key}",
+                     entry.Value))
+                 .ToList())
+    {
+        pathLastModified[localizedEntry.Key] = localizedEntry.Value;
+    }
+
+    var sitemapEntries = pathLastModified
+        .Select(entry => new
+        {
+            Location = new Uri(new Uri(siteRoot), entry.Key).AbsoluteUri,
+            entry.Value
+        })
+        .Concat(publicTeamPaths.SelectMany(team =>
+        {
+            var teamPath = $"team/{team.TeamId:D}/{ToSlug(team.TeamName)}?pool={Uri.EscapeDataString(team.EloPoolKey)}&ruleset={Uri.EscapeDataString(team.RulesetVersion)}";
+            return new[]
+            {
+                new
+                {
+                    Location = new Uri(new Uri(siteRoot), teamPath).AbsoluteUri,
+                    Value = (DateTime?)team.UpdatedAtUtc
+                },
+                new
+                {
+                    Location = new Uri(new Uri(siteRoot), $"es/{teamPath}").AbsoluteUri,
+                    Value = (DateTime?)team.UpdatedAtUtc
+                }
+            };
+        }));
     var sitemap = new XDocument(
         new XElement(ns + "urlset",
-            locations.Select(location =>
+            sitemapEntries.Select(entry =>
                 new XElement(ns + "url",
-                    new XElement(ns + "loc", location)))));
+                    new XElement(ns + "loc", entry.Location),
+                    entry.Value.HasValue
+                        ? new XElement(ns + "lastmod", entry.Value.Value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture))
+                        : null))));
     return Results.Text(sitemap.ToString(SaveOptions.DisableFormatting), "application/xml", Encoding.UTF8);
 });
 
@@ -440,6 +559,26 @@ static void SetCultureCookie(HttpContext httpContext, string cultureName)
             MaxAge = TimeSpan.FromDays(365)
         });
 }
+
+static bool IsSpanishRankingContentPath(PathString requestPath)
+{
+    var path = requestPath.Value?.Trim('/') ?? string.Empty;
+    return path.Equals("es", StringComparison.OrdinalIgnoreCase) ||
+           path.StartsWith("es/", StringComparison.OrdinalIgnoreCase) && IsRankingContentPath(path[3..]);
+}
+
+static bool IsEnglishRankingContentPath(PathString requestPath)
+    => IsRankingContentPath(requestPath.Value?.Trim('/') ?? string.Empty);
+
+static bool IsRankingContentPath(string path)
+    => path is "" or "rankings" or "movers" or "nba-elo" or "acb-elo" or "euroleague-elo" or
+       "european-basketball-rankings" or "basketball-national-team-rankings" ||
+       path.StartsWith("team/", StringComparison.OrdinalIgnoreCase) ||
+       path.StartsWith("teams/", StringComparison.OrdinalIgnoreCase) ||
+       path.StartsWith("basketball-elo/", StringComparison.OrdinalIgnoreCase) ||
+       path.StartsWith("nba-elo/", StringComparison.OrdinalIgnoreCase) ||
+       path.StartsWith("acb-elo/", StringComparison.OrdinalIgnoreCase) ||
+       path.StartsWith("euroleague-elo/", StringComparison.OrdinalIgnoreCase);
 
 static Guid? GetAuthenticatedUserId(ClaimsPrincipal user)
 {
@@ -478,6 +617,91 @@ static string ToSlug(string value)
         .Split([' ', '/', '\\', '.', ',', ':', ';', '&', '+', '(', ')', '[', ']', '{', '}', '\'', '"'], StringSplitOptions.RemoveEmptyEntries)
         .SelectMany(part => part.Split('-', StringSplitOptions.RemoveEmptyEntries)));
 }
+
+static string? ToSeasonSlug(string? season)
+{
+    if (string.IsNullOrWhiteSpace(season))
+    {
+        return null;
+    }
+
+    var parts = season.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+    if (parts.Length != 2 ||
+        parts[0].Length != 4 ||
+        !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var startYear) ||
+        !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var suppliedEndYear))
+    {
+        return null;
+    }
+
+    var endYear = parts[1].Length == 2 ? startYear / 100 * 100 + suppliedEndYear : suppliedEndYear;
+    if (endYear < startYear)
+    {
+        endYear += 100;
+    }
+
+    return endYear == startYear + 1 ? $"{startYear:D4}-{endYear % 100:D2}" : null;
+}
+
+static async Task<HashSet<Guid>> GetCurrentEuropeanTeamIdsAsync(
+    BasketEloDbContext dbContext,
+    CancellationToken cancellationToken)
+{
+    var latestRatedGameUtc = await dbContext.RatingHistories
+        .AsNoTracking()
+        .Where(history => history.EloPoolKey == EloPoolKeys.EuropeClubs)
+        .Select(history => (DateTime?)history.GameDateTimeUtc)
+        .MaxAsync(cancellationToken);
+
+    if (latestRatedGameUtc.HasValue)
+    {
+        var seasonStartYear = latestRatedGameUtc.Value.Month >= 7
+            ? latestRatedGameUtc.Value.Year
+            : latestRatedGameUtc.Value.Year - 1;
+        var seasonStartUtc = new DateTime(seasonStartYear, 7, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        return (await dbContext.RatingHistories
+                .AsNoTracking()
+                .Where(history => history.EloPoolKey == EloPoolKeys.EuropeClubs &&
+                                  history.GameDateTimeUtc >= seasonStartUtc &&
+                                  history.GameDateTimeUtc <= latestRatedGameUtc.Value)
+                .Select(history => history.TeamId)
+                .Distinct()
+                .ToListAsync(cancellationToken))
+            .ToHashSet();
+    }
+
+    var latestGameUtc = await dbContext.Games
+        .AsNoTracking()
+        .Where(game => game.Competition.EloPoolKey == EloPoolKeys.EuropeClubs)
+        .Select(game => (DateTime?)game.GameDateTimeUtc)
+        .MaxAsync(cancellationToken);
+    if (!latestGameUtc.HasValue)
+    {
+        return [];
+    }
+
+    var fallbackSeasonStartYear = latestGameUtc.Value.Month >= 7
+        ? latestGameUtc.Value.Year
+        : latestGameUtc.Value.Year - 1;
+    var fallbackSeasonStartUtc = new DateTime(fallbackSeasonStartYear, 7, 1, 0, 0, 0, DateTimeKind.Utc);
+    var currentGames = dbContext.Games
+        .AsNoTracking()
+        .Where(game => game.Competition.EloPoolKey == EloPoolKeys.EuropeClubs &&
+                       game.GameDateTimeUtc >= fallbackSeasonStartUtc &&
+                       game.GameDateTimeUtc <= latestGameUtc.Value);
+    var homeTeamIds = await currentGames.Select(game => game.HomeTeamId).ToListAsync(cancellationToken);
+    var awayTeamIds = await currentGames.Select(game => game.AwayTeamId).ToListAsync(cancellationToken);
+    return homeTeamIds.Concat(awayTeamIds).ToHashSet();
+}
+
+static bool IsRankingSitemapPath(string path)
+    => path is "" or "nba-elo" or "acb-elo" or "euroleague-elo" or "european-basketball-rankings" or
+       "basketball-national-team-rankings" or "movers" ||
+       path.StartsWith("basketball-elo/", StringComparison.OrdinalIgnoreCase) ||
+       path.StartsWith("nba-elo/", StringComparison.OrdinalIgnoreCase) ||
+       path.StartsWith("acb-elo/", StringComparison.OrdinalIgnoreCase) ||
+       path.StartsWith("euroleague-elo/", StringComparison.OrdinalIgnoreCase);
 
 static bool IsPrivateOrUtilityPath(PathString path)
 {

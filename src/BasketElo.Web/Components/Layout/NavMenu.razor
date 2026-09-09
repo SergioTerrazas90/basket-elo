@@ -1,5 +1,8 @@
+@using System.Globalization
+@using BasketElo.Web.Localization
+
 <div class="site-navigation">
-    <a class="brand-lockup" href="" aria-label='@T["BasketEloHome"]'>
+    <a class="brand-lockup" href="@RankingsHomeHref" aria-label='@T["BasketEloHome"]'>
         <span class="brand-mark" aria-hidden="true"><img src="brand-mark.svg" alt="" /></span>
         <span class="brand-copy">
             <strong>BasketElo</strong>
@@ -18,8 +21,8 @@
          class="nav-drawer"
         onclick="if (event.target.closest('a:not([data-enhance-nav=false])')) document.querySelector('#navigation-toggle').click()">
         <nav class="nav-primary" aria-label='@T["PrimaryNavigation"]'>
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">@T["Rankings"]</NavLink>
-            <NavLink class="nav-link" href="movers">@T["Movers"]</NavLink>
+            <NavLink class="nav-link" href="@RankingsHomeHref" Match="NavLinkMatch.All">@T["Rankings"]</NavLink>
+            <NavLink class="nav-link" href="@MoversHref">@T["Movers"]</NavLink>
             <NavLink class="nav-link" href="model-lab">@T["ModelLab"]</NavLink>
         </nav>
 
@@ -58,4 +61,12 @@
         </div>
     </div>
 </div>
+
+@code {
+    private bool IsSpanish => CultureInfo.CurrentUICulture.Name.StartsWith("es", StringComparison.OrdinalIgnoreCase);
+
+    private string RankingsHomeHref => IsSpanish ? "/es" : "/";
+
+    private string MoversHref => IsSpanish ? "/es/movers" : "/movers";
+}
 

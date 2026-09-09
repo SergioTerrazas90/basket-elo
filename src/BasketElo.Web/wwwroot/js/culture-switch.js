@@ -37,7 +37,16 @@
                 throw new Error(`Culture update failed with status ${response.status}.`);
             }
 
-            window.location.reload();
+            const returnUrl = updateUrl.searchParams.get("returnUrl");
+            const destination = returnUrl
+                ? new URL(returnUrl, window.location.origin)
+                : new URL(window.location.href);
+
+            if (destination.origin !== window.location.origin) {
+                throw new Error("Culture return URL must stay on the current site.");
+            }
+
+            window.location.assign(destination.href);
         } catch {
             window.location.assign(link.href);
         }

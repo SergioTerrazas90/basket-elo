@@ -249,9 +249,13 @@
 .data-source-row + .data-source-row { padding-top: var(--space-3); border-top: 1px dashed var(--color-border); }
 .data-source-provider, .data-source-seasons { display: grid; gap: 0.25rem; align-content: start; }
 
-.data-source-provider a {
+.data-source-provider a,
+.data-source-provider .data-source-title {
     color: var(--color-brand-dark);
     font-weight: 850;
+}
+
+.data-source-provider a {
     text-decoration-color: var(--color-accent);
     text-decoration-thickness: 0.08em;
     text-underline-offset: 0.2em;

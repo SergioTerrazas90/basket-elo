@@ -209,6 +209,44 @@
         return fallback;
     }
 
+    function positionTooltip(state, offsetX, offsetY, width, height, hostWidth, hostHeight) {
+        const edgeInset = 8;
+        const cursorGap = 14;
+        const movementThreshold = 4;
+        const spaceLeft = offsetX - cursorGap - edgeInset;
+        const spaceRight = hostWidth - offsetX - cursorGap - edgeInset;
+        const movementX = state.lastTooltipOffsetX == null
+            ? 0
+            : offsetX - state.lastTooltipOffsetX;
+
+        let side = state.tooltipSide;
+        if (Math.abs(movementX) >= movementThreshold) {
+            // Keep the card behind the user's movement so the part of the
+            // series they are tracing toward remains visible.
+            side = movementX > 0 ? "left" : "right";
+        } else if (!side) {
+            side = spaceRight >= spaceLeft ? "right" : "left";
+        }
+
+        // Respect the preferred side when possible, but never force the card
+        // against an edge when the other side has substantially more room.
+        if (side === "left" && spaceLeft < width && spaceRight > spaceLeft) {
+            side = "right";
+        } else if (side === "right" && spaceRight < width && spaceLeft > spaceRight) {
+            side = "left";
+        }
+
+        const preferredLeft = side === "left"
+            ? offsetX - width - cursorGap
+            : offsetX + cursorGap;
+        const preferredTop = offsetY - height / 2;
+
+        state.lastTooltipOffsetX = offsetX;
+        state.tooltipSide = side;
+        state.tooltip.style.left = `${clamp(preferredLeft, edgeInset, Math.max(edgeInset, hostWidth - width - edgeInset))}px`;
+        state.tooltip.style.top = `${clamp(preferredTop, edgeInset, Math.max(edgeInset, hostHeight - height - edgeInset))}px`;
+    }
+
     function renderTooltip(state, event, points, row) {
         if (!state.tooltip) {
             return;
@@ -272,10 +310,13 @@
         const rect = state.host.getBoundingClientRect();
         const width = state.tooltip.offsetWidth || 210;
         const height = state.tooltip.offsetHeight || 80;
-        const offsetX = event?.offsetX ?? first.canvasx ?? 0;
-        const offsetY = event?.offsetY ?? first.canvasy ?? 0;
-        state.tooltip.style.left = `${clamp(offsetX + 14, 8, Math.max(8, rect.width - width - 8))}px`;
-        state.tooltip.style.top = `${clamp(offsetY - height - 12, 8, Math.max(8, rect.height - height - 8))}px`;
+        const offsetX = Number.isFinite(event?.clientX)
+            ? event.clientX - rect.left
+            : first.canvasx ?? 0;
+        const offsetY = Number.isFinite(event?.clientY)
+            ? event.clientY - rect.top
+            : first.canvasy ?? 0;
+        positionTooltip(state, offsetX, offsetY, width, height, rect.width, rect.height);
     }
 
     function formatResult(metadata) {
@@ -976,6 +1017,8 @@
             },
             unhighlightCallback: () => {
                 if (state.tooltip) state.tooltip.hidden = true;
+                state.lastTooltipOffsetX = null;
+                state.tooltipSide = null;
                 clearPointHover(state);
             },
             drawCallback: graph => {
@@ -1057,6 +1100,8 @@
                 lastHoveredGameId: null,
                 suppressHoverNotification: false,
                 sharedTooltip: true,
+                lastTooltipOffsetX: null,
+                tooltipSide: null,
                 resizeObserver: null,
                 rangeDrag: null,
                 rangeBindingCleanup: null,

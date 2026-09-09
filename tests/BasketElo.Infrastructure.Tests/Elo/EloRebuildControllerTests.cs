@@ -16,6 +16,120 @@ namespace BasketElo.Infrastructure.Tests.Elo;
 public class EloRebuildControllerTests
 {
     [Fact]
+    public async Task RankingsWithExplicitDefaultRulesetReuseWarmedDefaultResponse()
+    {
+        await using var dbContext = CreateDbContext();
+        var team = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "Boston Celtics",
+            CountryCode = "USA",
+            IsActive = true
+        };
+        var rating = new TeamRating
+        {
+            TeamId = team.Id,
+            Team = team,
+            EloPoolKey = EloPoolKeys.Nba,
+            RulesetVersion = EloRulesetVersions.Default,
+            Elo = 1600m
+        };
+        dbContext.Teams.Add(team);
+        dbContext.TeamRatings.Add(rating);
+        await dbContext.SaveChangesAsync();
+        var controller = CreateController(dbContext, new ScopedIdentityHealthService(EloPoolKeys.Nba));
+
+        var warmedResult = await controller.GetRankings(
+            rulesetVersion: null,
+            pool: EloPoolKeys.Nba,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: null);
+        var warmedResponse = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(warmedResult.Result).Value);
+
+        rating.Elo = 1700m;
+        await dbContext.SaveChangesAsync();
+
+        var explicitDefaultResult = await controller.GetRankings(
+            rulesetVersion: EloRulesetVersions.Default,
+            pool: EloPoolKeys.Nba,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: null);
+        var explicitDefaultResponse = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(explicitDefaultResult.Result).Value);
+
+        Assert.Equal(1600m, Assert.Single(warmedResponse.Rankings).Elo);
+        Assert.Equal(1600m, Assert.Single(explicitDefaultResponse.Rankings).Elo);
+    }
+
+    [Fact]
+    public async Task NationalTeamRankingsReuseWarmedDefaultResponse()
+    {
+        await using var dbContext = CreateDbContext();
+        var team = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "United States",
+            CountryCode = "USA",
+            IsActive = true
+        };
+        var rating = new TeamRating
+        {
+            TeamId = team.Id,
+            Team = team,
+            EloPoolKey = EloPoolKeys.NationalTeams,
+            RulesetVersion = EloRulesetVersions.Default,
+            Elo = 1600m
+        };
+        dbContext.Teams.Add(team);
+        dbContext.TeamRatings.Add(rating);
+        await dbContext.SaveChangesAsync();
+        var controller = CreateController(dbContext, new ScopedIdentityHealthService(EloPoolKeys.NationalTeams));
+
+        var warmedResult = await controller.GetRankings(
+            rulesetVersion: null,
+            pool: EloPoolKeys.NationalTeams,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: null);
+        var warmedResponse = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(warmedResult.Result).Value);
+
+        rating.Elo = 1700m;
+        await dbContext.SaveChangesAsync();
+
+        var explicitDefaultResult = await controller.GetRankings(
+            rulesetVersion: EloRulesetVersions.Default,
+            pool: EloPoolKeys.NationalTeams,
+            country: null,
+            competition: null,
+            season: null,
+            fromUtc: null,
+            toUtc: null,
+            asOfDate: null,
+            minGames: null,
+            team: null);
+        var explicitDefaultResponse = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(explicitDefaultResult.Result).Value);
+
+        Assert.Equal(1600m, Assert.Single(warmedResponse.Rankings).Elo);
+        Assert.Equal(1600m, Assert.Single(explicitDefaultResponse.Rankings).Elo);
+    }
+
+    [Fact]
     public async Task RankingsWithoutPoolDefaultToNba()
     {
         await using var dbContext = CreateDbContext();
@@ -273,7 +387,7 @@ public class EloRebuildControllerTests
         {
             Id = Guid.NewGuid(),
             CanonicalName = "Historical Club",
-            CountryCode = "ES",
+            CountryCode = "FR",
             IsActive = true
         };
         var acb = new Competition
@@ -365,6 +479,7 @@ public class EloRebuildControllerTests
         var current = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(currentResult.Result).Value);
         Assert.Equal(EloTeamScopes.Current, current.TeamScope);
         Assert.Collection(current.Rankings, row => Assert.Equal(currentClub.Id, row.TeamId));
+        Assert.Equal(["Spain"], current.Filters.Countries);
 
         var historicalResult = await controller.GetRankings(
             rulesetVersion: null,
@@ -383,6 +498,7 @@ public class EloRebuildControllerTests
         Assert.Equal(EloTeamScopes.Historical, historical.TeamScope);
         Assert.Equal(2, historical.Rankings.Count);
         Assert.False(historical.Rankings.Single(row => row.TeamId == relegatedClub.Id).IsActive);
+        Assert.Equal(["France", "Spain"], historical.Filters.Countries);
     }
 
     [Fact]
@@ -486,6 +602,7 @@ public class EloRebuildControllerTests
 
         var current = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(currentResult.Result).Value);
         Assert.Equal(EloTeamScopes.Current, current.TeamScope);
+        Assert.Empty(current.Filters.Countries);
         Assert.DoesNotContain(current.Rankings, row => row.TeamId == historicalTeam.Id);
         Assert.Contains(current.Rankings, row => row.TeamId == currentTeam.Id);
         Assert.All(current.Rankings, row => Assert.True(row.IsActive));
@@ -507,6 +624,7 @@ public class EloRebuildControllerTests
         Assert.Equal(EloTeamScopes.Historical, historical.TeamScope);
         Assert.Equal(3, historical.Rankings.Count);
         Assert.False(historical.Rankings.Single(row => row.TeamId == historicalTeam.Id).IsActive);
+        Assert.Equal(["Yugoslavia"], historical.Filters.Countries);
     }
 
     [Fact]

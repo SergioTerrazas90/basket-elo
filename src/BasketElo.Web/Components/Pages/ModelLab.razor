@@ -1,6 +1,7 @@
 @page "/model-lab/new"
 @page "/model-lab/models/{ModelId:guid}/run"
 @rendermode InteractiveServer
+@implements IDisposable
 @using System.Security.Claims
 @using System.Net
 @using System.Net.Http.Json
@@ -15,6 +16,7 @@
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject IOptions<AuthOptions> AuthOptions
+@inject PersistentComponentState ApplicationState
 
 <SeoHead Title='@(IsExistingModelRoute ? "Run model | BasketElo" : "Create model | BasketElo")'
          Description="Build and backtest a basketball ELO model against historical results. Tune home advantage, K-factor, score-margin adjustment, and competition weight."
@@ -706,11 +708,24 @@
     private DateTime initializationTo;
     private DateTime scoredFrom;
     private DateTime scoredTo;
+    private PersistingComponentStateSubscription? persistingSubscription;
 
     private bool IsExistingModelRoute => ModelId != Guid.Empty;
 
+    private string PersistenceKey
+        => $"model-lab:{ModelId:D}:{RequestedModelId?.ToString("D") ?? "new"}";
+
     protected override async Task OnInitializedAsync()
     {
+        if (ApplicationState.TryTakeFromJson<ModelLabPageState>(PersistenceKey, out var restoredState) &&
+            restoredState is not null)
+        {
+            RestorePersistedState(restoredState);
+            return;
+        }
+
+        persistingSubscription = ApplicationState.RegisterOnPersisting(PersistStateAsync);
+
         try
         {
             if (AuthenticationStateTask is not null)
@@ -754,6 +769,53 @@
         {
             isLoadingOptions = false;
         }
+    }
+
+    private Task PersistStateAsync()
+    {
+        ApplicationState.PersistAsJson(
+            PersistenceKey,
+            new ModelLabPageState(
+                options,
+                entitlement,
+                savedModels,
+                savedRuns,
+                runQuota,
+                loadedModel,
+                selectedModelIdText,
+                isRealSignedIn,
+                errorMessage,
+                modelStatusMessage));
+        return Task.CompletedTask;
+    }
+
+    private void RestorePersistedState(ModelLabPageState state)
+    {
+        entitlement = state.Entitlement;
+        options = state.Options;
+        savedModels = state.SavedModels ?? [];
+        savedRuns = state.SavedRuns ?? [];
+        runQuota = state.RunQuota;
+        isRealSignedIn = state.IsRealSignedIn;
+        errorMessage = state.ErrorMessage;
+        modelStatusMessage = state.ModelStatusMessage;
+
+        if (options is not null)
+        {
+            ApplyDefaults(options);
+        }
+
+        if (state.LoadedModel is not null)
+        {
+            ApplySavedModel(state.LoadedModel);
+        }
+        else
+        {
+            selectedModelIdText = state.SelectedModelIdText ?? string.Empty;
+        }
+
+        isLoadingModels = false;
+        isLoadingOptions = false;
     }
 
     private string SavedModelPlaceholder
@@ -2020,4 +2082,19 @@
 
     private static string FormatSigned(decimal value)
         => value > 0 ? $"+{value:0.0}" : value.ToString("0.0");
+
+    public void Dispose()
+        => persistingSubscription?.Dispose();
+
+    private sealed record ModelLabPageState(
+        ModelLabOptionsResponse? Options,
+        ModelLabEntitlementResponse? Entitlement,
+        List<ModelLabModelSummaryResponse>? SavedModels,
+        List<ModelLabRunSummaryResponse>? SavedRuns,
+        ModelLabRunQuotaResponse? RunQuota,
+        ModelLabModelDetailResponse? LoadedModel,
+        string? SelectedModelIdText,
+        bool IsRealSignedIn,
+        string? ErrorMessage,
+        string? ModelStatusMessage);
 }

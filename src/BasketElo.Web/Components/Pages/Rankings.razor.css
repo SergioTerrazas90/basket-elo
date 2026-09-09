@@ -471,6 +471,11 @@
     flex-wrap: wrap;
     gap: 0.35rem;
     align-items: center;
+    margin-bottom: 0.25rem;
+}
+
+.active-filters + .advanced-filters {
+    margin-top: 0;
 }
 
 .filter-chip {
@@ -938,6 +943,35 @@
     gap: var(--space-3);
     min-width: 0;
     width: 100%;
+}
+
+.rankings-table-section {
+    position: relative;
+}
+
+.pool-navigation-loading {
+    position: absolute;
+    z-index: 20;
+    inset: 0;
+    display: none;
+    min-height: 24rem;
+    place-items: center;
+    align-content: center;
+    gap: var(--space-3);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-surface) 84%, transparent);
+    color: var(--color-text);
+    font-weight: 750;
+    backdrop-filter: blur(1px);
+}
+
+.rankings-table-section.is-pool-loading .pool-navigation-loading {
+    display: grid;
+}
+
+.rankings-table-section.is-pool-loading > :not(.pool-navigation-loading) {
+    opacity: 0.42;
+    pointer-events: none;
 }
 
 .ranking-table-title {
@@ -2039,6 +2073,51 @@
 .empty-state {
     padding: var(--space-8) var(--space-4);
     text-align: center;
+}
+
+.rankings-loading-section {
+    min-height: 28rem;
+}
+
+.ranking-table-loading {
+    display: grid;
+    min-height: 24rem;
+    place-items: center;
+    align-content: center;
+    gap: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background:
+        linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent),
+        repeating-linear-gradient(
+            180deg,
+            var(--color-surface) 0,
+            var(--color-surface) 2.35rem,
+            var(--color-surface-muted) 2.35rem,
+            var(--color-surface-muted) 2.42rem);
+    color: var(--color-muted);
+    font-weight: 750;
+}
+
+.ranking-loading-spinner {
+    width: 1.7rem;
+    height: 1.7rem;
+    border: 0.18rem solid var(--color-brand-soft);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    animation: ranking-loading-spin 0.7s linear infinite;
+}
+
+@keyframes ranking-loading-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ranking-loading-spinner {
+        animation: none;
+    }
 }
 
 .chart-loading-panel {

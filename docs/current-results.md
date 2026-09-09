@@ -18,7 +18,7 @@ After the complete date range has been ingested, changed Elo pools are identity-
 
 ## Cross-source reconciliation
 
-When a Livescore candidate has a confident competition and team mapping, ingestion first checks for an existing scheduled game from another source. It reconciles only when the competition, home team, away team, and fixture time identify one planned game within a 36-hour window. If more than one planned game is equally close, it is not reconciled by guesswork and follows the normal Livescore upsert path.
+When a Livescore candidate has a confident competition and team mapping, ingestion first checks for the same game from another source across its full status lifecycle. It reconciles only when the competition, home team, away team, and fixture time identify one game within a 36-hour window. This lets a result reuse an official row that was already finalized before Livescore observed it, while preserving an existing completed official result from a stale or conflicting current-results update. If more than one game is equally close, it is not reconciled by guesswork and follows the review path.
 
 This allows daily Livescore results to complete planned FIBA fixtures without creating a second row. The existing canonical source, source game ID, and source provenance are preserved; Livescore supplies the current score and status. Games with no safe planned match remain Livescore rows, subject to the normal competition/team review rules.
 

@@ -219,7 +219,7 @@ public static class CountryCodeCatalog
     private static readonly IReadOnlySet<string> HistoricalCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         // England is a constituent nation code, not a synonym for the United Kingdom.
-        "ANT", "CIS", "CSK", "CSP", "DDR", "ENG", "FRG", "FRY", "GDR", "SCG", "TCH", "UAR", "URS", "YUG", "ZAI", "ZAR"
+        "ANT", "CIS", "CSK", "CSP", "DDR", "ENG", "FRG", "FRY", "GDR", "SCG", "SCO", "TCH", "UAR", "URS", "WAL", "YUG", "ZAI", "ZAR"
     };
 
     private static readonly IReadOnlyDictionary<string, string> DisplayNames =
@@ -232,15 +232,20 @@ public static class CountryCodeCatalog
             ["GB"] = "United Kingdom",
             ["US"] = "United States",
             ["XK"] = "Kosovo",
+            ["ANT"] = "Netherlands Antilles",
             ["CIS"] = "Commonwealth of Independent States",
+            ["CSK"] = "Czechoslovakia",
             ["DDR"] = "East Germany",
             ["FRG"] = "West Germany",
+            ["FRY"] = "Serbia and Montenegro",
             ["GDR"] = "East Germany",
             ["SCG"] = "Serbia and Montenegro",
+            ["SCO"] = "Scotland",
             ["SMN"] = "Serbia and Montenegro",
             ["TCH"] = "Czechoslovakia",
             ["UAR"] = "United Arab Republic",
             ["URS"] = "Soviet Union",
+            ["WAL"] = "Wales",
             ["YUG"] = "Yugoslavia",
             ["ZAI"] = "Zaire",
             ["ZAR"] = "Zaire"
@@ -295,25 +300,33 @@ public static class CountryCodeCatalog
     }
 
     public static string DisplayName(string? countryCode)
+        => TryGetDisplayName(countryCode, out var displayName) ? displayName : string.Empty;
+
+    public static bool TryGetDisplayName(string? countryCode, out string displayName)
     {
+        displayName = string.Empty;
         var normalized = Normalize(countryCode);
-        if (string.IsNullOrWhiteSpace(normalized))
+        if (string.IsNullOrWhiteSpace(normalized) || normalized is "UNK" or "INT" or "EUR" or "AME" or "OCE" or "WOR")
         {
-            return string.Empty;
+            return false;
         }
 
-        if (DisplayNames.TryGetValue(normalized, out var displayName))
+        if (DisplayNames.TryGetValue(normalized, out var knownDisplayName))
         {
-            return displayName;
+            displayName = knownDisplayName;
+            return true;
         }
 
         try
         {
-            return new RegionInfo(normalized).EnglishName;
+            displayName = new RegionInfo(normalized).EnglishName;
+            return !string.IsNullOrWhiteSpace(displayName) &&
+                   !string.Equals(displayName, normalized, StringComparison.OrdinalIgnoreCase);
         }
         catch (ArgumentException)
         {
-            return normalized;
+            displayName = string.Empty;
+            return false;
         }
     }
 

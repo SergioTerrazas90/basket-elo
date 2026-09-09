@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
   <title id="title">BasketElo — transparent basketball ELO rankings</title>
-  <desc id="description">BasketElo turns basketball results into transparent, explorable power rankings.</desc>
+  <desc id="description">BasketElo turns basketball results into transparent, explorable ELO rankings.</desc>
   <rect width="1200" height="630" fill="#f5f4ef"/>
   <circle cx="1040" cy="-20" r="330" fill="#e9782d" opacity=".16"/>
   <circle cx="1180" cy="500" r="260" fill="#0f4b52" opacity=".1"/>

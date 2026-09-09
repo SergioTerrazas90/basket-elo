@@ -602,7 +602,7 @@ public class EloController(
             }
         }
 
-        foreach (var poolKey in new[] { EloPoolKeys.Default, EloPoolKeys.EuropeClubs })
+        foreach (var poolKey in new[] { EloPoolKeys.Default, EloPoolKeys.EuropeClubs, EloPoolKeys.NationalTeams })
         {
             var rankingResult = await GetRankings(
                 rulesetVersion: null,
@@ -828,7 +828,11 @@ public class EloController(
                 selectedRuleset,
                 teamScope,
                 archiveRows,
-                await BuildRankingFilterOptionsAsync(poolKey, selectedRuleset, cancellationToken),
+                await BuildRankingFilterOptionsForTeamsAsync(
+                    poolKey,
+                    selectedRuleset,
+                    globalArchiveRatings.Select(rating => rating.CountryCode),
+                    cancellationToken),
                 new EloRankingSummary(
                     globalArchiveRatings.Count,
                     archiveFilteredCount,
@@ -968,7 +972,11 @@ public class EloController(
             selectedRuleset,
             teamScope,
             rows,
-            await BuildRankingFilterOptionsAsync(poolKey, selectedRuleset, cancellationToken),
+            await BuildRankingFilterOptionsForTeamsAsync(
+                poolKey,
+                selectedRuleset,
+                globalRatings.Select(rating => rating.CountryCode),
+                cancellationToken),
             new EloRankingSummary(
                 globalRatings.Count,
                 filteredCount,
@@ -2156,7 +2164,7 @@ public class EloController(
         int minimumGames,
         string? team,
         string teamScope)
-        => string.IsNullOrWhiteSpace(rulesetVersion) &&
+        => ResolveRulesetOrDefault(rulesetVersion) == EloRulesetVersions.Default &&
             IsDefaultResponseCachePool(ResolvePoolOrDefault(pool)) &&
             string.IsNullOrWhiteSpace(country) &&
             string.IsNullOrWhiteSpace(competition) &&
@@ -2170,7 +2178,7 @@ public class EloController(
             teamScope == EloTeamScopes.Current;
 
     private static bool IsDefaultResponseCachePool(string? poolKey)
-        => poolKey is EloPoolKeys.Default or EloPoolKeys.EuropeClubs;
+        => poolKey is EloPoolKeys.Default or EloPoolKeys.EuropeClubs or EloPoolKeys.NationalTeams;
 
     private static bool UsesTeamScope(string poolKey)
         => poolKey is EloPoolKeys.Nba or EloPoolKeys.EuropeClubs or EloPoolKeys.NationalTeams;
@@ -2874,6 +2882,23 @@ public class EloController(
             }) ?? new EloRankingFilterOptions([], [], []);
     }
 
+    private async Task<EloRankingFilterOptions> BuildRankingFilterOptionsForTeamsAsync(
+        string poolKey,
+        string rulesetVersion,
+        IEnumerable<string?> countryCodes,
+        CancellationToken cancellationToken)
+    {
+        var options = await BuildRankingFilterOptionsAsync(poolKey, rulesetVersion, cancellationToken);
+        var countriesWithEligibleTeams = countryCodes
+            .Select(DisplayCountryFromCode)
+            .Where(country => !string.IsNullOrWhiteSpace(country))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(country => country, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return options with { Countries = countriesWithEligibleTeams };
+    }
+
     private async Task<Dictionary<Guid, PeakRatingSnapshot>> GetPeakRatingsAsync(
         string poolKey,
         string rulesetVersion,
@@ -3251,7 +3276,7 @@ public class EloController(
 
         return CountryNames.TryGetValue(normalized, out countryName)
             ? countryName
-            : countryCode.Trim();
+            : CountryCodeCatalog.DisplayName(normalized);
     }
 
     private static string? CompetitionContext(string name, string? countryCode)
@@ -3262,10 +3287,12 @@ public class EloController(
         if (normalizedCountry is "AME") return "FIBA · Americas";
         if (normalizedCountry is "OCE") return "FIBA · Oceania";
         if (normalizedCountry is "WOR") return normalizedName.Contains("olympic") ? "Olympics · Global" : "FIBA · Global";
+        if (normalizedCountry is "EUR") return "Europe";
 
         if (!string.IsNullOrWhiteSpace(countryCode))
         {
-            return DisplayCountryFromCode(countryCode);
+            var countryName = DisplayCountryFromCode(countryCode);
+            return string.IsNullOrWhiteSpace(countryName) ? "International / regional" : countryName;
         }
 
         if (normalizedName.StartsWith("fiba afro") || normalizedName.Contains("afrobasket")) return "FIBA · Africa";

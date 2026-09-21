@@ -1931,13 +1931,22 @@ public class EloController(
             historyRows.Where(x => sampledIds.Contains(x.GameId)).ToList(),
             rankChanges,
             cancellationToken);
+        var historicalFormRows = await GetTeamFormRowsAsync(
+            teamId,
+            poolKey,
+            selectedRuleset,
+            cancellationToken,
+            take: null,
+            fromUtc,
+            toUtc);
 
         return Ok(new EloTeamHistoryGamesResponse(
             teamId,
             historyRows.Count,
             games.Count,
             games.Count < historyRows.Count,
-            games));
+            games,
+            BuildHistoricalHighlights(historicalFormRows)));
     }
 
     [HttpPost("rebuilds")]
@@ -2194,37 +2203,7 @@ public class EloController(
             return cachedTeamIds;
         }
 
-        var latestGameUtc = await dbContext.RatingHistories
-            .AsNoTracking()
-            .Where(x =>
-                x.EloPoolKey == EloPoolKeys.EuropeClubs &&
-                (string.IsNullOrWhiteSpace(competitionName) || x.Game.Competition.Name == competitionName))
-            .Select(x => (DateTime?)x.GameDateTimeUtc)
-            .MaxAsync(cancellationToken);
-
-        if (latestGameUtc is null)
-        {
-            var fallbackTeamIds = await GetCurrentEuropeanTeamIdsFromGamesAsync(competitionName, cancellationToken);
-            CacheCurrentEuropeanTeamIds(competitionName, fallbackTeamIds);
-            return fallbackTeamIds;
-        }
-
-        var seasonStartYear = latestGameUtc.Value.Month >= 7
-            ? latestGameUtc.Value.Year
-            : latestGameUtc.Value.Year - 1;
-        var latestSeasonStartUtc = new DateTime(seasonStartYear, 7, 1, 0, 0, 0, DateTimeKind.Utc);
-        var latestSeasonTeamIds = await dbContext.RatingHistories
-            .AsNoTracking()
-            .Where(x =>
-                x.EloPoolKey == EloPoolKeys.EuropeClubs &&
-                (string.IsNullOrWhiteSpace(competitionName) || x.Game.Competition.Name == competitionName) &&
-                x.GameDateTimeUtc >= latestSeasonStartUtc &&
-                x.GameDateTimeUtc <= latestGameUtc.Value)
-            .Select(x => x.TeamId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        var teamIds = latestSeasonTeamIds.ToHashSet();
+        var teamIds = await CurrentEuropeanTeamResolver.ResolveAsync(dbContext, competitionName, cancellationToken);
         CacheCurrentEuropeanTeamIds(competitionName, teamIds);
         return teamIds;
     }
@@ -2244,46 +2223,6 @@ public class EloController(
                 AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
                 SlidingExpiration = TimeSpan.FromMinutes(5)
             });
-    }
-
-    private async Task<HashSet<Guid>> GetCurrentEuropeanTeamIdsFromGamesAsync(
-        string? competitionName,
-        CancellationToken cancellationToken)
-    {
-        var latestGameUtc = await dbContext.Games
-            .AsNoTracking()
-            .Where(x =>
-                x.Competition.EloPoolKey == EloPoolKeys.EuropeClubs &&
-                (string.IsNullOrWhiteSpace(competitionName) || x.Competition.Name == competitionName))
-            .Select(x => (DateTime?)x.GameDateTimeUtc)
-            .MaxAsync(cancellationToken);
-
-        if (latestGameUtc is null)
-        {
-            return [];
-        }
-
-        var seasonStartYear = latestGameUtc.Value.Month >= 7
-            ? latestGameUtc.Value.Year
-            : latestGameUtc.Value.Year - 1;
-        var latestSeasonStartUtc = new DateTime(seasonStartYear, 7, 1, 0, 0, 0, DateTimeKind.Utc);
-        var latestSeasonGames = dbContext.Games
-            .AsNoTracking()
-            .Where(x =>
-                x.Competition.EloPoolKey == EloPoolKeys.EuropeClubs &&
-                (string.IsNullOrWhiteSpace(competitionName) || x.Competition.Name == competitionName) &&
-                x.GameDateTimeUtc >= latestSeasonStartUtc &&
-                x.GameDateTimeUtc <= latestGameUtc.Value);
-        var homeTeamIds = await latestSeasonGames
-            .Select(x => x.HomeTeamId)
-            .ToListAsync(cancellationToken);
-        var awayTeamIds = await latestSeasonGames
-            .Select(x => x.AwayTeamId)
-            .ToListAsync(cancellationToken);
-
-        return homeTeamIds
-            .Concat(awayTeamIds)
-            .ToHashSet();
     }
 
     private async Task<HashSet<Guid>> GetCurrentNationalTeamIdsAsync(
@@ -2480,12 +2419,27 @@ public class EloController(
         string poolKey,
         string rulesetVersion,
         CancellationToken cancellationToken,
-        int? take = 10)
+        int? take = 10,
+        DateTime? fromUtc = null,
+        DateTime? toUtc = null)
     {
         IQueryable<RatingHistory> query = dbContext.RatingHistories
             .AsNoTracking()
             .Where(x => x.TeamId == teamId && x.EloPoolKey == poolKey && x.RulesetVersion == rulesetVersion &&
-                x.GameDateTimeUtc <= DateTime.UtcNow)
+                x.GameDateTimeUtc <= DateTime.UtcNow);
+        if (fromUtc.HasValue)
+        {
+            var startUtc = DateTime.SpecifyKind(fromUtc.Value.Date, DateTimeKind.Utc);
+            query = query.Where(x => x.GameDateTimeUtc >= startUtc);
+        }
+
+        if (toUtc.HasValue)
+        {
+            var endUtc = DateTime.SpecifyKind(toUtc.Value.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1);
+            query = query.Where(x => x.GameDateTimeUtc <= endUtc);
+        }
+
+        query = query
             .OrderByDescending(x => x.GameDateTimeUtc)
             .ThenByDescending(x => x.Id);
         if (take.HasValue)

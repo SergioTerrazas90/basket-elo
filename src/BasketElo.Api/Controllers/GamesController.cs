@@ -2,6 +2,7 @@ using BasketElo.Api.Elo;
 using BasketElo.Domain.Elo;
 using BasketElo.Domain.Games;
 using BasketElo.Infrastructure.Backfill;
+using BasketElo.Infrastructure.Elo;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Persistence;
 using BasketElo.Infrastructure.Teams;
@@ -199,37 +200,7 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
             return cachedTeamIds;
         }
 
-        var latestGameUtc = await dbContext.RatingHistories
-            .AsNoTracking()
-            .Where(x =>
-                x.EloPoolKey == EloPoolKeys.EuropeClubs &&
-                (string.IsNullOrWhiteSpace(competitionName) || x.Game.Competition.Name == competitionName))
-            .Select(x => (DateTime?)x.GameDateTimeUtc)
-            .MaxAsync(cancellationToken);
-
-        if (latestGameUtc is null)
-        {
-            var fallbackTeamIds = await GetCurrentEuropeanTeamIdsFromGamesAsync(competitionName, cancellationToken);
-            CacheCurrentEuropeanTeamIds(competitionName, fallbackTeamIds);
-            return fallbackTeamIds;
-        }
-
-        var seasonStartYear = latestGameUtc.Value.Month >= 7
-            ? latestGameUtc.Value.Year
-            : latestGameUtc.Value.Year - 1;
-        var latestSeasonStartUtc = new DateTime(seasonStartYear, 7, 1, 0, 0, 0, DateTimeKind.Utc);
-        var teamIds = await dbContext.RatingHistories
-            .AsNoTracking()
-            .Where(x =>
-                x.EloPoolKey == EloPoolKeys.EuropeClubs &&
-                (string.IsNullOrWhiteSpace(competitionName) || x.Game.Competition.Name == competitionName) &&
-                x.GameDateTimeUtc >= latestSeasonStartUtc &&
-                x.GameDateTimeUtc <= latestGameUtc.Value)
-            .Select(x => x.TeamId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
-        var currentTeamIds = teamIds.ToHashSet();
+        var currentTeamIds = await CurrentEuropeanTeamResolver.ResolveAsync(dbContext, competitionName, cancellationToken);
         CacheCurrentEuropeanTeamIds(competitionName, currentTeamIds);
         return currentTeamIds;
     }
@@ -249,39 +220,6 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
                 AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
                 SlidingExpiration = TimeSpan.FromMinutes(5)
             });
-    }
-
-    private async Task<HashSet<Guid>> GetCurrentEuropeanTeamIdsFromGamesAsync(
-        string? competitionName,
-        CancellationToken cancellationToken)
-    {
-        var latestGameUtc = await dbContext.Games
-            .AsNoTracking()
-            .Where(x =>
-                x.Competition.EloPoolKey == EloPoolKeys.EuropeClubs &&
-                (string.IsNullOrWhiteSpace(competitionName) || x.Competition.Name == competitionName))
-            .Select(x => (DateTime?)x.GameDateTimeUtc)
-            .MaxAsync(cancellationToken);
-
-        if (latestGameUtc is null)
-        {
-            return [];
-        }
-
-        var seasonStartYear = latestGameUtc.Value.Month >= 7
-            ? latestGameUtc.Value.Year
-            : latestGameUtc.Value.Year - 1;
-        var latestSeasonStartUtc = new DateTime(seasonStartYear, 7, 1, 0, 0, 0, DateTimeKind.Utc);
-        var latestSeasonGames = dbContext.Games
-            .AsNoTracking()
-            .Where(x =>
-                x.Competition.EloPoolKey == EloPoolKeys.EuropeClubs &&
-                (string.IsNullOrWhiteSpace(competitionName) || x.Competition.Name == competitionName) &&
-                x.GameDateTimeUtc >= latestSeasonStartUtc &&
-                x.GameDateTimeUtc <= latestGameUtc.Value);
-        var homeTeamIds = await latestSeasonGames.Select(x => x.HomeTeamId).ToListAsync(cancellationToken);
-        var awayTeamIds = await latestSeasonGames.Select(x => x.AwayTeamId).ToListAsync(cancellationToken);
-        return homeTeamIds.Concat(awayTeamIds).ToHashSet();
     }
 
     private async Task<HashSet<Guid>> GetCurrentNationalTeamIdsAsync(CancellationToken cancellationToken)
@@ -652,7 +590,12 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
                   x.Status.ToLower().Contains("canceled") ||
                   x.Status.ToLower().Contains("postponed") ||
                   x.Status.ToLower().Contains("abandoned")) &&
-                (!x.EloEligible ||
+                ((!x.EloEligible &&
+                  ((!string.IsNullOrEmpty(x.EloExclusionReason)) ||
+                   x.Status.ToLower().Contains("finished") ||
+                   x.Status.ToLower().Contains("after overtime") ||
+                   x.Status.ToLower().Contains("after over time") ||
+                   x.Status.ToLower().Contains("final"))) ||
                  ((x.Status.ToLower().Contains("finished") || x.Status.ToLower().Contains("after overtime") || x.Status.ToLower().Contains("after over time") || x.Status.ToLower().Contains("final")) && (!x.HomeScore.HasValue || !x.AwayScore.HasValue)) ||
                  (!(x.Status.ToLower().Contains("finished") || x.Status.ToLower().Contains("after overtime") || x.Status.ToLower().Contains("after over time") || x.Status.ToLower().Contains("final")) && x.GameDateTimeUtc < cutoff))),
             "excluded_from_elo" => query.Where(x => !x.EloEligible),
@@ -679,19 +622,20 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
             return reasons;
         }
 
-        if (!eloEligible)
+        var finished = IsFinishedStatus(status);
+        if (!eloEligible && (finished || !string.IsNullOrWhiteSpace(eloExclusionReason)))
         {
             reasons.Add(string.IsNullOrWhiteSpace(eloExclusionReason)
                 ? "Excluded from ELO"
                 : $"Excluded from ELO: {eloExclusionReason}");
         }
 
-        if (IsFinishedStatus(status) && (!homeScore.HasValue || !awayScore.HasValue))
+        if (finished && (!homeScore.HasValue || !awayScore.HasValue))
         {
             reasons.Add("Finished game is missing a score");
         }
 
-        if (!IsFinishedStatus(status) && gameDateTimeUtc < DateTime.UtcNow.AddDays(-2))
+        if (!finished && gameDateTimeUtc < DateTime.UtcNow.AddDays(-2))
         {
             reasons.Add("Game date is more than two days old but status is not finished");
         }

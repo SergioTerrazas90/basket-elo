@@ -246,8 +246,31 @@
 }
 
 .nav-admin-popover {
-    max-height: min(72vh, 32rem);
+    width: min(23rem, calc(100vw - 2rem));
+    max-height: min(78vh, 42rem);
     overflow-y: auto;
+}
+
+.nav-admin-group-label {
+    margin: 0.55rem 0.7rem 0.15rem;
+    color: var(--color-subtle);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+
+.nav-admin-group-label:first-child {
+    margin-top: 0.25rem;
+}
+
+.nav-admin-popover ::deep .nav-link > span {
+    line-height: 1.2;
+}
+
+.nav-admin-popover ::deep .nav-link small {
+    line-height: 1.35;
 }
 
 .nav-account {

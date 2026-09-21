@@ -1122,17 +1122,14 @@
     min-width: 980px;
 }
 
-.fixture-highlights {
+.fixture-recommendations {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-3);
+    gap: var(--space-5);
 }
 
-.fixture-highlight-card {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: var(--space-2);
+.fixture-recommendation-group {
+    display: grid;
+    gap: var(--space-3);
     padding: var(--space-4);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
@@ -1140,22 +1137,66 @@
     box-shadow: var(--shadow-sm);
 }
 
-.fixture-highlight-heading {
+.fixture-recommendation-heading {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: var(--space-2);
+    gap: var(--space-3);
 }
 
-.fixture-highlight-card h3 {
-    margin: 0;
-    font-size: 1.05rem;
+.fixture-recommendation-heading h3 {
+    margin: 0.15rem 0 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.2rem, 2vw, 1.55rem);
 }
 
-.fixture-highlight-card > p {
-    margin: 0;
+.fixture-recommendation-heading p {
+    max-width: 54rem;
+    margin: 0.35rem 0 0;
     color: var(--color-muted);
-    font-size: 0.78rem;
+    font-size: 0.82rem;
+}
+
+.fixture-recommendation-kicker {
+    color: var(--color-accent-dark);
+    font-size: 0.7rem;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.fixture-recommendation-games {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+    gap: var(--space-3);
+}
+
+.fixture-recommendation-game {
+    position: relative;
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 0.42rem;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+}
+
+.fixture-recommendation-rank {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
+    display: grid;
+    width: 1.55rem;
+    height: 1.55rem;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--color-brand-dark);
+    color: var(--color-inverse);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 850;
 }
 
 .fixture-highlight-count {
@@ -1171,16 +1212,26 @@
     font-weight: 850;
 }
 
-.fixture-highlight-games {
-    display: grid;
-    gap: var(--space-2);
+.fixture-recommendation-reason {
+    padding-right: 2rem;
+    color: var(--color-brand-dark);
+    font-size: 0.72rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
 }
 
-.fixture-highlight-game {
-    display: grid;
-    gap: 0.28rem;
-    padding-top: var(--space-2);
-    border-top: 1px solid var(--color-border);
+.fixture-recommendation-empty,
+.fixture-recommendation-fallback {
+    margin: 0;
+    padding: var(--space-3);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--color-surface-muted) 72%, transparent);
+    color: var(--color-muted);
+    font-size: 0.82rem;
+}
+
+.fixture-recommendation-empty {
+    border-left: 3px solid var(--color-accent);
 }
 
 .fixture-game-date,
@@ -2282,7 +2333,11 @@
         max-width: none;
     }
 
-    .fixture-highlights {
+    .fixture-recommendation-group {
+        padding: var(--space-3);
+    }
+
+    .fixture-recommendation-games {
         grid-template-columns: 1fr;
     }
 

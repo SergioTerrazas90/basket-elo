@@ -46,6 +46,38 @@ public class GamesControllerReviewTests
         Assert.All(response.Games, game => Assert.True(game.NeedsReview));
     }
 
+    [Fact]
+    public async Task NeedsReviewDoesNotFlagOrdinaryUpcomingGamesThatAreNotYetEloEligible()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+
+        var competition = new Competition { Id = Guid.NewGuid(), Name = "League", CountryCode = "ES" };
+        var season = new Season { Id = Guid.NewGuid(), CompetitionId = competition.Id, Competition = competition, Label = "2026-27" };
+        var home = new Team { Id = Guid.NewGuid(), CanonicalName = "Home", CountryCode = "ES" };
+        var away = new Team { Id = Guid.NewGuid(), CanonicalName = "Away", CountryCode = "ES" };
+        dbContext.AddRange(competition, season, home, away);
+
+        var futureDate = DateTime.UtcNow.AddDays(3);
+        dbContext.Games.AddRange(
+            CreateGame("ordinary-scheduled", "scheduled", false, futureDate, competition, season, home, away),
+            CreateGame("ordinary-not-started", "not started", false, futureDate, competition, season, home, away),
+            CreateGame("explicit-review", "scheduled", false, futureDate, competition, season, home, away, "tournament_cycle_confirmation_required"),
+            CreateGame("finished-excluded", "finished", false, futureDate, competition, season, home, away));
+        await dbContext.SaveChangesAsync();
+
+        var controller = new GamesController(dbContext);
+        var result = await controller.GetGames(
+            null, null, null, null, null, null, null, null, null, null, "needs_review", null, null, 1, 50, CancellationToken.None);
+        var response = Assert.IsType<OkObjectResult>(result.Result).Value as GameBrowseResponse;
+
+        Assert.NotNull(response);
+        Assert.Equal(new[] { "explicit-review", "finished-excluded" }, response!.Games.Select(x => x.SourceGameId).OrderBy(x => x));
+        Assert.All(response.Games, game => Assert.True(game.NeedsReview));
+    }
+
     private static Game CreateGame(
         string sourceGameId,
         string status,
@@ -54,7 +86,8 @@ public class GamesControllerReviewTests
         Competition competition,
         Season season,
         Team home,
-        Team away)
+        Team away,
+        string? eloExclusionReason = null)
         => new()
         {
             Id = Guid.NewGuid(),
@@ -71,6 +104,6 @@ public class GamesControllerReviewTests
             GameDateTimeUtc = dateUtc,
             Status = status,
             EloEligible = eloEligible,
-            EloExclusionReason = eloEligible ? null : "manual_result_not_eligible"
+            EloExclusionReason = eloEligible ? null : eloExclusionReason
         };
 }

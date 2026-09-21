@@ -12,13 +12,14 @@
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject IHttpContextAccessor HttpContextAccessor
+@inject ILogger<TeamDetail> Logger
 
 <SeoHead Title="@TeamSeoTitle"
          Description="@TeamSeoDescription"
          CanonicalPath="@TeamCanonicalPath"
          EnglishAlternatePath="@TeamEnglishAlternatePath"
          SpanishAlternatePath="@TeamSpanishAlternatePath"
-         NoIndex="@(!string.IsNullOrWhiteSpace(errorMessage))"
+         NoIndex="@teamNotFound"
          SchemaType="ProfilePage"
          SocialImageAlt="@TeamSocialImageAlt" />
 
@@ -148,63 +149,6 @@
                     }
                 </div>
 
-                @if (team.HistoricalHighlights is not null)
-                {
-                    <div class="historical-highlights">
-                        <div>
-                            <h3>@T["HistoryHighlights"]</h3>
-                            <p>@T["HistoryHighlightsDescription", team.HistoricalHighlights.GamesAvailable]</p>
-                        </div>
-                        <div class="historical-highlights-grid">
-                            <div>
-                                <span>@T["BestWins"]</span>
-                                @if (team.HistoricalHighlights.BestWins.Count == 0)
-                                {
-                                    <strong class="muted-cell">@T["NoWins"]</strong>
-                                }
-                                else
-                                {
-                                    @foreach (var win in team.HistoricalHighlights.BestWins)
-                                    {
-                                        <div class="historical-highlight-row">
-                                            <span>@FormatHistoricalHighlightGame(win)</span>
-                                            <button type="button"
-                                                    class="history-highlight-elo @MovementClass(win.EloDelta)"
-                                                    @onclick="() => LoadExplanationAsync(win.GameId)"
-                                                    disabled="@IsExplanationLoading(win.GameId)"
-                                                    title='@T["ExplainThisGame"]'>
-                                                @(IsExplanationLoading(win.GameId) ? T["LoadingShort"] : FormatMovement(win.EloDelta))
-                                            </button>
-                                        </div>
-                                    }
-                                }
-                            </div>
-                            <div>
-                                <span>@T["WorstLosses"]</span>
-                                @if (team.HistoricalHighlights.WorstLosses.Count == 0)
-                                {
-                                    <strong class="muted-cell">@T["NoLosses"]</strong>
-                                }
-                                else
-                                {
-                                    @foreach (var loss in team.HistoricalHighlights.WorstLosses)
-                                    {
-                                        <div class="historical-highlight-row">
-                                            <span>@FormatHistoricalHighlightGame(loss)</span>
-                                            <button type="button"
-                                                    class="history-highlight-elo @MovementClass(loss.EloDelta)"
-                                                    @onclick="() => LoadExplanationAsync(loss.GameId)"
-                                                    disabled="@IsExplanationLoading(loss.GameId)"
-                                                    title='@T["ExplainThisGame"]'>
-                                                @(IsExplanationLoading(loss.GameId) ? T["LoadingShort"] : FormatMovement(loss.EloDelta))
-                                            </button>
-                                        </div>
-                                    }
-                                }
-                            </div>
-                        </div>
-                    </div>
-                }
             </section>
         }
 
@@ -261,6 +205,68 @@
                                            FullRangeRequested="@RestoreFullTeamHistoryAsync"
                                            HighlightedGameId="@highlightedGameId"
                                            PointHoverChanged="@HandleChartPointHoverAsync" />
+                    }
+                </div>
+
+                <div class="historical-highlights" aria-live="polite" aria-busy="@isTeamHistoryRefining">
+                    <div>
+                        <h3>@T["HistoryHighlights"]</h3>
+                        <p>@HistoryHighlightsContextLabel()</p>
+                    </div>
+                    @if (team.HistoricalHighlights is null || team.HistoricalHighlights.GamesAvailable == 0)
+                    {
+                        <div class="historical-highlights-empty">@T["NoHistoryHighlightsInRange"]</div>
+                    }
+                    else
+                    {
+                        <div class="historical-highlights-grid">
+                            <div>
+                                <span>@T["BestWins"]</span>
+                                @if (team.HistoricalHighlights.BestWins.Count == 0)
+                                {
+                                    <strong class="muted-cell">@T["NoWins"]</strong>
+                                }
+                                else
+                                {
+                                    @foreach (var win in team.HistoricalHighlights.BestWins)
+                                    {
+                                        <div class="historical-highlight-row">
+                                            <span>@FormatHistoricalHighlightGame(win)</span>
+                                            <button type="button"
+                                                    class="history-highlight-elo @MovementClass(win.EloDelta)"
+                                                    @onclick="() => LoadExplanationAsync(win.GameId)"
+                                                    disabled="@IsExplanationLoading(win.GameId)"
+                                                    title='@T["ExplainThisGame"]'>
+                                                @(IsExplanationLoading(win.GameId) ? T["LoadingShort"] : FormatMovement(win.EloDelta))
+                                            </button>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                            <div>
+                                <span>@T["WorstLosses"]</span>
+                                @if (team.HistoricalHighlights.WorstLosses.Count == 0)
+                                {
+                                    <strong class="muted-cell">@T["NoLosses"]</strong>
+                                }
+                                else
+                                {
+                                    @foreach (var loss in team.HistoricalHighlights.WorstLosses)
+                                    {
+                                        <div class="historical-highlight-row">
+                                            <span>@FormatHistoricalHighlightGame(loss)</span>
+                                            <button type="button"
+                                                    class="history-highlight-elo @MovementClass(loss.EloDelta)"
+                                                    @onclick="() => LoadExplanationAsync(loss.GameId)"
+                                                    disabled="@IsExplanationLoading(loss.GameId)"
+                                                    title='@T["ExplainThisGame"]'>
+                                                @(IsExplanationLoading(loss.GameId) ? T["LoadingShort"] : FormatMovement(loss.EloDelta))
+                                            </button>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        </div>
                     }
                 </div>
             </section>
@@ -379,6 +385,7 @@
     private EloTeamDetailResponse? team;
     private bool isBusy;
     private bool isAdmin;
+    private bool teamNotFound;
     private string? errorMessage;
     private Guid? selectedExplanationGameId;
     private EloGameExplanationResponse? selectedExplanation;
@@ -389,6 +396,7 @@
     private IReadOnlyList<EloChartSeries> teamHistoryChartSeries = [];
     private IReadOnlyList<EloChartSeries> fullTeamHistoryChartSeries = [];
     private IReadOnlyCollection<EloTeamGameDto> fullTeamHistoryGames = [];
+    private EloTeamHistoricalHighlights? fullTeamHistoricalHighlights;
     private int fullTeamHistoryTotalGames;
     private bool fullTeamHistoryWasSampled;
     private DateTime? teamHistoryVisibleFromUtc;
@@ -399,19 +407,33 @@
     private readonly Dictionary<string, EloTeamHistoryGamesResponse> teamHistoryGamesRangeCache = new(StringComparer.Ordinal);
 
     private string TeamSeoTitle
-        => team is null
+        => string.IsNullOrWhiteSpace(SeoTeamName)
             ? T["TeamSeoFallbackTitle"]
-            : T["TeamSeoTitle", team.TeamName];
+            : T["TeamSeoTitle", SeoTeamName];
 
     private string TeamSeoDescription
-        => team is null
+        => string.IsNullOrWhiteSpace(SeoTeamName)
             ? T["TeamSeoFallbackDescription"]
-            : T["TeamSeoDescription", TeamPoolDisplayName(team), team.TeamName];
+            : T["TeamSeoDescription", SeoPoolDisplayName, SeoTeamName];
 
     private string TeamSocialImageAlt
-        => team is null
+        => string.IsNullOrWhiteSpace(SeoTeamName)
             ? T["TeamSocialImageFallbackAlt"]
-            : T["TeamSocialImageAlt", team.TeamName];
+            : T["TeamSocialImageAlt", SeoTeamName];
+
+    private string SeoTeamName
+        => team?.TeamName ?? TeamNameFromSlug(TeamSlug);
+
+    private string SeoPoolDisplayName
+        => team is not null
+            ? TeamPoolDisplayName(team)
+            : (Pool?.Trim().ToLowerInvariant()) switch
+            {
+                EloPoolKeys.Nba => "NBA",
+                EloPoolKeys.EuropeClubs => T["EuropeClubs"],
+                EloPoolKeys.NationalTeams => T["NationalTeams"],
+                _ => T["TeamSeoFallbackPool"]
+            };
 
     private string TeamCanonicalPath
         => BuildTeamPath(IsSpanishRoute);
@@ -449,6 +471,7 @@
     {
         isBusy = true;
         errorMessage = null;
+        teamNotFound = false;
         team = null;
         highlightedGameId = null;
         isChartExpanded = false;
@@ -474,6 +497,7 @@
             else
             {
                 fullTeamHistoryGames = team.RecentGames.ToList();
+                fullTeamHistoricalHighlights = team.HistoricalHighlights;
                 fullTeamHistoryTotalGames = team.RecentGamesTotalCount;
                 fullTeamHistoryWasSampled = team.RecentGamesWasSampled;
                 teamHistoryVisibleFromUtc = null;
@@ -485,11 +509,13 @@
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
+            teamNotFound = true;
             errorMessage = T["TeamProfileNotFound"];
             SetNotFoundStatus();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Could not load team profile {TeamId} for pool {Pool} and ruleset {Ruleset}.", TeamId, Pool, Ruleset);
             errorMessage = T["TeamProfileLoadError"];
         }
         finally
@@ -730,14 +756,15 @@
                 RecentGamesTotalCount = refinedGames.TotalGames,
                 RecentGamesTotalPages = 1,
                 RecentGamesSampledCount = refinedGames.SampledGames,
-                RecentGamesWasSampled = refinedGames.WasSampled
+                RecentGamesWasSampled = refinedGames.WasSampled,
+                HistoricalHighlights = refinedGames.HistoricalHighlights
             };
             if (refinedSeries.Count > 0 && refinedSeries[0].Points.Count >= 2)
             {
                 teamHistoryChartSeries = MergeTeamHistorySeries(teamHistoryChartSeries, refinedSeries, fromUtc, toUtc);
-                teamHistoryVisibleFromUtc = fromUtc;
-                teamHistoryVisibleToUtc = toUtc;
             }
+            teamHistoryVisibleFromUtc = fromUtc;
+            teamHistoryVisibleToUtc = toUtc;
             errorMessage = null;
             await InvokeAsync(StateHasChanged);
         }
@@ -785,6 +812,17 @@
             .SelectMany(part => part.Split('-', StringSplitOptions.RemoveEmptyEntries)));
     }
 
+    private static string TeamNameFromSlug(string? slug)
+    {
+        if (string.IsNullOrWhiteSpace(slug))
+        {
+            return string.Empty;
+        }
+
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(
+            slug.Replace('-', ' ').Replace('_', ' ').Trim().ToLowerInvariant());
+    }
+
     private Task RestoreFullTeamHistoryAsync()
     {
         CancelTeamHistoryRefinement();
@@ -803,7 +841,8 @@
                 RecentGamesTotalCount = fullTeamHistoryTotalGames,
                 RecentGamesTotalPages = 1,
                 RecentGamesSampledCount = fullTeamHistoryGames.Count,
-                RecentGamesWasSampled = fullTeamHistoryWasSampled
+                RecentGamesWasSampled = fullTeamHistoryWasSampled,
+                HistoricalHighlights = fullTeamHistoricalHighlights
             };
         }
         return Task.CompletedTask;
@@ -955,6 +994,21 @@
             : string.Empty;
 
         return $"{FormatDate(game.GameDateTimeUtc)} · {location} {game.Opponent}{score}";
+    }
+
+    private string HistoryHighlightsContextLabel()
+    {
+        var highlights = team?.HistoricalHighlights;
+        if (highlights is null || highlights.GamesAvailable == 0)
+        {
+            return teamHistoryVisibleFromUtc.HasValue && teamHistoryVisibleToUtc.HasValue
+                ? T["HistoryHighlightsEmptyRange", FormatDate(teamHistoryVisibleFromUtc), FormatDate(teamHistoryVisibleToUtc)]
+                : T["NoHistoryHighlights"];
+        }
+
+        return teamHistoryVisibleFromUtc.HasValue && teamHistoryVisibleToUtc.HasValue
+            ? T["HistoryHighlightsRangeDescription", highlights.GamesAvailable, FormatDate(teamHistoryVisibleFromUtc), FormatDate(teamHistoryVisibleToUtc)]
+            : T["HistoryHighlightsDescription", highlights.GamesAvailable];
     }
 
     private static string MovementClass(decimal? value)

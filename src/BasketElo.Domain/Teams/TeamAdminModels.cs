@@ -43,6 +43,12 @@ public sealed record TeamAdminDetail(
     TeamAdminOption? Predecessor,
     TeamAdminOption? Successor);
 
+public sealed record CreateTeamAdminRequest(
+    string CanonicalName,
+    string? CountryCode = null,
+    bool IsActive = true,
+    string? Description = null);
+
 public sealed record TeamAdminAlias(
     Guid Id,
     string Source,
@@ -86,3 +92,29 @@ public sealed record TeamAdminExtractAliasResponse(
     string Source,
     string SourceTeamId,
     int ExtractedAliasCount);
+
+public sealed record DuplicateTeamAliasGroupsResponse(
+    int GroupCount,
+    IReadOnlyList<DuplicateTeamAliasGroup> Groups);
+
+public sealed record DuplicateTeamAliasGroup(
+    string AliasName,
+    string CountryCode,
+    IReadOnlyList<DuplicateTeamAliasMember> Teams);
+
+public sealed record DuplicateTeamAliasMember(
+    Guid TeamId,
+    string CanonicalName,
+    IReadOnlyList<DuplicateTeamAliasDetail> Aliases);
+
+public sealed record DuplicateTeamAliasDetail(
+    Guid AliasId,
+    string AliasName,
+    string Source,
+    string SourceTeamId);
+
+public sealed record AcceptDuplicateTeamAliasGroupRequest(
+    string AliasName,
+    string CountryCode,
+    IReadOnlyList<Guid> TeamIds,
+    string? Note = null);

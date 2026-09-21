@@ -3,6 +3,7 @@ using BasketElo.Domain.Elo;
 using BasketElo.Domain.Entities;
 using BasketElo.Infrastructure.Identity;
 using BasketElo.Infrastructure.Jobs;
+using BasketElo.Infrastructure.Elo;
 using BasketElo.Infrastructure.Persistence;
 using BasketElo.Web.Auth;
 using BasketElo.Web.Billing;
@@ -252,6 +253,7 @@ app.Use(async (httpContext, next) =>
 app.UseAuthorization();
 app.MapHangfireDashboard("/admin/jobs", new DashboardOptions
 {
+    DashboardTitle = "BasketElo · ELO job monitor",
     Authorization = [new HangfireDashboardAuthorizationFilter()]
 });
 app.UseAntiforgery();
@@ -646,54 +648,7 @@ static string? ToSeasonSlug(string? season)
 static async Task<HashSet<Guid>> GetCurrentEuropeanTeamIdsAsync(
     BasketEloDbContext dbContext,
     CancellationToken cancellationToken)
-{
-    var latestRatedGameUtc = await dbContext.RatingHistories
-        .AsNoTracking()
-        .Where(history => history.EloPoolKey == EloPoolKeys.EuropeClubs)
-        .Select(history => (DateTime?)history.GameDateTimeUtc)
-        .MaxAsync(cancellationToken);
-
-    if (latestRatedGameUtc.HasValue)
-    {
-        var seasonStartYear = latestRatedGameUtc.Value.Month >= 7
-            ? latestRatedGameUtc.Value.Year
-            : latestRatedGameUtc.Value.Year - 1;
-        var seasonStartUtc = new DateTime(seasonStartYear, 7, 1, 0, 0, 0, DateTimeKind.Utc);
-
-        return (await dbContext.RatingHistories
-                .AsNoTracking()
-                .Where(history => history.EloPoolKey == EloPoolKeys.EuropeClubs &&
-                                  history.GameDateTimeUtc >= seasonStartUtc &&
-                                  history.GameDateTimeUtc <= latestRatedGameUtc.Value)
-                .Select(history => history.TeamId)
-                .Distinct()
-                .ToListAsync(cancellationToken))
-            .ToHashSet();
-    }
-
-    var latestGameUtc = await dbContext.Games
-        .AsNoTracking()
-        .Where(game => game.Competition.EloPoolKey == EloPoolKeys.EuropeClubs)
-        .Select(game => (DateTime?)game.GameDateTimeUtc)
-        .MaxAsync(cancellationToken);
-    if (!latestGameUtc.HasValue)
-    {
-        return [];
-    }
-
-    var fallbackSeasonStartYear = latestGameUtc.Value.Month >= 7
-        ? latestGameUtc.Value.Year
-        : latestGameUtc.Value.Year - 1;
-    var fallbackSeasonStartUtc = new DateTime(fallbackSeasonStartYear, 7, 1, 0, 0, 0, DateTimeKind.Utc);
-    var currentGames = dbContext.Games
-        .AsNoTracking()
-        .Where(game => game.Competition.EloPoolKey == EloPoolKeys.EuropeClubs &&
-                       game.GameDateTimeUtc >= fallbackSeasonStartUtc &&
-                       game.GameDateTimeUtc <= latestGameUtc.Value);
-    var homeTeamIds = await currentGames.Select(game => game.HomeTeamId).ToListAsync(cancellationToken);
-    var awayTeamIds = await currentGames.Select(game => game.AwayTeamId).ToListAsync(cancellationToken);
-    return homeTeamIds.Concat(awayTeamIds).ToHashSet();
-}
+    => await CurrentEuropeanTeamResolver.ResolveAsync(dbContext, null, cancellationToken);
 
 static bool IsRankingSitemapPath(string path)
     => path is "" or "nba-elo" or "acb-elo" or "euroleague-elo" or "european-basketball-rankings" or

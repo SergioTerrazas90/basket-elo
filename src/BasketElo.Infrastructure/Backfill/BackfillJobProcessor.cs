@@ -922,6 +922,39 @@ public class BackfillJobProcessor(
                 StringComparison.OrdinalIgnoreCase)
             ? NbaApiSportsCatalog.GetCanonicalName(sourceTeamId)
             : null;
+        var curatedSerbianClub = SerbianClubIdentityCatalog.Resolve(source, sourceTeamId, season);
+
+        // API-Sports reuses id 1066 for the original FMP Zeleznik through
+        // 2010-2011 and the unrelated Radnicki-lineage FMP from 2013-2014.
+        // A global TeamAlias cannot represent that temporal split, so resolve
+        // this source id by season before consulting the alias table.
+        if (curatedSerbianClub is not null)
+        {
+            var curatedTeam = await dbContext.Teams.FirstOrDefaultAsync(
+                x => x.CanonicalName == curatedSerbianClub.CanonicalName &&
+                    x.CountryCode == curatedSerbianClub.CountryCode,
+                cancellationToken);
+            if (curatedTeam is null)
+            {
+                curatedTeam = new Team
+                {
+                    Id = Guid.NewGuid(),
+                    CanonicalName = curatedSerbianClub.CanonicalName,
+                    CountryCode = curatedSerbianClub.CountryCode,
+                    IsActive = curatedSerbianClub.IsActive,
+                    CreatedAtUtc = DateTime.UtcNow
+                };
+                dbContext.Teams.Add(curatedTeam);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            else if (curatedTeam.IsActive != curatedSerbianClub.IsActive)
+            {
+                curatedTeam.IsActive = curatedSerbianClub.IsActive;
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            return curatedTeam;
+        }
 
         var alias = await dbContext.TeamAliases
             .Include(x => x.Team)
@@ -1180,6 +1213,10 @@ public class BackfillJobProcessor(
             "Israel" => "IL",
             "Poland" => "PL",
             "Czech Republic" => "CZ",
+            "Denmark" => "DK",
+            "Great Britain" => "GB",
+            "United Kingdom" => "GB",
+            "Norway" => "NO",
             "England" => "ENG",
             "Russia" => "RU",
             "Serbia" => "RS",

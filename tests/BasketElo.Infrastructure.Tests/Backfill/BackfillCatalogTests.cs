@@ -6,6 +6,26 @@ namespace BasketElo.Infrastructure.Tests.Backfill;
 
 public class BackfillCatalogTests
 {
+    [Theory]
+    [InlineData("Denmark", "Basket Ligaen")]
+    [InlineData("Great Britain", "SLB")]
+    [InlineData("Norway", "BLNO")]
+    public void NewEuropeanDomesticLeaguesCoverSixteenSeasons(string country, string leagueName)
+    {
+        var catalog = new BackfillCatalog();
+        var source = Assert.Single(catalog.GetLeagues(), league =>
+            league.Provider == FlashscoreDomesticHistoricalDataProvider.Source &&
+            league.Country == country &&
+            league.LeagueName == leagueName);
+
+        var seasons = catalog.GetSeasonsForLeague(source).ToList();
+
+        Assert.Equal(EloPoolKeys.EuropeClubs, source.EloPoolKey);
+        Assert.Equal("2010-2011", seasons[0]);
+        Assert.Equal("2025-2026", seasons[^1]);
+        Assert.Equal(16, seasons.Count);
+    }
+
     [Fact]
     public void SerbianHistoricalCatalogCoversAgreedHistoricalCutoff()
     {

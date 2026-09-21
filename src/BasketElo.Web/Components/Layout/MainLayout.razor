@@ -18,6 +18,12 @@
     </header>
 
     <main class="app-main">
+        <AuthorizeView Roles="admin">
+            <Authorized>
+                <AdminAttentionBar />
+            </Authorized>
+        </AuthorizeView>
+
         <article id="main-content" class="content" tabindex="-1">
             @Body
         </article>

@@ -30,6 +30,7 @@
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.Extensions.Caching.Memory
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
 @using BasketElo.Domain.Elo
 @using BasketElo.Domain.Entities
 @using BasketElo.Domain.Games
@@ -38,6 +39,7 @@
 @inject PersistentComponentState PersistentState
 @inject IMemoryCache PrerenderCache
 @inject ILogger<Rankings> Logger
+@inject IJSRuntime JS
 
 <SeoHead Title="@SeoTitle()"
          Description="@SeoDescription()"
@@ -554,55 +556,74 @@
                     </div>
                 </div>
 
-                @if (isBusy && (upcomingFixtures is null || fixtures is null))
+                @if (isBusy && fixtures is null)
                 {
                     <div class="loading-panel" role="status">@T["LoadingFixtures"]</div>
                 }
-                else if (upcomingFixtures is null || upcomingFixtures.TotalCount == 0)
+                else if (fixtures is null || fixtures.TotalCount == 0)
                 {
                     <div class="empty-state">@T["NoUpcomingFixtures"]</div>
                 }
                 else
                 {
-                    <div class="fixture-highlights" aria-label='@T["FixtureHighlights"]'>
-                        @foreach (var highlight in FixtureHighlights)
+                    <div class="fixture-recommendations" aria-label='@T["FixtureHighlights"]'>
+                        @foreach (var group in FixtureRecommendationGroups)
                         {
-                            <article class="fixture-highlight-card">
-                                <div class="fixture-highlight-heading">
+                            <section class="fixture-recommendation-group" aria-labelledby="@group.HeadingId">
+                                <div class="fixture-recommendation-heading">
                                     <div>
-                                        <h3>@highlight.Title</h3>
+                                        <span class="fixture-recommendation-kicker">@group.Kicker</span>
+                                        <h3 id="@group.HeadingId">@group.Title</h3>
+                                        <p>@group.Description</p>
                                     </div>
-                                    <span class="fixture-highlight-count">@highlight.Games.Count</span>
-                                </div>
-                                <p>@highlight.Description</p>
-                                <div class="fixture-highlight-games">
-                                    @foreach (var game in highlight.Games)
+                                    @if (group.Selection.Games.Count > 0)
                                     {
-                                        <div class="fixture-highlight-game">
-                                            <div class="fixture-game-date">@FormatFixtureDate(game.GameDateTimeUtc)</div>
-                                            <div class="fixture-matchup">
-                                                <div class="fixture-team-row">
-                                                    <strong>@game.HomeTeam</strong>
-                                                    <span class="fixture-team-rating"><b>@FormatFixtureRating(game.HomeElo)</b> ELO · <b>@FormatFixtureRank(game.HomeRank)</b></span>
-                                                </div>
-                                                <span class="fixture-versus">@T["Versus"]</span>
-                                                <div class="fixture-team-row">
-                                                    <strong>@game.AwayTeam</strong>
-                                                    <span class="fixture-team-rating"><b>@FormatFixtureRating(game.AwayElo)</b> ELO · <b>@FormatFixtureRank(game.AwayRank)</b></span>
-                                                </div>
-                                            </div>
-                                            <div class="fixture-game-meta">
-                                                <span>@game.Competition</span>
-                                                <span>@game.Country</span>
-                                            </div>
-                                            <div class="fixture-game-probability" aria-label='@T["ExpectedWinProbability"]'>
-                                                <span>@T["Home"] <strong>@FormatFixtureProbability(game.HomeWinProbability)</strong></span>
-                                                <span>@T["Away"] <strong>@FormatFixtureProbability(AwayWinProbability(game))</strong></span>
-                                            </div>
-                                        </div>
+                                        <span class="fixture-highlight-count">@group.Selection.Games.Count</span>
                                     }
                                 </div>
-                            </article>
+
+                                @if (group.Selection.Games.Count == 0)
+                                {
+                                    <div class="fixture-recommendation-empty">@group.EmptyMessage</div>
+                                }
+                                else
+                                {
+                                    @if (!group.Selection.IsRanked)
+                                    {
+                                        <p class="fixture-recommendation-fallback">@T["FixturesOrderedByTipoff"]</p>
+                                    }
+                                    <div class="fixture-recommendation-games">
+                                        @for (var index = 0; index < group.Selection.Games.Count; index++)
+                                        {
+                                            var game = group.Selection.Games[index];
+                                            <article class="fixture-recommendation-game">
+                                                <div class="fixture-recommendation-rank" aria-hidden="true">@(index + 1)</div>
+                                                <div class="fixture-game-date">@FormatFixtureDate(game.GameDateTimeUtc)</div>
+                                                <div class="fixture-recommendation-reason">@FixtureRecommendationReason(game)</div>
+                                                <div class="fixture-matchup">
+                                                    <div class="fixture-team-row">
+                                                        <strong>@game.HomeTeam</strong>
+                                                        <span class="fixture-team-rating"><b>@FormatFixtureRating(game.HomeElo)</b> ELO · <b>@FormatFixtureRank(game.HomeRank)</b></span>
+                                                    </div>
+                                                    <span class="fixture-versus">@T["Versus"]</span>
+                                                    <div class="fixture-team-row">
+                                                        <strong>@game.AwayTeam</strong>
+                                                        <span class="fixture-team-rating"><b>@FormatFixtureRating(game.AwayElo)</b> ELO · <b>@FormatFixtureRank(game.AwayRank)</b></span>
+                                                    </div>
+                                                </div>
+                                                <div class="fixture-game-meta">
+                                                    <span>@game.Competition</span>
+                                                    <span>@game.Country</span>
+                                                </div>
+                                                <div class="fixture-game-probability" aria-label='@T["ExpectedWinProbability"]'>
+                                                    <span>@T["Home"] <strong>@FormatFixtureProbability(game.HomeWinProbability)</strong></span>
+                                                    <span>@T["Away"] <strong>@FormatFixtureProbability(AwayWinProbability(game))</strong></span>
+                                                </div>
+                                            </article>
+                                        }
+                                    </div>
+                                }
+                            </section>
                         }
                     </div>
 
@@ -1184,6 +1205,9 @@
     private bool isChartVisible;
     private bool isChartLoading;
     private bool isAdmin;
+    private TimeZoneInfo fixtureTimeZone = TimeZoneInfo.Utc;
+    private string fixtureTimeZoneLabel = "UTC";
+    private bool hasResolvedFixtureTimeZone;
     private bool isGraphTeamManagerOpen;
     private bool showGraphLegend = true;
     private bool showAdvancedFilters;
@@ -1197,7 +1221,7 @@
     private bool showRulesetHelp;
     private string selectedRuleset = EloRulesetVersions.Default;
     private string selectedPool = EloPoolKeys.Default;
-    private string selectedTeamScope = EloTeamScopes.Current;
+    private string selectedTeamScope = EloTeamScopes.Historical;
     private string? selectedFromSeason;
     private string? selectedToSeason;
     private string? teamSearch;
@@ -1292,6 +1316,30 @@
         Navigation.LocationChanged += HandleLocationChanged;
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || hasResolvedFixtureTimeZone)
+        {
+            return;
+        }
+
+        hasResolvedFixtureTimeZone = true;
+        try
+        {
+            var browserTimeZoneId = await JS.InvokeAsync<string?>("basketEloFixtures.getTimeZoneId");
+            if (!string.IsNullOrWhiteSpace(browserTimeZoneId))
+            {
+                fixtureTimeZone = TimeZoneInfo.FindSystemTimeZoneById(browserTimeZoneId);
+                fixtureTimeZoneLabel = browserTimeZoneId.Replace('_', ' ');
+                StateHasChanged();
+            }
+        }
+        catch (Exception exception) when (exception is JSException or InvalidOperationException or TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            Logger.LogDebug(exception, "Could not resolve the browser timezone for fixtures; UTC will be used.");
+        }
+    }
+
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
     {
         var path = Navigation.ToBaseRelativePath(args.Location).Split('?', 2)[0].Trim('/');
@@ -1380,7 +1428,9 @@
         selectedTeamScope = SupportsTeamScope
             ? pathSeason is not null
                 ? EloTeamScopes.Historical
-                : EloTeamScopes.Normalize(Teams)
+                : string.IsNullOrWhiteSpace(Teams)
+                    ? EloTeamScopes.Historical
+                    : EloTeamScopes.Normalize(Teams)
             : EloTeamScopes.Current;
         var teamScopeChanged = !string.Equals(previousTeamScope, selectedTeamScope, StringComparison.Ordinal);
         selectedCountry = IsAcbEloPath(currentPath)
@@ -1601,7 +1651,7 @@
     private async Task ResetFiltersAsync()
     {
         CancelTeamSearchDebounce();
-        selectedTeamScope = EloTeamScopes.Current;
+        selectedTeamScope = EloTeamScopes.Historical;
         selectedCountry = null;
         selectedCompetition = null;
         countrySearch = null;
@@ -2356,22 +2406,6 @@
             {
                 var fixturesFromUtc = DateTime.UtcNow;
                 var fixturesToUtc = fixturesFromUtc.AddDays(9);
-                var upcomingFixturesUri = BuildFixturesApiUri(
-                    includeFilters: false,
-                    fixturesFromUtc: fixturesFromUtc,
-                    fixturesToUtc: fixturesToUtc);
-                if (upcomingFixtures is null || !string.Equals(upcomingFixturesUri, lastUpcomingFixturesApiUri, StringComparison.Ordinal))
-                {
-                    var fetchedUpcomingFixtures = await Http.GetFromJsonAsync<UpcomingGamesResponse>(upcomingFixturesUri, cancellationToken);
-                    if (!IsCurrentTeamSearchRequest(expectedTeamSearchVersion, expectedTeamSearch))
-                    {
-                        return;
-                    }
-
-                    upcomingFixtures = fetchedUpcomingFixtures;
-                    lastUpcomingFixturesApiUri = upcomingFixturesUri;
-                }
-
                 var fixturesUri = BuildFixturesApiUri(
                     includeFilters: true,
                     fixturesFromUtc: fixturesFromUtc,
@@ -2385,7 +2419,14 @@
                     }
 
                     fixtures = fetchedFixtures;
+                    upcomingFixtures = fetchedFixtures;
                     lastFixturesApiUri = fixturesUri;
+                    lastUpcomingFixturesApiUri = fixturesUri;
+                }
+                else
+                {
+                    upcomingFixtures = fixtures;
+                    lastUpcomingFixturesApiUri = fixturesUri;
                 }
 
                 page = 1;
@@ -2723,7 +2764,7 @@
         var query = new Dictionary<string, object?>
         {
             ["pool"] = IsDedicatedEloRoute(route) || selectedPool == EloPoolKeys.Default ? null : selectedPool,
-            ["teams"] = targetShowsTeamScope && selectedTeamScope == EloTeamScopes.Historical && !usesSeasonArchiveRoute
+            ["teams"] = targetShowsTeamScope && selectedTeamScope == EloTeamScopes.Current && !usesSeasonArchiveRoute
                 ? selectedTeamScope
                 : null,
             ["movement"] = view == "movers" ? selectedMoverDirection : null,
@@ -3634,90 +3675,119 @@
 
     private int ChartHeightPixels => isChartExpanded ? 560 : 340;
 
-    private IReadOnlyList<FixtureHighlight> FixtureHighlights
-        => BuildFixtureHighlights(upcomingFixtures?.Games);
-
     private string FixturesContextLabel()
-        => upcomingFixtures is null
+        => fixtures is null
             ? string.Empty
-            : upcomingFixtures.TotalCount == 0
+            : fixtures.TotalCount == 0
                 ? "No upcoming fixtures are available in the next nine days."
-                : $"Showing {upcomingFixtures.TotalCount} upcoming games over the next nine days. Highlights use the full slate; the table uses the active filters.";
+                : string.Format(
+                    CultureInfo.CurrentCulture,
+                    T["FixturesContext"],
+                    fixtures.TotalCount,
+                    fixtureTimeZoneLabel);
 
-    private static IReadOnlyList<FixtureHighlight> BuildFixtureHighlights(IReadOnlyCollection<UpcomingGameListItem>? source = null)
+    private IReadOnlyList<FixtureRecommendationGroup> FixtureRecommendationGroups
     {
-        var games = source?.ToList() ?? [];
-        if (games.Count == 0)
+        get
         {
-            return [];
+            var games = fixtures?.Games ?? [];
+            var nowUtc = DateTime.UtcNow;
+            var localToday = ConvertFixtureToLocal(nowUtc).Date;
+            var todayGames = games
+                .Where(game => ConvertFixtureToLocal(game.GameDateTimeUtc).Date == localToday)
+                .ToList();
+            var laterGames = games
+                .Where(game => ConvertFixtureToLocal(game.GameDateTimeUtc).Date > localToday)
+                .ToList();
+
+            return
+            [
+                new FixtureRecommendationGroup(
+                    "fixtures-today-heading",
+                    T["Today"],
+                    T["BestGamesToday"],
+                    string.Format(CultureInfo.CurrentCulture, T["BestGamesTodayDescription"], localToday.ToString("D", CultureInfo.CurrentCulture), fixtureTimeZoneLabel),
+                    BuildFixtureSelection(todayGames, 3),
+                    T["NoMoreGamesToday"]),
+                new FixtureRecommendationGroup(
+                    "fixtures-upcoming-heading",
+                    T["NextNineDays"],
+                    T["BestUpcomingGames"],
+                    T["BestUpcomingGamesDescription"],
+                    BuildFixtureSelection(laterGames, 4),
+                    T["NoLaterUpcomingGames"])
+            ];
         }
-
-        var usedGameIds = new HashSet<Guid>();
-        var ratedGames = games.Where(game => game.HasBothRatings).ToList();
-        var comparableGames = ratedGames.Count > 0 ? ratedGames : games;
-        var highlights = new List<FixtureHighlight>(2);
-
-        AddHighlight(
-            highlights,
-            usedGameIds,
-            "Most even",
-            "The fixture closest to a 50–50 expected result.",
-            comparableGames
-                .OrderBy(ProbabilityDistanceFromEven)
-                .ThenByDescending(CombinedElo)
-                .ThenBy(game => game.GameDateTimeUtc));
-
-        AddHighlight(
-            highlights,
-            usedGameIds,
-            "Strongest matchup",
-            "The fixture with the highest combined ELO.",
-            comparableGames
-                .OrderByDescending(CombinedElo)
-                .ThenBy(game => game.EloDifference)
-                .ThenBy(game => game.GameDateTimeUtc));
-
-        return highlights;
     }
 
-    private static void AddHighlight(
-        ICollection<FixtureHighlight> highlights,
-        ISet<Guid> usedGameIds,
-        string title,
-        string description,
-        IEnumerable<UpcomingGameListItem> orderedGames)
+    private static FixtureSelection BuildFixtureSelection(IReadOnlyCollection<UpcomingGameListItem> source, int limit)
     {
-        var ordered = orderedGames.ToList();
-        var selected = ordered
-            .Where(game => usedGameIds.Add(game.Id))
-            .Take(2)
+        if (source.Count == 0)
+        {
+            return new FixtureSelection([], false);
+        }
+
+        var ratedGames = source
+            .Where(game => game.HasBothRatings && game.MinimumTeamElo.HasValue && game.HomeWinProbability.HasValue)
             .ToList();
-
-        if (selected.Count < 2)
+        if (ratedGames.Count == 0)
         {
-            selected.AddRange(ordered
-                .Where(game => selected.All(selectedGame => selectedGame.Id != game.Id))
-                .Take(2 - selected.Count));
+            return new FixtureSelection(source.OrderBy(game => game.GameDateTimeUtc).Take(limit).ToList(), false);
         }
 
-        if (selected.Count > 0)
-        {
-            highlights.Add(new FixtureHighlight(title, description, selected));
-        }
+        var minimumElo = ratedGames.Min(game => game.MinimumTeamElo!.Value);
+        var maximumElo = ratedGames.Max(game => game.MinimumTeamElo!.Value);
+        decimal QualityScore(UpcomingGameListItem game)
+            => maximumElo == minimumElo
+                ? 1m
+                : (game.MinimumTeamElo!.Value - minimumElo) / (maximumElo - minimumElo);
+        decimal CompetitivenessScore(UpcomingGameListItem game)
+            => 1m - (2m * Math.Abs(game.HomeWinProbability!.Value - 0.5m));
+        decimal WatchabilityScore(UpcomingGameListItem game)
+            => (0.6m * QualityScore(game)) + (0.4m * CompetitivenessScore(game));
+
+        var selected = ratedGames
+            .OrderByDescending(WatchabilityScore)
+            .ThenByDescending(game => game.MinimumTeamElo)
+            .ThenBy(game => ProbabilityDistanceFromEven(game))
+            .ThenBy(game => game.GameDateTimeUtc)
+            .Take(limit)
+            .ToList();
+        return new FixtureSelection(selected, true);
     }
 
-    private static decimal CombinedElo(UpcomingGameListItem game)
-        => game.HasBothRatings && game.HomeElo.HasValue && game.AwayElo.HasValue
-            ? game.HomeElo.Value + game.AwayElo.Value
-            : decimal.MinValue;
+    private DateTime ConvertFixtureToLocal(DateTime value)
+        => TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(value, DateTimeKind.Utc), fixtureTimeZone);
+
+    private string FormatFixtureDate(DateTime value)
+        => ConvertFixtureToLocal(value).ToString("ddd, MMM d · HH:mm", CultureInfo.CurrentCulture);
 
     private static decimal ProbabilityDistanceFromEven(UpcomingGameListItem game)
         => game.HomeWinProbability.HasValue
             ? Math.Abs(game.HomeWinProbability.Value - 0.5m)
             : decimal.MaxValue;
 
-    private static string FormatFixtureDate(DateTime value)
-        => DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("ddd, MMM d · HH:mm 'UTC'");
+    private string FixtureRecommendationReason(UpcomingGameListItem game)
+    {
+        var probability = game.HomeWinProbability.HasValue
+            ? $"{FormatFixtureProbability(game.HomeWinProbability)}–{FormatFixtureProbability(AwayWinProbability(game))}"
+            : null;
+        if (game.HomeRank.HasValue && game.AwayRank.HasValue)
+        {
+            return probability is null
+                ? $"#{game.HomeRank.Value} vs #{game.AwayRank.Value}"
+                : $"#{game.HomeRank.Value} vs #{game.AwayRank.Value} · {probability}";
+        }
+
+        if (game.HomeElo.HasValue && game.AwayElo.HasValue)
+        {
+            return probability is null
+                ? $"{FormatFixtureRating(game.HomeElo)}–{FormatFixtureRating(game.AwayElo)} ELO"
+                : $"{FormatFixtureRating(game.HomeElo)}–{FormatFixtureRating(game.AwayElo)} ELO · {probability}";
+        }
+
+        return T["ScheduledByTipoff"];
+    }
 
     private static string FormatFixtureRating(decimal? value)
         => value.HasValue ? value.Value.ToString("0") : "—";
@@ -3739,10 +3809,17 @@
             _ => "fixture-status"
         };
 
-    private sealed record FixtureHighlight(
+    private sealed record FixtureSelection(
+        IReadOnlyList<UpcomingGameListItem> Games,
+        bool IsRanked);
+
+    private sealed record FixtureRecommendationGroup(
+        string HeadingId,
+        string Kicker,
         string Title,
         string Description,
-        IReadOnlyList<UpcomingGameListItem> Games);
+        FixtureSelection Selection,
+        string EmptyMessage);
 
     private string BuildApiUri(
         int? requestedPage = null,
@@ -4105,7 +4182,7 @@
             ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
             ["fromSeason"] = selectedFromSeason,
             ["toSeason"] = selectedToSeason,
-            ["teams"] = IsHistoricalTeamScope ? selectedTeamScope : null
+            ["teams"] = selectedTeamScope == EloTeamScopes.Current ? selectedTeamScope : null
         });
     }
 

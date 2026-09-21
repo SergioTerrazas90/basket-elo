@@ -1,0 +1,242 @@
+@page "/admin/alias-groups"
+@attribute [Authorize(Roles = "admin")]
+@attribute [StreamRendering]
+@rendermode InteractiveServer
+@using BasketElo.Domain.Teams
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Duplicate alias groups</PageTitle>
+
+<div class="alias-groups-page">
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Review &amp; resolve</p>
+            <h1>Duplicate alias groups</h1>
+            <p class="intro">Aliases with the same normalized name and country that currently belong to different canonical teams.</p>
+        </div>
+        <button class="btn btn-outline-primary" @onclick="LoadAsync" disabled="@isBusy">Refresh</button>
+    </section>
+
+    <div class="alert alert-info" role="note">
+        <strong>This is a separate catalog check.</strong>
+        Accept a group when every mapping is valid for separate teams. If a mapping is wrong, reject that individual alias to remove it from its team.
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    @if (response is null && isBusy)
+    {
+        <p><em>Loading duplicate alias groups…</em></p>
+    }
+    else if (response is not null)
+    {
+        <section class="alias-groups-summary" aria-label="Duplicate alias summary">
+            <div>
+                <span>Groups requiring review</span>
+                <strong>@response.GroupCount</strong>
+            </div>
+            <div>
+                <span>Canonical teams involved</span>
+                <strong>@response.Groups.SelectMany(x => x.Teams).Select(x => x.TeamId).Distinct().Count()</strong>
+            </div>
+            <div>
+                <span>Alias records involved</span>
+                <strong>@response.Groups.SelectMany(x => x.Teams).SelectMany(x => x.Aliases).Count()</strong>
+            </div>
+        </section>
+
+        @if (response.GroupCount == 0)
+        {
+            <div class="alias-groups-empty">
+                <strong>No duplicate alias groups found.</strong>
+                <span>The catalog currently has no alias name and country shared across canonical teams.</span>
+            </div>
+        }
+        else
+        {
+            <div class="alias-groups-list">
+                @foreach (var group in response.Groups)
+                {
+                    <article class="alias-group-card">
+                        <header>
+                            <div>
+                                <span class="alias-group-country">@group.CountryCode</span>
+                                <h2>@group.AliasName</h2>
+                            </div>
+                            <div class="alias-group-actions">
+                                <span class="alias-group-count">@group.Teams.Count teams</span>
+                                <button class="btn btn-sm @(IsConfirming(group) ? "btn-success" : "btn-outline-success")"
+                                        title="Confirm that these aliases are valid for separate canonical teams"
+                                        @onclick="() => AcceptGroupAsync(group)"
+                                        disabled="@isBusy">
+                                    @(IsConfirming(group) ? "Confirm acceptance" : "Accept aliases")
+                                </button>
+                            </div>
+                        </header>
+
+                        <div class="alias-group-teams">
+                            @foreach (var team in group.Teams)
+                            {
+                                <section class="alias-group-team">
+                                    <div class="alias-group-team-heading">
+                                        <div>
+                                            <h3>@team.CanonicalName</h3>
+                                            <small>@team.TeamId</small>
+                                        </div>
+                                        <a class="btn btn-sm btn-outline-primary" href="@TeamEditorHref(team.TeamId)">Edit team</a>
+                                    </div>
+
+                                    <table class="table table-sm alias-record-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Alias</th>
+                                                <th>Source</th>
+                                                <th>Provider ID</th>
+                                                <th><span class="visually-hidden">Actions</span></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var alias in team.Aliases)
+                                            {
+                                                <tr>
+                                                    <td>@alias.AliasName</td>
+                                                    <td>@alias.Source</td>
+                                                    <td><code>@alias.SourceTeamId</code></td>
+                                                    <td class="text-end">
+                                                        <button class="btn btn-sm @(confirmingRejectAliasId == alias.AliasId ? "btn-danger" : "btn-outline-danger")"
+                                                                title="Remove this alias mapping from @team.CanonicalName"
+                                                                @onclick="() => RejectAliasAsync(team, alias)"
+                                                                disabled="@isBusy">
+                                                            @(confirmingRejectAliasId == alias.AliasId ? "Confirm removal" : "Reject alias")
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </section>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private DuplicateTeamAliasGroupsResponse? response;
+    private bool isBusy;
+    private string? errorMessage;
+    private string? confirmingGroupKey;
+    private Guid? confirmingRejectAliasId;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isBusy = true;
+        errorMessage = null;
+
+        try
+        {
+            response = await Http.GetFromJsonAsync<DuplicateTeamAliasGroupsResponse>(
+                "api/admin/teams/duplicate-alias-groups");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load duplicate alias groups: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static string TeamEditorHref(Guid teamId) =>
+        $"/admin/teams?teamId={teamId:D}";
+
+    private bool IsConfirming(DuplicateTeamAliasGroup group) =>
+        confirmingGroupKey == GroupKey(group);
+
+    private async Task AcceptGroupAsync(DuplicateTeamAliasGroup group)
+    {
+        var groupKey = GroupKey(group);
+        if (confirmingGroupKey != groupKey)
+        {
+            confirmingGroupKey = groupKey;
+            confirmingRejectAliasId = null;
+            return;
+        }
+
+        isBusy = true;
+        errorMessage = null;
+        try
+        {
+            using var result = await Http.PostAsJsonAsync(
+                "api/admin/teams/duplicate-alias-groups/accept",
+                new AcceptDuplicateTeamAliasGroupRequest(
+                    group.AliasName,
+                    group.CountryCode,
+                    group.Teams.Select(x => x.TeamId).ToList(),
+                    "Confirmed as valid aliases for separate canonical teams."));
+            if (!result.IsSuccessStatusCode)
+            {
+                var detail = await result.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail)
+                    ? $"The server returned HTTP {(int)result.StatusCode}."
+                    : detail.Trim('"'));
+            }
+
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not accept this alias group: {ex.Message}";
+            confirmingGroupKey = null;
+            isBusy = false;
+        }
+    }
+
+    private async Task RejectAliasAsync(
+        DuplicateTeamAliasMember team,
+        DuplicateTeamAliasDetail alias)
+    {
+        if (confirmingRejectAliasId != alias.AliasId)
+        {
+            confirmingRejectAliasId = alias.AliasId;
+            confirmingGroupKey = null;
+            return;
+        }
+
+        isBusy = true;
+        errorMessage = null;
+        try
+        {
+            using var result = await Http.DeleteAsync(
+                $"api/admin/teams/{team.TeamId:D}/aliases/{alias.AliasId:D}");
+            if (!result.IsSuccessStatusCode)
+            {
+                var detail = await result.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail)
+                    ? $"The server returned HTTP {(int)result.StatusCode}."
+                    : detail.Trim('"'));
+            }
+
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not reject this alias: {ex.Message}";
+            confirmingRejectAliasId = null;
+            isBusy = false;
+        }
+    }
+
+    private static string GroupKey(DuplicateTeamAliasGroup group) =>
+        $"{group.CountryCode}|{group.AliasName}|{string.Join(",", group.Teams.Select(x => x.TeamId).OrderBy(x => x))}";
+}

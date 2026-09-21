@@ -9,6 +9,11 @@ public sealed record CompetitionAdminListResponse(
     int TotalCount,
     int TotalPages);
 
+public sealed record CompetitionCountryOption(
+    string Code,
+    string Name,
+    int CompetitionCount);
+
 public sealed record CompetitionAdminListItem(
     Guid Id,
     string Name,

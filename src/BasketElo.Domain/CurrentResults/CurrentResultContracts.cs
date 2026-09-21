@@ -27,6 +27,7 @@ public static class CurrentResultReviewReasons
     public const string UnresolvedAwayTeam = "unresolved_away_team";
     public const string AmbiguousHomeTeam = "ambiguous_home_team";
     public const string AmbiguousAwayTeam = "ambiguous_away_team";
+    public const string ConflictingTeamMapping = "conflicting_team_mapping";
     public const string InvalidResult = "invalid_result";
     public const string AmbiguousPlannedFixture = "ambiguous_planned_fixture";
     public const string TournamentCycleConfirmationRequired = "tournament_cycle_confirmation_required";
@@ -157,6 +158,39 @@ public sealed record CurrentResultReviewMatchDto(
     string HomeTeamName,
     string AwayTeamName,
     string Status);
+
+public sealed record CurrentResultReviewTeamCandidateDto(
+    Guid TeamId,
+    string CanonicalName,
+    string CountryCode,
+    int MatchScore,
+    string MatchReason);
+
+public sealed record CurrentResultReviewTeamMappingRequest(
+    string Side,
+    Guid TeamId);
+
+public sealed record CurrentResultReviewTeamCreateRequest(
+    string Side,
+    string CanonicalName,
+    string? CountryCode = null);
+
+public sealed record CurrentResultReviewTeamMappingDto(
+    Guid ReviewId,
+    string Side,
+    Guid TeamId,
+    string TeamName,
+    string Status,
+    string Message);
+
+public sealed record CurrentResultTeamMappingHistoryDto(
+    DateTime MappedAtUtc,
+    string ObservedName,
+    string CanonicalName,
+    string CountryCode,
+    string Source,
+    string MappingMethod,
+    int? Confidence);
 
 public sealed record CurrentResultReviewResolutionRequest(
     string Action,

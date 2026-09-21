@@ -319,6 +319,18 @@
     background: var(--color-surface-muted);
 }
 
+.history-section > .historical-highlights {
+    margin-top: var(--space-4);
+}
+
+.historical-highlights-empty {
+    padding: var(--space-3);
+    border-left: 3px solid var(--color-accent);
+    background: color-mix(in srgb, var(--color-surface) 72%, transparent);
+    color: var(--color-muted);
+    font-size: 0.85rem;
+}
+
 .historical-highlights h3 {
     margin: 0 0 0.25rem;
     font-size: 1rem;

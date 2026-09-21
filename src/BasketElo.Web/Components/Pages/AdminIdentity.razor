@@ -5,11 +5,15 @@
 @inject HttpClient Http
 
 
-<PageTitle>Identity Health</PageTitle>
+<PageTitle>Identity checks</PageTitle>
 
 <div class="d-flex justify-content-between align-items-start gap-3">
-    <h1>Identity Health</h1>
-    <NavLink class="btn btn-outline-primary" href="admin/identity-review">Open Identity Review</NavLink>
+    <div>
+        <p class="text-uppercase text-muted small fw-bold mb-1">Review &amp; resolve</p>
+        <h1>Identity checks</h1>
+        <p class="text-muted mb-0">Run diagnostics to find duplicate, cross-source, and cross-season team identities that need attention.</p>
+    </div>
+    <NavLink class="btn btn-outline-primary" href="admin/identity-review">Review identity decisions</NavLink>
 </div>
 
 <div class="mb-4">
@@ -124,46 +128,6 @@ else
                         </button>
                         <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteRunAsync(run.Id)" disabled="@isBusy">
                             Delete
-                        </button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-}
-
-<h2>Confirmed separate teams</h2>
-
-@if (distinctTeams is null)
-{
-    <p><em>Loading...</em></p>
-}
-else if (distinctTeams.Count == 0)
-{
-    <p>No persistent separate-team decisions have been recorded.</p>
-}
-else
-{
-    <p class="text-muted">These pairs are excluded from duplicate, cross-source, and cross-season identity findings. Remove a decision if the teams should be reconsidered.</p>
-    <table class="table table-sm align-middle">
-        <thead>
-            <tr>
-                <th>Team</th>
-                <th>Different team</th>
-                <th>Note</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var decision in distinctTeams)
-            {
-                <tr>
-                    <td><a href="@($"/teams/{decision.LeftTeamId}")">@decision.LeftTeamName</a></td>
-                    <td><a href="@($"/teams/{decision.RightTeamId}")">@decision.RightTeamName</a></td>
-                    <td>@decision.Note</td>
-                    <td class="text-end">
-                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveDistinctTeamsAsync(decision)" disabled="@isBusy">
-                            Remove decision
                         </button>
                     </td>
                 </tr>
@@ -427,6 +391,46 @@ else
                                 Ignore
                             </button>
                         }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<h2>Confirmed separate teams</h2>
+
+@if (distinctTeams is null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (distinctTeams.Count == 0)
+{
+    <p>No persistent separate-team decisions have been recorded.</p>
+}
+else
+{
+    <p class="text-muted">These pairs are excluded from duplicate, cross-source, and cross-season identity findings. Remove a decision if the teams should be reconsidered.</p>
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr>
+                <th>Team</th>
+                <th>Different team</th>
+                <th>Note</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var decision in distinctTeams)
+            {
+                <tr>
+                    <td><a href="@($"/teams/{decision.LeftTeamId}")">@decision.LeftTeamName</a></td>
+                    <td><a href="@($"/teams/{decision.RightTeamId}")">@decision.RightTeamName</a></td>
+                    <td>@decision.Note</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveDistinctTeamsAsync(decision)" disabled="@isBusy">
+                            Remove decision
+                        </button>
                     </td>
                 </tr>
             }

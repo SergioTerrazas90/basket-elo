@@ -12,7 +12,8 @@ public sealed class LiveScoreDailyResultsProvider(
     HttpClient httpClient,
     IOptions<LiveScoreOptions> options) : ICurrentResultsProvider
 {
-    private const string ParserVersion = "livescore-daily-html-v2";
+    private const string ParserVersion = "livescore-daily-html-v3";
+    private static readonly IReadOnlySet<string> GeographicScopes = BuildGeographicScopes();
     private readonly LiveScoreOptions options = options.Value;
 
     public string Source => "livescore";
@@ -31,11 +32,18 @@ public sealed class LiveScoreDailyResultsProvider(
         var sourceUrl = new Uri(httpClient.BaseAddress ?? new Uri(options.BaseUrl), path).ToString();
         var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(html))).ToLowerInvariant()[..16];
 
+        var candidates = Parse(html, date, sourceUrl, revision, options.SourceTimeZoneId);
+        if (candidates.Count == 0 && ContainsEventMarkers(html))
+        {
+            throw new InvalidOperationException(
+                "The Livescore page contains basketball events, but none matched the expected markup. The parser likely needs updating.");
+        }
+
         return new CurrentResultFetchResult(
             date,
             sourceUrl,
             revision,
-            Parse(html, date, sourceUrl, revision, options.SourceTimeZoneId));
+            candidates);
     }
 
     public static IReadOnlyCollection<CurrentResultCandidate> Parse(
@@ -49,7 +57,7 @@ public sealed class LiveScoreDailyResultsProvider(
         document.LoadHtml(html);
         var candidates = new List<CurrentResultCandidate>();
         var headers = document.DocumentNode
-            .SelectNodes("//div[contains(concat(' ', normalize-space(@class), ' '), ' Pa ')]")?
+            .SelectNodes("//div[contains(concat(' ', normalize-space(@class), ' '), ' Pa ') or contains(concat(' ', normalize-space(@class), ' '), ' Ea ')]")?
             .ToList() ?? [];
 
         foreach (var header in headers)
@@ -60,9 +68,22 @@ public sealed class LiveScoreDailyResultsProvider(
                 continue;
             }
 
-            var country = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Sa ')]")?.InnerText);
-            var competitionAndStage = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ta ')]")?.InnerText);
-            SplitCompetition(country, competitionAndStage, out var competition, out var stage);
+            string country;
+            string competition;
+            string? stage;
+            if (HasClass(header, "Ea"))
+            {
+                var primary = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ha ')]")?.InnerText);
+                var secondary = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ia ')]")?.InnerText);
+                SplitCurrentCompetition(primary, secondary, out country, out competition, out stage);
+            }
+            else
+            {
+                country = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Sa ')]")?.InnerText);
+                var competitionAndStage = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ta ')]")?.InnerText);
+                SplitCompetition(country, competitionAndStage, out competition, out stage);
+            }
+
             var headerIndex = parent.ChildNodes.ToList().IndexOf(header);
             if (headerIndex < 0)
             {
@@ -72,12 +93,12 @@ public sealed class LiveScoreDailyResultsProvider(
             for (var index = headerIndex + 1; index < parent.ChildNodes.Count; index++)
             {
                 var node = parent.ChildNodes[index];
-                if (HasClass(node, "Pa"))
+                if (HasClass(node, "Pa") || HasClass(node, "Ea"))
                 {
                     break;
                 }
 
-                if (!HasClass(node, "Xe"))
+                if (!HasClass(node, "Xe") && !HasClass(node, "rf"))
                 {
                     continue;
                 }
@@ -104,7 +125,7 @@ public sealed class LiveScoreDailyResultsProvider(
         string sourceTimeZoneId)
     {
         var teams = eventNode
-            .SelectNodes(".//div[contains(concat(' ', normalize-space(@class), ' '), ' nf ')]//div[contains(concat(' ', normalize-space(@class), ' '), ' vf ')]")?
+            .SelectNodes(".//div[contains(concat(' ', normalize-space(@class), ' '), ' nf ')]//div[contains(concat(' ', normalize-space(@class), ' '), ' vf ')] | .//div[contains(concat(' ', normalize-space(@class), ' '), ' Hf ')]//div[contains(concat(' ', normalize-space(@class), ' '), ' Pf ')]")?
             .Select(x => Clean(x.InnerText))
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .ToList() ?? [];
@@ -114,12 +135,12 @@ public sealed class LiveScoreDailyResultsProvider(
         }
 
         var scoreValues = eventNode
-            .SelectNodes(".//div[contains(concat(' ', normalize-space(@class), ' '), ' rf ')]//span[contains(concat(' ', normalize-space(@class), ' '), ' hf ')]")?
+            .SelectNodes(".//div[contains(concat(' ', normalize-space(@class), ' '), ' rf ')]//span[contains(concat(' ', normalize-space(@class), ' '), ' hf ')] | .//div[contains(concat(' ', normalize-space(@class), ' '), ' Lf ')]//span[contains(concat(' ', normalize-space(@class), ' '), ' Bf ')]")?
             .Select(x => TryParseScore(Clean(x.InnerText)))
             .Where(x => x.HasValue)
             .Select(x => x!.Value)
             .ToList() ?? [];
-        var statusText = Clean(eventNode.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ih ')]")?.InnerText);
+        var statusText = Clean(eventNode.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ih ')] | .//span[contains(concat(' ', normalize-space(@class), ' '), ' zg ')]")?.InnerText);
         var status = ToStatus(statusText, scoreValues.Count >= 2);
         var gameDateTimeUtc = ExtractEventDateTimeUtc(eventNode)
             ?? ParseDateTimeUtc(date, statusText, sourceTimeZoneId);
@@ -277,6 +298,56 @@ public sealed class LiveScoreDailyResultsProvider(
         competition = value;
         stage = null;
     }
+
+    private static void SplitCurrentCompetition(
+        string primary,
+        string secondary,
+        out string country,
+        out string competition,
+        out string? stage)
+    {
+        if (IsGeographicScope(primary))
+        {
+            country = primary;
+            competition = string.IsNullOrWhiteSpace(secondary) ? primary : secondary;
+            stage = null;
+            return;
+        }
+
+        country = primary;
+        competition = primary;
+        stage = string.IsNullOrWhiteSpace(secondary) ? null : secondary;
+    }
+
+    private static bool IsGeographicScope(string value)
+        => GeographicScopes.Contains(Normalize(value));
+
+    private static IReadOnlySet<string> BuildGeographicScopes()
+    {
+        var scopes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "world", "international", "europe", "asia", "africa", "americas", "oceania",
+            "usa", "uk", "great-britain", "south-korea", "north-korea", "czech-republic", "turkiye"
+        };
+
+        foreach (var culture in CultureInfo.GetCultures(CultureTypes.SpecificCultures))
+        {
+            try
+            {
+                scopes.Add(Normalize(new RegionInfo(culture.Name).EnglishName));
+            }
+            catch (ArgumentException)
+            {
+                // Some synthetic or invariant cultures do not expose region metadata.
+            }
+        }
+
+        return scopes;
+    }
+
+    private static bool ContainsEventMarkers(string html) =>
+        Regex.IsMatch(html, @"data-eventid\s*=", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) ||
+        Regex.IsMatch(html, @"/basketball/[^\""']+/\d+/?(?:[\""'?])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static short? TryParseScore(string value) => short.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var score) ? score : null;
 

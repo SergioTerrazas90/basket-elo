@@ -6,17 +6,18 @@
 @inject HttpClient Http
 @inject NavigationManager Navigation
 
-<PageTitle>Teams Admin</PageTitle>
+<PageTitle>Team catalog</PageTitle>
 
 <div class="admin-teams-page">
     <section class="page-header">
         <div>
-            <p class="eyebrow">Operations</p>
-            <h1>Teams</h1>
-            <p class="intro">Review canonical identities, edit team metadata, manage provider aliases, and merge duplicate team records.</p>
+            <p class="eyebrow">Catalogs</p>
+            <h1>Team catalog</h1>
+            <p class="intro">Manage canonical teams, metadata, source aliases, and duplicate-record mergers.</p>
         </div>
         <div class="header-actions">
             <button type="button" class="btn btn-outline-secondary" @onclick="RefreshAsync" disabled="@isBusy">Refresh</button>
+            <button type="button" class="btn btn-outline-primary" @onclick="StartCreateTeam" disabled="@isBusy">New team</button>
             <button type="button"
                     class="btn btn-primary"
                     title="Select exactly two teams to merge"
@@ -30,6 +31,39 @@
     @if (!string.IsNullOrWhiteSpace(message))
     {
         <div class="alert @messageCss" role="alert">@message</div>
+    }
+
+    @if (creatingTeam)
+    {
+        <section class="card mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-3">
+                    <div>
+                        <p class="eyebrow mb-1">Catalog</p>
+                        <h2 class="h4">Create team</h2>
+                        <p class="text-muted">Create the canonical team first. You can add provider aliases after saving it.</p>
+                    </div>
+                    <button type="button" class="btn-close" aria-label="Close team form" @onclick="CancelCreateTeam"></button>
+                </div>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label" for="new-team-name">Canonical name</label>
+                        <input id="new-team-name" class="form-control" maxlength="200" @bind="newTeamName" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label" for="new-team-country">Country code</label>
+                        <input id="new-team-country" class="form-control" maxlength="3" placeholder="e.g. ES" @bind="newTeamCountryCode" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label" for="new-team-description">Description <span class="text-muted">(optional)</span></label>
+                        <input id="new-team-description" class="form-control" maxlength="4000" @bind="newTeamDescription" />
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-primary w-100" @onclick="CreateTeamAsync" disabled="@(isBusy || string.IsNullOrWhiteSpace(newTeamName))">Create team</button>
+                    </div>
+                </div>
+            </div>
+        </section>
     }
 
     <section class="team-admin-filters">
@@ -357,6 +391,9 @@
     [SupplyParameterFromQuery(Name = "teamId")]
     private Guid? TeamId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "country")]
+    private string? Country { get; set; }
+
     private TeamAdminListResponse? response;
     private IReadOnlyList<TeamAdminOption> teamOptions = [];
     private TeamAdminDetail? teamDetail;
@@ -388,6 +425,10 @@
     private string? mergeError;
     private Guid? confirmingRemoveTeamId;
     private Guid? confirmingExtractAliasId;
+    private bool creatingTeam;
+    private string newTeamName = string.Empty;
+    private string newTeamCountryCode = string.Empty;
+    private string newTeamDescription = string.Empty;
 
     private IReadOnlyList<TeamAdminOption> SelectedMergeTeams
         => teamOptions.Where(x => selectedForMerge.Contains(x.Id)).ToList();
@@ -398,6 +439,7 @@
     protected override async Task OnInitializedAsync()
     {
         selectedTeamId = TeamId;
+        selectedCountry = Country;
         teamOptions = await Http.GetFromJsonAsync<IReadOnlyList<TeamAdminOption>>("api/admin/teams/options") ?? [];
         await RefreshAsync();
     }
@@ -421,6 +463,49 @@
         catch (Exception ex)
         {
             message = $"Could not load teams: {ex.Message}";
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void StartCreateTeam()
+    {
+        creatingTeam = true;
+        newTeamName = string.Empty;
+        newTeamCountryCode = string.Empty;
+        newTeamDescription = string.Empty;
+    }
+
+    private void CancelCreateTeam() => creatingTeam = false;
+
+    private async Task CreateTeamAsync()
+    {
+        isBusy = true;
+        message = null;
+        try
+        {
+            using var result = await Http.PostAsJsonAsync(
+                "api/admin/teams",
+                new CreateTeamAdminRequest(newTeamName, newTeamCountryCode, true, newTeamDescription));
+            if (!result.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(result));
+            }
+
+            teamDetail = await result.Content.ReadFromJsonAsync<TeamAdminDetail>();
+            selectedTeamId = teamDetail?.Id;
+            creatingTeam = false;
+            teamOptions = await Http.GetFromJsonAsync<IReadOnlyList<TeamAdminOption>>("api/admin/teams/options") ?? [];
+            message = teamDetail is null ? "Team created." : $"{teamDetail.CanonicalName} created and selected.";
+            messageCss = "alert-success";
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
             messageCss = "alert-danger";
         }
         finally

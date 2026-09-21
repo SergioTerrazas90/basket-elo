@@ -37,18 +37,65 @@
             <AuthorizeView Roles="admin">
                 <Authorized>
                     <details class="nav-disclosure nav-disclosure-admin">
-                        <summary>@T["Admin"] <span class="nav-chevron" aria-hidden="true"></span></summary>
-                        <nav class="nav-popover nav-admin-popover" aria-label='@T["Administration"]'>
-                            <NavLink class="nav-link" href="games">@T["Games"]</NavLink>
-                            <NavLink class="nav-link" href="upcoming">@T["Upcoming"]</NavLink>
-                            <NavLink class="nav-link" href="backfill">@T["Backfill"]</NavLink>
-                            <NavLink class="nav-link" href="admin">@T["AdminOverview"]</NavLink>
-                            <NavLink class="nav-link" href="admin/jobs" target="_blank" rel="noopener">@T["EloRunJobs"] ↗</NavLink>
-                            <NavLink class="nav-link" href="admin/identity">@T["Identity"]</NavLink>
-                            <NavLink class="nav-link" href="admin/identity-review">@T["IdentityReview"]</NavLink>
-                            <NavLink class="nav-link" href="admin/current-results-review">@T["ResultsReview"]</NavLink>
-                            <NavLink class="nav-link" href="admin/competitions">@T["Competitions"]</NavLink>
-                            <NavLink class="nav-link" href="admin/teams">@T["Teams"]</NavLink>
+                        <summary>@T["Operations"] <span class="nav-chevron" aria-hidden="true"></span></summary>
+                        <nav class="nav-popover nav-admin-popover" aria-label='@T["OperationsNavigation"]'>
+                            <p class="nav-admin-group-label">@T["MonitorAndRun"]</p>
+                            <NavLink class="nav-link" href="admin" Match="NavLinkMatch.All">
+                                <span>@T["OperationsOverview"]</span>
+                                <small>@T["OperationsOverviewDescription"]</small>
+                            </NavLink>
+                            <NavLink class="nav-link" href="admin/jobs" target="_blank" rel="noopener">
+                                <span>@T["EloJobMonitor"] <span aria-hidden="true">↗</span></span>
+                                <small>@T["EloJobMonitorDescription"]</small>
+                            </NavLink>
+
+                            <p class="nav-admin-group-label">@T["GameData"]</p>
+                            <NavLink class="nav-link" href="games">
+                                <span>@T["GameRecords"]</span>
+                                <small>@T["GameRecordsDescription"]</small>
+                            </NavLink>
+                            <NavLink class="nav-link" href="upcoming">
+                                <span>@T["UpcomingSchedule"]</span>
+                                <small>@T["UpcomingScheduleDescription"]</small>
+                            </NavLink>
+                            <NavLink class="nav-link" href="admin/manual-game">
+                                <span>Manual match entry</span>
+                                <small>Create missing fixtures and results</small>
+                            </NavLink>
+                            <NavLink class="nav-link" href="backfill">
+                                <span>@T["HistoricalImports"]</span>
+                                <small>@T["HistoricalImportsDescription"]</small>
+                            </NavLink>
+
+                            <p class="nav-admin-group-label">@T["ReviewAndResolve"]</p>
+                            <NavLink class="nav-link" href="admin/current-results-review">
+                                <span>@T["ResultsMatching"]</span>
+                                <small>@T["ResultsMatchingDescription"]</small>
+                            </NavLink>
+                            <NavLink class="nav-link" href="admin/identity">
+                                <span>@T["IdentityChecks"]</span>
+                                <small>@T["IdentityChecksDescription"]</small>
+                            </NavLink>
+                            <NavLink class="nav-link" href="admin/identity-review">
+                                <span>@T["IdentityDecisions"]</span>
+                                <small>@T["IdentityDecisionsDescription"]</small>
+                            </NavLink>
+
+                            <p class="nav-admin-group-label">@T["Catalogs"]</p>
+                            <NavLink class="nav-link" href="admin/competitions">
+                                <span>@T["CompetitionCatalog"]</span>
+                                <small>@T["CompetitionCatalogDescription"]</small>
+                            </NavLink>
+                            <NavLink class="nav-link" href="admin/teams">
+                                <span>@T["TeamCatalog"]</span>
+                                <small>@T["TeamCatalogDescription"]</small>
+                            </NavLink>
+
+                            <p class="nav-admin-group-label">@T["Publishing"]</p>
+                            <NavLink class="nav-link" href="admin/social-posts">
+                                <span>@T["SocialPostStudio"]</span>
+                                <small>@T["SocialPostStudioDescription"]</small>
+                            </NavLink>
                         </nav>
                     </details>
                 </Authorized>

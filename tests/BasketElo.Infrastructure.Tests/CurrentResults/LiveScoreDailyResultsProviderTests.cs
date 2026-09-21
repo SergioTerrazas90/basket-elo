@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using BasketElo.Domain.CurrentResults;
 using BasketElo.Infrastructure.CurrentResults;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -90,6 +91,65 @@ public class LiveScoreDailyResultsProviderTests
         var game = Assert.Single(result.Candidates);
         Assert.Equal("1819479", game.SourceGameId);
         Assert.Equal(new DateTime(2026, 8, 27, 18, 0, 0, DateTimeKind.Utc), game.GameDateTimeUtc);
+    }
+
+    [Fact]
+    public async Task FetchAsync_ParsesCurrentFinishedAndScheduledMarkup()
+    {
+        var epoch = new DateTimeOffset(2026, 9, 14, 18, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var html = $"""
+            <html><body><div class="group">
+              <div class="Ea"><span><a href="/basketball/great-britain/"><span class="Ha">Great Britain</span></a> - <a href="/basketball/great-britain/slb/"><span class="Ia">SLB</span></a></span></div>
+              <div class="rf wf"><a href="/basketball/great-britain/slb/bristol-flyers-vs-london-lions/1890495/"><div class="Cf"><span class="ug wg vg"><span class="zg vg">FT</span></span><div class="Df"><div class="Hf"><div class="Pf">Bristol Flyers</div><div class="Pf">London Lions</div></div><div class="Lf Mf Nf"><span class="Bf">86</span><span class="Bf">93</span></div></div></div></a></div>
+              <div class="Ea"><span><a href="/basketball/champions-league/"><span class="Ha">Champions League</span></a> - <a href="/basketball/champions-league/qualification/"><span class="Ia">Qualification</span></a></span></div>
+              <div class="rf"><div class="Cf"><span class="ug wg vg"><span class="zg vg">18:00</span></span><div class="Df"><div class="Hf"><div class="Pf">Wuerzburg Baskets</div><div class="Pf">Manchester Basketball</div></div><div class="Lf Mf"><span class="Bf"></span><span class="Bf"></span></div></div></div><button data-eventId="1820576" data-favouritesDetails="basketball-1820576-{epoch}"></button></div>
+            </div></body></html>
+            """;
+        using var client = new HttpClient(new FixtureHandler(html))
+        {
+            BaseAddress = new Uri("https://www.livescores.com")
+        };
+        var provider = new LiveScoreDailyResultsProvider(
+            client,
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC" }));
+
+        var result = await provider.FetchAsync(new DateOnly(2026, 9, 14), CancellationToken.None);
+
+        Assert.Equal(2, result.Candidates.Count);
+        var finished = result.Candidates.Single(x => x.SourceGameId == "1890495");
+        Assert.Equal("Great Britain", finished.CountryName);
+        Assert.Equal("SLB", finished.CompetitionName);
+        Assert.Null(finished.StageName);
+        Assert.Equal(CurrentResultStatuses.Finished, finished.Status);
+        Assert.Equal((short)86, finished.HomeScore);
+        Assert.Equal((short)93, finished.AwayScore);
+
+        var scheduled = result.Candidates.Single(x => x.SourceGameId == "1820576");
+        Assert.Equal("Champions League", scheduled.CountryName);
+        Assert.Equal("Champions League", scheduled.CompetitionName);
+        Assert.Equal("Qualification", scheduled.StageName);
+        Assert.Equal(CurrentResultStatuses.Scheduled, scheduled.Status);
+        Assert.Equal(new DateTime(2026, 9, 14, 18, 0, 0, DateTimeKind.Utc), scheduled.GameDateTimeUtc);
+    }
+
+    [Fact]
+    public async Task FetchAsync_RejectsUnrecognizedMarkupWhenEventsArePresent()
+    {
+        const string html = """
+            <html><body><div class="new-layout"><button data-eventId="1234567"></button><span>Team A</span><span>Team B</span></div></body></html>
+            """;
+        using var client = new HttpClient(new FixtureHandler(html))
+        {
+            BaseAddress = new Uri("https://www.livescores.com")
+        };
+        var provider = new LiveScoreDailyResultsProvider(
+            client,
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC" }));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => provider.FetchAsync(new DateOnly(2026, 9, 14), CancellationToken.None));
+
+        Assert.Contains("parser likely needs updating", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

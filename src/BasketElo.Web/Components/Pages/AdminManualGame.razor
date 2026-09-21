@@ -1,0 +1,325 @@
+@page "/admin/manual-game"
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@using BasketElo.Domain.Competitions
+@using BasketElo.Domain.Elo
+@using BasketElo.Domain.Games
+@using BasketElo.Domain.Teams
+@using Microsoft.AspNetCore.Components
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<PageTitle>Add match manually</PageTitle>
+
+<div class="admin-page">
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Game data</p>
+            <h1>Add match manually</h1>
+            <p class="intro">Add a fixture or final result that is missing from the live-results feed.</p>
+        </div>
+        <div class="header-actions">
+            <NavLink class="btn btn-outline-secondary" href="admin">Operations overview</NavLink>
+            <NavLink class="btn btn-outline-primary" href="games">Game records</NavLink>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="alert @messageCss" role="alert">@message</div>
+    }
+
+    <section class="card mb-4">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+                <div>
+                    <h2 class="h4 mb-1">Competition and season</h2>
+                    <p class="text-muted mb-0">The season will be created automatically for this competition if it does not exist.</p>
+                </div>
+                <NavLink class="btn btn-sm btn-outline-primary" href="admin/competitions">Create or manage competitions</NavLink>
+            </div>
+            <div class="row g-3">
+                <div class="col-lg-8">
+                    <label class="form-label" for="manual-competition">Competition</label>
+                    <select id="manual-competition" class="form-select" @bind="selectedCompetitionId">
+                        <option value="">Select a competition...</option>
+                        @foreach (var competition in competitions)
+                        {
+                            <option value="@competition.Id">@CompetitionLabel(competition)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-lg-4">
+                    <label class="form-label" for="manual-season">Season</label>
+                    <input id="manual-season" class="form-control" maxlength="20" placeholder="e.g. 2026-2027" @bind="seasonLabel" />
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card mb-4">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+                <div>
+                    <h2 class="h4 mb-1">Teams</h2>
+                    <p class="text-muted mb-0">Teams are global records. Adding this match associates them with the selected competition.</p>
+                </div>
+                <NavLink class="btn btn-sm btn-outline-primary" href="admin/teams">Create or manage teams</NavLink>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="manual-home-team">Home team</label>
+                    <select id="manual-home-team" class="form-select" @bind="homeTeamId">
+                        <option value="">Select the home team...</option>
+                        @foreach (var team in teams)
+                        {
+                            <option value="@team.Id">@TeamLabel(team)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="manual-away-team">Away team</label>
+                    <select id="manual-away-team" class="form-select" @bind="awayTeamId">
+                        <option value="">Select the away team...</option>
+                        @foreach (var team in teams)
+                        {
+                            <option value="@team.Id">@TeamLabel(team)</option>
+                        }
+                    </select>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="card-body">
+            <h2 class="h4">Match details</h2>
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label" for="manual-game-time">Date and time</label>
+                    <input id="manual-game-time" class="form-control" type="datetime-local" @bind="localDateTime" />
+                    <div class="form-text">Shown in your browser time zone: @timeZoneId</div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="manual-status">Status</label>
+                    <select id="manual-status" class="form-select" @bind="status" @bind:after="StatusChanged">
+                        @foreach (var option in ManualGameStatuses.All)
+                        {
+                            <option value="@option">@StatusLabel(option)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="manual-site">Venue treatment</label>
+                    <select id="manual-site" class="form-select" @bind="siteTreatment">
+                        @foreach (var option in HomeAdvantagePolicies.All)
+                        {
+                            <option value="@option">@VenueTreatmentLabel(option)</option>
+                        }
+                    </select>
+                </div>
+                @if (status == ManualGameStatuses.Finished)
+                {
+                    <div class="col-md-2">
+                        <label class="form-label" for="manual-home-score">Home score</label>
+                        <input id="manual-home-score" class="form-control" type="number" min="0" max="32767" @bind="homeScore" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label" for="manual-away-score">Away score</label>
+                        <input id="manual-away-score" class="form-control" type="number" min="0" max="32767" @bind="awayScore" />
+                    </div>
+                }
+                <div class="@(status == ManualGameStatuses.Finished ? "col-md-4" : "col-md-6")">
+                    <label class="form-label" for="manual-phase">Phase <span class="text-muted">(optional)</span></label>
+                    <input id="manual-phase" class="form-control" maxlength="100" placeholder="e.g. Final" @bind="competitionPhase" />
+                </div>
+                <div class="@(status == ManualGameStatuses.Finished ? "col-md-4" : "col-md-6")">
+                    <label class="form-label" for="manual-round">Round <span class="text-muted">(optional)</span></label>
+                    <input id="manual-round" class="form-control" maxlength="100" placeholder="e.g. Super Cup Final" @bind="competitionRound" />
+                </div>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-3 mt-4">
+                <button type="button" class="btn btn-primary" @onclick="CreateGameAsync" disabled="@(isBusy || !CanSubmit)">
+                    @(isBusy ? "Saving..." : status == ManualGameStatuses.Finished ? "Add final result" : "Add match")
+                </button>
+                @if (createdGame is not null)
+                {
+                    <a class="btn btn-outline-primary" href="@GamesHref(createdGame)">View in game records</a>
+                }
+                <span class="text-muted">A finished result becomes ELO-eligible; run the relevant ELO rebuild when you are ready.</span>
+            </div>
+        </div>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "competitionId")]
+    private Guid? CompetitionId { get; set; }
+
+    private IReadOnlyList<CompetitionAdminOption> competitions = [];
+    private IReadOnlyList<TeamAdminOption> teams = [];
+    private Guid? selectedCompetitionId;
+    private Guid? homeTeamId;
+    private Guid? awayTeamId;
+    private string seasonLabel = $"{DateTime.UtcNow.Year}-{DateTime.UtcNow.Year + 1}";
+    private DateTime localDateTime;
+    private string timeZoneId = "UTC";
+    private string status = ManualGameStatuses.Finished;
+    private short? homeScore;
+    private short? awayScore;
+    private string competitionPhase = string.Empty;
+    private string competitionRound = string.Empty;
+    private string siteTreatment = HomeAdvantagePolicies.Automatic;
+    private bool isBusy;
+    private string? message;
+    private string messageCss = "alert-info";
+    private ManualGameCreatedResponse? createdGame;
+
+    private bool CanSubmit => selectedCompetitionId.HasValue && homeTeamId.HasValue && awayTeamId.HasValue &&
+        homeTeamId != awayTeamId && !string.IsNullOrWhiteSpace(seasonLabel) && localDateTime != default &&
+        (status != ManualGameStatuses.Finished || (homeScore.HasValue && awayScore.HasValue));
+
+    protected override async Task OnInitializedAsync()
+    {
+        selectedCompetitionId = CompetitionId;
+        try
+        {
+            var competitionTask = Http.GetFromJsonAsync<IReadOnlyList<CompetitionAdminOption>>("api/admin/competitions/options");
+            var teamTask = Http.GetFromJsonAsync<IReadOnlyList<TeamAdminOption>>("api/admin/teams/options");
+            await Task.WhenAll(competitionTask, teamTask);
+            competitions = await competitionTask ?? [];
+            teams = (await teamTask ?? []).Where(x => x.IsActive).OrderBy(x => x.CanonicalName).ToList();
+        }
+        catch (Exception exception)
+        {
+            message = $"Could not load the manual-entry form: {exception.Message}";
+            messageCss = "alert-danger";
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            timeZoneId = await JS.InvokeAsync<string>("basketEloFixtures.getTimeZoneId");
+            var localValue = await JS.InvokeAsync<string>("basketEloFixtures.getLocalDateTimeValue");
+            if (DateTime.TryParse(localValue, out var parsed))
+            {
+                localDateTime = DateTime.SpecifyKind(parsed, DateTimeKind.Unspecified);
+            }
+            StateHasChanged();
+        }
+        catch (JSException)
+        {
+            localDateTime = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+            StateHasChanged();
+        }
+    }
+
+    private void StatusChanged()
+    {
+        if (status != ManualGameStatuses.Finished)
+        {
+            homeScore = null;
+            awayScore = null;
+        }
+    }
+
+    private async Task CreateGameAsync()
+    {
+        if (!CanSubmit)
+        {
+            return;
+        }
+
+        isBusy = true;
+        message = null;
+        createdGame = null;
+        try
+        {
+            var neutralSite = siteTreatment switch
+            {
+                HomeAdvantagePolicies.Neutral => true,
+                HomeAdvantagePolicies.Home => false,
+                _ => (bool?)null
+            };
+            using var response = await Http.PostAsJsonAsync(
+                "api/admin/games",
+                new CreateManualGameRequest(
+                    selectedCompetitionId!.Value,
+                    seasonLabel,
+                    DateTime.SpecifyKind(localDateTime, DateTimeKind.Unspecified),
+                    timeZoneId,
+                    homeTeamId!.Value,
+                    awayTeamId!.Value,
+                    homeScore,
+                    awayScore,
+                    status,
+                    competitionPhase,
+                    competitionRound,
+                    neutralSite));
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(await ReadErrorAsync(response));
+            }
+
+            createdGame = await response.Content.ReadFromJsonAsync<ManualGameCreatedResponse>();
+            message = createdGame is null
+                ? "Match added."
+                : $"Added {createdGame.HomeTeamName} vs {createdGame.AwayTeamName} to {createdGame.CompetitionName}.";
+            messageCss = "alert-success";
+            homeScore = null;
+            awayScore = null;
+            homeTeamId = null;
+            awayTeamId = null;
+        }
+        catch (Exception exception)
+        {
+            message = exception.Message;
+            messageCss = "alert-danger";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static string CompetitionLabel(CompetitionAdminOption competition) =>
+        string.IsNullOrWhiteSpace(competition.CountryCode)
+            ? competition.Name
+            : $"{competition.Name} ({competition.CountryCode})";
+
+    private static string TeamLabel(TeamAdminOption team) =>
+        $"{team.CanonicalName} ({team.CountryCode})";
+
+    private static string StatusLabel(string value) => value switch
+    {
+        ManualGameStatuses.Scheduled => "Scheduled",
+        ManualGameStatuses.Finished => "Finished",
+        ManualGameStatuses.Postponed => "Postponed",
+        ManualGameStatuses.Cancelled => "Cancelled",
+        _ => value
+    };
+
+    private static string VenueTreatmentLabel(string value) => value switch
+    {
+        HomeAdvantagePolicies.Automatic => "Competition default",
+        HomeAdvantagePolicies.Home => "Home advantage",
+        HomeAdvantagePolicies.Neutral => "Neutral venue",
+        _ => value
+    };
+
+    private static string GamesHref(ManualGameCreatedResponse game) =>
+        $"/games?league={Uri.EscapeDataString(game.CompetitionName)}&season={Uri.EscapeDataString(game.SeasonLabel)}";
+
+    private static async Task<string> ReadErrorAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase ?? "Request failed." : body;
+    }
+}

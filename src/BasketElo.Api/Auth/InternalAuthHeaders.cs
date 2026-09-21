@@ -7,4 +7,5 @@ public static class InternalAuthHeaders
     public const string Email = "X-BasketElo-User-Email";
     public const string Roles = "X-BasketElo-Roles";
     public const string AuthMode = "X-BasketElo-Auth-Mode";
+    public const string ClientIp = "X-BasketElo-Client-IP";
 }

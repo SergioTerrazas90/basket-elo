@@ -23,7 +23,10 @@ public sealed class FlashscoreDomesticHistoricalDataProvider(HttpClient httpClie
         new("Belgium", "EuroMillions Basketball League", "pro-basketball-league", "Ethias League", "BE", "https://www.flashscore.com", 2009, 2009),
         new("Belgium", "Pro Basketball League", "pro-basketball-league", "Ethias League", "BE", "https://www.flashscore.com", 2009, 2009),
         new("Croatia", "Premijer liga", "premijer-liga", "A1 Liga", "HR", "https://www.flashscore.info", 2008, 2013),
-        new("Latvia", "LBL", "lbl", "LBL", "LV", "https://www.flashscore.com", 2011, 2020)
+        new("Latvia", "LBL", "lbl", "LBL", "LV", "https://www.flashscore.com", 2011, 2020),
+        new("Denmark", "Basket Ligaen", "basketligaen", "Basket Ligaen", "DK", "https://www.flashscore.com", 2010, 2025),
+        new("Great Britain", "SLB", "slb", "SLB", "GB", "https://www.flashscore.com", 2010, 2025),
+        new("Norway", "BLNO", "blno", "BLNO", "NO", "https://www.flashscore.com", 2010, 2025)
     ];
 
     private static readonly Regex InitialResultsPattern = new(
@@ -267,6 +270,7 @@ public sealed class FlashscoreDomesticHistoricalDataProvider(HttpClient httpClie
         public string CountryPath => Country switch
         {
             "Czech Republic" => "czech-republic",
+            "Great Britain" => "united-kingdom",
             _ => Country.ToLowerInvariant().Replace(' ', '-')
         };
 

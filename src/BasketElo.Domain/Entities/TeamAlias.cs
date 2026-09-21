@@ -9,6 +9,8 @@ public class TeamAlias
     public string AliasName { get; set; } = string.Empty;
     public DateTime? ValidFromUtc { get; set; }
     public DateTime? ValidToUtc { get; set; }
+    public string? MappingMethod { get; set; }
+    public int? MappingConfidence { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public Team Team { get; set; } = null!;

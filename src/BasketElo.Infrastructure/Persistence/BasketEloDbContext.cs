@@ -467,6 +467,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.Source).HasMaxLength(50).IsRequired();
             entity.Property(x => x.SourceTeamId).HasMaxLength(100).IsRequired();
             entity.Property(x => x.AliasName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.MappingMethod).HasMaxLength(40);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
             entity.HasOne(x => x.Team)
                 .WithMany(x => x.Aliases)

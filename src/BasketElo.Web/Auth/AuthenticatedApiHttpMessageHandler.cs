@@ -12,6 +12,12 @@ public sealed class AuthenticatedApiHttpMessageHandler(
         if (!string.IsNullOrWhiteSpace(sharedSecret))
         {
             request.Headers.TryAddWithoutValidation(InternalAuthHeaders.SharedSecret, sharedSecret);
+
+            var clientIp = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
+            if (!string.IsNullOrWhiteSpace(clientIp))
+            {
+                request.Headers.TryAddWithoutValidation(InternalAuthHeaders.ClientIp, clientIp);
+            }
         }
 
         var user = httpContextAccessor.HttpContext?.User;

@@ -390,12 +390,34 @@ public class EloRebuildControllerTests
             CountryCode = "FR",
             IsActive = true
         };
+        var upcomingClub = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "Upcoming Club",
+            CountryCode = "DE",
+            IsActive = true
+        };
+        var qualifierClub = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "Qualifier Club",
+            CountryCode = "CH",
+            IsActive = true
+        };
         var acb = new Competition
         {
             Id = Guid.NewGuid(),
             Name = "ACB",
             Type = "league",
             CountryCode = "ES",
+            EloPoolKey = EloPoolKeys.EuropeClubs
+        };
+        var championsLeague = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "Champions League",
+            Type = "continental",
+            CountryCode = "EUR",
             EloPoolKey = EloPoolKeys.EuropeClubs
         };
         var latestSeason = new Season
@@ -416,9 +438,18 @@ public class EloRebuildControllerTests
             StartDateUtc = new DateTime(2013, 7, 1, 0, 0, 0, DateTimeKind.Utc),
             EndDateUtc = new DateTime(2014, 6, 30, 23, 59, 59, DateTimeKind.Utc)
         };
-        dbContext.Teams.AddRange(currentClub, relegatedClub);
-        dbContext.Competitions.Add(acb);
-        dbContext.Seasons.AddRange(latestSeason, oldSeason);
+        var qualifierSeason = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = championsLeague.Id,
+            Competition = championsLeague,
+            Label = "2026-2027",
+            StartDateUtc = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(2027, 6, 30, 23, 59, 59, DateTimeKind.Utc)
+        };
+        dbContext.Teams.AddRange(currentClub, relegatedClub, upcomingClub, qualifierClub);
+        dbContext.Competitions.AddRange(acb, championsLeague);
+        dbContext.Seasons.AddRange(latestSeason, oldSeason, qualifierSeason);
         dbContext.Games.AddRange(
             new Game
             {
@@ -443,6 +474,30 @@ public class EloRebuildControllerTests
                 HomeTeamId = relegatedClub.Id,
                 AwayTeamId = currentClub.Id,
                 Status = "finished"
+            },
+            new Game
+            {
+                Id = Guid.NewGuid(),
+                CompetitionId = acb.Id,
+                Competition = acb,
+                SeasonId = latestSeason.Id,
+                Season = latestSeason,
+                GameDateTimeUtc = new DateTime(2026, 5, 10, 19, 0, 0, DateTimeKind.Utc),
+                HomeTeamId = upcomingClub.Id,
+                AwayTeamId = currentClub.Id,
+                Status = "scheduled"
+            },
+            new Game
+            {
+                Id = Guid.NewGuid(),
+                CompetitionId = championsLeague.Id,
+                Competition = championsLeague,
+                SeasonId = qualifierSeason.Id,
+                Season = qualifierSeason,
+                GameDateTimeUtc = new DateTime(2026, 9, 15, 19, 0, 0, DateTimeKind.Utc),
+                HomeTeamId = qualifierClub.Id,
+                AwayTeamId = qualifierClub.Id,
+                Status = "finished"
             });
         dbContext.TeamRatings.AddRange(
             new TeamRating
@@ -460,6 +515,22 @@ public class EloRebuildControllerTests
                 EloPoolKey = EloPoolKeys.EuropeClubs,
                 RulesetVersion = EloRulesetVersions.AdjustedV1,
                 Elo = 1700m
+            },
+            new TeamRating
+            {
+                TeamId = upcomingClub.Id,
+                Team = upcomingClub,
+                EloPoolKey = EloPoolKeys.EuropeClubs,
+                RulesetVersion = EloRulesetVersions.AdjustedV1,
+                Elo = 1650m
+            },
+            new TeamRating
+            {
+                TeamId = qualifierClub.Id,
+                Team = qualifierClub,
+                EloPoolKey = EloPoolKeys.EuropeClubs,
+                RulesetVersion = EloRulesetVersions.AdjustedV1,
+                Elo = 1500m
             });
         await dbContext.SaveChangesAsync();
         var controller = CreateController(dbContext, new ScopedIdentityHealthService(EloPoolKeys.EuropeClubs));
@@ -478,8 +549,11 @@ public class EloRebuildControllerTests
 
         var current = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(currentResult.Result).Value);
         Assert.Equal(EloTeamScopes.Current, current.TeamScope);
-        Assert.Collection(current.Rankings, row => Assert.Equal(currentClub.Id, row.TeamId));
-        Assert.Equal(["Spain"], current.Filters.Countries);
+        Assert.Equal(3, current.Rankings.Count);
+        Assert.Contains(current.Rankings, row => row.TeamId == currentClub.Id);
+        Assert.Contains(current.Rankings, row => row.TeamId == upcomingClub.Id);
+        Assert.Contains(current.Rankings, row => row.TeamId == qualifierClub.Id);
+        Assert.Equal(["Germany", "Spain", "Switzerland"], current.Filters.Countries);
 
         var historicalResult = await controller.GetRankings(
             rulesetVersion: null,
@@ -496,9 +570,9 @@ public class EloRebuildControllerTests
 
         var historical = Assert.IsType<EloRankingsResponse>(Assert.IsType<OkObjectResult>(historicalResult.Result).Value);
         Assert.Equal(EloTeamScopes.Historical, historical.TeamScope);
-        Assert.Equal(2, historical.Rankings.Count);
+        Assert.Equal(4, historical.Rankings.Count);
         Assert.False(historical.Rankings.Single(row => row.TeamId == relegatedClub.Id).IsActive);
-        Assert.Equal(["France", "Spain"], historical.Filters.Countries);
+        Assert.Equal(["France", "Germany", "Spain", "Switzerland"], historical.Filters.Countries);
     }
 
     [Fact]

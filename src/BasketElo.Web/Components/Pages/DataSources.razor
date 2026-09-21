@@ -184,6 +184,7 @@
             .ToList();
 
         allRegions = AddPrintedBookSources(allRegions).ToList();
+        allRegions = AddCurrentResultsSources(allRegions).ToList();
 
         fibaRegions = FilterRegions(allRegions, league => league.EloPoolKey == EloPoolKeys.NationalTeams);
         clubRegions = FilterRegions(allRegions, league => league.EloPoolKey != EloPoolKeys.NationalTeams);
@@ -218,6 +219,27 @@
                             : league)
                         .ToList()
                 })
+            .ToList();
+
+    private IReadOnlyList<RegionView> AddCurrentResultsSources(IReadOnlyList<RegionView> regions)
+        => regions
+            .Select(region => region with
+            {
+                Leagues = region.Leagues
+                    .Select(league => CurrentResultsCompetitions.Contains($"{region.Name}|{league.LeagueName}")
+                        ? league with
+                        {
+                            Sources = league.Sources
+                                .Append(new SourceView(
+                                    "Livescore current results",
+                                    "https://www.livescore.com/en/basketball/",
+                                    T["CurrentResultsFeed"],
+                                    ["2026-2027"]))
+                                .ToList()
+                        }
+                        : league)
+                    .ToList()
+            })
             .ToList();
 
     private static int RegionSortOrder(string region)
@@ -365,4 +387,12 @@
             ["FIBA EuroBasket Division B"] = ["1973", "1975", "1977", "1979", "1981", "1983", "1985", "1987"],
             ["FIBA EuroBasket Pre-Qualifiers"] = ["1991"]
         };
+
+    private static readonly HashSet<string> CurrentResultsCompetitions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Czech Republic|NBL",
+        "Denmark|Basket Ligaen",
+        "Great Britain|SLB",
+        "Norway|BLNO"
+    };
 }

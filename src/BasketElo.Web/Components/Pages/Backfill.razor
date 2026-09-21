@@ -6,14 +6,14 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>Backfill Coverage</PageTitle>
+<PageTitle>Historical imports</PageTitle>
 
 <div class="backfill-page">
     <section class="page-header">
         <div>
-            <p class="eyebrow">Coverage Dashboard</p>
-            <h1>Competition and season backfill coverage</h1>
-            <p class="intro">See what is already loaded, spot gaps from the configured competition catalog, and queue one season or a full competition from the same screen.</p>
+            <p class="eyebrow">Game data</p>
+            <h1>Historical imports</h1>
+            <p class="intro">See which competition seasons are loaded, find coverage gaps, and queue one season or a full competition for import.</p>
         </div>
         <button class="btn btn-outline-primary" @onclick="RefreshAsync" disabled="@isBusy">Refresh</button>
     </section>

@@ -1,0 +1,278 @@
+@page "/admin/social-posts"
+@attribute [Authorize(Roles = "admin")]
+@rendermode InteractiveServer
+@using BasketElo.Domain.Admin
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+<PageTitle>Social post studio</PageTitle>
+
+<div class="social-studio-page">
+    <header class="studio-header">
+        <div>
+            <p class="eyebrow">Publishing</p>
+            <h1>Social post studio</h1>
+            <p class="intro">The strongest BasketElo stories, ready to copy and publish manually.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="admin">Operations overview</a>
+    </header>
+
+    <section class="studio-controls" aria-label="Post controls">
+        <div class="control-field">
+            <label for="storyDate">Story date (UTC)</label>
+            <input id="storyDate"
+                   class="form-control"
+                   type="date"
+                   @bind-value="selectedDate"
+                   @bind-value:format="yyyy-MM-dd" />
+        </div>
+        <div class="control-field">
+            <span class="control-label">Caption language</span>
+            <div class="language-switch" role="group" aria-label="Caption language">
+                <button type="button" class="@(captionLanguage == "en" ? "is-active" : null)" @onclick='() => captionLanguage = "en"'>English</button>
+                <button type="button" class="@(captionLanguage == "es" ? "is-active" : null)" @onclick='() => captionLanguage = "es"'>Español</button>
+            </div>
+        </div>
+        <button type="button" class="btn btn-primary generate-button" @onclick="LoadAsync" disabled="@isBusy">
+            @(isBusy ? "Generating…" : "Generate daily picks")
+        </button>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-success" role="status">@statusMessage</div>
+    }
+
+    @if (response is not null)
+    {
+        @if (response.UsedFallbackDate)
+        {
+            <div class="alert alert-warning" role="status">
+                No rated NBA, ACB, or EuroLeague games were found on @response.RequestedDate.ToString("MMM d, yyyy").
+                Game stories use the latest available date, @response.ContentDate.ToString("MMM d, yyyy"); the ranking card is current.
+            </div>
+        }
+
+        <div class="studio-summary">
+            <div>
+                <strong>@response.Posts.Count daily picks</strong>
+                <span>@response.RatedGames rated games considered</span>
+            </div>
+            <small>Generated @response.GeneratedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</small>
+        </div>
+
+        @if (response.Posts.Count == 0)
+        {
+            <section class="empty-state">
+                <h2>No post candidates yet</h2>
+                <p>There are no rated target games or current rankings available for this date.</p>
+            </section>
+        }
+        else
+        {
+            <div class="draft-list">
+                @foreach (var draft in response.Posts)
+                {
+                    <article class="draft-card" @key="draft.Id">
+                        <div class="preview-shell">
+                            <svg id="@CardId(draft)"
+                                 class="social-card-preview"
+                                 viewBox="0 0 1200 675"
+                                 xmlns="http://www.w3.org/2000/svg"
+                                 role="img"
+                                 aria-label="@draft.Headline">
+                                <defs>
+                                    <linearGradient id="@GradientId(draft)" x1="0" y1="0" x2="1" y2="1">
+                                        <stop offset="0%" stop-color="#0b1320" />
+                                        <stop offset="58%" stop-color="#163b50" />
+                                        <stop offset="100%" stop-color="#1f7a68" />
+                                    </linearGradient>
+                                    <linearGradient id="@BarGradientId(draft)" x1="0" y1="0" x2="1" y2="0">
+                                        <stop offset="0%" stop-color="#73c7ad" />
+                                        <stop offset="100%" stop-color="#d8c269" />
+                                    </linearGradient>
+                                </defs>
+
+                                <rect width="1200" height="675" rx="32" fill="@($"url(#{GradientId(draft)})")" />
+                                <circle cx="1080" cy="80" r="210" fill="#ffffff" opacity="0.035" />
+                                <circle cx="1125" cy="595" r="260" fill="#d8c269" opacity="0.055" />
+
+                                <g transform="translate(64 52)">
+                                    <rect width="50" height="50" rx="14" fill="#d8c269" />
+                                    <path d="M14 15h22v6H20v6h14v6H20v6h16" fill="none" stroke="#0b1320" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+                                    <text x="66" y="24" fill="#ffffff" font-family="Arial, sans-serif" font-size="29" font-weight="800">BasketElo</text>
+                                    <text x="66" y="47" fill="#a8c4c3" font-family="Arial, sans-serif" font-size="16" font-weight="600" letter-spacing="2">BASKETBALL INTELLIGENCE</text>
+                                </g>
+
+                                <text x="1136" y="78" text-anchor="end" fill="#d5e4e1" font-family="Arial, sans-serif" font-size="20" font-weight="700">@draft.League</text>
+                                <text x="64" y="160" fill="#d8c269" font-family="Arial, sans-serif" font-size="21" font-weight="800" letter-spacing="4">@draft.Kicker</text>
+                                <text x="64" y="215" fill="#ffffff" font-family="Arial, sans-serif" font-size="43" font-weight="800">@FitText(draft.Headline, 39)</text>
+                                <text x="64" y="250" fill="#b8d0ce" font-family="Arial, sans-serif" font-size="22" font-weight="600">@FitText(draft.Subheadline, 70)</text>
+
+                                @if (draft.Rankings.Count > 0)
+                                {
+                                    var minimumElo = draft.Rankings.Min(x => x.Elo);
+                                    var maximumElo = draft.Rankings.Max(x => x.Elo);
+                                    @foreach (var row in draft.Rankings)
+                                    {
+                                        var y = 296 + ((row.Rank - 1) * 63);
+                                        var barWidth = RankingBarWidth(row.Elo, minimumElo, maximumElo);
+                                        <g>
+                                            <text x="67" y="@(y + 29)" fill="#d8c269" font-family="Arial, sans-serif" font-size="22" font-weight="800">@row.Rank</text>
+                                            <text x="108" y="@(y + 29)" fill="#ffffff" font-family="Arial, sans-serif" font-size="24" font-weight="700">@FitText(row.TeamName, 25)</text>
+                                            <rect x="455" y="@y" width="610" height="40" rx="20" fill="#ffffff" opacity="0.10" />
+                                            <rect x="455" y="@y" width="@barWidth" height="40" rx="20" fill="@($"url(#{BarGradientId(draft)})")" />
+                                            <text x="1118" y="@(y + 28)" text-anchor="end" fill="#ffffff" font-family="Arial, sans-serif" font-size="22" font-weight="800">@row.Elo.ToString("0.0")</text>
+                                        </g>
+                                    }
+                                }
+                                else if (draft.Game is { } game)
+                                {
+                                    <g transform="translate(64 292)">
+                                        <rect width="1072" height="176" rx="24" fill="#ffffff" opacity="0.085" />
+                                        <text x="38" y="48" fill="#9fc1bd" font-family="Arial, sans-serif" font-size="17" font-weight="700" letter-spacing="2">FINAL</text>
+                                        <text x="38" y="98" fill="#ffffff" font-family="Arial, sans-serif" font-size="31" font-weight="800">@FitText(game.Winner, 25)</text>
+                                        <text x="38" y="140" fill="#b8d0ce" font-family="Arial, sans-serif" font-size="25" font-weight="650">@FitText(game.Loser, 28)</text>
+                                        <text x="808" y="105" fill="#ffffff" font-family="Arial, sans-serif" font-size="78" font-weight="900">@game.WinnerScore</text>
+                                        <text x="895" y="105" fill="#779b99" font-family="Arial, sans-serif" font-size="54" font-weight="700">–</text>
+                                        <text x="950" y="105" fill="#b8d0ce" font-family="Arial, sans-serif" font-size="65" font-weight="800">@game.LoserScore</text>
+                                    </g>
+
+                                    <g transform="translate(64 492)">
+                                        <rect width="330" height="96" rx="20" fill="#102a3a" stroke="#ffffff" stroke-opacity="0.12" />
+                                        <text x="25" y="33" fill="#91b8b2" font-family="Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="2">PRE-GAME CHANCE</text>
+                                        <text x="25" y="72" fill="#ffffff" font-family="Arial, sans-serif" font-size="33" font-weight="900">@game.ExpectedWinPercentage.ToString("0")%</text>
+                                    </g>
+                                    <g transform="translate(414 492)">
+                                        <rect width="330" height="96" rx="20" fill="#102a3a" stroke="#ffffff" stroke-opacity="0.12" />
+                                        <text x="25" y="33" fill="#91b8b2" font-family="Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="2">ELO CHANGE</text>
+                                        <text x="25" y="72" fill="#d8c269" font-family="Arial, sans-serif" font-size="33" font-weight="900">@game.EloDelta.ToString("+0.0;-0.0;0.0")</text>
+                                    </g>
+                                    <g transform="translate(764 492)">
+                                        <rect width="372" height="96" rx="20" fill="#102a3a" stroke="#ffffff" stroke-opacity="0.12" />
+                                        <text x="25" y="33" fill="#91b8b2" font-family="Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="2">RATING</text>
+                                        <text x="25" y="72" fill="#ffffff" font-family="Arial, sans-serif" font-size="30" font-weight="900">@game.WinnerPreElo.ToString("0.0") → @game.WinnerPostElo.ToString("0.0")</text>
+                                    </g>
+                                }
+
+                                <line x1="64" y1="623" x2="1136" y2="623" stroke="#ffffff" stroke-opacity="0.12" />
+                                <text x="64" y="653" fill="#9fc1bd" font-family="Arial, sans-serif" font-size="17" font-weight="700">basketelo.com</text>
+                                <text x="1136" y="653" text-anchor="end" fill="#9fc1bd" font-family="Arial, sans-serif" font-size="16">Adjusted ELO · @response.ContentDate.ToString("MMM d, yyyy")</text>
+                            </svg>
+                        </div>
+
+                        <div class="draft-copy">
+                            <div class="draft-heading">
+                                <div>
+                                    <span class="draft-type">@draft.Kicker</span>
+                                    <h2>@draft.Headline</h2>
+                                </div>
+                                <span class="league-pill">@draft.League</span>
+                            </div>
+
+                            <label for="caption-@draft.Id">Ready-to-post caption</label>
+                            <textarea id="caption-@draft.Id" class="form-control caption-box" rows="9" readonly>@CaptionFor(draft)</textarea>
+                            <div class="caption-meta">
+                                <span class="@(CaptionLength(draft) > 280 ? "over-limit" : null)">@CaptionLength(draft) / 280 characters</span>
+                                <span>Includes tracked destination link</span>
+                            </div>
+
+                            <div class="draft-actions">
+                                <button type="button" class="btn btn-primary" @onclick="() => CopyCaptionAsync(draft)">Copy caption</button>
+                                <button type="button" class="btn btn-outline-primary" @onclick="() => DownloadPngAsync(draft)">Download PNG</button>
+                                <a class="btn btn-outline-secondary" href="@AbsoluteLink(draft)" target="_blank" rel="noopener">Open destination</a>
+                            </div>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private DateTime selectedDate = DateTime.UtcNow.Date;
+    private string captionLanguage = "en";
+    private bool isBusy;
+    private string? errorMessage;
+    private string? statusMessage;
+    private AdminSocialPostsResponse? response;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isBusy = true;
+        errorMessage = null;
+        statusMessage = null;
+
+        try
+        {
+            var date = selectedDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            response = await Http.GetFromJsonAsync<AdminSocialPostsResponse>($"api/admin/social-posts?date={date}");
+            if (response is null)
+            {
+                throw new InvalidOperationException("The API returned no social post data.");
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not generate social posts: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task CopyCaptionAsync(AdminSocialPostDraft draft)
+    {
+        await JS.InvokeVoidAsync("basketEloSocial.copyText", CaptionFor(draft));
+        statusMessage = $"Copied the {draft.Kicker.ToLowerInvariant()} caption.";
+    }
+
+    private async Task DownloadPngAsync(AdminSocialPostDraft draft)
+    {
+        await JS.InvokeVoidAsync("basketEloSocial.downloadSvgAsPng", CardId(draft), $"basketelo-{draft.Id}.png");
+        statusMessage = "PNG download prepared.";
+    }
+
+    private string CaptionFor(AdminSocialPostDraft draft)
+    {
+        var caption = captionLanguage == "es" ? draft.CaptionSpanish : draft.CaptionEnglish;
+        return $"{caption}\n\n{AbsoluteLink(draft)}";
+    }
+
+    private int CaptionLength(AdminSocialPostDraft draft) => CaptionFor(draft).Length;
+
+    private string AbsoluteLink(AdminSocialPostDraft draft)
+    {
+        var baseUri = Navigation.BaseUri.TrimEnd('/');
+        var separator = draft.LinkPath.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+        return $"{baseUri}{draft.LinkPath}{separator}utm_source=x&utm_medium=social&utm_campaign=admin_daily_pick";
+    }
+
+    private static string CardId(AdminSocialPostDraft draft) => $"social-card-{draft.Id}";
+    private static string GradientId(AdminSocialPostDraft draft) => $"social-gradient-{draft.Id}";
+    private static string BarGradientId(AdminSocialPostDraft draft) => $"bar-gradient-{draft.Id}";
+
+    private static string FitText(string value, int maxLength) =>
+        value.Length <= maxLength ? value : $"{value[..(maxLength - 1)].TrimEnd()}…";
+
+    private static int RankingBarWidth(decimal elo, decimal minimum, decimal maximum)
+    {
+        if (maximum <= minimum)
+        {
+            return 610;
+        }
+
+        var normalized = (elo - minimum) / (maximum - minimum);
+        return (int)Math.Round(350m + (normalized * 260m));
+    }
+}

@@ -9,17 +9,17 @@
 @inject EloRebuildNotificationCenter Notifications
 @implements IDisposable
 
-<PageTitle>Internal Admin</PageTitle>
+<PageTitle>Operations overview</PageTitle>
 
 <div class="admin-page">
     <section class="page-header">
         <div>
-            <p class="eyebrow">Internal Admin</p>
-            <h1>Pipeline operations</h1>
-            <p class="intro">Monitor ingestion, data health, system status, and ELO rebuilds from one internal surface.</p>
+            <p class="eyebrow">BasketElo operations</p>
+            <h1>Operations overview</h1>
+            <p class="intro">Check system health, data coverage, and ELO rebuild activity from one place.</p>
         </div>
         <div class="admin-header-actions">
-            <a class="btn btn-outline-primary" href="/admin/jobs" target="_blank" rel="noopener">ELO run jobs <span aria-hidden="true">↗</span></a>
+            <a class="btn btn-outline-primary" href="/admin/jobs" target="_blank" rel="noopener">Open ELO job monitor <span aria-hidden="true">↗</span></a>
             <button class="btn btn-outline-primary" @onclick="() => RefreshAsync()" disabled="@isBusy">Refresh</button>
         </div>
     </section>
@@ -156,12 +156,20 @@
                 </dl>
 
                 <div class="link-grid compact-links">
+                    <a class="tool-card" href="admin/manual-game">
+                        <span class="tool-label">Manual data</span>
+                        <strong>Add a missing match</strong>
+                    </a>
+                    <a class="tool-card" href="admin/social-posts">
+                        <span class="tool-label">Social post studio</span>
+                        <strong>Prepare daily posts</strong>
+                    </a>
                     <a class="tool-card" href="admin/identity">
-                        <span class="tool-label">Identity Health</span>
-                        <strong>Review findings</strong>
+                        <span class="tool-label">Identity checks</span>
+                        <strong>Run diagnostics</strong>
                     </a>
                     <a class="tool-card" href="backfill">
-                        <span class="tool-label">Backfill Coverage</span>
+                        <span class="tool-label">Historical imports</span>
                         <strong>Queue seasons</strong>
                     </a>
                 </div>

@@ -303,7 +303,8 @@ public sealed record EloTeamHistoryGamesResponse(
     int TotalGames,
     int SampledGames,
     bool WasSampled,
-    IReadOnlyCollection<EloTeamGameDto> Games);
+    IReadOnlyCollection<EloTeamGameDto> Games,
+    EloTeamHistoricalHighlights? HistoricalHighlights = null);
 public sealed record EloTeamGameDto(
     Guid GameId,
     DateTime GameDateTimeUtc,

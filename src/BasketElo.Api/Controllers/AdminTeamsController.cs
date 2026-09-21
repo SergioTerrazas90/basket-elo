@@ -1,4 +1,5 @@
 using BasketElo.Api.Auth;
+using BasketElo.Domain.Entities;
 using BasketElo.Domain.Teams;
 using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.Identity;
@@ -15,6 +16,140 @@ public class AdminTeamsController(
     BasketEloDbContext dbContext,
     IIdentityHealthCheckService identityHealthCheckService) : ControllerBase
 {
+    [HttpGet("duplicate-alias-groups")]
+    public async Task<ActionResult<DuplicateTeamAliasGroupsResponse>> GetDuplicateAliasGroups(
+        CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.TeamAliases
+            .AsNoTracking()
+            .Select(x => new
+            {
+                AliasId = x.Id,
+                x.AliasName,
+                x.Source,
+                x.SourceTeamId,
+                x.TeamId,
+                x.Team.CanonicalName,
+                x.Team.CountryCode
+            })
+            .ToListAsync(cancellationToken);
+        var acceptedKeys = (await dbContext.IdentityReviewDecisions
+            .AsNoTracking()
+            .Where(x =>
+                x.FindingType == TeamAliasCollisionReview.FindingType &&
+                x.ResolutionAction == TeamAliasCollisionReview.AcceptedAction)
+            .Select(x => x.DecisionKey)
+            .ToListAsync(cancellationToken))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var groups = rows
+            .GroupBy(x => new
+            {
+                AliasName = TeamAliasCollisionReview.NormalizeAlias(x.AliasName),
+                CountryCode = TeamAliasCollisionReview.NormalizeCountry(x.CountryCode)
+            })
+            .Where(group =>
+                group.Select(x => x.TeamId).Distinct().Count() > 1 &&
+                !acceptedKeys.Contains(TeamAliasCollisionReview.CreateDecisionKey(
+                    group.Key.AliasName,
+                    group.Key.CountryCode,
+                    group.Select(x => x.TeamId))))
+            .Select(group => new DuplicateTeamAliasGroup(
+                group
+                    .GroupBy(x => x.AliasName.Trim(), StringComparer.OrdinalIgnoreCase)
+                    .OrderByDescending(x => x.Count())
+                    .ThenBy(x => x.Key)
+                    .Select(x => x.Key)
+                    .First(),
+                group.Key.CountryCode,
+                group
+                    .GroupBy(x => new { x.TeamId, x.CanonicalName })
+                    .OrderBy(x => x.Key.CanonicalName)
+                    .ThenBy(x => x.Key.TeamId)
+                    .Select(team => new DuplicateTeamAliasMember(
+                        team.Key.TeamId,
+                        team.Key.CanonicalName,
+                        team
+                            .OrderBy(x => x.Source)
+                            .ThenBy(x => x.SourceTeamId)
+                            .Select(x => new DuplicateTeamAliasDetail(
+                                x.AliasId,
+                                x.AliasName,
+                                x.Source,
+                                x.SourceTeamId))
+                            .ToList()))
+                    .ToList()))
+            .OrderBy(x => x.CountryCode)
+            .ThenBy(x => x.AliasName)
+            .ToList();
+
+        return Ok(new DuplicateTeamAliasGroupsResponse(groups.Count, groups));
+    }
+
+    [HttpPost("duplicate-alias-groups/accept")]
+    public async Task<IActionResult> AcceptDuplicateAliasGroup(
+        [FromBody] AcceptDuplicateTeamAliasGroupRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.AliasName) || request.TeamIds.Count < 2)
+        {
+            return BadRequest("Choose a duplicate alias group containing at least two teams.");
+        }
+
+        var note = request.Note?.Trim();
+        if (note?.Length > 1000)
+        {
+            return BadRequest("The review note must be 1000 characters or fewer.");
+        }
+
+        var requestedAlias = TeamAliasCollisionReview.NormalizeAlias(request.AliasName);
+        var requestedCountry = TeamAliasCollisionReview.NormalizeCountry(request.CountryCode);
+        var requestedTeamIds = request.TeamIds.Distinct().OrderBy(x => x).ToArray();
+        var rows = await dbContext.TeamAliases
+            .AsNoTracking()
+            .Select(x => new { x.AliasName, x.Team.CountryCode, x.TeamId })
+            .ToListAsync(cancellationToken);
+        var currentGroup = rows
+            .Where(x =>
+                TeamAliasCollisionReview.NormalizeAlias(x.AliasName) == requestedAlias &&
+                TeamAliasCollisionReview.NormalizeCountry(x.CountryCode) == requestedCountry)
+            .Select(x => x.TeamId)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToArray();
+
+        if (currentGroup.Length < 2 || !currentGroup.SequenceEqual(requestedTeamIds))
+        {
+            return Conflict("This alias group changed after the page loaded. Refresh it before reviewing.");
+        }
+
+        var decisionKey = TeamAliasCollisionReview.CreateDecisionKey(
+            requestedAlias,
+            requestedCountry,
+            currentGroup);
+        if (await dbContext.IdentityReviewDecisions.AnyAsync(
+            x => x.DecisionKey == decisionKey,
+            cancellationToken))
+        {
+            return NoContent();
+        }
+
+        var createdBy = ControllerContext.HttpContext?.Request.Headers[InternalAuthHeaders.Email]
+            .FirstOrDefault();
+        dbContext.IdentityReviewDecisions.Add(new IdentityReviewDecision
+        {
+            Id = Guid.NewGuid(),
+            DecisionKey = decisionKey,
+            FindingType = TeamAliasCollisionReview.FindingType,
+            ResolutionAction = TeamAliasCollisionReview.AcceptedAction,
+            Note = note,
+            CreatedBy = string.IsNullOrWhiteSpace(createdBy) ? "admin-ui" : createdBy,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
     [HttpGet]
     public async Task<ActionResult<TeamAdminListResponse>> GetTeams(
         [FromQuery] string? country,
@@ -125,6 +260,57 @@ public class AdminTeamsController(
         {
             return NotFound(ex.Message);
         }
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<TeamAdminDetail>> CreateTeam(
+        [FromBody] CreateTeamAdminRequest request,
+        CancellationToken cancellationToken)
+    {
+        var canonicalName = request.CanonicalName?.Trim();
+        if (string.IsNullOrWhiteSpace(canonicalName))
+        {
+            return BadRequest("Canonical name is required.");
+        }
+
+        if (canonicalName.Length > 200)
+        {
+            return BadRequest("Canonical name cannot exceed 200 characters.");
+        }
+
+        if (request.Description?.Length > 4000)
+        {
+            return BadRequest("Description cannot exceed 4000 characters.");
+        }
+
+        var countryCode = CountryCodeCatalog.Normalize(request.CountryCode) ?? "UNK";
+        var duplicateExists = await dbContext.Teams.AnyAsync(
+            x => x.CanonicalName.ToLower() == canonicalName.ToLower() && x.CountryCode == countryCode,
+            cancellationToken);
+        if (duplicateExists)
+        {
+            return Conflict("A team with this canonical name and country already exists.");
+        }
+
+        var team = new Domain.Entities.Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = canonicalName,
+            CountryCode = countryCode,
+            Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+            IsActive = request.IsActive,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        dbContext.Teams.Add(team);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await identityHealthCheckService.InvalidateChangedScopeAsync(
+            new IdentityChangedScope { CountryCode = team.CountryCode },
+            cancellationToken);
+
+        return CreatedAtAction(
+            nameof(GetTeam),
+            new { teamId = team.Id },
+            await BuildTeamDetailAsync(team.Id, cancellationToken));
     }
 
     [HttpPatch("{teamId:guid}")]

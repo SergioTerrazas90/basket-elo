@@ -5,7 +5,7 @@
 @using BasketElo.Domain.Teams
 @inject HttpClient Http
 
-<PageTitle>Identity Review</PageTitle>
+<PageTitle>Identity decisions</PageTitle>
 
 <div class="admin-identity-review-page @(isBusy ? "identity-review-loading" : string.Empty)" aria-busy="@isBusy">
     @if (isBusy)
@@ -19,10 +19,11 @@
 
     <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
         <div>
-            <h1>Identity review</h1>
-            <p class="text-muted mb-0">Review one team pair at a time. Findings for duplicate, cross-source, and cross-season checks are grouped together so a decision applies to the whole pair.</p>
+            <p class="text-uppercase text-muted small fw-bold mb-1">Review &amp; resolve</p>
+            <h1>Identity decisions</h1>
+            <p class="text-muted mb-0">Resolve one flagged team pair at a time; related findings are grouped so one decision clears the whole pair.</p>
         </div>
-        <NavLink class="btn btn-outline-secondary" href="admin/identity">Identity diagnostics</NavLink>
+        <NavLink class="btn btn-outline-secondary" href="admin/identity">Back to identity checks</NavLink>
     </div>
 
     <section class="identity-review-toolbar card mb-4">

@@ -1,6 +1,7 @@
 using BasketElo.Api.Auth;
 using BasketElo.Domain.CurrentResults;
 using BasketElo.Domain.Tournaments;
+using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.CurrentResults;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
@@ -49,6 +50,12 @@ public class CurrentResultsController(
             .CountAsync(review => review.Status == CurrentResultReviewStatuses.Open, cancellationToken);
         return Ok(count);
     }
+
+    [HttpGet("team-mappings")]
+    public async Task<ActionResult<IReadOnlyList<CurrentResultTeamMappingHistoryDto>>> GetRecentTeamMappings(
+        [FromQuery] int days = 10,
+        CancellationToken cancellationToken = default) =>
+        Ok(await ingestionService.GetRecentTeamMappingsAsync(days, cancellationToken));
 
     [HttpGet("reviews")]
     public async Task<ActionResult<IReadOnlyCollection<CurrentResultReviewDto>>> GetReviews(
@@ -100,6 +107,10 @@ public class CurrentResultsController(
         }
     }
 
+    [HttpPost("reviews/reprocess-mapped")]
+    public async Task<ActionResult<int>> ReprocessMappedCompetitionReviews(CancellationToken cancellationToken) =>
+        Ok(await ingestionService.ReprocessMergedCompetitionReviewsAsync(cancellationToken));
+
     [HttpGet("tournament-cycles")]
     public async Task<ActionResult<CurrentResultsTournamentCycleOptionsResponse>> GetTournamentCycles(
         CancellationToken cancellationToken)
@@ -128,6 +139,10 @@ public class CurrentResultsController(
         {
             return BadRequest(exception.Message);
         }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(exception.Message);
+        }
     }
 
     [HttpGet("reviews/{reviewId:guid}/matches")]
@@ -144,7 +159,8 @@ public class CurrentResultsController(
         var maximumDateTimeUtc = review.GameDateTimeUtc.AddHours(36);
         var query = dbContext.Games
             .AsNoTracking()
-            .Where(x => x.Status == CurrentResultStatuses.Scheduled &&
+            .Where(x => x.Source != review.Source &&
+                        (x.Status == CurrentResultStatuses.Scheduled || x.Status == "not started") &&
                         x.GameDateTimeUtc >= minimumDateTimeUtc &&
                         x.GameDateTimeUtc <= maximumDateTimeUtc);
         if (!string.IsNullOrWhiteSpace(review.SuggestedCompetitionName))
@@ -167,7 +183,80 @@ public class CurrentResultsController(
                 x.AwayTeam.CanonicalName,
                 x.Status))
             .ToListAsync(cancellationToken);
-        return Ok(matches);
+        return Ok(matches
+            .Where(x => IsLikelyTeamNameMatch(review.HomeTeamName, x.HomeTeamName) &&
+                        IsLikelyTeamNameMatch(review.AwayTeamName, x.AwayTeamName))
+            .Take(50)
+            .ToList());
+    }
+
+    [HttpGet("reviews/{reviewId:guid}/team-candidates")]
+    public async Task<ActionResult<IReadOnlyList<CurrentResultReviewTeamCandidateDto>>> GetReviewTeamCandidates(
+        Guid reviewId,
+        [FromQuery] string side,
+        [FromQuery] string? search,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await ingestionService.GetReviewTeamCandidatesAsync(reviewId, side, search, cancellationToken));
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return NotFound(exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(exception.Message);
+        }
+    }
+
+    [HttpPost("reviews/{reviewId:guid}/map-team")]
+    public async Task<ActionResult<CurrentResultReviewTeamMappingDto>> MapReviewTeam(
+        Guid reviewId,
+        [FromBody] CurrentResultReviewTeamMappingRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await ingestionService.MapReviewTeamAsync(reviewId, request, cancellationToken));
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return NotFound(exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(exception.Message);
+        }
+    }
+
+    [HttpPost("reviews/{reviewId:guid}/create-team")]
+    public async Task<ActionResult<CurrentResultReviewTeamMappingDto>> CreateReviewTeam(
+        Guid reviewId,
+        [FromBody] CurrentResultReviewTeamCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await ingestionService.CreateReviewTeamAsync(reviewId, request, cancellationToken));
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return NotFound(exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(exception.Message);
+        }
     }
 
     [HttpPost("reviews/{reviewId:guid}/resolve")]
@@ -192,6 +281,15 @@ public class CurrentResultsController(
         {
             return Conflict(exception.Message);
         }
+    }
+
+    private static bool IsLikelyTeamNameMatch(string observed, string canonical)
+    {
+        var left = InternationalTeamCatalog.NormalizeSearchTerm(observed);
+        var right = InternationalTeamCatalog.NormalizeSearchTerm(canonical);
+        return !string.IsNullOrWhiteSpace(left) &&
+               !string.IsNullOrWhiteSpace(right) &&
+               (left == right || left.Contains(right, StringComparison.OrdinalIgnoreCase) || right.Contains(left, StringComparison.OrdinalIgnoreCase));
     }
 }
 

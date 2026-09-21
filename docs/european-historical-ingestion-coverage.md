@@ -1,18 +1,22 @@
 # European historical ingestion coverage
 
 This is the consolidated source and cutoff record for the European club and
-domestic competitions added or repaired for the pre-2008 historical gap. It is
+domestic competitions added or repaired through historical backfills. It is
 the documentation companion to the catalog in
 [`BackfillCatalog.cs`](../src/BasketElo.Infrastructure/Backfill/BackfillCatalog.cs).
 
 All entries below are ingested into the Europe clubs pool unless the linked
-competition runbook states otherwise. These imports do not rebuild ELOs.
+competition runbook states otherwise. Historical imports are followed by an
+identity check before the Europe Clubs ratings are rebuilt.
 
 ## Domestic leagues
 
 | Competition | Historical provider and source | Clean source cutoff | Catalog coverage | Verified games |
 | --- | --- | --- | --- | ---: |
 | Czech NBL | `flashscore-czech-nbl`; Flashscore results feed with repeated “Show more matches” pagination | 2000-2001 | 2000-2001 through 2007-2008; API-Sports from 2008-2009 | 1,930 |
+| Denmark Basket Ligaen | `flashscore-domestic`; Flashscore paginated results feed | 2010-2011 | 2010-2011 through 2025-2026; Livescore current results from 2026-2027 | 2,469 |
+| Great Britain SLB | `flashscore-domestic`; Flashscore paginated results feed | 2010-2011 | 2010-2011 through 2025-2026; Livescore current results from 2026-2027 | 3,006 |
+| Norway BLNO | `flashscore-domestic`; Flashscore paginated results feed | 2010-2011 | 2010-2011 through 2025-2026; Livescore current results from 2026-2027 | 2,137 |
 | Lithuanian LKL | `eurobasket-lithuania`; Eurobasket team game pages | 2008-2009 | 2008-2009 through 2010-2011; API-Sports from 2011-2012 | 468 |
 | Israeli Super League | `official-israel-basket`; official basket.co.il season and Board selectors | 1953-1954 | 1953-1954 through 2007-2008; API-Sports from 2008-2009 | 7,725 league + 16 Winner Cup |
 | Polish PLK / Tauron Basket Liga | `flashscore-poland-plk`; Flashscore results feed with repeated “Show more matches” pagination | 2001-2002 | 2001-2002 through 2007-2008; API-Sports from 2008-2009 | 1,506 |
@@ -23,6 +27,12 @@ source exposes enough scored game records to support a season backfill. It is
 not a claim that no earlier games existed. The Czech and Polish Flashscore
 providers preserve the source's event IDs and fetch every paginated batch until
 the page's listed-event count is reached or the source stops returning data.
+
+The Denmark, Great Britain, and Norway imports each completed all 16 configured
+seasons without warnings. Their production totals were 2,469 Basket Ligaen,
+3,006 SLB, and 2,137 BLNO historical games. Current 2026-2027 results are
+handled separately by the Livescore feed, so they do not change the historical
+source cutoff.
 
 The Czech NBL season-level verification is:
 

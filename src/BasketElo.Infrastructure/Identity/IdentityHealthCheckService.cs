@@ -3,6 +3,7 @@ using BasketElo.Domain.Elo;
 using BasketElo.Infrastructure.Backfill;
 using BasketElo.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace BasketElo.Infrastructure.Identity;
 
@@ -856,6 +857,10 @@ public class IdentityHealthCheckService(
                 "Alias observations require one of these decisions: accept the aliases, map the provider identity to an existing team, or extract it as a new team.");
         }
 
+        await using var mergeTransaction = action == "merge_duplicate"
+            ? await BeginOptionalTransactionAsync(cancellationToken)
+            : null;
+
         if (action == "keep_separate")
         {
             await PopulateFindingTeamIdsAsync(finding, cancellationToken);
@@ -887,6 +892,11 @@ public class IdentityHealthCheckService(
         await SaveReviewDecisionAsync(finding, action, cancellationToken);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (mergeTransaction is not null)
+        {
+            await mergeTransaction.CommitAsync(cancellationToken);
+        }
+
         if (action is "reassign_alias" or "extract_alias")
         {
             await InvalidateChangedScopeAsync(
@@ -1453,8 +1463,14 @@ public class IdentityHealthCheckService(
         bool confirmMergeWithRatings,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await BeginOptionalTransactionAsync(cancellationToken);
         await MergeTeamsCoreAsync(sourceTeamId, targetTeamId, confirmMergeWithRatings, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+
         await InvalidateChangedScopeAsync(new IdentityChangedScope(), cancellationToken);
 
         var targetTeam = await dbContext.Teams
@@ -1726,6 +1742,51 @@ public class IdentityHealthCheckService(
             .Where(x => x.OpponentTeamId == sourceTeam.Id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.OpponentTeamId, targetTeam.Id), cancellationToken);
 
+        // Model-lab runs are immutable snapshots, but their foreign keys still need to
+        // follow the canonical team so the source can be safely removed. Ratings and
+        // evolution points have uniqueness constraints that require duplicate cleanup.
+        await dbContext.ModelLabRunPredictions
+            .Where(x => x.HomeTeamId == sourceTeam.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.HomeTeamId, targetTeam.Id), cancellationToken);
+        await dbContext.ModelLabRunPredictions
+            .Where(x => x.AwayTeamId == sourceTeam.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.AwayTeamId, targetTeam.Id), cancellationToken);
+
+        await dbContext.ModelLabRunRatings
+            .Where(sourceRating =>
+                sourceRating.TeamId == sourceTeam.Id &&
+                dbContext.ModelLabRunRatings.Any(targetRating =>
+                    targetRating.RunId == sourceRating.RunId &&
+                    targetRating.TeamId == targetTeam.Id))
+            .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.ModelLabRunRatings
+            .Where(x => x.TeamId == sourceTeam.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.TeamId, targetTeam.Id), cancellationToken);
+
+        await dbContext.ModelLabRunEvolutionPoints
+            .Where(sourcePoint =>
+                sourcePoint.TeamId == sourceTeam.Id &&
+                dbContext.ModelLabRunEvolutionPoints.Any(targetPoint =>
+                    targetPoint.RunId == sourcePoint.RunId &&
+                    targetPoint.GameId == sourcePoint.GameId &&
+                    targetPoint.TeamId == targetTeam.Id))
+            .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.ModelLabRunEvolutionPoints
+            .Where(x => x.TeamId == sourceTeam.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.TeamId, targetTeam.Id), cancellationToken);
+
+        await dbContext.TeamSearchNames
+            .Where(sourceName =>
+                sourceName.TeamId == sourceTeam.Id &&
+                dbContext.TeamSearchNames.Any(targetName =>
+                    targetName.TeamId == targetTeam.Id &&
+                    targetName.Locale == sourceName.Locale &&
+                    targetName.NormalizedName == sourceName.NormalizedName))
+            .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.TeamSearchNames
+            .Where(x => x.TeamId == sourceTeam.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.TeamId, targetTeam.Id), cancellationToken);
+
         var sourceRatings = await dbContext.TeamRatings
             .Where(x => x.TeamId == sourceTeam.Id)
             .ToListAsync(cancellationToken);
@@ -1755,6 +1816,14 @@ public class IdentityHealthCheckService(
         }
 
         dbContext.Teams.Remove(sourceTeam);
+    }
+
+    private async Task<IDbContextTransaction?> BeginOptionalTransactionAsync(
+        CancellationToken cancellationToken)
+    {
+        return dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
     }
 
     private async Task<Guid> ResolveSourceAliasTeamIdAsync(

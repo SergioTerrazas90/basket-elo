@@ -19,6 +19,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
     public async Task<ActionResult<CompetitionAdminListResponse>> GetCompetitions(
         [FromQuery] string? search,
         [FromQuery] string? supportPolicy,
+        [FromQuery] string? countryCode,
         [FromQuery] bool? active,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -37,6 +38,14 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
         if (active.HasValue)
         {
             query = query.Where(x => x.IsActive == active.Value);
+        }
+
+        var normalizedCountry = CountryCodeCatalog.Normalize(countryCode);
+        if (!string.IsNullOrWhiteSpace(normalizedCountry))
+        {
+            query = normalizedCountry == "UNK"
+                ? query.Where(x => x.CountryCode == null || x.CountryCode == "" || x.CountryCode == "UNK")
+                : query.Where(x => x.CountryCode == normalizedCountry);
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -82,6 +91,34 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
             page, pageSize, totalCount, totalPages));
     }
 
+    [HttpGet("countries")]
+    public async Task<ActionResult<IReadOnlyList<CompetitionCountryOption>>> GetCountryOptions(
+        CancellationToken cancellationToken)
+    {
+        var countryCodes = await dbContext.Competitions
+            .AsNoTracking()
+            .Select(x => x.CountryCode)
+            .ToListAsync(cancellationToken);
+
+        var countries = countryCodes
+            .GroupBy(x => CountryCodeCatalog.Normalize(x) ?? "UNK", StringComparer.OrdinalIgnoreCase)
+            .Select(group => new CompetitionCountryOption(
+                group.Key,
+                CountryCodeCatalog.DisplayName(group.Key) is { Length: > 0 } name
+                    ? name
+                    : group.Key switch
+                    {
+                        "UNK" => "Unknown / unset",
+                        "INT" => "International",
+                        _ => group.Key
+                    },
+                group.Count()))
+            .OrderBy(x => x.Name)
+            .ToList();
+
+        return Ok(countries);
+    }
+
     [HttpGet("options")]
     public async Task<ActionResult<IReadOnlyList<CompetitionAdminOption>>> GetOptions(
         CancellationToken cancellationToken)
@@ -114,8 +151,8 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
         [FromBody] CreateCompetitionAdminRequest request,
         CancellationToken cancellationToken)
     {
-        (string Name, string Type, string? CountryCode, string SupportPolicy, string HomeAdvantagePolicy) values;
-        try { values = Validate(request.Name, request.Type, request.CountryCode, request.SupportPolicy, request.HomeAdvantagePolicy); }
+        (string Name, string Type, string? CountryCode, string? EloPoolKey, string SupportPolicy, string HomeAdvantagePolicy) values;
+        try { values = Validate(request.Name, request.Type, request.CountryCode, request.EloPoolKey, request.SupportPolicy, request.HomeAdvantagePolicy); }
         catch (ArgumentException exception) { return BadRequest(exception.Message); }
         if (await dbContext.Competitions.AnyAsync(
                 x => x.Name == values.Name && x.CountryCode == values.CountryCode, cancellationToken))
@@ -129,7 +166,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
             Name = values.Name,
             Type = values.Type,
             CountryCode = values.CountryCode,
-            EloPoolKey = request.EloPoolKey?.Trim(),
+            EloPoolKey = values.EloPoolKey,
             Tier = Math.Max(0, request.Tier),
             IsActive = request.IsActive,
             SupportPolicy = values.SupportPolicy,
@@ -152,8 +189,8 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
             .SingleOrDefaultAsync(x => x.Id == competitionId, cancellationToken);
         if (competition is null) return NotFound("Competition was not found.");
 
-        (string Name, string Type, string? CountryCode, string SupportPolicy, string HomeAdvantagePolicy) values;
-        try { values = Validate(request.Name, request.Type, request.CountryCode, request.SupportPolicy, request.HomeAdvantagePolicy); }
+        (string Name, string Type, string? CountryCode, string? EloPoolKey, string SupportPolicy, string HomeAdvantagePolicy) values;
+        try { values = Validate(request.Name, request.Type, request.CountryCode, request.EloPoolKey, request.SupportPolicy, request.HomeAdvantagePolicy); }
         catch (ArgumentException exception) { return BadRequest(exception.Message); }
         if (await dbContext.Competitions.AnyAsync(
                 x => x.Id != competitionId && x.Name == values.Name && x.CountryCode == values.CountryCode, cancellationToken))
@@ -164,7 +201,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
         competition.Name = values.Name;
         competition.Type = values.Type;
         competition.CountryCode = values.CountryCode;
-        competition.EloPoolKey = request.EloPoolKey?.Trim();
+        competition.EloPoolKey = values.EloPoolKey;
         competition.Tier = Math.Max(0, request.Tier);
         competition.IsActive = request.IsActive;
         competition.SupportPolicy = values.SupportPolicy;
@@ -263,15 +300,19 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
             competition.HomeAdvantagePolicy, competition.CreatedAtUtc, gameCount, openReviewCount, aliases);
     }
 
-    private static (string Name, string Type, string? CountryCode, string SupportPolicy, string HomeAdvantagePolicy) Validate(
+    private static (string Name, string Type, string? CountryCode, string? EloPoolKey, string SupportPolicy, string HomeAdvantagePolicy) Validate(
         string name,
         string type,
         string? countryCode,
+        string? eloPoolKey,
         string supportPolicy,
         string homeAdvantagePolicy)
     {
         var normalizedName = Required(name, "Name", 200);
-        var normalizedType = Required(type, "Type", 50);
+        var normalizedType = CompetitionTypeCatalog.Normalize(type);
+        var normalizedEloPoolKey = string.IsNullOrWhiteSpace(eloPoolKey)
+            ? null
+            : EloPoolKeys.Normalize(eloPoolKey);
         var normalizedPolicy = NormalizePolicy(supportPolicy) ?? throw new ArgumentException("Unknown support policy.");
         var normalizedHomeAdvantagePolicy = homeAdvantagePolicy?.Trim().ToLowerInvariant();
         if (!HomeAdvantagePolicies.IsValid(normalizedHomeAdvantagePolicy))
@@ -279,7 +320,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
             throw new ArgumentException("Unknown home-advantage policy.");
         }
         var normalizedCountry = CountryCodeCatalog.Normalize(countryCode);
-        return (normalizedName, normalizedType, normalizedCountry, normalizedPolicy, normalizedHomeAdvantagePolicy!);
+        return (normalizedName, normalizedType, normalizedCountry, normalizedEloPoolKey, normalizedPolicy, normalizedHomeAdvantagePolicy!);
     }
 
     private static string Required(string? value, string label, int maxLength)

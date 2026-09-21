@@ -1,0 +1,179 @@
+@rendermode InteractiveServer
+@using BasketElo.Domain.Admin
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<section class="admin-attention-shell" aria-label="Administrator action summary" aria-live="polite">
+    <div class="admin-attention">
+        <div class="admin-attention-heading">
+            <span class="admin-attention-icon" aria-hidden="true">!</span>
+            <span>
+                <strong>Admin attention</strong>
+                <small>@SummaryMessage</small>
+            </span>
+        </div>
+
+        @if (isLoading && summary is null)
+        {
+            <span class="admin-attention-state">Checking review queues…</span>
+        }
+        else if (loadFailed)
+        {
+            <a class="admin-attention-state admin-attention-unavailable" href="admin">Checks unavailable · Open operations</a>
+        }
+        else if (summary is not null && HasActions)
+        {
+            <nav class="admin-attention-actions" aria-label="Administrator actions needing review">
+                @if (summary.OpenResultReviews > 0)
+                {
+                    <a class="admin-attention-action warning" href="admin/current-results-review">
+                        <span class="admin-attention-count">@summary.OpenResultReviews</span>
+                        <span>Result matches<small>Review unmatched fixtures</small></span>
+                        <span class="admin-attention-arrow" aria-hidden="true">→</span>
+                    </a>
+                }
+                @if (OpenIdentityFindings > 0)
+                {
+                    <a class="admin-attention-action @(summary.OpenIdentityBlockers > 0 ? "critical" : "warning")" href="admin/identity">
+                        <span class="admin-attention-count">@OpenIdentityFindings</span>
+                        <span>
+                            Identity findings
+                            <small>@IdentityFindingSummary</small>
+                        </span>
+                        <span class="admin-attention-arrow" aria-hidden="true">→</span>
+                    </a>
+                }
+                @if (summary.PossibleDuplicateAliasGroups > 0)
+                {
+                    <a class="admin-attention-action warning" href="admin/alias-groups">
+                        <span class="admin-attention-count">@summary.PossibleDuplicateAliasGroups</span>
+                        <span>Duplicate alias groups<small>Review aliases across teams</small></span>
+                        <span class="admin-attention-arrow" aria-hidden="true">→</span>
+                    </a>
+                }
+                @if (summary.TeamsMissingCountry > 0)
+                {
+                    <a class="admin-attention-action" href="admin/teams?country=UNK">
+                        <span class="admin-attention-count">@summary.TeamsMissingCountry</span>
+                        <span>Team metadata<small>Add missing countries</small></span>
+                        <span class="admin-attention-arrow" aria-hidden="true">→</span>
+                    </a>
+                }
+                @if (summary.UnratedEligibleGames > 0)
+                {
+                    <a class="admin-attention-action" href="admin">
+                        <span class="admin-attention-count">@summary.UnratedEligibleGames</span>
+                        <span>Unrated games<small>Review and rebuild ELO</small></span>
+                        <span class="admin-attention-arrow" aria-hidden="true">→</span>
+                    </a>
+                }
+            </nav>
+        }
+        else if (summary is not null)
+        {
+            <span class="admin-attention-state admin-attention-clear">
+                <span aria-hidden="true">✓</span> No review queues need attention
+            </span>
+        }
+
+        <button class="admin-attention-refresh"
+                type="button"
+                title="Refresh administrator action summary"
+                aria-label="Refresh administrator action summary"
+                @onclick="LoadAsync"
+                disabled="@isLoading">
+            <span aria-hidden="true">↻</span>
+        </button>
+    </div>
+</section>
+
+@code {
+    private AdminAttentionSummary? summary;
+    private CancellationTokenSource? loadCancellation;
+    private bool isLoading;
+    private bool loadFailed;
+
+    private int OpenIdentityFindings =>
+        (summary?.OpenIdentityWarnings ?? 0) + (summary?.OpenIdentityBlockers ?? 0);
+
+    private bool HasActions => summary is not null &&
+        (summary.OpenResultReviews > 0 ||
+         OpenIdentityFindings > 0 ||
+         summary.PossibleDuplicateAliasGroups > 0 ||
+         summary.TeamsMissingCountry > 0 ||
+         summary.UnratedEligibleGames > 0);
+
+    private string SummaryMessage => isLoading && summary is null
+        ? "Checking data quality"
+        : loadFailed
+            ? "Could not load the latest checks"
+            : HasActions
+                ? "Review before the next data run"
+                : "Everything currently looks clear";
+
+    private string IdentityFindingSummary
+    {
+        get
+        {
+            if (summary is null)
+            {
+                return string.Empty;
+            }
+
+            return summary.OpenIdentityBlockers > 0
+                ? $"{summary.OpenIdentityBlockers} blocker{Plural(summary.OpenIdentityBlockers)}, {summary.OpenIdentityWarnings} warning{Plural(summary.OpenIdentityWarnings)}"
+                : $"{summary.OpenIdentityWarnings} warning{Plural(summary.OpenIdentityWarnings)}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += HandleLocationChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var cancellation = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref loadCancellation, cancellation);
+        previous?.Cancel();
+        previous?.Dispose();
+
+        isLoading = true;
+        loadFailed = false;
+
+        try
+        {
+            summary = await Http.GetFromJsonAsync<AdminAttentionSummary>(
+                "api/admin/attention-summary",
+                cancellation.Token);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception)
+        {
+            loadFailed = true;
+        }
+        finally
+        {
+            if (ReferenceEquals(loadCancellation, cancellation))
+            {
+                isLoading = false;
+            }
+        }
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs args) =>
+        _ = InvokeAsync(LoadAsync);
+
+    private static string Plural(int count) => count == 1 ? string.Empty : "s";
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
+        loadCancellation?.Cancel();
+        loadCancellation?.Dispose();
+    }
+}

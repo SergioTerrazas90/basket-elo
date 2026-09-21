@@ -39,18 +39,25 @@ builder.Services.AddRateLimiter(options =>
 
         var expectedSecret = builder.Configuration["InternalAuth:SharedSecret"];
         var suppliedSecret = httpContext.Request.Headers[InternalAuthHeaders.SharedSecret].ToString();
+        var hasTrustedInternalSecret = !string.IsNullOrWhiteSpace(expectedSecret) &&
+            string.Equals(suppliedSecret, expectedSecret, StringComparison.Ordinal);
         var roles = httpContext.Request.Headers[InternalAuthHeaders.Roles]
             .ToString()
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (roles.Contains(ApplicationRoleKeys.Admin, StringComparer.OrdinalIgnoreCase) &&
-            (string.IsNullOrWhiteSpace(expectedSecret) || string.Equals(suppliedSecret, expectedSecret, StringComparison.Ordinal)))
+            hasTrustedInternalSecret)
         {
             return RateLimitPartition.GetNoLimiter("admin");
         }
 
         var userId = httpContext.Request.Headers[InternalAuthHeaders.UserId].ToString();
+        var trustedClientIp = hasTrustedInternalSecret
+            ? httpContext.Request.Headers[InternalAuthHeaders.ClientIp].ToString()
+            : string.Empty;
         var identity = Guid.TryParse(userId, out var parsedUserId)
             ? parsedUserId.ToString("D")
+            : !string.IsNullOrWhiteSpace(trustedClientIp)
+                ? trustedClientIp
             : httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var isHistoryRequest = httpContext.Request.Path.StartsWithSegments("/api/elo/teams") ||
             httpContext.Request.Path.StartsWithSegments("/api/elo/rankings/evolution");

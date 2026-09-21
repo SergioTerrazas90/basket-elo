@@ -1,3 +1,4 @@
+using BasketElo.Domain.Backfill;
 using BasketElo.Infrastructure.Backfill;
 using Xunit;
 
@@ -5,6 +6,29 @@ namespace BasketElo.Infrastructure.Tests.Backfill;
 
 public sealed class FlashscoreDomesticHistoricalDataProviderTests
 {
+    [Theory]
+    [InlineData("Denmark", "Basket Ligaen", "basketligaen", "DK")]
+    [InlineData("Great Britain", "SLB", "slb", "GB")]
+    [InlineData("Norway", "BLNO", "blno", "NO")]
+    public async Task ResolvesNewDomesticLeagueArchives(
+        string country,
+        string leagueName,
+        string expectedRoute,
+        string expectedCountryCode)
+    {
+        var provider = new FlashscoreDomesticHistoricalDataProvider(new HttpClient());
+
+        var league = await provider.ResolveLeagueAsync(
+            country,
+            leagueName,
+            new BackfillExecutionContext(0, 0),
+            CancellationToken.None);
+
+        Assert.NotNull(league);
+        Assert.Equal(expectedRoute, league.SourceLeagueId);
+        Assert.Equal(expectedCountryCode, league.CountryCode);
+    }
+
     [Fact]
     public void ParsesFlashscoreDomesticFeedRecord()
     {

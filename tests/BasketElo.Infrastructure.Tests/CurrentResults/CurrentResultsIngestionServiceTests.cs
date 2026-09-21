@@ -14,6 +14,57 @@ namespace BasketElo.Infrastructure.Tests.CurrentResults;
 public class CurrentResultsIngestionServiceTests
 {
     [Fact]
+    public async Task ManualTeamSearchIncludesStrongMatchesOutsideCompetitionCountry()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var team = new Team
+        {
+            Id = Guid.NewGuid(),
+            CanonicalName = "BC Andorra",
+            CountryCode = "AD"
+        };
+        var review = new CurrentResultReview
+        {
+            Id = Guid.NewGuid(),
+            Source = "livescore",
+            SourceGameId = "andorra-home-review",
+            SourceDate = new DateOnly(2026, 9, 19),
+            GameDateTimeUtc = new DateTime(2026, 9, 19, 18, 0, 0, DateTimeKind.Utc),
+            CountryName = "Spain",
+            CompetitionName = "Spanish League",
+            HomeTeamName = "Basquet Club Andorra",
+            AwayTeamName = "Unmapped Opponent",
+            HomeTeamSourceId = "andorra-home",
+            AwayTeamSourceId = "andorra-away",
+            ResultStatus = CurrentResultStatuses.Finished,
+            Reason = CurrentResultReviewReasons.UnresolvedHomeTeam,
+            Status = CurrentResultReviewStatuses.Open
+        };
+        dbContext.AddRange(team, review);
+        await dbContext.SaveChangesAsync();
+
+        var candidate = new CurrentResultCandidate(
+            "andorra-home-review", null, review.SourceDate, review.GameDateTimeUtc,
+            review.CountryName, review.CompetitionName, null,
+            review.HomeTeamName, review.AwayTeamName, review.HomeTeamSourceId, review.AwayTeamSourceId,
+            80, 70, CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+
+        var results = await service.GetReviewTeamCandidatesAsync(
+            review.Id,
+            "home",
+            "andorra",
+            CancellationToken.None);
+
+        var match = Assert.Single(results);
+        Assert.Equal(team.Id, match.TeamId);
+        Assert.Equal("AD", match.CountryCode);
+    }
+
+    [Fact]
     public async Task FinishedLivescoreResultUpdatesScheduledFibaFixtureWithoutCreatingDuplicate()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()
@@ -306,7 +357,7 @@ public class CurrentResultsIngestionServiceTests
             GameDateTimeUtc = new DateTime(2026, 8, 28, 18, 0, 0, DateTimeKind.Utc),
             HomeTeamId = homeTeam.Id,
             AwayTeamId = awayTeam.Id,
-            Status = CurrentResultStatuses.Scheduled,
+            Status = "not started",
             EloEligible = false
         };
         var review = new CurrentResultReview
@@ -355,6 +406,10 @@ public class CurrentResultsIngestionServiceTests
         Assert.Equal(CurrentResultStatuses.Finished, updatedGame.Status);
         Assert.Equal(2, result.EloRunsQueued);
         Assert.Equal(2, await dbContext.EloRebuildRuns.CountAsync());
+        var aliases = await dbContext.TeamAliases.OrderBy(x => x.AliasName).ToListAsync();
+        Assert.Equal(2, aliases.Count);
+        Assert.Contains(aliases, x => x.TeamId == homeTeam.Id && x.SourceTeamId == review.HomeTeamSourceId);
+        Assert.Contains(aliases, x => x.TeamId == awayTeam.Id && x.SourceTeamId == review.AwayTeamSourceId);
     }
 
     [Fact]
@@ -416,6 +471,79 @@ public class CurrentResultsIngestionServiceTests
     }
 
     [Fact]
+    public async Task ItalySerieA2IsSkippedInsteadOfMatchingTheTopDivision()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var legaA = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "Lega A", CountryCode = "IT", EloPoolKey = "europe-clubs"
+        };
+        var serieA = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "Serie A", CountryCode = "IT", EloPoolKey = "europe-clubs"
+        };
+        var home = new Team { Id = Guid.NewGuid(), CanonicalName = "Basket Torino", CountryCode = "IT" };
+        var away = new Team { Id = Guid.NewGuid(), CanonicalName = "Fortitudo Bologna", CountryCode = "IT" };
+        dbContext.AddRange(legaA, serieA, home, away);
+        await dbContext.SaveChangesAsync();
+        var candidate = new CurrentResultCandidate(
+            "italy-serie-a2-game", null, new DateOnly(2026, 9, 20),
+            new DateTime(2026, 9, 20, 18, 0, 0, DateTimeKind.Utc), "Italy", "Serie A2", null,
+            home.CanonicalName, away.CanonicalName, "home-source", "away-source", 82, 77,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+
+        var summary = await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        Assert.Equal(1, summary.UnsupportedSkipped);
+        Assert.Equal(0, summary.GamesUpserted);
+        Assert.Equal(0, summary.ReviewsOpened);
+        Assert.Empty(await dbContext.Games.ToListAsync());
+        Assert.Empty(await dbContext.CurrentResultReviews.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ItalySerieA2RemovesAnExistingReviewFromResultsMatching()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var candidate = new CurrentResultCandidate(
+            "existing-italy-serie-a2-review", null, new DateOnly(2026, 9, 20),
+            new DateTime(2026, 9, 20, 18, 0, 0, DateTimeKind.Utc), "Italy", "Serie A2", null,
+            "Basket Torino", "Fortitudo Bologna", "home-source", "away-source", 82, 77,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        dbContext.CurrentResultReviews.Add(new CurrentResultReview
+        {
+            Id = Guid.NewGuid(),
+            Source = "livescore",
+            SourceGameId = candidate.SourceGameId,
+            SourceDate = candidate.SourceDate,
+            GameDateTimeUtc = candidate.GameDateTimeUtc,
+            CountryName = candidate.CountryName,
+            CompetitionName = candidate.CompetitionName,
+            HomeTeamName = candidate.HomeTeamName,
+            AwayTeamName = candidate.AwayTeamName,
+            HomeTeamSourceId = candidate.HomeTeamSourceId,
+            AwayTeamSourceId = candidate.AwayTeamSourceId,
+            ResultStatus = candidate.Status,
+            Reason = CurrentResultReviewReasons.UnresolvedHomeTeam,
+            Status = CurrentResultReviewStatuses.Open
+        });
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext, candidate);
+
+        var summary = await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        Assert.Equal(1, summary.UnsupportedSkipped);
+        Assert.Empty(await dbContext.CurrentResultReviews.ToListAsync());
+    }
+
+    [Fact]
     public async Task SourceCompetitionIdAliasMatchesBeforeTeamResolution()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()
@@ -443,6 +571,44 @@ public class CurrentResultsIngestionServiceTests
         Assert.Equal(1, summary.GamesUpserted);
         Assert.Empty(await dbContext.CurrentResultReviews.ToListAsync());
         Assert.Equal(competition.Id, (await dbContext.Games.SingleAsync()).CompetitionId);
+    }
+
+    [Fact]
+    public async Task CompetitionNameAliasDoesNotCrossCountryBoundary()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var czechNbl = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "NBL", CountryCode = "CZ", EloPoolKey = "europe-clubs"
+        };
+        var unrelatedNbl = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "NBL", CountryCode = null, IsActive = false,
+            SupportPolicy = CompetitionSupportPolicies.Unsupported
+        };
+        var home = new Team { Id = Guid.NewGuid(), CanonicalName = "Nymburk", CountryCode = "CZ" };
+        var away = new Team { Id = Guid.NewGuid(), CanonicalName = "Decin", CountryCode = "CZ" };
+        dbContext.AddRange(czechNbl, unrelatedNbl, home, away, new CompetitionAlias
+        {
+            Id = Guid.NewGuid(), CompetitionId = unrelatedNbl.Id, Source = "livescore",
+            SourceCompetitionId = string.Empty, AliasName = "NBL"
+        });
+        await dbContext.SaveChangesAsync();
+        var candidate = new CurrentResultCandidate(
+            "czech-nbl-game", null, new DateOnly(2026, 9, 18),
+            new DateTime(2026, 9, 18, 18, 0, 0, DateTimeKind.Utc), "Czech Republic", "NBL", null,
+            home.CanonicalName, away.CanonicalName, "home-source", "away-source", 82, 77,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+
+        var summary = await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        Assert.Equal(1, summary.GamesUpserted);
+        Assert.Equal(0, summary.ReviewsOpened);
+        Assert.Equal(czechNbl.Id, (await dbContext.Games.SingleAsync()).CompetitionId);
     }
 
     [Fact]
@@ -478,7 +644,138 @@ public class CurrentResultsIngestionServiceTests
     }
 
     [Fact]
-    public async Task MergingUnmatchedCompetitionAddsAliasAndRemovesItFromNewQueue()
+    public async Task IgnoringExistingInactiveMexicanCompetitionIsIdempotent()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var candidate = new CurrentResultCandidate(
+            "ignore-lnbp-game", null, new DateOnly(2026, 9, 14),
+            new DateTime(2026, 9, 14, 1, 0, 0, DateTimeKind.Utc), "Mexico", "LNBP", null,
+            "A", "B", "home-source", "away-source", null, null,
+            CurrentResultStatuses.Scheduled, "01:00", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        // Simulate a prior click that created the inactive placeholder before
+        // the request was retried.
+        var existing = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "LNBP",
+            CountryCode = "MX",
+            Type = "current-results",
+            SupportPolicy = CompetitionSupportPolicies.Unsupported,
+            IsActive = false
+        };
+        dbContext.Competitions.Add(existing);
+        await dbContext.SaveChangesAsync();
+
+        var ignored = await service.IgnoreUnmatchedCompetitionAsync(
+            new IgnoreUnmatchedCompetitionRequest("livescore", null, "Mexico", "LNBP"),
+            CancellationToken.None);
+
+        Assert.Equal(1, ignored);
+        Assert.Single(await dbContext.Competitions.ToListAsync());
+        Assert.Equal(existing.Id, (await dbContext.CompetitionAliases.SingleAsync()).CompetitionId);
+        Assert.Equal(CurrentResultReviewStatuses.Ignored, (await dbContext.CurrentResultReviews.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task IgnoringCompetitionReusesExistingAliasWhenCountryCodeWasAddedLater()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var candidate = new CurrentResultCandidate(
+            "ignore-kvindebasketligaen-game", null, new DateOnly(2026, 9, 20),
+            new DateTime(2026, 9, 20, 9, 0, 0, DateTimeKind.Utc), "Denmark", "Kvindebasketligaen", null,
+            "Sisu W", "BK Amager W", "home-source", "away-source", null, null,
+            CurrentResultStatuses.Scheduled, "09:00", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        // This is the legacy shape that caused the conflict: the existing
+        // unsupported placeholder has no country code, but already owns the
+        // Livescore alias.
+        var existing = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "Kvindebasketligaen",
+            CountryCode = null,
+            Type = "current-results",
+            SupportPolicy = CompetitionSupportPolicies.Unsupported,
+            IsActive = false
+        };
+        dbContext.AddRange(existing, new CompetitionAlias
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = existing.Id,
+            Source = "livescore",
+            SourceCompetitionId = string.Empty,
+            AliasName = "Kvindebasketligaen"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var ignored = await service.IgnoreUnmatchedCompetitionAsync(
+            new IgnoreUnmatchedCompetitionRequest("livescore", null, "Denmark", "Kvindebasketligaen"),
+            CancellationToken.None);
+
+        Assert.Equal(1, ignored);
+        Assert.Single(await dbContext.Competitions.ToListAsync());
+        Assert.Equal(existing.Id, (await dbContext.CompetitionAliases.SingleAsync()).CompetitionId);
+        Assert.Equal(CurrentResultReviewStatuses.Ignored, (await dbContext.CurrentResultReviews.SingleAsync()).Status);
+        Assert.Equal("DK", existing.CountryCode);
+
+        var rerun = await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+        Assert.Equal(1, rerun.UnsupportedSkipped);
+        Assert.Equal(0, rerun.ReviewsOpened);
+        Assert.Equal(CurrentResultReviewStatuses.Ignored, (await dbContext.CurrentResultReviews.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task SavedUnsupportedAliasSkipsFutureImportsWhenLegacyCompetitionHasNoCountryCode()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "Kvindebasketligaen",
+            CountryCode = null,
+            Type = "current-results",
+            SupportPolicy = CompetitionSupportPolicies.Unsupported,
+            IsActive = false
+        };
+        dbContext.AddRange(competition, new CompetitionAlias
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Source = "livescore",
+            SourceCompetitionId = string.Empty,
+            AliasName = "Kvindebasketligaen"
+        });
+        await dbContext.SaveChangesAsync();
+        var candidate = new CurrentResultCandidate(
+            "future-kvindebasketligaen-game", null, new DateOnly(2026, 9, 24),
+            new DateTime(2026, 9, 24, 17, 0, 0, DateTimeKind.Utc), "Denmark", "Kvindebasketligaen", null,
+            "Sisu W", "BK Amager W", "home-source", "away-source", null, null,
+            CurrentResultStatuses.Scheduled, "17:00", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+
+        var summary = await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        Assert.Equal(1, summary.UnsupportedSkipped);
+        Assert.Equal(0, summary.ReviewsOpened);
+        Assert.Empty(await dbContext.CurrentResultReviews.ToListAsync());
+    }
+
+    [Fact]
+    public async Task MergingUnmatchedCompetitionAddsAliasAndReclassifiesRemainingReviews()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -502,11 +799,152 @@ public class CurrentResultsIngestionServiceTests
         Assert.Equal(1, updated);
         Assert.Empty(await service.GetUnmatchedCompetitionsAsync(CancellationToken.None));
         Assert.Equal(target.Id, (await dbContext.CompetitionAliases.SingleAsync()).CompetitionId);
-        Assert.Equal("merge", (await dbContext.CurrentResultReviews.SingleAsync()).ResolutionAction);
+        var review = await dbContext.CurrentResultReviews.SingleAsync();
+        Assert.Equal(CurrentResultReviewStatuses.Open, review.Status);
+        Assert.NotEqual(CurrentResultReviewReasons.UnknownCompetition, review.Reason);
+        Assert.Null(review.ResolutionAction);
     }
 
     [Fact]
-    public async Task MergingCanCreateCompetitionAndAssignNewTournamentCycle()
+    public async Task ReprocessingPreviouslyMergedCompetitionReviewsCreatesNowMappableGames()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var target = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "Women's National Basketball Association", CountryCode = "US"
+        };
+        dbContext.AddRange(
+            target,
+            new Team { Id = Guid.NewGuid(), CanonicalName = "Minnesota Lynx", CountryCode = "US" },
+            new Team { Id = Guid.NewGuid(), CanonicalName = "Los Angeles Sparks", CountryCode = "US" });
+        await dbContext.SaveChangesAsync();
+        var candidate = new CurrentResultCandidate(
+            "legacy-merged-competition-game", null, new DateOnly(2026, 8, 28),
+            new DateTime(2026, 8, 28, 18, 30, 0, DateTimeKind.Utc), "USA", "WNBA", null,
+            "Minnesota Lynx", "Los Angeles Sparks", "home-source", "away-source", 88, 76,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        var review = await dbContext.CurrentResultReviews.SingleAsync();
+        dbContext.CompetitionAliases.Add(new CompetitionAlias
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = target.Id,
+            Source = "livescore",
+            SourceCompetitionId = string.Empty,
+            AliasName = "WNBA",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        review.ResolutionAction = "merge";
+        await dbContext.SaveChangesAsync();
+
+        var processed = await service.ReprocessMergedCompetitionReviewsAsync(CancellationToken.None);
+
+        Assert.Equal(1, processed);
+        Assert.Equal(CurrentResultReviewStatuses.Resolved, review.Status);
+        Assert.Empty(review.Reason);
+        Assert.NotNull(review.AssignedGameId);
+        Assert.Single(await dbContext.Games.ToListAsync());
+    }
+
+    [Fact]
+    public async Task MergedCompetitionAliasResolvesWhenFeedUsesCompetitionAsCountryName()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var target = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "VTB United League", CountryCode = "RU"
+        };
+        dbContext.AddRange(
+            target,
+            new Team { Id = Guid.NewGuid(), CanonicalName = "Avtodor", CountryCode = "RU" },
+            new Team { Id = Guid.NewGuid(), CanonicalName = "BC Samara", CountryCode = "RU" });
+        await dbContext.SaveChangesAsync();
+        var candidate = new CurrentResultCandidate(
+            "vtb-league-game", null, new DateOnly(2026, 9, 19),
+            new DateTime(2026, 9, 19, 16, 0, 0, DateTimeKind.Utc), "VTB United League", "VTB United League", null,
+            "Avtodor", "BC Samara", "home-vtb", "away-vtb", 85, 79,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+        Assert.Equal(CurrentResultReviewReasons.UnknownCompetition, (await dbContext.CurrentResultReviews.SingleAsync()).Reason);
+
+        var updated = await service.MergeUnmatchedCompetitionAsync(
+            new MergeUnmatchedCompetitionRequest(
+                "livescore", null, "VTB United League", "VTB United League", target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, updated);
+        Assert.Empty(await service.GetUnmatchedCompetitionsAsync(CancellationToken.None));
+        Assert.Equal(CurrentResultReviewStatuses.Resolved, (await dbContext.CurrentResultReviews.SingleAsync()).Status);
+        Assert.Equal(target.Id, (await dbContext.Games.SingleAsync()).CompetitionId);
+    }
+
+    [Fact]
+    public async Task CreatingCanonicalTeamDefaultsToSuggestedCompetitionCountry()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "VTB United League", CountryCode = "RU"
+        };
+        var review = new CurrentResultReview
+        {
+            Id = Guid.NewGuid(),
+            Source = "livescore",
+            SourceGameId = "vtb-new-home-team",
+            SourceDate = new DateOnly(2026, 9, 19),
+            GameDateTimeUtc = new DateTime(2026, 9, 19, 16, 0, 0, DateTimeKind.Utc),
+            CountryName = "VTB United League",
+            CompetitionName = "VTB United League",
+            SuggestedCompetitionName = competition.Name,
+            SuggestedCompetitionCountryCode = competition.CountryCode,
+            HomeTeamName = "New VTB Club",
+            AwayTeamName = "Unmapped Opponent",
+            HomeTeamSourceId = "new-vtb-home",
+            AwayTeamSourceId = "unmapped-away",
+            HomeScore = 80,
+            AwayScore = 70,
+            ResultStatus = CurrentResultStatuses.Finished,
+            Reason = CurrentResultReviewReasons.UnresolvedHomeTeam,
+            Status = CurrentResultReviewStatuses.Open
+        };
+        dbContext.AddRange(
+            competition,
+            new CompetitionAlias
+            {
+                Id = Guid.NewGuid(), CompetitionId = competition.Id, Source = "livescore",
+                SourceCompetitionId = string.Empty, AliasName = "VTB United League"
+            },
+            review);
+        await dbContext.SaveChangesAsync();
+        var candidate = new CurrentResultCandidate(
+            "vtb-new-home-team", null, review.SourceDate, review.GameDateTimeUtc,
+            review.CountryName, review.CompetitionName, null, review.HomeTeamName, review.AwayTeamName,
+            review.HomeTeamSourceId, review.AwayTeamSourceId, review.HomeScore, review.AwayScore,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+
+        await service.CreateReviewTeamAsync(
+            review.Id,
+            new CurrentResultReviewTeamCreateRequest("home", "New VTB Club"),
+            CancellationToken.None);
+
+        Assert.Equal("RU", (await dbContext.Teams.SingleAsync()).CountryCode);
+    }
+
+    [Fact]
+    public async Task MergingCanCreateCompetitionAssignCycleAndReprocessCandidate()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -538,7 +976,10 @@ public class CurrentResultsIngestionServiceTests
         var cycle = await dbContext.TournamentCycles.SingleAsync();
         Assert.Equal("worldcup-2031", cycle.Key);
         Assert.Equal("FIBA Basketball World Cup 2031", cycle.DisplayName);
-        Assert.Equal(cycle.Id, (await dbContext.CurrentResultReviews.SingleAsync()).TournamentCycleId);
+        var review = await dbContext.CurrentResultReviews.SingleAsync();
+        Assert.Equal(cycle.Id, review.TournamentCycleId);
+        Assert.Equal(CurrentResultReviewStatuses.Resolved, review.Status);
+        Assert.Single(await dbContext.Games.ToListAsync());
 
         await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
 
@@ -639,6 +1080,100 @@ public class CurrentResultsIngestionServiceTests
                     CompetitionSupportPolicies.Supported),
                 null, "Olympics", "2028"),
             CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task HighConfidenceRecentTeamNameIsMappedAutomatically()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "ACB", CountryCode = "ES", EloPoolKey = "europe-clubs", IsActive = true
+        };
+        var priorSeason = new Season
+        {
+            Id = Guid.NewGuid(), CompetitionId = competition.Id, Label = "2025-2026",
+            StartDateUtc = new DateTime(2025, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(2026, 6, 30, 23, 59, 59, DateTimeKind.Utc)
+        };
+        var baskonia = new Team { Id = Guid.NewGuid(), CanonicalName = "Baskonia", CountryCode = "ES" };
+        var barcelona = new Team { Id = Guid.NewGuid(), CanonicalName = "Barcelona", CountryCode = "ES" };
+        var priorGame = new Game
+        {
+            Id = Guid.NewGuid(), Source = "historical", SourceGameId = "prior-acb", CompetitionId = competition.Id,
+            SeasonId = priorSeason.Id, GameDateTimeUtc = new DateTime(2026, 3, 1, 18, 0, 0, DateTimeKind.Utc),
+            HomeTeamId = baskonia.Id, AwayTeamId = barcelona.Id, Status = CurrentResultStatuses.Finished,
+            HomeScore = 88, AwayScore = 82
+        };
+        dbContext.AddRange(competition, priorSeason, baskonia, barcelona, priorGame);
+        await dbContext.SaveChangesAsync();
+
+        var candidate = new CurrentResultCandidate(
+            "acb-new", null, new DateOnly(2026, 9, 20),
+            new DateTime(2026, 9, 20, 18, 0, 0, DateTimeKind.Utc), "Spain", "ACB", null,
+            "Saski Baskonia", "Barcelona", "team:spain:saski-baskonia", "team:spain:barcelona",
+            null, null, CurrentResultStatuses.Scheduled, "scheduled", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        Assert.Empty(await dbContext.CurrentResultReviews.ToListAsync());
+        var alias = await dbContext.TeamAliases.SingleAsync(x => x.SourceTeamId == "team:spain:saski-baskonia");
+        Assert.Equal(baskonia.Id, alias.TeamId);
+        Assert.Equal("automatic_fuzzy", alias.MappingMethod);
+        Assert.InRange(alias.MappingConfidence!.Value, 95, 100);
+    }
+
+    [Fact]
+    public async Task ConflictingAutomaticTeamMappingsOpenReviewInsteadOfCreatingSelfGame()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "Premijer liga", CountryCode = "HR", EloPoolKey = "europe-clubs", IsActive = true
+        };
+        var priorSeason = new Season
+        {
+            Id = Guid.NewGuid(), CompetitionId = competition.Id, Label = "2025-2026",
+            StartDateUtc = new DateTime(2025, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(2026, 6, 30, 23, 59, 59, DateTimeKind.Utc)
+        };
+        var dubrava = new Team { Id = Guid.NewGuid(), CanonicalName = "Dubrava", CountryCode = "HR" };
+        var opponent = new Team { Id = Guid.NewGuid(), CanonicalName = "Zadar", CountryCode = "HR" };
+        dbContext.AddRange(
+            competition,
+            priorSeason,
+            dubrava,
+            opponent,
+            new Game
+            {
+                Id = Guid.NewGuid(), Source = "historical", SourceGameId = "prior-dubrava", CompetitionId = competition.Id,
+                SeasonId = priorSeason.Id, GameDateTimeUtc = new DateTime(2026, 3, 1, 18, 0, 0, DateTimeKind.Utc),
+                HomeTeamId = dubrava.Id, AwayTeamId = opponent.Id, Status = CurrentResultStatuses.Finished,
+                HomeScore = 80, AwayScore = 75
+            });
+        await dbContext.SaveChangesAsync();
+
+        var candidate = new CurrentResultCandidate(
+            "croatia-self-map", null, new DateOnly(2026, 9, 26),
+            new DateTime(2026, 9, 26, 16, 0, 0, DateTimeKind.Utc), "Croatia", "Premijer liga", null,
+            "Dubrava", "Dubravaa", "team:croatia:dubrava", "team:croatia:opponent",
+            null, null, CurrentResultStatuses.Scheduled, "scheduled", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        Assert.Empty(await dbContext.Games.Where(x => x.Source == "livescore").ToListAsync());
+        Assert.Empty(await dbContext.TeamAliases.Where(x => x.Source == "livescore").ToListAsync());
+        var review = await dbContext.CurrentResultReviews.SingleAsync();
+        Assert.Equal(CurrentResultReviewStatuses.Open, review.Status);
+        Assert.Equal(CurrentResultReviewReasons.ConflictingTeamMapping, review.Reason);
     }
 
     private static CurrentResultsIngestionService CreateService(BasketEloDbContext dbContext, CurrentResultCandidate candidate) =>

@@ -12,7 +12,8 @@ public sealed class LiveScoreDailyResultsProvider(
     HttpClient httpClient,
     IOptions<LiveScoreOptions> options) : ICurrentResultsProvider
 {
-    private const string ParserVersion = "livescore-daily-html-v3";
+    private const string ParserVersion = "livescore-daily-html-v5";
+    private const string VtbUnitedLeaguePath = "/basketball/united-league/vtb-united-league/";
     private static readonly IReadOnlySet<string> GeographicScopes = BuildGeographicScopes();
     private readonly LiveScoreOptions options = options.Value;
 
@@ -25,26 +26,55 @@ public sealed class LiveScoreDailyResultsProvider(
             throw new InvalidOperationException("The Livescore provider is disabled. Enable it only after confirming permitted use of the source data.");
         }
 
-        var path = $"/basketball/{date:yyyy-MM-dd}/";
+        var dailyPath = $"/basketball/{date:yyyy-MM-dd}/";
+        var daily = await FetchPageAsync(dailyPath, date, cancellationToken);
+
+        if (options.RequestDelayMilliseconds > 0)
+        {
+            await Task.Delay(options.RequestDelayMilliseconds, cancellationToken);
+        }
+
+        // VTB disappeared from Livescore's all-basketball daily board during the
+        // 2026-27 season, but its dedicated competition page remains current.
+        // Read both routes and deduplicate in case it returns to the daily board.
+        var vtbPath = $"{VtbUnitedLeaguePath}?date={date:yyyyMMdd}&tz=0";
+        var vtb = await FetchPageAsync(vtbPath, date, cancellationToken);
+        var candidates = daily.Candidates
+            .Concat(vtb.Candidates)
+            .GroupBy(candidate => candidate.SourceGameId, StringComparer.Ordinal)
+            .Select(group => group.Last())
+            .ToList();
+        var revision = CombinedRevision(daily.Revision, vtb.Revision);
+
+        return new CurrentResultFetchResult(
+            date,
+            daily.SourceUrl,
+            revision,
+            candidates);
+    }
+
+    private async Task<FetchedPage> FetchPageAsync(
+        string path,
+        DateOnly date,
+        CancellationToken cancellationToken)
+    {
         using var response = await httpClient.GetAsync(path, cancellationToken);
         response.EnsureSuccessStatusCode();
         var html = await response.Content.ReadAsStringAsync(cancellationToken);
         var sourceUrl = new Uri(httpClient.BaseAddress ?? new Uri(options.BaseUrl), path).ToString();
         var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(html))).ToLowerInvariant()[..16];
-
         var candidates = Parse(html, date, sourceUrl, revision, options.SourceTimeZoneId);
         if (candidates.Count == 0 && ContainsEventMarkers(html))
         {
             throw new InvalidOperationException(
-                "The Livescore page contains basketball events, but none matched the expected markup. The parser likely needs updating.");
+                $"The Livescore page {sourceUrl} contains basketball events, but none matched the expected markup. The parser likely needs updating.");
         }
 
-        return new CurrentResultFetchResult(
-            date,
-            sourceUrl,
-            revision,
-            candidates);
+        return new FetchedPage(sourceUrl, revision, candidates);
     }
+
+    private static string CombinedRevision(string first, string second) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{first}:{second}"))).ToLowerInvariant()[..16];
 
     public static IReadOnlyCollection<CurrentResultCandidate> Parse(
         string html,
@@ -57,7 +87,7 @@ public sealed class LiveScoreDailyResultsProvider(
         document.LoadHtml(html);
         var candidates = new List<CurrentResultCandidate>();
         var headers = document.DocumentNode
-            .SelectNodes("//div[contains(concat(' ', normalize-space(@class), ' '), ' Pa ') or contains(concat(' ', normalize-space(@class), ' '), ' Ea ')]")?
+            .SelectNodes("//div[contains(concat(' ', normalize-space(@class), ' '), ' Pa ') or contains(concat(' ', normalize-space(@class), ' '), ' Ea ') or contains(concat(' ', normalize-space(@class), ' '), ' kb ')]")?
             .ToList() ?? [];
 
         foreach (var header in headers)
@@ -71,10 +101,10 @@ public sealed class LiveScoreDailyResultsProvider(
             string country;
             string competition;
             string? stage;
-            if (HasClass(header, "Ea"))
+            if (HasClass(header, "Ea") || HasClass(header, "kb"))
             {
-                var primary = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ha ')]")?.InnerText);
-                var secondary = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ia ')]")?.InnerText);
+                var primary = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ha ') or contains(concat(' ', normalize-space(@class), ' '), ' nb ')]")?.InnerText);
+                var secondary = Clean(header.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ia ') or contains(concat(' ', normalize-space(@class), ' '), ' ob ')]")?.InnerText);
                 SplitCurrentCompetition(primary, secondary, out country, out competition, out stage);
             }
             else
@@ -93,12 +123,12 @@ public sealed class LiveScoreDailyResultsProvider(
             for (var index = headerIndex + 1; index < parent.ChildNodes.Count; index++)
             {
                 var node = parent.ChildNodes[index];
-                if (HasClass(node, "Pa") || HasClass(node, "Ea"))
+                if (HasClass(node, "Pa") || HasClass(node, "Ea") || HasClass(node, "kb"))
                 {
                     break;
                 }
 
-                if (!HasClass(node, "Xe") && !HasClass(node, "rf"))
+                if (!HasClass(node, "Xe") && !HasClass(node, "rf") && !HasClass(node, "vf"))
                 {
                     continue;
                 }
@@ -125,7 +155,7 @@ public sealed class LiveScoreDailyResultsProvider(
         string sourceTimeZoneId)
     {
         var teams = eventNode
-            .SelectNodes(".//div[contains(concat(' ', normalize-space(@class), ' '), ' nf ')]//div[contains(concat(' ', normalize-space(@class), ' '), ' vf ')] | .//div[contains(concat(' ', normalize-space(@class), ' '), ' Hf ')]//div[contains(concat(' ', normalize-space(@class), ' '), ' Pf ')]")?
+            .SelectNodes(".//div[contains(concat(' ', normalize-space(@class), ' '), ' nf ')]//div[contains(concat(' ', normalize-space(@class), ' '), ' vf ')] | .//div[contains(concat(' ', normalize-space(@class), ' '), ' Hf ')]//div[contains(concat(' ', normalize-space(@class), ' '), ' Pf ')] | .//div[contains(concat(' ', normalize-space(@class), ' '), ' Lf ')]/div[contains(concat(' ', normalize-space(@class), ' '), ' Tf ')]")?
             .Select(x => Clean(x.InnerText))
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .ToList() ?? [];
@@ -135,12 +165,12 @@ public sealed class LiveScoreDailyResultsProvider(
         }
 
         var scoreValues = eventNode
-            .SelectNodes(".//div[contains(concat(' ', normalize-space(@class), ' '), ' rf ')]//span[contains(concat(' ', normalize-space(@class), ' '), ' hf ')] | .//div[contains(concat(' ', normalize-space(@class), ' '), ' Lf ')]//span[contains(concat(' ', normalize-space(@class), ' '), ' Bf ')]")?
+            .SelectNodes(".//div[contains(concat(' ', normalize-space(@class), ' '), ' rf ')]//span[contains(concat(' ', normalize-space(@class), ' '), ' hf ')] | .//div[contains(concat(' ', normalize-space(@class), ' '), ' Lf ')]//span[contains(concat(' ', normalize-space(@class), ' '), ' Bf ')] | .//div[contains(concat(' ', normalize-space(@class), ' '), ' Pf ')]/span[contains(concat(' ', normalize-space(@class), ' '), ' Ff ')]")?
             .Select(x => TryParseScore(Clean(x.InnerText)))
             .Where(x => x.HasValue)
             .Select(x => x!.Value)
             .ToList() ?? [];
-        var statusText = Clean(eventNode.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ih ')] | .//span[contains(concat(' ', normalize-space(@class), ' '), ' zg ')]")?.InnerText);
+        var statusText = Clean(eventNode.SelectSingleNode(".//span[contains(concat(' ', normalize-space(@class), ' '), ' Ih ')] | .//span[contains(concat(' ', normalize-space(@class), ' '), ' zg ')] | .//span[contains(concat(' ', normalize-space(@class), ' '), ' Gg ')]")?.InnerText);
         var status = ToStatus(statusText, scoreValues.Count >= 2);
         var gameDateTimeUtc = ExtractEventDateTimeUtc(eventNode)
             ?? ParseDateTimeUtc(date, statusText, sourceTimeZoneId);
@@ -363,4 +393,9 @@ public sealed class LiveScoreDailyResultsProvider(
 
     private static bool HasClass(HtmlNode node, string className) =>
         node.GetAttributeValue("class", string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(className, StringComparer.Ordinal);
+
+    private sealed record FetchedPage(
+        string SourceUrl,
+        string Revision,
+        IReadOnlyCollection<CurrentResultCandidate> Candidates);
 }

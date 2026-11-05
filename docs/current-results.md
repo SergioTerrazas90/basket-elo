@@ -31,3 +31,9 @@ For a recognized tournament family with no confirmed cycle, current-results inge
 ELO is fail-closed for chronology: before a rebuild starts deleting or recomputing ratings, it scans the affected pool for any `finished` game with `EloEligible = false`. If one exists, the run is marked `blocked`, existing ratings are left untouched, and no later game in that pool is rated. The run notes identify the blocking game and exclusion reason. Once the game is corrected or the tournament cycle is confirmed, a new rebuild can be queued (or the blocked run can be retried); unrelated Elo pools remain independent.
 
 The Livescore provider is an opt-in adapter. Enable it only after confirming that the intended use is permitted by the source’s current terms and any required license. The adapter uses the public daily HTML page and does not call hidden APIs.
+
+VTB United League games are also read from Livescore's public dedicated
+competition page. Livescore stopped including VTB on the all-basketball daily
+board during the 2026-2027 season while continuing to update the competition
+page. Candidates from both pages are merged by source game ID, so a game is not
+duplicated if VTB later returns to the daily board.

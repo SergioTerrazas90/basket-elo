@@ -26,7 +26,7 @@ public class LiveScoreDailyResultsProviderTests
         };
         var provider = new LiveScoreDailyResultsProvider(
             client,
-            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC" }));
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC", RequestDelayMilliseconds = 0 }));
 
         var result = await provider.FetchAsync(new DateOnly(2026, 7, 25), CancellationToken.None);
 
@@ -58,7 +58,7 @@ public class LiveScoreDailyResultsProviderTests
         };
         var provider = new LiveScoreDailyResultsProvider(
             client,
-            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC" }));
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC", RequestDelayMilliseconds = 0 }));
 
         var result = await provider.FetchAsync(new DateOnly(2026, 8, 13), CancellationToken.None);
 
@@ -84,7 +84,7 @@ public class LiveScoreDailyResultsProviderTests
         };
         var provider = new LiveScoreDailyResultsProvider(
             client,
-            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "Europe/Madrid" }));
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "Europe/Madrid", RequestDelayMilliseconds = 0 }));
 
         var result = await provider.FetchAsync(new DateOnly(2026, 8, 27), CancellationToken.None);
 
@@ -111,7 +111,7 @@ public class LiveScoreDailyResultsProviderTests
         };
         var provider = new LiveScoreDailyResultsProvider(
             client,
-            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC" }));
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC", RequestDelayMilliseconds = 0 }));
 
         var result = await provider.FetchAsync(new DateOnly(2026, 9, 14), CancellationToken.None);
 
@@ -133,6 +133,76 @@ public class LiveScoreDailyResultsProviderTests
     }
 
     [Fact]
+    public async Task FetchAsync_ParsesOctoberFinishedAndScheduledMarkup()
+    {
+        var epoch = new DateTimeOffset(2026, 10, 2, 18, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var html = $"""
+            <html><body><div class="group">
+              <div class="kb"><span><a href="/basketball/croatia/"><span class="nb">Croatia</span></a> - <a href="/basketball/croatia/premijer-liga/"><span class="ob">Premijer Liga</span></a></span></div>
+              <div class="vf Af"><a href="/basketball/croatia/premijer-liga/kk-skrljevo-vs-zadar/1875108/"><div class="Gf"><span class="Bg Dg Cg"><span class="Gg Cg">FT</span></span><div class="Hf"><div class="Lf"><div class="Tf">KK Skrljevo</div><div class="Tf Uf">Zadar</div></div><div class="Pf Qf Rf"><span class="Ff">69</span><span class="Ff">107</span></div><div class="Nf"><span class="Ff">17</span><span class="Ff">25</span></div></div></div></a></div>
+              <div class="kb"><span><a href="/basketball/denmark/"><span class="nb">Denmark</span></a> - <a href="/basketball/denmark/basket-ligaen/"><span class="ob">Basket Ligaen</span></a></span></div>
+              <div class="vf"><div class="Gf"><span class="Bg Dg Cg"><span class="Gg Cg">18:00</span></span><div class="Hf"><div class="Lf"><div class="Tf">Cedevita</div><div class="Tf">Furnir</div></div><div class="Pf Qf"><span class="Ff"></span><span class="Ff"></span></div></div></div><button data-eventId="1875095" data-favouritesDetails="basketball-1875095-{epoch}"></button></div>
+            </div></body></html>
+            """;
+        using var client = new HttpClient(new FixtureHandler(html))
+        {
+            BaseAddress = new Uri("https://www.livescores.com")
+        };
+        var provider = new LiveScoreDailyResultsProvider(
+            client,
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC", RequestDelayMilliseconds = 0 }));
+
+        var result = await provider.FetchAsync(new DateOnly(2026, 10, 2), CancellationToken.None);
+
+        Assert.Equal(2, result.Candidates.Count);
+        var finished = result.Candidates.Single(x => x.SourceGameId == "1875108");
+        Assert.Equal("Croatia", finished.CountryName);
+        Assert.Equal("Premijer Liga", finished.CompetitionName);
+        Assert.Equal(CurrentResultStatuses.Finished, finished.Status);
+        Assert.Equal((short)69, finished.HomeScore);
+        Assert.Equal((short)107, finished.AwayScore);
+
+        var scheduled = result.Candidates.Single(x => x.SourceGameId == "1875095");
+        Assert.Equal(CurrentResultStatuses.Scheduled, scheduled.Status);
+        Assert.Equal(new DateTime(2026, 10, 2, 18, 0, 0, DateTimeKind.Utc), scheduled.GameDateTimeUtc);
+    }
+
+    [Fact]
+    public async Task FetchAsync_AddsVtbGamesFromDedicatedCompetitionPage()
+    {
+        const string dailyHtml = "<html><body><div>No VTB games on the daily board.</div></body></html>";
+        const string vtbHtml = """
+            <html><body><div class="group">
+              <div class="kb"><span><a href="/basketball/united-league/"><span class="nb">VTB United League</span></a> - <a href="/basketball/united-league/vtb-united-league/"><span class="ob">VTB United League</span></a></span><span class="lb">November 3</span></div>
+              <div class="vf Af"><a href="/basketball/united-league/vtb-united-league/parma-perm-vs-bc-samara/1871117/"><div class="Gf"><span class="Bg Dg Cg"><span class="Gg Cg">FT</span></span><div class="Hf"><div class="Lf"><div class="Tf Uf">Parma Perm</div><div class="Tf">BC Samara</div></div><div class="Pf Qf Rf"><span class="Ff">109</span><span class="Ff">68</span></div></div></div></a></div>
+            </div></body></html>
+            """;
+        using var client = new HttpClient(new FixtureHandler(request =>
+            request.RequestUri?.AbsolutePath.Contains("vtb-united-league", StringComparison.Ordinal) == true
+                ? vtbHtml
+                : dailyHtml))
+        {
+            BaseAddress = new Uri("https://www.livescores.com")
+        };
+        var provider = new LiveScoreDailyResultsProvider(
+            client,
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC", RequestDelayMilliseconds = 0 }));
+
+        var result = await provider.FetchAsync(new DateOnly(2026, 11, 3), CancellationToken.None);
+
+        var game = Assert.Single(result.Candidates);
+        Assert.Equal("1871117", game.SourceGameId);
+        Assert.Equal("VTB United League", game.CountryName);
+        Assert.Equal("VTB United League", game.CompetitionName);
+        Assert.Equal("Parma Perm", game.HomeTeamName);
+        Assert.Equal("BC Samara", game.AwayTeamName);
+        Assert.Equal((short)109, game.HomeScore);
+        Assert.Equal((short)68, game.AwayScore);
+        Assert.Equal(CurrentResultStatuses.Finished, game.Status);
+        Assert.Contains("/basketball/united-league/vtb-united-league/", game.SourceUrl, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FetchAsync_RejectsUnrecognizedMarkupWhenEventsArePresent()
     {
         const string html = """
@@ -144,7 +214,7 @@ public class LiveScoreDailyResultsProviderTests
         };
         var provider = new LiveScoreDailyResultsProvider(
             client,
-            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC" }));
+            Options.Create(new LiveScoreOptions { Enabled = true, SourceTimeZoneId = "UTC", RequestDelayMilliseconds = 0 }));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => provider.FetchAsync(new DateOnly(2026, 9, 14), CancellationToken.None));
@@ -161,13 +231,25 @@ public class LiveScoreDailyResultsProviderTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => provider.FetchAsync(new DateOnly(2026, 7, 25), CancellationToken.None));
     }
 
-    private sealed class FixtureHandler(string body) : HttpMessageHandler
+    private sealed class FixtureHandler : HttpMessageHandler
     {
+        private readonly Func<HttpRequestMessage, string> bodyForRequest;
+
+        public FixtureHandler(string body)
+            : this(_ => body)
+        {
+        }
+
+        public FixtureHandler(Func<HttpRequestMessage, string> bodyForRequest)
+        {
+            this.bodyForRequest = bodyForRequest;
+        }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent(body)
+                Content = new StringContent(bodyForRequest(request))
             };
             response.Content.Headers.ContentType = new MediaTypeHeaderValue("text/html");
             return Task.FromResult(response);

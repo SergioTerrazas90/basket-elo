@@ -21,6 +21,7 @@ public sealed class AdminAttentionSummaryControllerTests
             Id = Guid.NewGuid(),
             Name = "Test League",
             Type = "league",
+            MonitorGameGaps = true,
             EloPoolKey = EloPoolKeys.EuropeClubs
         };
         var season = new Season
@@ -46,6 +47,7 @@ public sealed class AdminAttentionSummaryControllerTests
             HomeTeam = home,
             AwayTeamId = away.Id,
             AwayTeam = away,
+            GameDateTimeUtc = DateTime.UtcNow,
             HomeScore = 81,
             AwayScore = 76,
             Status = "finished",
@@ -93,6 +95,73 @@ public sealed class AdminAttentionSummaryControllerTests
         Assert.Equal(1, summary.PossibleDuplicateAliasGroups);
         Assert.Equal(1, summary.TeamsMissingCountry);
         Assert.Equal(1, summary.UnratedEligibleGames);
+        Assert.Equal(0, summary.CompetitionsWithoutRecentGames);
+    }
+
+    [Fact]
+    public async Task SummaryCountsOnlyFollowedCompetitionsWithTwoMonitoredWeeksWithoutGames()
+    {
+        await using var dbContext = CreateDbContext();
+        var nowUtc = DateTime.UtcNow;
+        dbContext.Competitions.AddRange(
+            new Competition
+            {
+                Id = Guid.NewGuid(),
+                Name = "Stale followed league",
+                Type = "league",
+                IsActive = true,
+                MonitorGameGaps = true,
+                SupportPolicy = CompetitionSupportPolicies.Supported,
+                CreatedAtUtc = nowUtc.AddDays(-15)
+            },
+            new Competition
+            {
+                Id = Guid.NewGuid(),
+                Name = "New followed league",
+                Type = "league",
+                IsActive = true,
+                MonitorGameGaps = true,
+                SupportPolicy = CompetitionSupportPolicies.Supported,
+                CreatedAtUtc = nowUtc.AddDays(-13)
+            },
+            new Competition
+            {
+                Id = Guid.NewGuid(),
+                Name = "Inactive league",
+                Type = "league",
+                IsActive = false,
+                MonitorGameGaps = true,
+                SupportPolicy = CompetitionSupportPolicies.Supported,
+                CreatedAtUtc = nowUtc.AddDays(-30)
+            },
+            new Competition
+            {
+                Id = Guid.NewGuid(),
+                Name = "Unsupported league",
+                Type = "league",
+                IsActive = true,
+                MonitorGameGaps = true,
+                SupportPolicy = CompetitionSupportPolicies.Unsupported,
+                CreatedAtUtc = nowUtc.AddDays(-30)
+            },
+            new Competition
+            {
+                Id = Guid.NewGuid(),
+                Name = "Unmonitored cup",
+                Type = "domestic_cup",
+                IsActive = true,
+                MonitorGameGaps = false,
+                SupportPolicy = CompetitionSupportPolicies.Supported,
+                CreatedAtUtc = nowUtc.AddDays(-30)
+            });
+        await dbContext.SaveChangesAsync();
+
+        var controller = new AdminController(dbContext);
+        var result = await controller.GetAttentionSummary(CancellationToken.None);
+        var summary = Assert.IsType<AdminAttentionSummary>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Equal(1, summary.CompetitionsWithoutRecentGames);
     }
 
     private static Team CreateTeam(string name, string countryCode) => new()

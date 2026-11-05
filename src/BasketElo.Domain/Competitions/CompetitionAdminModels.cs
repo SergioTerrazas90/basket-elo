@@ -22,6 +22,7 @@ public sealed record CompetitionAdminListItem(
     string? EloPoolKey,
     int Tier,
     bool IsActive,
+    bool MonitorGameGaps,
     string SupportPolicy,
     string HomeAdvantagePolicy,
     int AliasCount,
@@ -36,6 +37,7 @@ public sealed record CompetitionAdminDetail(
     string? EloPoolKey,
     int Tier,
     bool IsActive,
+    bool MonitorGameGaps,
     string SupportPolicy,
     string HomeAdvantagePolicy,
     DateTime CreatedAtUtc,
@@ -60,7 +62,8 @@ public sealed record CreateCompetitionAdminRequest(
     int Tier,
     bool IsActive,
     string SupportPolicy,
-    string HomeAdvantagePolicy = HomeAdvantagePolicies.Automatic);
+    string HomeAdvantagePolicy = HomeAdvantagePolicies.Automatic,
+    bool MonitorGameGaps = false);
 
 public sealed record UpdateCompetitionAdminRequest(
     string Name,
@@ -70,7 +73,8 @@ public sealed record UpdateCompetitionAdminRequest(
     int Tier,
     bool IsActive,
     string SupportPolicy,
-    string HomeAdvantagePolicy = HomeAdvantagePolicies.Automatic);
+    string HomeAdvantagePolicy = HomeAdvantagePolicies.Automatic,
+    bool MonitorGameGaps = false);
 
 public sealed record AddCompetitionAdminAliasRequest(
     string Source,

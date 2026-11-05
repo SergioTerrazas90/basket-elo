@@ -31,7 +31,7 @@
         <section class="card border-primary mb-4" aria-live="polite">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start gap-3"><div><p class="eyebrow">Selected competition</p><h2 class="h4">@detail.Name</h2></div><button type="button" class="btn-close" aria-label="Close competition details" @onclick="CloseDetail"></button></div>
-                <div class="d-flex flex-wrap gap-2 mb-3"><span class="badge text-bg-light">@detail.GameCount games</span><span class="badge text-bg-light">@detail.OpenReviewCount open reviews</span><span class="badge text-bg-light">@detail.Aliases.Count aliases</span><span class="badge text-bg-info">ELO site: @HomeAdvantageLabel(detail.HomeAdvantagePolicy)</span><span class="badge @(detail.IsActive ? "text-bg-success" : "text-bg-secondary")">@(detail.IsActive ? "Active" : "Inactive")</span></div>
+                <div class="d-flex flex-wrap gap-2 mb-3"><span class="badge text-bg-light">@detail.GameCount games</span><span class="badge text-bg-light">@detail.OpenReviewCount open reviews</span><span class="badge text-bg-light">@detail.Aliases.Count aliases</span><span class="badge text-bg-info">ELO site: @HomeAdvantageLabel(detail.HomeAdvantagePolicy)</span><span class="badge @(detail.IsActive ? "text-bg-success" : "text-bg-secondary")">@(detail.IsActive ? "Active" : "Inactive")</span>@if (detail.MonitorGameGaps) { <span class="badge text-bg-warning">Game-gap alert</span> }</div>
                 <div class="d-flex flex-wrap gap-2 mb-3">
                     <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => StartEdit(detail)">Edit metadata and policy</button>
                     <NavLink class="btn btn-primary btn-sm" href="@ManualGameHref(detail.Id)">Add match manually</NavLink>
@@ -111,6 +111,7 @@
                     <div class="col-md-3"><label class="form-label">Current-results policy</label><select class="form-select" @bind="editSupportPolicy">@foreach (var policy in CompetitionSupportPolicies.All) { <option value="@policy">@PolicyLabel(policy)</option> }</select></div>
                     <div class="col-md-3"><label class="form-label">ELO site treatment</label><select class="form-select" @bind="editHomeAdvantagePolicy">@foreach (var policy in HomeAdvantagePolicies.All) { <option value="@policy">@HomeAdvantageLabel(policy)</option> }</select></div>
                     <div class="col-md-2 d-flex align-items-end"><div class="form-check"><input id="competition-active" class="form-check-input" type="checkbox" @bind="editIsActive" /><label class="form-check-label" for="competition-active">Active</label></div></div>
+                    <div class="col-md-3 d-flex align-items-end"><div class="form-check"><input id="competition-monitor-gaps" class="form-check-input" type="checkbox" @bind="editMonitorGameGaps" /><label class="form-check-label" for="competition-monitor-gaps">Monitor two-week game gaps</label></div></div>
                 </div>
                 <div class="d-flex gap-2 mt-3"><button type="button" class="btn btn-primary" @onclick="SaveCompetitionAsync" disabled="@isBusy">Save</button><button type="button" class="btn btn-outline-secondary" @onclick="CancelEdit">Cancel</button></div>
             </div>
@@ -153,6 +154,12 @@
 </div>
 
 @code {
+    [Parameter, SupplyParameterFromQuery(Name = "active")]
+    public bool? ActiveQuery { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "supportPolicy")]
+    public string? SupportPolicyQuery { get; set; }
+
     private CompetitionAdminListResponse? response;
     private CompetitionAdminDetail? detail;
     private string search = string.Empty;
@@ -170,6 +177,7 @@
     private string? editEloPoolKey;
     private int editTier;
     private bool editIsActive = true;
+    private bool editMonitorGameGaps;
     private string editSupportPolicy = CompetitionSupportPolicies.Supported;
     private string editHomeAdvantagePolicy = HomeAdvantagePolicies.Automatic;
     private string aliasSource = string.Empty;
@@ -180,6 +188,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        activeFilter = ActiveQuery switch { true => "active", false => "inactive", _ => string.Empty };
+        policyFilter = CompetitionSupportPolicies.IsValid(SupportPolicyQuery)
+            ? SupportPolicyQuery!.Trim().ToLowerInvariant()
+            : string.Empty;
+
         try
         {
             countryOptions = await Http.GetFromJsonAsync<IReadOnlyList<CompetitionCountryOption>>(
@@ -208,12 +221,12 @@
 
     private void StartCreate()
     {
-        creating = true; editing = true; detail = null; editName = string.Empty; editType = CompetitionTypeCatalog.League; editCountryCode = null; editEloPoolKey = null; editTier = 0; editIsActive = true; editSupportPolicy = CompetitionSupportPolicies.Supported; editHomeAdvantagePolicy = HomeAdvantagePolicies.Automatic;
+        creating = true; editing = true; detail = null; editName = string.Empty; editType = CompetitionTypeCatalog.League; editCountryCode = null; editEloPoolKey = null; editTier = 0; editIsActive = true; editMonitorGameGaps = false; editSupportPolicy = CompetitionSupportPolicies.Supported; editHomeAdvantagePolicy = HomeAdvantagePolicies.Automatic;
     }
 
     private void StartEdit(CompetitionAdminDetail value)
     {
-        creating = false; editing = true; editName = value.Name; editType = value.Type; editCountryCode = value.CountryCode; editEloPoolKey = value.EloPoolKey; editTier = value.Tier; editIsActive = value.IsActive; editSupportPolicy = value.SupportPolicy; editHomeAdvantagePolicy = value.HomeAdvantagePolicy;
+        creating = false; editing = true; editName = value.Name; editType = value.Type; editCountryCode = value.CountryCode; editEloPoolKey = value.EloPoolKey; editTier = value.Tier; editIsActive = value.IsActive; editMonitorGameGaps = value.MonitorGameGaps; editSupportPolicy = value.SupportPolicy; editHomeAdvantagePolicy = value.HomeAdvantagePolicy;
     }
 
     private void CancelEdit() => editing = false;
@@ -226,11 +239,11 @@
             HttpResponseMessage result;
             if (creating)
             {
-                result = await Http.PostAsJsonAsync("api/admin/competitions", new CreateCompetitionAdminRequest(editName, editType, editCountryCode, editEloPoolKey, editTier, editIsActive, editSupportPolicy, editHomeAdvantagePolicy));
+                result = await Http.PostAsJsonAsync("api/admin/competitions", new CreateCompetitionAdminRequest(editName, editType, editCountryCode, editEloPoolKey, editTier, editIsActive, editSupportPolicy, editHomeAdvantagePolicy, editMonitorGameGaps));
             }
             else
             {
-                result = await Http.PatchAsJsonAsync($"api/admin/competitions/{detail!.Id}", new UpdateCompetitionAdminRequest(editName, editType, editCountryCode, editEloPoolKey, editTier, editIsActive, editSupportPolicy, editHomeAdvantagePolicy));
+                result = await Http.PatchAsJsonAsync($"api/admin/competitions/{detail!.Id}", new UpdateCompetitionAdminRequest(editName, editType, editCountryCode, editEloPoolKey, editTier, editIsActive, editSupportPolicy, editHomeAdvantagePolicy, editMonitorGameGaps));
             }
             if (!result.IsSuccessStatusCode) { SetMessage(await result.Content.ReadAsStringAsync(), "alert-danger"); return; }
             detail = creating ? await result.Content.ReadFromJsonAsync<CompetitionAdminDetail>() : await result.Content.ReadFromJsonAsync<CompetitionAdminDetail>();

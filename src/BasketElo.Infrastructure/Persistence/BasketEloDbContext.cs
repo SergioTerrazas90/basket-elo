@@ -502,6 +502,7 @@ public class BasketEloDbContext(DbContextOptions<BasketEloDbContext> options) : 
             entity.Property(x => x.Type).HasMaxLength(50).IsRequired();
             entity.Property(x => x.EloPoolKey).HasMaxLength(30);
             entity.Property(x => x.CountryCode).HasMaxLength(3);
+            entity.Property(x => x.MonitorGameGaps).IsRequired();
             entity.Property(x => x.SupportPolicy).HasMaxLength(30).IsRequired();
             entity.Property(x => x.HomeAdvantagePolicy).HasMaxLength(30).IsRequired();
             entity.Property(x => x.CreatedAtUtc).IsRequired();

@@ -68,6 +68,14 @@
                         <span class="admin-attention-arrow" aria-hidden="true">→</span>
                     </a>
                 }
+                @if (summary.CompetitionsWithoutRecentGames > 0)
+                {
+                    <a class="admin-attention-action warning" href="admin/competitions?active=true&amp;supportPolicy=supported">
+                        <span class="admin-attention-count">@summary.CompetitionsWithoutRecentGames</span>
+                        <span>Competition game gaps<small>No games for two monitored weeks</small></span>
+                        <span class="admin-attention-arrow" aria-hidden="true">→</span>
+                    </a>
+                }
             </nav>
         }
         else if (summary is not null)
@@ -102,7 +110,8 @@
          OpenIdentityFindings > 0 ||
          summary.PossibleDuplicateAliasGroups > 0 ||
          summary.TeamsMissingCountry > 0 ||
-         summary.UnratedEligibleGames > 0);
+         summary.UnratedEligibleGames > 0 ||
+         summary.CompetitionsWithoutRecentGames > 0);
 
     private string SummaryMessage => isLoading && summary is null
         ? "Checking data quality"

@@ -75,6 +75,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
                 x.EloPoolKey,
                 x.Tier,
                 x.IsActive,
+                x.MonitorGameGaps,
                 x.SupportPolicy,
                 x.HomeAdvantagePolicy,
                 AliasCount = dbContext.CompetitionAliases.Count(alias => alias.CompetitionId == x.Id),
@@ -86,7 +87,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
 
         return Ok(new CompetitionAdminListResponse(
             rows.Select(x => new CompetitionAdminListItem(
-                x.Id, x.Name, x.Type, x.CountryCode, x.EloPoolKey, x.Tier, x.IsActive,
+                x.Id, x.Name, x.Type, x.CountryCode, x.EloPoolKey, x.Tier, x.IsActive, x.MonitorGameGaps,
                 x.SupportPolicy, x.HomeAdvantagePolicy, x.AliasCount, x.GameCount, x.OpenReviewCount)).ToList(),
             page, pageSize, totalCount, totalPages));
     }
@@ -169,6 +170,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
             EloPoolKey = values.EloPoolKey,
             Tier = Math.Max(0, request.Tier),
             IsActive = request.IsActive,
+            MonitorGameGaps = request.MonitorGameGaps,
             SupportPolicy = values.SupportPolicy,
             HomeAdvantagePolicy = values.HomeAdvantagePolicy,
             CreatedAtUtc = DateTime.UtcNow
@@ -204,6 +206,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
         competition.EloPoolKey = values.EloPoolKey;
         competition.Tier = Math.Max(0, request.Tier);
         competition.IsActive = request.IsActive;
+        competition.MonitorGameGaps = request.MonitorGameGaps;
         competition.SupportPolicy = values.SupportPolicy;
         competition.HomeAdvantagePolicy = values.HomeAdvantagePolicy;
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -296,7 +299,7 @@ public class AdminCompetitionsController(BasketEloDbContext dbContext) : Control
             .ToList();
         return new CompetitionAdminDetail(
             competition.Id, competition.Name, competition.Type, competition.CountryCode,
-            competition.EloPoolKey, competition.Tier, competition.IsActive, competition.SupportPolicy,
+            competition.EloPoolKey, competition.Tier, competition.IsActive, competition.MonitorGameGaps, competition.SupportPolicy,
             competition.HomeAdvantagePolicy, competition.CreatedAtUtc, gameCount, openReviewCount, aliases);
     }
 

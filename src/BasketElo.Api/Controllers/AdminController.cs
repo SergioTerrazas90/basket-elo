@@ -90,13 +90,36 @@ public class AdminController(BasketEloDbContext dbContext) : ControllerBase
                     history.RulesetVersion == EloRulesetVersions.Default),
                 cancellationToken);
 
+        var nowUtc = DateTime.UtcNow;
+        var followedCompetitionActivity = await dbContext.Competitions
+            .AsNoTracking()
+            .Where(x =>
+                x.IsActive &&
+                x.MonitorGameGaps &&
+                x.SupportPolicy == CompetitionSupportPolicies.Supported)
+            .Select(x => new
+            {
+                x.CreatedAtUtc,
+                LastGameUtc = dbContext.Games
+                    .Where(game =>
+                        game.CompetitionId == x.Id &&
+                        game.GameDateTimeUtc <= nowUtc)
+                    .Max(game => (DateTime?)game.GameDateTimeUtc)
+            })
+            .ToListAsync(cancellationToken);
+        var competitionsWithoutRecentGames = followedCompetitionActivity.Count(x =>
+            CompetitionGameGapPolicy.ShouldAlert(
+                x.LastGameUtc ?? x.CreatedAtUtc,
+                nowUtc));
+
         return Ok(new AdminAttentionSummary(
             openResultReviews,
             openIdentityWarnings,
             openIdentityBlockers,
             possibleDuplicateAliasGroups,
             teamsMissingCountry,
-            unratedEligibleGames));
+            unratedEligibleGames,
+            competitionsWithoutRecentGames));
     }
 
     [HttpGet("dashboard")]

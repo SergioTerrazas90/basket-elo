@@ -11,6 +11,7 @@ public class Competition
     public string? CountryCode { get; set; }
     public int Tier { get; set; }
     public bool IsActive { get; set; } = true;
+    public bool MonitorGameGaps { get; set; }
     public string SupportPolicy { get; set; } = CompetitionSupportPolicies.Supported;
     public string HomeAdvantagePolicy { get; set; } = HomeAdvantagePolicies.Automatic;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

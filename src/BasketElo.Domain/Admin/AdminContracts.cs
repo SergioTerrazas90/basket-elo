@@ -56,7 +56,8 @@ public sealed record AdminAttentionSummary(
     int OpenIdentityBlockers,
     int PossibleDuplicateAliasGroups,
     int TeamsMissingCountry,
-    int UnratedEligibleGames);
+    int UnratedEligibleGames,
+    int CompetitionsWithoutRecentGames);
 
 public sealed record AdminSocialPostsResponse(
     DateOnly RequestedDate,

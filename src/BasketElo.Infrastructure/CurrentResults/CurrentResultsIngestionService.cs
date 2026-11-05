@@ -1195,7 +1195,10 @@ public sealed class CurrentResultsIngestionService(
         var maximumDateTimeUtc = gameDateTimeUtc + CrossSourceReconciliationWindow;
         var candidates = await dbContext.Games
             .Where(x =>
-                x.Source != provider.Source &&
+                // A dedicated competition page can omit its event ID after a
+                // postponement. In that case, allow the synthetic candidate to
+                // reuse the earlier same-source scheduled fixture.
+                (x.Source != provider.Source || sourceGameId.StartsWith("synthetic:")) &&
                 x.CompetitionId == competitionId &&
                 x.HomeTeamId == homeTeamId &&
                 x.AwayTeamId == awayTeamId &&

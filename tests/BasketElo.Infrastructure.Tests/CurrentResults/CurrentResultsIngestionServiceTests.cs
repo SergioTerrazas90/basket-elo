@@ -888,6 +888,62 @@ public class CurrentResultsIngestionServiceTests
     }
 
     [Fact]
+    public async Task SyntheticPostponementReusesEarlierSameSourceScheduledFixture()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "VTB United League", CountryCode = "RU",
+            SupportPolicy = CompetitionSupportPolicies.Supported, IsActive = true
+        };
+        var season = new Season
+        {
+            Id = Guid.NewGuid(), CompetitionId = competition.Id, Label = "2026-2027",
+            StartDateUtc = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(2027, 6, 30, 23, 59, 59, DateTimeKind.Utc)
+        };
+        var home = new Team { Id = Guid.NewGuid(), CanonicalName = "MBA Moscow", CountryCode = "RU" };
+        var away = new Team { Id = Guid.NewGuid(), CanonicalName = "Enisey Krasnoyarsk", CountryCode = "RU" };
+        var scheduled = new Game
+        {
+            Id = Guid.NewGuid(), Source = "livescore", SourceGameId = "1871091",
+            CompetitionId = competition.Id, SeasonId = season.Id,
+            GameDateTimeUtc = new DateTime(2026, 10, 10, 10, 0, 0, DateTimeKind.Utc),
+            HomeTeamId = home.Id, AwayTeamId = away.Id, Status = CurrentResultStatuses.Scheduled
+        };
+        dbContext.AddRange(
+            competition,
+            season,
+            home,
+            away,
+            scheduled,
+            new CompetitionAlias
+            {
+                Id = Guid.NewGuid(), CompetitionId = competition.Id, Source = "livescore",
+                SourceCompetitionId = string.Empty, AliasName = "VTB United League"
+            });
+        await dbContext.SaveChangesAsync();
+        var candidate = new CurrentResultCandidate(
+            "synthetic:2026-10-10:vtb-united-league:vtb-united-league:mba-moscow:enisey-krasnoyarsk",
+            null, new DateOnly(2026, 10, 10),
+            new DateTime(2026, 10, 10, 0, 0, 0, DateTimeKind.Utc),
+            "VTB United League", "VTB United League", null,
+            "MBA Moscow", "Enisey Krasnoyarsk",
+            "team:vtb-united-league:mba-moscow", "team:vtb-united-league:enisey-krasnoyarsk",
+            null, null, CurrentResultStatuses.Postponed, "Postp.", "revision", "parser");
+        var service = CreateService(dbContext, candidate);
+
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        var game = Assert.Single(await dbContext.Games.ToListAsync());
+        Assert.Equal("1871091", game.SourceGameId);
+        Assert.Equal(CurrentResultStatuses.Postponed, game.Status);
+    }
+
+    [Fact]
     public async Task CreatingCanonicalTeamDefaultsToSuggestedCompetitionCountry()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()

@@ -10,6 +10,9 @@ namespace BasketElo.Infrastructure.Identity;
 /// </summary>
 public static class CountryCodeCatalog
 {
+    private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyCollection<string>>> CodesByDisplayName =
+        new(BuildCodesByDisplayName);
+
     private static readonly IReadOnlyDictionary<string, string> ProviderAliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -332,4 +335,45 @@ public static class CountryCodeCatalog
 
     public static bool AreEquivalent(string? left, string? right)
         => string.Equals(Normalize(left), Normalize(right), StringComparison.OrdinalIgnoreCase);
+
+    public static IReadOnlyCollection<string> ResolveFilterCodes(string? country)
+    {
+        if (string.IsNullOrWhiteSpace(country))
+        {
+            return [];
+        }
+
+        var requested = country.Trim();
+        if (CodesByDisplayName.Value.TryGetValue(requested, out var displayNameCodes))
+        {
+            return displayNameCodes;
+        }
+
+        var normalized = Normalize(requested);
+        return string.IsNullOrWhiteSpace(normalized) ? [] : [normalized];
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyCollection<string>> BuildCodesByDisplayName()
+    {
+        var codes = new HashSet<string>(HistoricalCodes, StringComparer.OrdinalIgnoreCase);
+        foreach (var first in Enumerable.Range('A', 26))
+        {
+            foreach (var second in Enumerable.Range('A', 26))
+            {
+                codes.Add($"{(char)first}{(char)second}");
+            }
+        }
+
+        return codes
+            .Select(code => new { Code = Normalize(code), DisplayName = DisplayName(code) })
+            .Where(item => !string.IsNullOrWhiteSpace(item.Code) && !string.IsNullOrWhiteSpace(item.DisplayName))
+            .GroupBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyCollection<string>)group
+                    .Select(item => item.Code!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+    }
 }

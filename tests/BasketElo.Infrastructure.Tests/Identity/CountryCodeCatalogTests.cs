@@ -64,4 +64,15 @@ public sealed class CountryCodeCatalogTests
         Assert.True(CountryCodeCatalog.AreEquivalent("US", "USA"));
         Assert.False(CountryCodeCatalog.AreEquivalent("IT", "ES"));
     }
+
+    [Theory]
+    [InlineData("Serbia", "RS")]
+    [InlineData("serbia", "RS")]
+    [InlineData("RS", "RS")]
+    [InlineData("United States", "US")]
+    [InlineData("Yugoslavia", "YUG")]
+    public void ResolveFilterCodes_AcceptsDisplayNamesAndCodes(string country, string expected)
+    {
+        Assert.Contains(expected, CountryCodeCatalog.ResolveFilterCodes(country));
+    }
 }

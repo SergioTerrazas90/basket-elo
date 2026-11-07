@@ -388,8 +388,11 @@
 }
 
 .advanced-filters {
+    position: relative;
+    z-index: 10;
     align-items: end;
     margin-top: -1.25rem;
+    overflow: visible;
     padding: 1.15rem;
     background: var(--color-surface-muted);
     animation: be-content-rise var(--motion-standard) both;

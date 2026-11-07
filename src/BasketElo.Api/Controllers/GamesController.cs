@@ -56,8 +56,8 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
 
         if (!string.IsNullOrWhiteSpace(country))
         {
-            var normalizedCountry = CountryCodeCatalog.Normalize(country);
-            query = query.Where(x => x.Competition.CountryCode == normalizedCountry);
+            var countryCodes = CountryCodeCatalog.ResolveFilterCodes(country);
+            query = query.Where(x => countryCodes.Contains(x.Competition.CountryCode ?? string.Empty));
         }
 
         var normalizedCompetition = competition?.Trim();
@@ -275,7 +275,7 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
 
         if (!string.IsNullOrWhiteSpace(country))
         {
-            var countryCodes = GetCountryCodes(country);
+            var countryCodes = CountryCodeCatalog.ResolveFilterCodes(country);
             query = query.Where(x => countryCodes.Contains(x.Competition.CountryCode ?? string.Empty));
         }
 
@@ -662,28 +662,6 @@ public class GamesController(BasketEloDbContext dbContext, IMemoryCache? cache =
 
     private static string DisplayCountryFromCode(string? countryCode)
         => CountryCodeCatalog.DisplayName(countryCode);
-
-    private static IReadOnlyCollection<string> GetCountryCodes(string displayCountry)
-    {
-        return displayCountry switch
-        {
-            "Spain" => ["ES"],
-            "France" => ["FR"],
-            "Lithuania" => ["LT"],
-            "Greece" => ["GR"],
-            "Italy" => ["IT"],
-            "Turkey" => ["TR"],
-            "Latvia" => ["LV"],
-            "Belgium" => ["BE"],
-            "Germany" => ["DE"],
-            "Israel" => ["IL"],
-            "Poland" => ["PL"],
-            "Czech Republic" => ["CZ"],
-            "Russia" => ["RU"],
-            "United States" => ["US"],
-            _ => [displayCountry]
-        };
-    }
 
     private static IQueryable<Domain.Entities.Game> ApplySeasonFilter(IQueryable<Domain.Entities.Game> query, string season)
         => query.Where(x => x.Season.Label == season.Trim());

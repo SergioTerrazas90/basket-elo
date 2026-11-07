@@ -1221,7 +1221,7 @@
     private bool showRulesetHelp;
     private string selectedRuleset = EloRulesetVersions.Default;
     private string selectedPool = EloPoolKeys.Default;
-    private string selectedTeamScope = EloTeamScopes.Historical;
+    private string selectedTeamScope = EloTeamScopes.Current;
     private string? selectedFromSeason;
     private string? selectedToSeason;
     private string? teamSearch;
@@ -1429,7 +1429,7 @@
             ? pathSeason is not null
                 ? EloTeamScopes.Historical
                 : string.IsNullOrWhiteSpace(Teams)
-                    ? EloTeamScopes.Historical
+                    ? EloTeamScopes.Current
                     : EloTeamScopes.Normalize(Teams)
             : EloTeamScopes.Current;
         var teamScopeChanged = !string.Equals(previousTeamScope, selectedTeamScope, StringComparison.Ordinal);
@@ -1651,7 +1651,7 @@
     private async Task ResetFiltersAsync()
     {
         CancelTeamSearchDebounce();
-        selectedTeamScope = EloTeamScopes.Historical;
+        selectedTeamScope = EloTeamScopes.Current;
         selectedCountry = null;
         selectedCompetition = null;
         countrySearch = null;
@@ -2764,7 +2764,7 @@
         var query = new Dictionary<string, object?>
         {
             ["pool"] = IsDedicatedEloRoute(route) || selectedPool == EloPoolKeys.Default ? null : selectedPool,
-            ["teams"] = targetShowsTeamScope && selectedTeamScope == EloTeamScopes.Current && !usesSeasonArchiveRoute
+            ["teams"] = targetShowsTeamScope && selectedTeamScope == EloTeamScopes.Historical && !usesSeasonArchiveRoute
                 ? selectedTeamScope
                 : null,
             ["movement"] = view == "movers" ? selectedMoverDirection : null,
@@ -2788,9 +2788,13 @@
         var targetPool = EloPoolKeys.Normalize(poolKey);
         var targetView = selectedView;
         var route = targetView == "movers" ? "/movers" : LandingRouteForContext(targetPool, null, null);
+        var targetSupportsTeamScope = targetPool is EloPoolKeys.Nba or EloPoolKeys.EuropeClubs or EloPoolKeys.NationalTeams;
         var query = new Dictionary<string, object?>
         {
             ["pool"] = IsDedicatedEloRoute(route) || targetPool == EloPoolKeys.Default ? null : targetPool,
+            ["teams"] = targetSupportsTeamScope && selectedTeamScope == EloTeamScopes.Historical
+                ? selectedTeamScope
+                : null,
             ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
             ["movement"] = targetView == "movers" ? selectedMoverDirection : null,
             ["windowDays"] = targetView == "movers" && selectedWindowDays != 30 ? selectedWindowDays : null,
@@ -4182,7 +4186,7 @@
             ["ruleset"] = selectedRuleset == EloRulesetVersions.Default ? null : selectedRuleset,
             ["fromSeason"] = selectedFromSeason,
             ["toSeason"] = selectedToSeason,
-            ["teams"] = selectedTeamScope == EloTeamScopes.Current ? selectedTeamScope : null
+            ["teams"] = selectedTeamScope == EloTeamScopes.Historical ? selectedTeamScope : null
         });
     }
 

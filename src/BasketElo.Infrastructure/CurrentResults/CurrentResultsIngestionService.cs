@@ -52,6 +52,7 @@ public sealed class CurrentResultsIngestionService(
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var changedPools = new HashSet<string>(StringComparer.Ordinal);
+        var changedCompetitions = new Dictionary<Guid, string>();
         var deferredPools = new List<string>();
         try
         {
@@ -73,6 +74,10 @@ public sealed class CurrentResultsIngestionService(
                     {
                         changedPools.Add(outcome.EloPoolKey);
                     }
+                    if (outcome.GameChanged && outcome.CompetitionId.HasValue && outcome.EloPoolKey is not null)
+                    {
+                        changedCompetitions[outcome.CompetitionId.Value] = outcome.EloPoolKey;
+                    }
 
                     run.GamesUpserted += outcome.GameChanged ? 1 : 0;
                     run.ReviewsOpened += outcome.ReviewOpened ? 1 : 0;
@@ -84,26 +89,31 @@ public sealed class CurrentResultsIngestionService(
 
             if (!dryRun)
             {
-                foreach (var poolKey in changedPools)
+                foreach (var (competitionId, poolKey) in changedCompetitions)
                 {
                     await identityHealthCheckService.InvalidateChangedScopeAsync(new IdentityChangedScope
                     {
                         EloPoolKey = poolKey,
-                        Source = provider.Source
+                        CompetitionId = competitionId
                     }, cancellationToken);
 
                     var health = await identityHealthCheckService.RunAsync(new IdentityHealthCheckRequest
                     {
                         EloPoolKey = poolKey,
-                        Source = provider.Source,
+                        CompetitionId = competitionId,
                         Force = true
                     }, cancellationToken);
                     if (health.Status == IdentityHealthCheckStatus.Blockers)
                     {
-                        deferredPools.Add(poolKey);
-                        continue;
+                        if (!deferredPools.Contains(poolKey, StringComparer.Ordinal))
+                        {
+                            deferredPools.Add(poolKey);
+                        }
                     }
+                }
 
+                foreach (var poolKey in changedPools.Where(pool => !deferredPools.Contains(pool, StringComparer.Ordinal)))
+                {
                     run.EloPoolsQueued += await QueueEloRunsAsync(poolKey, cancellationToken);
                 }
             }
@@ -192,14 +202,15 @@ public sealed class CurrentResultsIngestionService(
         review.ResolutionNote = request.Note;
         review.ResolvedAtUtc = now;
 
-        var eloRunsQueued = 0;
-        if (resultChanged && game.EloEligible && !string.IsNullOrWhiteSpace(game.Competition.EloPoolKey))
-        {
-            eloRunsQueued = await QueueEloRunsAsync(game.Competition.EloPoolKey!, cancellationToken);
-        }
-
         review.UpdatedAtUtc = now;
         await dbContext.SaveChangesAsync(cancellationToken);
+        var eloRunsQueued = await ValidateIdentityAndQueueEloAsync(new UpsertOutcome(
+            true,
+            false,
+            resultChanged && game.EloEligible,
+            false,
+            game.Competition.EloPoolKey,
+            game.CompetitionId), cancellationToken);
         return new CurrentResultReviewResolutionDto(review.Id, review.Status, review.AssignedGameId, eloRunsQueued, "Result assigned to the planned game.");
     }
 
@@ -403,7 +414,7 @@ public sealed class CurrentResultsIngestionService(
     {
         if (!string.Equals(review.Source, provider.Source, StringComparison.OrdinalIgnoreCase))
         {
-            return new UpsertOutcome(false, true, false, false, null);
+            return new UpsertOutcome(false, true, false, false, null, null);
         }
 
         var run = review.RunId.HasValue
@@ -448,27 +459,41 @@ public sealed class CurrentResultsIngestionService(
         var outcome = await UpsertCandidateAsync(candidate, run, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        if (outcome.EloChanged && outcome.EloPoolKey is not null)
-        {
-            await identityHealthCheckService.InvalidateChangedScopeAsync(new IdentityChangedScope
-            {
-                EloPoolKey = outcome.EloPoolKey,
-                Source = provider.Source
-            }, cancellationToken);
-            var health = await identityHealthCheckService.RunAsync(new IdentityHealthCheckRequest
-            {
-                EloPoolKey = outcome.EloPoolKey,
-                Source = provider.Source,
-                Force = true
-            }, cancellationToken);
-            if (health.Status != IdentityHealthCheckStatus.Blockers)
-            {
-                await QueueEloRunsAsync(outcome.EloPoolKey, cancellationToken);
-                await dbContext.SaveChangesAsync(cancellationToken);
-            }
-        }
+        await ValidateIdentityAndQueueEloAsync(outcome, cancellationToken);
 
         return outcome;
+    }
+
+    private async Task<int> ValidateIdentityAndQueueEloAsync(
+        UpsertOutcome outcome,
+        CancellationToken cancellationToken)
+    {
+        if (!outcome.GameChanged ||
+            !outcome.CompetitionId.HasValue ||
+            string.IsNullOrWhiteSpace(outcome.EloPoolKey))
+        {
+            return 0;
+        }
+
+        await identityHealthCheckService.InvalidateChangedScopeAsync(new IdentityChangedScope
+        {
+            EloPoolKey = outcome.EloPoolKey,
+            CompetitionId = outcome.CompetitionId
+        }, cancellationToken);
+        var health = await identityHealthCheckService.RunAsync(new IdentityHealthCheckRequest
+        {
+            EloPoolKey = outcome.EloPoolKey,
+            CompetitionId = outcome.CompetitionId,
+            Force = true
+        }, cancellationToken);
+        if (health.Status == IdentityHealthCheckStatus.Blockers || !outcome.EloChanged)
+        {
+            return 0;
+        }
+
+        var queued = await QueueEloRunsAsync(outcome.EloPoolKey, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return queued;
     }
 
     public async Task<IReadOnlyList<CurrentResultsUnmatchedCompetitionDto>> GetUnmatchedCompetitionsAsync(
@@ -951,19 +976,19 @@ public sealed class CurrentResultsIngestionService(
                 dbContext.CurrentResultReviews.Remove(existingReview);
             }
 
-            return new UpsertOutcome(false, false, false, true, null);
+            return new UpsertOutcome(false, false, false, true, null, null);
         }
 
         var mapping = await ResolveCompetitionAsync(candidate, cancellationToken);
         if (mapping.Competition is null)
         {
             await UpsertReviewAsync(candidate, run, mapping.Reason ?? CurrentResultReviewReasons.UnknownCompetition, mapping, cancellationToken, reopenIgnored: true);
-            return new UpsertOutcome(false, true, false, false, null);
+            return new UpsertOutcome(false, true, false, false, null, null);
         }
 
         if (!mapping.Competition.IsActive || mapping.Competition.SupportPolicy == CompetitionSupportPolicies.Unsupported)
         {
-            return new UpsertOutcome(false, false, false, true, null);
+            return new UpsertOutcome(false, false, false, true, mapping.Competition.EloPoolKey, mapping.Competition.Id);
         }
 
         var home = await ResolveTeamAsync(candidate.HomeTeamName, candidate.HomeTeamSourceId, mapping.Competition.CountryCode, mapping.Competition.Id, candidate.GameDateTimeUtc, cancellationToken);
@@ -1000,7 +1025,7 @@ public sealed class CurrentResultsIngestionService(
         if (reasons.Count > 0 || mapping.Competition is null || home.Team is null || away.Team is null)
         {
             await UpsertReviewAsync(candidate, run, string.Join(',', reasons.Distinct(StringComparer.Ordinal)), mapping, cancellationToken);
-            return new UpsertOutcome(false, true, false, false, mapping.Competition?.EloPoolKey);
+            return new UpsertOutcome(false, true, false, false, mapping.Competition?.EloPoolKey, mapping.Competition?.Id);
         }
 
         var season = await GetOrCreateSeasonAsync(mapping.Competition, candidate.GameDateTimeUtc, cancellationToken);
@@ -1008,7 +1033,7 @@ public sealed class CurrentResultsIngestionService(
             .SingleOrDefaultAsync(x => x.Source == provider.Source && x.SourceGameId == candidate.SourceGameId, cancellationToken);
         if (review?.Status == CurrentResultReviewStatuses.Ignored)
         {
-            return new UpsertOutcome(false, false, false, false, null);
+            return new UpsertOutcome(false, false, false, false, null, null);
         }
 
         var existing = await dbContext.Games
@@ -1036,7 +1061,7 @@ public sealed class CurrentResultsIngestionService(
             if (plannedFixtureMatch.Ambiguous)
             {
                 await UpsertReviewAsync(candidate, run, CurrentResultReviewReasons.AmbiguousPlannedFixture, mapping, cancellationToken);
-                return new UpsertOutcome(false, true, false, false, mapping.Competition.EloPoolKey);
+                return new UpsertOutcome(false, true, false, false, mapping.Competition.EloPoolKey, mapping.Competition.Id);
             }
 
             existing = plannedFixtureMatch.Game;
@@ -1133,7 +1158,13 @@ public sealed class CurrentResultsIngestionService(
             review.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
         }
 
-        return new UpsertOutcome(changed, tournamentCyclePendingConfirmation, eloChanged, false, tournamentCyclePendingConfirmation ? null : mapping.Competition.EloPoolKey);
+        return new UpsertOutcome(
+            changed,
+            tournamentCyclePendingConfirmation,
+            eloChanged,
+            false,
+            tournamentCyclePendingConfirmation ? null : mapping.Competition.EloPoolKey,
+            mapping.Competition.Id);
     }
 
     private async Task<TournamentCycle?> ResolveConfirmedTournamentCycleAsync(
@@ -1727,11 +1758,30 @@ public sealed class CurrentResultsIngestionService(
 
     private static string? CountryCode(string country) => NormalizeName(country) switch
     {
-        "spain" => "ES", "france" => "FR", "lithuania" => "LT", "greece" => "GR", "italy" => "IT", "turkey" => "TR",
-        "belgium" => "BE", "germany" => "DE", "israel" => "IL", "poland" => "PL", "czech republic" => "CZ", "czechia" => "CZ",
-        "denmark" => "DK", "great britain" or "united kingdom" => "GB", "norway" => "NO",
-        "russia" => "RU", "serbia" => "RS", "croatia" => "HR", "slovenia" => "SI", "latvia" => "LV", "estonia" => "EE",
-        "usa" or "united states" => "US", "mexico" => "MX", _ => null
+        "spain" => "ES",
+        "france" => "FR",
+        "lithuania" => "LT",
+        "greece" => "GR",
+        "italy" => "IT",
+        "turkey" => "TR",
+        "belgium" => "BE",
+        "germany" => "DE",
+        "israel" => "IL",
+        "poland" => "PL",
+        "czech republic" => "CZ",
+        "czechia" => "CZ",
+        "denmark" => "DK",
+        "great britain" or "united kingdom" => "GB",
+        "norway" => "NO",
+        "russia" => "RU",
+        "serbia" => "RS",
+        "croatia" => "HR",
+        "slovenia" => "SI",
+        "latvia" => "LV",
+        "estonia" => "EE",
+        "usa" or "united states" => "US",
+        "mexico" => "MX",
+        _ => null
     };
 
     private static bool CountryMatches(string? actual, string? expected) =>
@@ -1859,5 +1909,11 @@ public sealed class CurrentResultsIngestionService(
     private sealed record TeamMatchCandidate(Team Team, int Confidence, string Reason, int SearchRank);
     private sealed record TeamActivity(HashSet<Guid> RecentTeamIds, HashSet<Guid> SameCompetitionTeamIds);
     private sealed record PlannedFixtureMatch(Game? Game, bool Ambiguous);
-    private sealed record UpsertOutcome(bool GameChanged, bool ReviewOpened, bool EloChanged, bool UnsupportedSkipped, string? EloPoolKey);
+    private sealed record UpsertOutcome(
+        bool GameChanged,
+        bool ReviewOpened,
+        bool EloChanged,
+        bool UnsupportedSkipped,
+        string? EloPoolKey,
+        Guid? CompetitionId);
 }

@@ -12,6 +12,14 @@ public class IdentityHealthCheckService(
     IBackfillCatalog backfillCatalog) : IIdentityHealthCheckService
 {
     private const double SimilarNameThreshold = 0.86;
+    private static readonly HashSet<string> LeadingClubDesignators = new(StringComparer.Ordinal)
+    {
+        "BC", "BK", "CB", "KK"
+    };
+    private static readonly HashSet<string> GenericIdentityTokens = new(StringComparer.Ordinal)
+    {
+        "BASKET", "BASKETBALL", "CITY", "CLUB", "REAL", "SPORT", "SPORTING", "UNITED"
+    };
     private const string DistinctTeamsDecisionPrefix = "distinct_teams|teams=";
     private static readonly IReadOnlyCollection<IdentityCountryOptionDto> DefaultCountryOptions =
     [
@@ -1421,10 +1429,10 @@ public class IdentityHealthCheckService(
                     }
 
                     var matchingLeftAlias = leftAliases.FirstOrDefault(a =>
-                        rightAliases.Any(b => AreSimilarNames(a.AliasName, b.AliasName)));
+                        rightAliases.Any(b => AreLikelySameAcrossSeasons(a.AliasName, b.AliasName)));
                     var matchingRightAlias = matchingLeftAlias is null
                         ? null
-                        : rightAliases.First(a => AreSimilarNames(matchingLeftAlias.AliasName, a.AliasName));
+                        : rightAliases.First(a => AreLikelySameAcrossSeasons(matchingLeftAlias.AliasName, a.AliasName));
 
                     if (matchingLeftAlias is null || matchingRightAlias is null)
                     {
@@ -2217,6 +2225,47 @@ public class IdentityHealthCheckService(
 
     private static bool AreSimilarNames(string left, string right)
         => AreSimilarNormalizedNames(NormalizeTeamName(left), NormalizeTeamName(right));
+
+    private static bool AreLikelySameAcrossSeasons(string left, string right)
+    {
+        if (AreSimilarNames(left, right))
+        {
+            return true;
+        }
+
+        var leftTokens = MeaningfulIdentityTokens(left);
+        var rightTokens = MeaningfulIdentityTokens(right);
+        if (leftTokens.Count == 0 || rightTokens.Count == 0 ||
+            leftTokens[0].Length < 5 ||
+            !string.Equals(leftTokens[0], rightTokens[0], StringComparison.Ordinal) ||
+            GenericIdentityTokens.Contains(leftTokens[0]))
+        {
+            return false;
+        }
+
+        // Provider names frequently add a basketball-club prefix (BC/BK) while
+        // historical feeds append a city. Treat that as a candidate only when
+        // one side is the distinctive club token itself. Competition, country
+        // and adjacent-season checks are applied by the caller.
+        return leftTokens.Count == 1 || rightTokens.Count == 1;
+    }
+
+    private static IReadOnlyList<string> MeaningfulIdentityTokens(string value)
+    {
+        var tokens = value
+            .ToUpperInvariant()
+            .Split([' ', '-', '_', '.', '/', '\\', '(', ')'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(token => new string(token.Where(char.IsLetterOrDigit).ToArray()))
+            .Where(token => token.Length > 0)
+            .ToList();
+
+        while (tokens.Count > 1 && LeadingClubDesignators.Contains(tokens[0]))
+        {
+            tokens.RemoveAt(0);
+        }
+
+        return tokens;
+    }
 
     private static bool AreSimilarNormalizedNames(string normalizedLeft, string normalizedRight)
     {

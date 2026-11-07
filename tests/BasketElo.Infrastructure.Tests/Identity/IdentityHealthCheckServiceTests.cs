@@ -579,4 +579,105 @@ public sealed class IdentityHealthCheckServiceTests
             CancellationToken.None);
         Assert.Single(deferred);
     }
+
+    [Fact]
+    public async Task GlobalCompetitionCheckDetectsZenitCrossProviderSeasonSplit()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var dbContext = new BasketEloDbContext(options);
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "VTB United League",
+            CountryCode = "RU",
+            EloPoolKey = "europe-clubs"
+        };
+        var previousSeason = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Label = "2025-26",
+            StartDateUtc = new DateTime(2025, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(2026, 6, 30, 23, 59, 59, DateTimeKind.Utc)
+        };
+        var currentSeason = new Season
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Label = "2026-27",
+            StartDateUtc = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(2027, 6, 30, 23, 59, 59, DateTimeKind.Utc)
+        };
+        var historicalZenit = new Team { Id = Guid.NewGuid(), CanonicalName = "Zenit Petersburg", CountryCode = "RU" };
+        var currentZenit = new Team { Id = Guid.NewGuid(), CanonicalName = "BK Zenit", CountryCode = "RU" };
+        var opponent = new Team { Id = Guid.NewGuid(), CanonicalName = "CSKA Moscow", CountryCode = "RU" };
+        dbContext.AddRange(
+            competition,
+            previousSeason,
+            currentSeason,
+            historicalZenit,
+            currentZenit,
+            opponent,
+            new TeamAlias
+            {
+                Id = Guid.NewGuid(),
+                TeamId = historicalZenit.Id,
+                Source = "api-sports",
+                SourceTeamId = "zenit-petersburg",
+                AliasName = "Zenit Petersburg"
+            },
+            new TeamAlias
+            {
+                Id = Guid.NewGuid(),
+                TeamId = currentZenit.Id,
+                Source = "livescore",
+                SourceTeamId = "bc-zenit",
+                AliasName = "BC Zenit"
+            },
+            new Game
+            {
+                Id = Guid.NewGuid(),
+                Source = "api-sports",
+                SourceGameId = "old-zenit",
+                CompetitionId = competition.Id,
+                SeasonId = previousSeason.Id,
+                GameDateTimeUtc = new DateTime(2026, 6, 12, 18, 0, 0, DateTimeKind.Utc),
+                HomeTeamId = historicalZenit.Id,
+                AwayTeamId = opponent.Id,
+                Status = "finished"
+            },
+            new Game
+            {
+                Id = Guid.NewGuid(),
+                Source = "livescore",
+                SourceGameId = "new-zenit",
+                CompetitionId = competition.Id,
+                SeasonId = currentSeason.Id,
+                GameDateTimeUtc = new DateTime(2026, 10, 30, 18, 0, 0, DateTimeKind.Utc),
+                HomeTeamId = currentZenit.Id,
+                AwayTeamId = opponent.Id,
+                Status = "finished"
+            });
+        await dbContext.SaveChangesAsync();
+
+        var service = new IdentityHealthCheckService(dbContext, null!);
+        var result = await service.RunAsync(new IdentityHealthCheckRequest
+        {
+            EloPoolKey = "europe-clubs",
+            CompetitionId = competition.Id,
+            Force = true
+        }, CancellationToken.None);
+
+        Assert.Equal(IdentityHealthCheckStatus.Blockers, result.Status);
+        var finding = Assert.Single(await dbContext.IdentityHealthCheckFindings
+            .Where(x => x.FindingType == IdentityFindingType.PossibleCrossSeasonSplit)
+            .ToListAsync());
+        Assert.Equal(historicalZenit.Id, finding.AffectedTeamId);
+        Assert.Equal(currentZenit.Id, finding.RelatedTeamId);
+        Assert.Equal("api-sports", finding.Source);
+        Assert.Equal("livescore", finding.RelatedSource);
+    }
 }

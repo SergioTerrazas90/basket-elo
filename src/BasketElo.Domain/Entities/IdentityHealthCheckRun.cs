@@ -30,5 +30,5 @@ public static class IdentityHealthCheckStatus
 
 public static class IdentityHealthCheckRules
 {
-    public const string CurrentVersion = "identity-v1";
+    public const string CurrentVersion = "identity-v2";
 }

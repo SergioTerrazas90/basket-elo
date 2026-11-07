@@ -450,7 +450,9 @@ public class CurrentResultsIngestionServiceTests
         await using var dbContext = new BasketEloDbContext(options);
         var competition = new Competition
         {
-            Id = Guid.NewGuid(), Name = "WNBA", CountryCode = "US",
+            Id = Guid.NewGuid(),
+            Name = "WNBA",
+            CountryCode = "US",
             SupportPolicy = CompetitionSupportPolicies.Unsupported
         };
         dbContext.Competitions.Add(competition);
@@ -479,11 +481,17 @@ public class CurrentResultsIngestionServiceTests
         await using var dbContext = new BasketEloDbContext(options);
         var legaA = new Competition
         {
-            Id = Guid.NewGuid(), Name = "Lega A", CountryCode = "IT", EloPoolKey = "europe-clubs"
+            Id = Guid.NewGuid(),
+            Name = "Lega A",
+            CountryCode = "IT",
+            EloPoolKey = "europe-clubs"
         };
         var serieA = new Competition
         {
-            Id = Guid.NewGuid(), Name = "Serie A", CountryCode = "IT", EloPoolKey = "europe-clubs"
+            Id = Guid.NewGuid(),
+            Name = "Serie A",
+            CountryCode = "IT",
+            EloPoolKey = "europe-clubs"
         };
         var home = new Team { Id = Guid.NewGuid(), CanonicalName = "Basket Torino", CountryCode = "IT" };
         var away = new Team { Id = Guid.NewGuid(), CanonicalName = "Fortitudo Bologna", CountryCode = "IT" };
@@ -555,8 +563,11 @@ public class CurrentResultsIngestionServiceTests
         var away = new Team { Id = Guid.NewGuid(), CanonicalName = "Los Angeles Sparks", CountryCode = "US" };
         dbContext.AddRange(competition, home, away, new CompetitionAlias
         {
-            Id = Guid.NewGuid(), CompetitionId = competition.Id, Source = "livescore",
-            SourceCompetitionId = "league-wnba", AliasName = "WNBA"
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Source = "livescore",
+            SourceCompetitionId = "league-wnba",
+            AliasName = "WNBA"
         });
         await dbContext.SaveChangesAsync();
         var candidate = new CurrentResultCandidate(
@@ -582,19 +593,28 @@ public class CurrentResultsIngestionServiceTests
         await using var dbContext = new BasketEloDbContext(options);
         var czechNbl = new Competition
         {
-            Id = Guid.NewGuid(), Name = "NBL", CountryCode = "CZ", EloPoolKey = "europe-clubs"
+            Id = Guid.NewGuid(),
+            Name = "NBL",
+            CountryCode = "CZ",
+            EloPoolKey = "europe-clubs"
         };
         var unrelatedNbl = new Competition
         {
-            Id = Guid.NewGuid(), Name = "NBL", CountryCode = null, IsActive = false,
+            Id = Guid.NewGuid(),
+            Name = "NBL",
+            CountryCode = null,
+            IsActive = false,
             SupportPolicy = CompetitionSupportPolicies.Unsupported
         };
         var home = new Team { Id = Guid.NewGuid(), CanonicalName = "Nymburk", CountryCode = "CZ" };
         var away = new Team { Id = Guid.NewGuid(), CanonicalName = "Decin", CountryCode = "CZ" };
         dbContext.AddRange(czechNbl, unrelatedNbl, home, away, new CompetitionAlias
         {
-            Id = Guid.NewGuid(), CompetitionId = unrelatedNbl.Id, Source = "livescore",
-            SourceCompetitionId = string.Empty, AliasName = "NBL"
+            Id = Guid.NewGuid(),
+            CompetitionId = unrelatedNbl.Id,
+            Source = "livescore",
+            SourceCompetitionId = string.Empty,
+            AliasName = "NBL"
         });
         await dbContext.SaveChangesAsync();
         var candidate = new CurrentResultCandidate(
@@ -814,7 +834,9 @@ public class CurrentResultsIngestionServiceTests
         await using var dbContext = new BasketEloDbContext(options);
         var target = new Competition
         {
-            Id = Guid.NewGuid(), Name = "Women's National Basketball Association", CountryCode = "US"
+            Id = Guid.NewGuid(),
+            Name = "Women's National Basketball Association",
+            CountryCode = "US"
         };
         dbContext.AddRange(
             target,
@@ -860,7 +882,9 @@ public class CurrentResultsIngestionServiceTests
         await using var dbContext = new BasketEloDbContext(options);
         var target = new Competition
         {
-            Id = Guid.NewGuid(), Name = "VTB United League", CountryCode = "RU"
+            Id = Guid.NewGuid(),
+            Name = "VTB United League",
+            CountryCode = "RU"
         };
         dbContext.AddRange(
             target,
@@ -896,12 +920,17 @@ public class CurrentResultsIngestionServiceTests
         await using var dbContext = new BasketEloDbContext(options);
         var competition = new Competition
         {
-            Id = Guid.NewGuid(), Name = "VTB United League", CountryCode = "RU",
-            SupportPolicy = CompetitionSupportPolicies.Supported, IsActive = true
+            Id = Guid.NewGuid(),
+            Name = "VTB United League",
+            CountryCode = "RU",
+            SupportPolicy = CompetitionSupportPolicies.Supported,
+            IsActive = true
         };
         var season = new Season
         {
-            Id = Guid.NewGuid(), CompetitionId = competition.Id, Label = "2026-2027",
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Label = "2026-2027",
             StartDateUtc = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc),
             EndDateUtc = new DateTime(2027, 6, 30, 23, 59, 59, DateTimeKind.Utc)
         };
@@ -909,10 +938,15 @@ public class CurrentResultsIngestionServiceTests
         var away = new Team { Id = Guid.NewGuid(), CanonicalName = "Enisey Krasnoyarsk", CountryCode = "RU" };
         var scheduled = new Game
         {
-            Id = Guid.NewGuid(), Source = "livescore", SourceGameId = "1871091",
-            CompetitionId = competition.Id, SeasonId = season.Id,
+            Id = Guid.NewGuid(),
+            Source = "livescore",
+            SourceGameId = "1871091",
+            CompetitionId = competition.Id,
+            SeasonId = season.Id,
             GameDateTimeUtc = new DateTime(2026, 10, 10, 10, 0, 0, DateTimeKind.Utc),
-            HomeTeamId = home.Id, AwayTeamId = away.Id, Status = CurrentResultStatuses.Scheduled
+            HomeTeamId = home.Id,
+            AwayTeamId = away.Id,
+            Status = CurrentResultStatuses.Scheduled
         };
         dbContext.AddRange(
             competition,
@@ -922,8 +956,11 @@ public class CurrentResultsIngestionServiceTests
             scheduled,
             new CompetitionAlias
             {
-                Id = Guid.NewGuid(), CompetitionId = competition.Id, Source = "livescore",
-                SourceCompetitionId = string.Empty, AliasName = "VTB United League"
+                Id = Guid.NewGuid(),
+                CompetitionId = competition.Id,
+                Source = "livescore",
+                SourceCompetitionId = string.Empty,
+                AliasName = "VTB United League"
             });
         await dbContext.SaveChangesAsync();
         var candidate = new CurrentResultCandidate(
@@ -952,7 +989,9 @@ public class CurrentResultsIngestionServiceTests
         await using var dbContext = new BasketEloDbContext(options);
         var competition = new Competition
         {
-            Id = Guid.NewGuid(), Name = "VTB United League", CountryCode = "RU"
+            Id = Guid.NewGuid(),
+            Name = "VTB United League",
+            CountryCode = "RU"
         };
         var review = new CurrentResultReview
         {
@@ -979,8 +1018,11 @@ public class CurrentResultsIngestionServiceTests
             competition,
             new CompetitionAlias
             {
-                Id = Guid.NewGuid(), CompetitionId = competition.Id, Source = "livescore",
-                SourceCompetitionId = string.Empty, AliasName = "VTB United League"
+                Id = Guid.NewGuid(),
+                CompetitionId = competition.Id,
+                Source = "livescore",
+                SourceCompetitionId = string.Empty,
+                AliasName = "VTB United League"
             },
             review);
         await dbContext.SaveChangesAsync();
@@ -1147,11 +1189,17 @@ public class CurrentResultsIngestionServiceTests
         await using var dbContext = new BasketEloDbContext(options);
         var competition = new Competition
         {
-            Id = Guid.NewGuid(), Name = "ACB", CountryCode = "ES", EloPoolKey = "europe-clubs", IsActive = true
+            Id = Guid.NewGuid(),
+            Name = "ACB",
+            CountryCode = "ES",
+            EloPoolKey = "europe-clubs",
+            IsActive = true
         };
         var priorSeason = new Season
         {
-            Id = Guid.NewGuid(), CompetitionId = competition.Id, Label = "2025-2026",
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Label = "2025-2026",
             StartDateUtc = new DateTime(2025, 7, 1, 0, 0, 0, DateTimeKind.Utc),
             EndDateUtc = new DateTime(2026, 6, 30, 23, 59, 59, DateTimeKind.Utc)
         };
@@ -1159,10 +1207,17 @@ public class CurrentResultsIngestionServiceTests
         var barcelona = new Team { Id = Guid.NewGuid(), CanonicalName = "Barcelona", CountryCode = "ES" };
         var priorGame = new Game
         {
-            Id = Guid.NewGuid(), Source = "historical", SourceGameId = "prior-acb", CompetitionId = competition.Id,
-            SeasonId = priorSeason.Id, GameDateTimeUtc = new DateTime(2026, 3, 1, 18, 0, 0, DateTimeKind.Utc),
-            HomeTeamId = baskonia.Id, AwayTeamId = barcelona.Id, Status = CurrentResultStatuses.Finished,
-            HomeScore = 88, AwayScore = 82
+            Id = Guid.NewGuid(),
+            Source = "historical",
+            SourceGameId = "prior-acb",
+            CompetitionId = competition.Id,
+            SeasonId = priorSeason.Id,
+            GameDateTimeUtc = new DateTime(2026, 3, 1, 18, 0, 0, DateTimeKind.Utc),
+            HomeTeamId = baskonia.Id,
+            AwayTeamId = barcelona.Id,
+            Status = CurrentResultStatuses.Finished,
+            HomeScore = 88,
+            AwayScore = 82
         };
         dbContext.AddRange(competition, priorSeason, baskonia, barcelona, priorGame);
         await dbContext.SaveChangesAsync();
@@ -1192,11 +1247,17 @@ public class CurrentResultsIngestionServiceTests
         await using var dbContext = new BasketEloDbContext(options);
         var competition = new Competition
         {
-            Id = Guid.NewGuid(), Name = "Premijer liga", CountryCode = "HR", EloPoolKey = "europe-clubs", IsActive = true
+            Id = Guid.NewGuid(),
+            Name = "Premijer liga",
+            CountryCode = "HR",
+            EloPoolKey = "europe-clubs",
+            IsActive = true
         };
         var priorSeason = new Season
         {
-            Id = Guid.NewGuid(), CompetitionId = competition.Id, Label = "2025-2026",
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Label = "2025-2026",
             StartDateUtc = new DateTime(2025, 7, 1, 0, 0, 0, DateTimeKind.Utc),
             EndDateUtc = new DateTime(2026, 6, 30, 23, 59, 59, DateTimeKind.Utc)
         };
@@ -1209,10 +1270,17 @@ public class CurrentResultsIngestionServiceTests
             opponent,
             new Game
             {
-                Id = Guid.NewGuid(), Source = "historical", SourceGameId = "prior-dubrava", CompetitionId = competition.Id,
-                SeasonId = priorSeason.Id, GameDateTimeUtc = new DateTime(2026, 3, 1, 18, 0, 0, DateTimeKind.Utc),
-                HomeTeamId = dubrava.Id, AwayTeamId = opponent.Id, Status = CurrentResultStatuses.Finished,
-                HomeScore = 80, AwayScore = 75
+                Id = Guid.NewGuid(),
+                Source = "historical",
+                SourceGameId = "prior-dubrava",
+                CompetitionId = competition.Id,
+                SeasonId = priorSeason.Id,
+                GameDateTimeUtc = new DateTime(2026, 3, 1, 18, 0, 0, DateTimeKind.Utc),
+                HomeTeamId = dubrava.Id,
+                AwayTeamId = opponent.Id,
+                Status = CurrentResultStatuses.Finished,
+                HomeScore = 80,
+                AwayScore = 75
             });
         await dbContext.SaveChangesAsync();
 
@@ -1241,6 +1309,47 @@ public class CurrentResultsIngestionServiceTests
             TimeProvider.System,
             NullLogger<CurrentResultsIngestionService>.Instance);
 
+    [Fact]
+    public async Task IngestionChecksChangedCompetitionAcrossAllSources()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new BasketEloDbContext(options);
+        var competition = new Competition
+        {
+            Id = Guid.NewGuid(),
+            Name = "VTB United League",
+            CountryCode = "RU",
+            EloPoolKey = "europe-clubs"
+        };
+        var zenit = new Team { Id = Guid.NewGuid(), CanonicalName = "Zenit Petersburg", CountryCode = "RU" };
+        var cska = new Team { Id = Guid.NewGuid(), CanonicalName = "CSKA Moscow", CountryCode = "RU" };
+        dbContext.AddRange(competition, zenit, cska);
+        await dbContext.SaveChangesAsync();
+
+        var candidate = new CurrentResultCandidate(
+            "vtb-current", null, new DateOnly(2026, 10, 30),
+            new DateTime(2026, 10, 30, 18, 0, 0, DateTimeKind.Utc), "Russia", competition.Name, null,
+            zenit.CanonicalName, cska.CanonicalName, "bc-zenit", "cska", 91, 86,
+            CurrentResultStatuses.Finished, "FT", "revision", "parser");
+        var identityHealth = new CleanIdentityHealthCheckService();
+        var service = new CurrentResultsIngestionService(
+            dbContext,
+            new TestCurrentResultsProvider(candidate),
+            new TestBackfillCatalog(),
+            identityHealth,
+            TimeProvider.System,
+            NullLogger<CurrentResultsIngestionService>.Instance);
+
+        await service.RunAsync(candidate.SourceDate, candidate.SourceDate, false, CancellationToken.None);
+
+        var request = Assert.Single(identityHealth.Requests);
+        Assert.Null(request.Source);
+        Assert.Equal("europe-clubs", request.EloPoolKey);
+        Assert.Equal(competition.Id, request.CompetitionId);
+    }
+
     private sealed class TestCurrentResultsProvider(CurrentResultCandidate? candidate) : ICurrentResultsProvider
     {
         public string Source => "livescore";
@@ -1267,8 +1376,12 @@ public class CurrentResultsIngestionServiceTests
 
     private sealed class CleanIdentityHealthCheckService : IIdentityHealthCheckService
     {
-        public Task<IdentityHealthCheckRunDto> RunAsync(IdentityHealthCheckRequest request, CancellationToken cancellationToken) =>
-            Task.FromResult(new IdentityHealthCheckRunDto(
+        public List<IdentityHealthCheckRequest> Requests { get; } = [];
+
+        public Task<IdentityHealthCheckRunDto> RunAsync(IdentityHealthCheckRequest request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new IdentityHealthCheckRunDto(
                 Guid.NewGuid(),
                 request.Source,
                 request.Season,
@@ -1288,6 +1401,7 @@ public class CurrentResultsIngestionServiceTests
                 request.Force,
                 DateTime.UtcNow,
                 null));
+        }
 
         public Task<IdentityHealthOptionsDto> GetOptionsAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<IdentityHealthCheckRunDto>> GetRunsAsync(IdentityHealthCheckQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();

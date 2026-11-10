@@ -1362,7 +1362,10 @@ public class IdentityHealthCheckService(
             findings.Add(NewFinding(
                 run,
                 findingType,
-                IdentityFindingSeverity.Blocker,
+                // Similar names are review candidates, not proof that stored game
+                // ownership is wrong. Treating them as blockers can freeze an
+                // entire shared ELO pool because of an unrelated historical pair.
+                IdentityFindingSeverity.Warning,
                 left.Alias.Source,
                 left.Alias.SourceTeamId,
                 left.Alias.TeamId,
@@ -1448,7 +1451,10 @@ public class IdentityHealthCheckService(
                     findings.Add(NewFinding(
                         run,
                         IdentityFindingType.PossibleCrossSeasonSplit,
-                        IdentityFindingSeverity.Blocker,
+                        // A nearby-season name match is intentionally heuristic.
+                        // Keep it visible for review without preventing current
+                        // results for every competition in the pool from rating.
+                        IdentityFindingSeverity.Warning,
                         matchingLeftAlias.Source,
                         matchingLeftAlias.SourceTeamId,
                         left.TeamId,

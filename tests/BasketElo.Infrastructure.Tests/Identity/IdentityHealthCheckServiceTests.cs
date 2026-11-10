@@ -581,7 +581,7 @@ public sealed class IdentityHealthCheckServiceTests
     }
 
     [Fact]
-    public async Task GlobalCompetitionCheckDetectsZenitCrossProviderSeasonSplit()
+    public async Task GlobalCompetitionCheckReportsZenitCrossProviderSeasonSplitAsWarning()
     {
         var options = new DbContextOptionsBuilder<BasketEloDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -671,10 +671,11 @@ public sealed class IdentityHealthCheckServiceTests
             Force = true
         }, CancellationToken.None);
 
-        Assert.Equal(IdentityHealthCheckStatus.Blockers, result.Status);
+        Assert.Equal(IdentityHealthCheckStatus.Warnings, result.Status);
         var finding = Assert.Single(await dbContext.IdentityHealthCheckFindings
             .Where(x => x.FindingType == IdentityFindingType.PossibleCrossSeasonSplit)
             .ToListAsync());
+        Assert.Equal(IdentityFindingSeverity.Warning, finding.Severity);
         Assert.Equal(historicalZenit.Id, finding.AffectedTeamId);
         Assert.Equal(currentZenit.Id, finding.RelatedTeamId);
         Assert.Equal("api-sports", finding.Source);

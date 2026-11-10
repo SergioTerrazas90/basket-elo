@@ -14,6 +14,8 @@ Administrators manage canonical competitions at `/admin/competitions`. The page 
 
 After the complete date range has been ingested, changed Elo pools are identity-checked and the two active rulesets are queued once per pool. The worker then processes those rebuild jobs. This avoids rebuilding once per game while still rerunning ratings after the daily batch.
 
+Identity checks fail closed only for concrete mapping conflicts, such as one source team ID mapped to multiple canonical teams or an unreviewed source ID with multiple observed names. Heuristic possible-duplicate and cross-season name matches remain visible as warnings, but do not freeze an entire shared Elo pool because of an unrelated historical pair.
+
 `GET /api/games/upcoming` returns the next schedule with current team ratings, Elo difference, and an optional `minElo` threshold. The admin UI is available at `/upcoming`.
 
 ## Cross-source reconciliation

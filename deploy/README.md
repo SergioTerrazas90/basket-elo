@@ -21,7 +21,7 @@ The frontend and backend are intentionally kept as separate services. The web ap
 
 The public web service serves meaningful server-rendered HTML, negotiates Markdown on `/`, publishes OpenAPI at `/openapi.json`, and returns structured JSON errors below `/api`. `robots.txt` explicitly allows ChatGPT-User, OAI-SearchBot, Claude-User, and PerplexityBot in addition to the wildcard crawler rule.
 
-Cloudflare evaluates requests before they reach Caddy, so an origin change cannot bypass a Cloudflare challenge. After changing Bot Management, WAF, or Super Bot Fight Mode, run the four public user-agent checks in `deploy/vps/deploy.ps1`. If any returns a challenge instead of the page's `<h1>`, use Cloudflare Security Events to identify the matching managed rule and narrow it for the verified crawler rather than disabling protection for all traffic. Creating or changing that exception requires Cloudflare account access and is intentionally not automated by this repository.
+Cloudflare evaluates requests before they reach Caddy, so an origin change cannot bypass a Cloudflare challenge. After changing Bot Management, WAF, or Super Bot Fight Mode, run the four public user-agent checks in `deploy/vps/deploy.ps1`. Those checks run from the deployment workstation because Cloudflare can treat requests looped back from the origin's datacenter IP differently from public agent traffic. If any returns a challenge instead of the page's `<h1>`, use Cloudflare Security Events to identify the matching managed rule and narrow it for the verified crawler rather than disabling protection for all traffic. Creating or changing that exception requires Cloudflare account access and is intentionally not automated by this repository.
 
 ## Cloudflare Web Analytics
 

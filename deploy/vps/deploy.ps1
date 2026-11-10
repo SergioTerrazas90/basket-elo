@@ -123,13 +123,26 @@ if ($LASTEXITCODE -ne 0) {
     throw "Remote restart or status check failed."
 }
 
-Write-Host "Running VPS health, SEO, and server-rendering checks..."
+Write-Host "Running VPS health, SEO, agent-readiness, and server-rendering checks..."
 $verifyCommand = @(
     "curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 2 http://127.0.0.1:5101/health >/dev/null",
     "curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 2 http://127.0.0.1:5102/health >/dev/null",
     "curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 2 http://127.0.0.1:5100/health >/dev/null",
     "curl --fail --silent --show-error http://127.0.0.1:5100/robots.txt >/dev/null",
     "curl --fail --silent --show-error http://127.0.0.1:5100/sitemap.xml >/dev/null",
+    "curl --fail --silent --show-error http://127.0.0.1:5100/openapi.json | grep '3.1.0' >/dev/null",
+    "curl --fail --silent --show-error http://127.0.0.1:5100/api/v1/status | grep 'BasketElo Agent API' >/dev/null",
+    "test `$(`curl --silent --output /tmp/basketelo-api-error.json --write-out '%{http_code}' http://127.0.0.1:5100/api/not-found`) = 404",
+    "grep 'resolutionHint' /tmp/basketelo-api-error.json >/dev/null",
+    "curl --fail --silent --show-error --header 'Accept: text/markdown' --dump-header /tmp/basketelo-markdown.headers http://127.0.0.1:5100/ --output /tmp/basketelo-home.md",
+    "grep -i '^Content-Type: text/markdown' /tmp/basketelo-markdown.headers >/dev/null",
+    "grep -i '^Vary:.*Accept' /tmp/basketelo-markdown.headers >/dev/null",
+    "grep '^# Basketball ELO rankings' /tmp/basketelo-home.md >/dev/null",
+    "test `$(`wc -c < /tmp/basketelo-home.md`) -ge 500",
+    "curl --fail --silent --show-error --user-agent 'ChatGPT-User' https://basketelo.com/ | grep '<h1' >/dev/null",
+    "curl --fail --silent --show-error --user-agent 'OAI-SearchBot' https://basketelo.com/ | grep '<h1' >/dev/null",
+    "curl --fail --silent --show-error --user-agent 'Claude-User' https://basketelo.com/ | grep '<h1' >/dev/null",
+    "curl --fail --silent --show-error --user-agent 'PerplexityBot' https://basketelo.com/ | grep '<h1' >/dev/null",
     "curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=results&pool=nba' | grep 'Recent results' >/dev/null",
     "! curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=results&pool=nba' | grep 'Loading completed results' >/dev/null",
     "curl --fail --silent --show-error 'http://127.0.0.1:5100/?view=results&pool=europe-clubs' | grep 'Recent results' >/dev/null",

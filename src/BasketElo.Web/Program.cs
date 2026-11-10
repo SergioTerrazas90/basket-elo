@@ -21,6 +21,7 @@ using System.Text;
 using System.Xml.Linq;
 using System.Globalization;
 using BasketElo.Web.Localization;
+using BasketElo.Web.AgentReadiness;
 using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -164,6 +165,16 @@ builder.Services.AddScoped(serviceProvider =>
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+app.UseMiddleware<MarkdownNegotiationMiddleware>();
+app.UseWhen(MachineReadableErrors.IsMachinePath, machineApp =>
+{
+    machineApp.UseExceptionHandler(errorApp => errorApp.Run(context =>
+        MachineReadableErrors.WriteAsync(context, StatusCodes.Status500InternalServerError)));
+    machineApp.UseStatusCodePages(statusCodeContext =>
+        MachineReadableErrors.WriteAsync(
+            statusCodeContext.HttpContext,
+            statusCodeContext.HttpContext.Response.StatusCode));
+});
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -385,10 +396,13 @@ app.MapPost("/billing/stripe/webhook", async (
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/api/v1/status", () => Results.Ok(AgentApi.Status));
+app.MapGet("/openapi.json", () =>
+    Results.Text(AgentApi.OpenApiDocument, "application/json", Encoding.UTF8));
 app.MapGet("/robots.txt", (HttpContext httpContext, IConfiguration configuration) =>
 {
     var siteRoot = ResolveSiteRoot(httpContext, configuration);
-    var robots = $"User-agent: *\nAllow: /\n\nSitemap: {siteRoot}sitemap.xml\n";
+    var robots = AgentContent.Robots(siteRoot);
     return Results.Text(robots, "text/plain", Encoding.UTF8);
 });
 app.MapGet("/sitemap.xml", async (HttpContext httpContext, IConfiguration configuration, BasketEloDbContext dbContext, CancellationToken cancellationToken) =>

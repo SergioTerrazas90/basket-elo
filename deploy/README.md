@@ -17,6 +17,12 @@ This deploy shape mirrors a simple VPS setup:
 
 The frontend and backend are intentionally kept as separate services. The web app is Blazor Server and calls the API from the server side through `ApiBaseUrl`, so the API does not need to be public.
 
+## Agent access and Cloudflare
+
+The public web service serves meaningful server-rendered HTML, negotiates Markdown on `/`, publishes OpenAPI at `/openapi.json`, and returns structured JSON errors below `/api`. `robots.txt` explicitly allows ChatGPT-User, OAI-SearchBot, Claude-User, and PerplexityBot in addition to the wildcard crawler rule.
+
+Cloudflare evaluates requests before they reach Caddy, so an origin change cannot bypass a Cloudflare challenge. After changing Bot Management, WAF, or Super Bot Fight Mode, run the four public user-agent checks in `deploy/vps/deploy.ps1`. If any returns a challenge instead of the page's `<h1>`, use Cloudflare Security Events to identify the matching managed rule and narrow it for the verified crawler rather than disabling protection for all traffic. Creating or changing that exception requires Cloudflare account access and is intentionally not automated by this repository.
+
 ## Cloudflare Web Analytics
 
 Create a Web Analytics site in Cloudflare, copy its site token, and add it to

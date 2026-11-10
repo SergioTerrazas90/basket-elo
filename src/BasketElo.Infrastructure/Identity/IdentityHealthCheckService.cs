@@ -1352,7 +1352,10 @@ public class IdentityHealthCheckService(
             var findingType = sameSource
                 ? IdentityFindingType.PossibleDuplicate
                 : IdentityFindingType.PossibleCrossSourceMatch;
-            var key = $"{findingType}:{OrderedPairKey(left.Alias.TeamId, right.Alias.TeamId)}:{left.NormalizedName}";
+            // A review decision belongs to the unordered canonical-team pair.
+            // Different aliases (or the opposite traversal order) are evidence
+            // for the same decision, not additional review candidates.
+            var key = $"{findingType}:{OrderedPairKey(left.Alias.TeamId, right.Alias.TeamId)}";
 
             if (!seen.Add(key))
             {
@@ -1442,7 +1445,10 @@ public class IdentityHealthCheckService(
                         continue;
                     }
 
-                    var key = $"cross-season:{OrderedPairKey(left.TeamId, right.TeamId)}:{left.CompetitionId}";
+                    // Report one cross-season candidate for an unordered team
+                    // pair across the whole requested scope. The same pair can
+                    // appear in several competitions and in the reverse order.
+                    var key = $"cross-season:{OrderedPairKey(left.TeamId, right.TeamId)}";
                     if (!seen.Add(key))
                     {
                         continue;

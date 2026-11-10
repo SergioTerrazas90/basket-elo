@@ -681,4 +681,77 @@ public sealed class IdentityHealthCheckServiceTests
         Assert.Equal("api-sports", finding.Source);
         Assert.Equal("livescore", finding.RelatedSource);
     }
+
+    [Fact]
+    public async Task GlobalCheckReportsAnUnorderedCrossSeasonPairOnlyOnceAcrossCompetitions()
+    {
+        var options = new DbContextOptionsBuilder<BasketEloDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        await using var dbContext = new BasketEloDbContext(options);
+        var firstCompetition = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "First league", CountryCode = "ES", EloPoolKey = "europe-clubs"
+        };
+        var secondCompetition = new Competition
+        {
+            Id = Guid.NewGuid(), Name = "Second league", CountryCode = "ES", EloPoolKey = "europe-clubs"
+        };
+        var firstOldSeason = NewSeason(firstCompetition, "2022-23", 2022);
+        var firstNewSeason = NewSeason(firstCompetition, "2023-24", 2023);
+        var secondOldSeason = NewSeason(secondCompetition, "2024-25", 2024);
+        var secondNewSeason = NewSeason(secondCompetition, "2025-26", 2025);
+        var alpha = new Team { Id = Guid.NewGuid(), CanonicalName = "Basket Alpha", CountryCode = "ES" };
+        var beta = new Team { Id = Guid.NewGuid(), CanonicalName = "Alpha Basket", CountryCode = "ES" };
+        var opponent = new Team { Id = Guid.NewGuid(), CanonicalName = "Opponent", CountryCode = "ES" };
+
+        dbContext.AddRange(
+            firstCompetition, secondCompetition,
+            firstOldSeason, firstNewSeason, secondOldSeason, secondNewSeason,
+            alpha, beta, opponent,
+            new TeamAlias { Id = Guid.NewGuid(), TeamId = alpha.Id, Source = "source-a", SourceTeamId = "alpha", AliasName = "Alpha Basket" },
+            new TeamAlias { Id = Guid.NewGuid(), TeamId = beta.Id, Source = "source-b", SourceTeamId = "beta", AliasName = "Alpha Basket" },
+            NewGame(firstCompetition, firstOldSeason, alpha, opponent, "first-alpha"),
+            NewGame(firstCompetition, firstNewSeason, beta, opponent, "first-beta"),
+            NewGame(secondCompetition, secondOldSeason, beta, opponent, "second-beta"),
+            NewGame(secondCompetition, secondNewSeason, alpha, opponent, "second-alpha"));
+        await dbContext.SaveChangesAsync();
+
+        var service = new IdentityHealthCheckService(dbContext, null!);
+        await service.RunAsync(new IdentityHealthCheckRequest
+        {
+            EloPoolKey = "europe-clubs",
+            Force = true
+        }, CancellationToken.None);
+
+        var finding = Assert.Single(await dbContext.IdentityHealthCheckFindings
+            .Where(x => x.FindingType == IdentityFindingType.PossibleCrossSeasonSplit)
+            .ToListAsync());
+        Assert.Equal(
+            new HashSet<Guid> { alpha.Id, beta.Id },
+            new HashSet<Guid> { finding.AffectedTeamId!.Value, finding.RelatedTeamId!.Value });
+
+        static Season NewSeason(Competition competition, string label, int startYear) => new()
+        {
+            Id = Guid.NewGuid(),
+            CompetitionId = competition.Id,
+            Label = label,
+            StartDateUtc = new DateTime(startYear, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+            EndDateUtc = new DateTime(startYear + 1, 6, 30, 23, 59, 59, DateTimeKind.Utc)
+        };
+
+        static Game NewGame(Competition competition, Season season, Team team, Team opponent, string sourceGameId) => new()
+        {
+            Id = Guid.NewGuid(),
+            Source = "test",
+            SourceGameId = sourceGameId,
+            CompetitionId = competition.Id,
+            SeasonId = season.Id,
+            GameDateTimeUtc = season.StartDateUtc.AddDays(30),
+            HomeTeamId = team.Id,
+            AwayTeamId = opponent.Id,
+            Status = "finished"
+        };
+    }
 }
